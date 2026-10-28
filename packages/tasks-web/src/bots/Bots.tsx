@@ -62,13 +62,14 @@ import {
 } from "../../../../apps/web/src/sidebarThreadRow/sidebarListRow.tsx";
 import { cn } from "../../../../apps/web/src/lib/utils.ts";
 import { toastManager } from "../../../../apps/web/src/components/ui/toast.tsx";
+import { errorToastDescription } from "../../../../apps/web/src/components/errors/ErrorDetails.tsx";
 import { useEnvironmentScope } from "../../../../apps/web/src/state/session.ts";
 import { threadEnvironment } from "../../../../apps/web/src/state/threads.ts";
 import { useOrchestrationCommand } from "../../../../apps/web/src/state/use-orchestration-command.ts";
 import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/extensionApi.ts";
 import { claimSidebarThreads } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
 import { TaskThreadRunCounts } from "../ui/TaskThreadRunCounts.tsx";
-import { BotAvatar, botPage, useBots, useBotStatus } from "./botData.tsx";
+import { BotAvatar, botPage, errorReason, useBots, useBotStatus } from "./botData.tsx";
 
 function useBotEnvironmentIds() {
   const connected = useConnectedEnvironmentIds();
@@ -287,8 +288,13 @@ function BotRow({
         const error = squashAtomCommandFailure(result);
         toastManager.add({
           type: "error",
-          title: "Failed to rename bot",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          title: "Couldn't save the bot",
+          description: errorToastDescription(
+            error,
+            undefined,
+            `Couldn't save ${bot.agent.name}'s settings: ${errorReason(error)}. Try again.`,
+          ),
+          actionProps: { children: "Retry", onClick: () => commitRename(trimmed) },
         });
       }
     });

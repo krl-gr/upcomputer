@@ -5515,7 +5515,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                 {action === "retry" ? <RotateCcwIcon aria-hidden /> : null}
                 {action === "switch_model"
                   ? "Switch provider or model"
-                  : action === "open_settings"
+                  : action === "open_settings" || action === "open_bot_settings"
                     ? "Open settings"
                     : warning && resetTime
                       ? `Retry at ${resetTime}`

@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { describeError } from "@t3tools/client-runtime/errors";
 import { ThreadId, type EnvironmentId } from "@t3tools/contracts";
 import {
   defaultBotPortrait,
@@ -47,8 +48,23 @@ interface BotListStore {
 const EMPTY: BotList = { bots: [], loaded: false, error: "" };
 const stores = new Map<EnvironmentId, BotListStore>();
 
-export const errorText = (error: unknown) =>
-  error instanceof Error ? error.message : "Bot operation failed.";
+/** A failed bot action in plain words; the raw text goes behind Details. */
+export const errorText = (error: unknown) => {
+  const { reason } = describeError(error);
+  return reason === undefined
+    ? "Something went wrong. Try again."
+    : `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.`;
+};
+
+/** The reason inside a sentence, such as "Couldn't save Nova's settings: <reason>." */
+export const errorReason = (error: unknown) =>
+  describeError(error).reason ?? "something went wrong";
+
+/** The server's code for a failed bot action, which picks its title and action. */
+export const errorCode = (error: unknown) =>
+  typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : undefined;
 
 function storeFor(environmentId: EnvironmentId) {
   let store = stores.get(environmentId);

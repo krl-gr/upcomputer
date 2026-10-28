@@ -17,6 +17,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { describeError } from "@t3tools/client-runtime/errors";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   DEFAULT_RUNTIME_MODE,
@@ -65,6 +66,19 @@ import {
   SettingsRow,
   SettingsSection,
 } from "../../../../apps/web/src/components/settings/settingsLayout.tsx";
+import {
+  ErrorDetails,
+  errorToastDescription,
+} from "../../../../apps/web/src/components/errors/ErrorDetails.tsx";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "../../../../apps/web/src/components/ui/alert-dialog.tsx";
 import { Badge } from "../../../../apps/web/src/components/ui/badge.tsx";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { Input } from "../../../../apps/web/src/components/ui/input.tsx";
@@ -98,7 +112,15 @@ import { readTasksWebClient } from "../environmentApi.ts";
 import { TaskThreadRunCounts } from "../ui/TaskThreadRunCounts.tsx";
 import { WorkspaceViewLayout } from "../ui/WorkspaceViewLayout.tsx";
 import { useAutosave } from "./botAutosave.ts";
-import { botsChanged, errorText, useBots, useBotStatus, useBotTaskRunRequest } from "./botData.tsx";
+import {
+  botsChanged,
+  errorCode,
+  errorReason,
+  errorText,
+  useBots,
+  useBotStatus,
+  useBotTaskRunRequest,
+} from "./botData.tsx";
 import { botStatus, type BotCharacterState } from "./botStatus.ts";
 import { BotPortraitPicker } from "./portraits/BotPortraitPicker.tsx";
 
@@ -219,7 +241,10 @@ function BotForm({
     bot?.agent.config.runtimeMode ?? source?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
   );
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<unknown>(null);
+  // Why the chat could not become a bot, shown in a dialog.
+  const [adoptRefusal, setAdoptRefusal] = useState<string | null>(null);
+  const [removal, setRemoval] = useState<number | null>(null);
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
   const configs = useServerConfigs();
   const settings = usePrimarySettings();
@@ -276,23 +301,32 @@ function BotForm({
           },
         }
       : null;
+  // The failure toast's Retry runs after render, once `autosave` exists.
+  const retrySave = useRef(() => {});
   // An existing bot saves as it changes; a new one waits for Create.
   const autosave = useAutosave(bot ? draft : null, async (input) => {
     try {
       await client.save(input);
-      setError("");
+      setError(null);
       botsChanged();
     } catch (cause) {
-      const message = errorText(cause);
-      setError(message);
+      setError(cause);
       toastManager.add({
         type: "error",
-        title: "Bot settings were not saved",
-        description: message,
+        title: "Couldn't save the bot",
+        description: errorToastDescription(
+          cause,
+          undefined,
+          `Couldn't save ${input.name}'s settings: ${errorReason(cause)}. Try again.`,
+        ),
+        actionProps: { children: "Retry", onClick: () => retrySave.current() },
       });
       throw cause;
     }
   });
+  useEffect(() => {
+    retrySave.current = () => autosave.schedule(0);
+  }, [autosave]);
   const textKey = JSON.stringify([name, instructions]);
   const choiceKey = JSON.stringify([appearance, selection, runtimeMode, projectId, allowed]);
   // Text saves after a pause in typing or when the field loses focus; a pick saves at once.
@@ -308,12 +342,13 @@ function BotForm({
 
   const act = async (run: () => Promise<unknown>) => {
     setBusy(true);
-    setError("");
+    setError(null);
     try {
       await run();
       botsChanged();
     } catch (cause) {
-      setError(errorText(cause));
+      if (errorCode(cause) === "bot_chat_unavailable") setAdoptRefusal(errorText(cause));
+      else setError(cause);
     } finally {
       setBusy(false);
     }
@@ -331,6 +366,25 @@ function BotForm({
       await navigate({
         to: "/$environmentId/$threadId",
         params: { environmentId, threadId: saved.threadId },
+      });
+    });
+  };
+  const restoreNotices = (configs.get(environmentId)?.backgroundNotices ?? []).filter(
+    (notice) => notice.id === `bots:restore:${id}` || notice.id === `bots:name:${id}`,
+  );
+  const remove = () => {
+    if (!bot) return;
+    // A save that lands after removal would recreate the bot.
+    const saving = autosave.stop();
+    void act(async () => {
+      await saving;
+      await client.remove({ agentId: id }).catch((cause: unknown) => {
+        autosave.resume();
+        throw cause;
+      });
+      await navigate({
+        to: "/$environmentId/$threadId",
+        params: { environmentId, threadId: bot.threadId },
       });
     });
   };
@@ -367,10 +421,33 @@ function BotForm({
       }
     >
       <WorkspacePageContainer>
-        {error ? (
-          <p role="alert" className="px-3 text-sm text-destructive sm:px-4">
-            {error}
-          </p>
+        <BotError error={error} className="px-3 sm:px-4" />
+        {bot && restoreNotices.length > 0 ? (
+          <SettingsSection title="Problems" hideTitle>
+            {restoreNotices.map((notice) => (
+              <SettingsRow
+                key={notice.id}
+                title={notice.title}
+                description={notice.message}
+                control={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!editable || draft === null}
+                    onClick={() => {
+                      if (draft) void act(() => client.save(draft));
+                    }}
+                  >
+                    Save again
+                  </Button>
+                }
+              >
+                <div className="pb-2">
+                  <ErrorDetails detail={notice.detail} />
+                </div>
+              </SettingsRow>
+            ))}
+          </SettingsSection>
         ) : null}
         <SettingsSection title="Appearance">
           <div className="flex items-center gap-3 px-3 py-3 sm:px-4">
@@ -522,6 +599,7 @@ function BotForm({
         </SettingsSection>
 
         <SettingsSection
+          id={PROJECTS_SECTION_ID}
           title="Projects"
           titleAction={
             <InfoTip label="About projects">
@@ -591,19 +669,10 @@ function BotForm({
                     size="sm"
                     disabled={!editable}
                     onClick={() => {
-                      // A save that lands after removal would recreate the bot.
-                      const saving = autosave.stop();
-                      void act(async () => {
-                        await saving;
-                        await client.remove({ agentId: id }).catch((cause: unknown) => {
-                          autosave.resume();
-                          throw cause;
-                        });
-                        await navigate({
-                          to: "/$environmentId/$threadId",
-                          params: { environmentId, threadId: bot.threadId },
-                        });
-                      });
+                      void client.memory({ agentId: id }).then(
+                        (entries) => setRemoval(entries.length),
+                        (cause: unknown) => setError(cause),
+                      );
                     }}
                   >
                     Remove
@@ -614,7 +683,64 @@ function BotForm({
           </>
         ) : null}
       </WorkspacePageContainer>
+      <AlertDialog
+        open={removal !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoval(null);
+        }}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete bot and its memory?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {bot?.agent.name} is a bot. Deleting it also deletes its {removal}{" "}
+              {removal === 1 ? "memory" : "memories"}, and its chat becomes a normal chat.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setRemoval(null);
+                remove();
+              }}
+            >
+              Delete
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
+      <AlertDialog
+        open={adoptRefusal !== null}
+        onOpenChange={(open) => {
+          if (!open) setAdoptRefusal(null);
+        }}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Can't use this chat</AlertDialogTitle>
+            <AlertDialogDescription>{adoptRefusal}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" />}>OK</AlertDialogClose>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
     </WorkspaceViewLayout>
+  );
+}
+
+const PROJECTS_SECTION_ID = "bot-projects";
+
+/** A failed bot action: plain words, with the raw error behind Details. */
+function BotError({ error, className }: { readonly error: unknown; readonly className: string }) {
+  if (error === null) return null;
+  return (
+    <div role="alert" className={cn("grid gap-1", className)}>
+      <p className="text-sm text-destructive">{errorText(error)}</p>
+      <ErrorDetails detail={describeError(error).detail} />
+    </div>
   );
 }
 
@@ -802,7 +928,7 @@ function MemorySections({
   const [entries, setEntries] = useState<ReadonlyArray<BotMemory>>([]);
   const [proposals, setProposals] = useState<ReadonlyArray<BotMemoryProposal>>([]);
   const [adding, setAdding] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let disposed = false;
@@ -816,7 +942,7 @@ function MemorySections({
         setProposals(suggested);
       },
       (cause: unknown) => {
-        if (!disposed) setError(errorText(cause));
+        if (!disposed) setError(cause);
       },
     );
     return () => {
@@ -833,7 +959,7 @@ function MemorySections({
   ]);
   const mutate = async (run: () => Promise<unknown>) => {
     setBusy(true);
-    setError("");
+    setError(null);
     try {
       await run();
       const [memory, suggested] = await Promise.all([
@@ -843,7 +969,20 @@ function MemorySections({
       setEntries(memory);
       setProposals(suggested);
     } catch (cause) {
-      setError(errorText(cause));
+      if (errorCode(cause) === "bot_memory_project_unavailable")
+        toastManager.add({
+          type: "error",
+          title: "Memory belongs to another project",
+          description: errorToastDescription(cause, undefined, errorText(cause)),
+          actionProps: {
+            children: "Open settings",
+            onClick: () =>
+              document
+                .getElementById(PROJECTS_SECTION_ID)
+                ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+          },
+        });
+      else setError(cause);
     } finally {
       setBusy(false);
     }
@@ -994,11 +1133,7 @@ function MemorySections({
             No memories yet. Say “Remember: …” in the chat.
           </p>
         ) : null}
-        {error ? (
-          <p role="alert" className="px-3 py-3 text-sm text-destructive sm:px-4">
-            {error}
-          </p>
-        ) : null}
+        <BotError error={error} className="px-3 py-3 sm:px-4" />
       </SettingsSection>
     </>
   );
@@ -1297,17 +1432,17 @@ function BackgroundWork({
   const [description, setDescription] = useState("");
   // Retrying the same assignment after a lost reply must not create a second task.
   const [requestId, setRequestId] = useState(() => randomUUID());
-  const [error, setError] = useState("");
+  const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const disabled = busy || !canWrite;
   const cancel = () => {
     setOpen(false);
-    setError("");
+    setError(null);
   };
   const assign = () => {
     if (disabled || title.trim() === "") return;
     setBusy(true);
-    setError("");
+    setError(null);
     void readTasksWebClient(environmentId)
       .bots.assign({ agentId: bot.agent.id, requestId, title, description })
       .then(
@@ -1318,7 +1453,7 @@ function BackgroundWork({
           setRequestId(randomUUID());
           toastManager.add({ type: "success", title: "Task assigned" });
         },
-        (cause: unknown) => setError(errorText(cause)),
+        (cause: unknown) => setError(cause),
       )
       .finally(() => setBusy(false));
   };
@@ -1404,11 +1539,7 @@ function BackgroundWork({
           </Button>
         </div>
       )}
-      {error ? (
-        <p role="alert" className="px-3 py-3 text-sm text-destructive sm:px-4">
-          {error}
-        </p>
-      ) : null}
+      <BotError error={error} className="px-3 py-3 sm:px-4" />
     </SettingsSection>
   );
 }

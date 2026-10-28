@@ -9856,6 +9856,15 @@ export default function ChatView(props: ChatViewProps) {
       composerRef.current?.openModelPicker();
       return;
     }
+    if (action === "open_bot_settings") {
+      // The bots page opens the bot whose chat this thread is.
+      if (activeThread)
+        void navigate({
+          to: "/bots",
+          search: { environment: activeThread.environmentId, thread: activeThread.id },
+        } as never);
+      return;
+    }
     if (action === "open_settings") {
       if (run !== undefined) openProviderSetup(run.providerInstanceId);
       else void navigate({ to: "/settings/providers" });

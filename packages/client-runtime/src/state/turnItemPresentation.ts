@@ -48,7 +48,12 @@ const SETTINGS_FAILURE_CODES = new Set([
   "model_unavailable",
 ]);
 
-export type ProviderFailureAction = "retry" | "switch_model" | "open_settings";
+/** `open_bot_settings` opens the settings of the bot whose chat this is. */
+export type ProviderFailureAction =
+  | "retry"
+  | "switch_model"
+  | "open_settings"
+  | "open_bot_settings";
 
 /**
  * The buttons under a failed turn, most useful first. Usage limits lead with
@@ -58,6 +63,7 @@ export function providerFailureActions(
   failure: Extract<OrchestrationV2TurnItem, { readonly type: "error" }>["failure"],
 ): ReadonlyArray<ProviderFailureAction> {
   if (failure.class === "usage_limit") return ["switch_model", "retry"];
+  if (failure.code === "bot_project_changed") return ["open_bot_settings"];
   if (
     failure.class === "permission_error" ||
     (failure.code !== null && SETTINGS_FAILURE_CODES.has(failure.code))

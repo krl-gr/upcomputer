@@ -112,6 +112,19 @@ describe("providerFailureActions", () => {
     ...overrides,
   });
 
+  it("sends a bot whose chat moved project to its settings, not to send again", () => {
+    expect(
+      providerFailureActions(
+        failure({ class: "validation_error", code: "bot_project_changed", retryable: false }),
+      ),
+    ).toEqual(["open_bot_settings"]);
+    expect(
+      providerFailureActions(
+        failure({ class: "validation_error", code: "bot_context_unavailable", retryable: true }),
+      ),
+    ).toEqual(["retry"]);
+  });
+
   it("leads a usage limit with switching model and keeps retry second", () => {
     expect(providerFailureActions(failure({ class: "usage_limit" }))).toEqual([
       "switch_model",
