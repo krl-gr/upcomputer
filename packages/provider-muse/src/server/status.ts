@@ -114,7 +114,8 @@ export const checkMuseProviderStatus = Effect.fn("checkMuseProviderStatus")(func
       version,
       status: "error",
       auth: { status: "unknown" },
-      message: "Muse Code CLI is installed but failed to run.",
+      message:
+        "Muse Code is installed but didn't respond. Open a terminal and run `muse --version` to see what's wrong, then refresh.",
     });
   }
 

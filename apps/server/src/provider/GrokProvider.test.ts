@@ -367,7 +367,7 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
       expect(snapshot.enabled).toBe(true);
       expect(snapshot.installed).toBe(false);
       expect(snapshot.status).toBe("error");
-      expect(snapshot.message).toMatch(/not installed|not on PATH|Failed to execute/);
+      expect(snapshot.message).toMatch(/isn't installed|couldn't be started/);
     }),
   );
 
@@ -397,7 +397,9 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
       expect(snapshot.enabled).toBe(true);
       expect(snapshot.installed).toBe(true);
       expect(snapshot.status).toBe("error");
-      expect(snapshot.message).toBe("Grok CLI is installed but failed to run.");
+      expect(snapshot.message).toBe(
+        "Grok is installed but didn't respond. Open a terminal and run `grok --version` to see what's wrong, then refresh.",
+      );
       expect(snapshot.message).not.toContain(secretStderr);
     }),
   );
@@ -522,7 +524,7 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
         ["grok-4.6", true],
         ["grok-4.5", false],
       ]);
-      expect(snapshot.message).toContain("ACP initialize failed");
+      expect(snapshot.message).toContain("didn't report its models");
       expect(snapshot.slashCommands.map((command) => command.name)).toEqual(["compact"]);
     }),
   );

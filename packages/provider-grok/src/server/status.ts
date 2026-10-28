@@ -414,8 +414,8 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
         status: "error",
         auth: { status: "unknown" },
         message: isCommandMissingCause(error)
-          ? "Grok CLI (`grok`) is not installed or not on PATH."
-          : "Failed to execute Grok CLI health check.",
+          ? "Grok isn't installed on this computer, or Up.computer can't find it. Install it, or set its path in Settings."
+          : "Grok is installed but couldn't be started. Reinstall or update it, then refresh.",
       },
     });
   }
@@ -431,7 +431,8 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
         version: null,
         status: "error",
         auth: { status: "unknown" },
-        message: "Grok CLI is installed but timed out while running `grok --version`.",
+        message:
+          "Grok is installed but didn't respond in time. Open a terminal and run `grok --version` to see what's wrong, then refresh.",
       },
     });
   }
@@ -454,7 +455,8 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
         version,
         status: "error",
         auth: { status: "unknown" },
-        message: "Grok CLI is installed but failed to run.",
+        message:
+          "Grok is installed but didn't respond. Open a terminal and run `grok --version` to see what's wrong, then refresh.",
       },
     });
   }
@@ -530,7 +532,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
         version,
         status: "error",
         auth,
-        message: "Grok CLI is installed but not logged in. Run `grok login`.",
+        message: "Grok isn't signed in. Run `grok login` in a terminal, then refresh.",
       },
     });
   }
@@ -550,7 +552,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       ...(acpFailed
         ? {
             message:
-              "Grok CLI is installed but ACP initialize failed. Model options may be incomplete.",
+              "Grok is installed but didn't report its models. Some model choices may be missing; refresh to try again.",
           }
         : {}),
     },

@@ -382,7 +382,7 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
       NodeAssert.equal(snapshot.installed, false);
       NodeAssert.equal(
         snapshot.message,
-        "OpenCode CLI (`opencode`) is not installed or not on PATH.",
+        "OpenCode isn't installed on this computer, or Up.computer can't find it. Install it, or set its path in Settings.",
       );
     }),
   );
@@ -394,7 +394,10 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
 
       NodeAssert.equal(snapshot.status, "error");
       NodeAssert.equal(snapshot.installed, true);
-      NodeAssert.equal(snapshot.message, "Failed to execute OpenCode CLI health check.");
+      NodeAssert.equal(
+        snapshot.message,
+        "OpenCode is installed but couldn't be started. Reinstall or update it, then refresh.",
+      );
     }),
   );
 
@@ -411,7 +414,7 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
       NodeAssert.equal(snapshot.installed, true);
       NodeAssert.equal(
         snapshot.message,
-        "Failed to execute OpenCode CLI health check: OpenCode CLI version probe timed out after 20 seconds.",
+        "OpenCode is installed but couldn't be started. Reinstall or update it, then refresh.",
       );
     }).pipe(Effect.provide(TestClock.layer())),
   );
@@ -888,7 +891,7 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
       NodeAssert.equal(snapshot.models.length, 0);
       NodeAssert.equal(
         snapshot.message,
-        "Failed to load OpenCode provider inventory: opencode models failed",
+        "OpenCode is installed but didn't report its models. Refresh to try again.",
       );
     }),
   );
