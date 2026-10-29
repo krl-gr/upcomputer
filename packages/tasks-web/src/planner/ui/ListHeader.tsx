@@ -34,8 +34,8 @@ export interface PlannerEnvironmentOption {
 }
 
 /**
- * The list column's header, and the planner's title bar row with the week
- * header beside it: Me / Workers, Tasks / Routines, then New, the list menu
+ * The list column's header, beside the week header in the planner's title
+ * bar row, or stacked on the list: Me / Workers, Tasks / Routines, then New, the list menu
  * (Select, Show archive, environment) and hide the week. In select mode it
  * holds the bulk controls instead.
  */
@@ -57,8 +57,8 @@ export function ListHeader(props: {
   readonly weekHidden: boolean;
   readonly onToggleWeek: () => void;
   /**
-   * The page's title bar row; off in a right-panel surface, where it is a
-   * plain row under the panel's tab bar.
+   * The page's title bar row beside the week header; off when stacked on the
+   * list and in a right-panel surface, where it is a plain row.
    */
   readonly titleBar: boolean;
 }) {

@@ -189,18 +189,19 @@ export function WeekHeader(props: {
   readonly onCopySelected: (dates: readonly string[], at: "top" | "bottom") => void;
   readonly onDeleteSelected: () => void;
   /**
-   * Beside the list on the page the header is the title bar's right half,
-   * as the right panel's tab bar is beside the thread header. Stacked under
-   * the list header, or in the right panel, it is a plain row.
+   * On the page the header is in the title bar: its right half beside the
+   * list, or the whole row when stacked. In the right panel it is a plain row.
    */
   readonly titleBar: boolean;
+  /** Stacked on the page: the planner's first row, so it clears the collapsed sidebar. */
+  readonly leftEdge: boolean;
 }) {
   const { preferences } = usePlanner();
-  // The left edge belongs to the list column, so no collapsed-sidebar inset.
   const header = {
     electron: isElectron && props.titleBar,
-    clearCollapsedSidebar: false,
-    className: "justify-between border-b border-border",
+    clearCollapsedSidebar: props.leftEdge,
+    // A container, so the day steps give way when its full row does not fit.
+    className: "@container justify-between border-b border-border",
   };
   const [menuOpen, setMenuOpen] = useState(false);
   const [goToOpen, setGoToOpen] = useState(false);
@@ -342,6 +343,7 @@ export function WeekHeader(props: {
           label="Previous day"
           variant="outline"
           size="icon-sm"
+          className="@max-[22rem]:hidden"
           onClick={() => props.onNavigate("previous-day")}
         >
           <ChevronLeftIcon />
@@ -353,6 +355,7 @@ export function WeekHeader(props: {
           label="Next day"
           variant="outline"
           size="icon-sm"
+          className="@max-[22rem]:hidden"
           onClick={() => props.onNavigate("next-day")}
         >
           <ChevronRightIcon />

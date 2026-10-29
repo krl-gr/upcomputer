@@ -253,7 +253,8 @@ function PlannerBody(props: {
         void store.deleteEntries(selectedWeekIds);
         exitWeekSelection();
       }}
-      titleBar={wide && !props.panel}
+      titleBar={!props.panel}
+      leftEdge={!wide && !props.panel}
     />
   );
   const weekContent = (
@@ -327,7 +328,7 @@ function PlannerBody(props: {
               canHideWeek={wide}
               weekHidden={weekHidden}
               onToggleWeek={() => updateViewState({ rightPaneHidden: !viewState.rightPaneHidden })}
-              titleBar={!props.panel}
+              titleBar={wide && !props.panel}
             />
           }
           list={

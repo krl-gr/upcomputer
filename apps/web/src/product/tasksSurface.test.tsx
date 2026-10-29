@@ -429,7 +429,7 @@ describe("the Tasks surface's content", () => {
       expect(stacked()).not.toBeNull();
       expect(listBesideWeek()).toBeNull();
 
-      act(() => dom.resize(800));
+      act(() => dom.resize(900));
       expect(listBesideWeek()).not.toBeNull();
       act(() => root?.unmount());
       container?.remove();
