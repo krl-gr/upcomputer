@@ -31,24 +31,7 @@
   display: none;
 }
 
-/* Glyphs are 20px; project tiles 24px; bot faces 28px (drawn at 20px in a 16px slot). */
-[data-sidebar-compact="true"]
-  [data-app-sidebar]
-  :is(
-    [data-sidebar="menu-button"],
-    [data-sidebar-compact-search],
-    [data-sidebar-compact-new-thread]
-  )
-  > svg {
-  width: 1.25rem;
-  height: 1.25rem;
-}
-[data-sidebar-compact="true"]
-  [data-app-sidebar]
-  [data-sidebar="menu-button"]
-  > :is(span:first-child, svg[data-icon="all-projects"]) {
-  zoom: 1.5;
-}
+/* Glyphs and project tiles keep their standard size; bot faces 28px (drawn at 20px in a 16px slot). */
 [data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-list-row] > :first-child {
   zoom: 1.4;
 }
@@ -77,7 +60,7 @@
  * section is gone, its divider too. Threads stays for New thread.
  */
 [data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-section-header] {
-  width: 2.5rem;
+  width: 1.75rem;
   height: 1px;
   margin: 0.5rem auto;
   padding: 0;
