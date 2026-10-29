@@ -67,6 +67,7 @@ import { threadEnvironment } from "../../../../apps/web/src/state/threads.ts";
 import { useOrchestrationCommand } from "../../../../apps/web/src/state/use-orchestration-command.ts";
 import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/extensionApi.ts";
 import { claimSidebarThreads } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
+import { useTimelineMinimapByDay } from "../../../../apps/web/src/timelineMinimapDays/timelineMinimapDays.ts";
 import {
   SidebarCompactTooltip,
   useSidebarCompact,
@@ -456,6 +457,11 @@ export function BotHeader({
   readonly threadId: ThreadId;
 }) {
   const { bots, loaded, enabled } = useBots(environmentId);
-  if (!enabled || !loaded || !bots.some((bot) => bot.threadId === threadId)) return null;
+  const isBotChat = enabled && loaded && bots.some((bot) => bot.threadId === threadId);
+  // A bot chat runs for days: its minimap shows one tick per day.
+  useTimelineMinimapByDay(
+    isBotChat ? scopedThreadKey(scopeThreadRef(environmentId, threadId)) : null,
+  );
+  if (!isBotChat) return null;
   return <span hidden data-chat-header-hidden />;
 }

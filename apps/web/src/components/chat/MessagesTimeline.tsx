@@ -9,7 +9,10 @@ import { useChatCanvas } from "./ChatCanvasContext";
 import { WorkLogBlock } from "./WorkLog";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
-import { deriveTimelineMinimapItems } from "./timelineMinimapItems";
+import {
+  isTimelineMinimapTickInView,
+  useTimelineMinimapTicks,
+} from "../../timelineMinimapDays/timelineMinimapDays";
 import {
   type AssistantCitation,
   type EnvironmentId,
@@ -75,7 +78,6 @@ import {
   resolveTimelineIsAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
   resolveTimelineMinimapCurrentIndex,
-  isTimelineMinimapRowVisible,
   resolveTimelineMinimapVisibleRange,
   resolveTimelineMinimapHitStripWidth,
   timelineTurnFoldRunIdsByEntryId,
@@ -703,7 +705,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   }
   // Run status/timestamps change per stream event; keep them out of shared row context.
   const runs = useStableHandoffRuns(runsProp);
-  const minimapItems = deriveTimelineMinimapItems(rows);
+  const minimapItems = useTimelineMinimapTicks(rows, listIdentityKey);
   const minimapRowIndices = minimapItems.map((item) => item.rowIndex);
   const restoreRowIndex =
     restoringThreadPosition && rememberedPosition?.atEnd === false
@@ -876,11 +878,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     const visibleRange = resolveTimelineMinimapVisibleRange({ ...state, scroll });
     for (const item of minimapItems) {
       const strip = minimapStripMap.get(item.id);
-      const inView = isTimelineMinimapRowVisible(
-        item.rowIndex,
-        visibleRange.start,
-        visibleRange.end,
-      );
+      const inView = isTimelineMinimapTickInView(item, visibleRange.start, visibleRange.end);
       const next = inView ? "true" : "false";
       // Avoid dirtying style state on every scroll tick for unchanged strips.
       if (strip && strip.dataset.inView !== next) {
