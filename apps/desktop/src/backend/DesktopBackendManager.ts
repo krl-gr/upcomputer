@@ -941,7 +941,9 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
                       exitCode !== undefined && Number.isInteger(exitCode) && exitCode >= 0
                         ? Math.min(exitCode, 255)
                         : null,
-                    signal: DesktopProductEvents.backendExitSignal(exitError),
+                    signal: DesktopProductEvents.backendExitSignal(
+                      exitError ?? { message: reason },
+                    ),
                     uptimeMs: Option.match(startedAtMs, {
                       onNone: () => 0,
                       onSome: (startedAt) => Math.max(0, now - startedAt),

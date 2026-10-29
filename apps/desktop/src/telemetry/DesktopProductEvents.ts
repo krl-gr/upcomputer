@@ -21,8 +21,9 @@ const MAX_EVENTS_PER_TYPE = 20;
 const encodeMessage = Schema.encodeSync(Schema.fromJsonString(DesktopProductEventMessage));
 const textEncoder = new TextEncoder();
 const KNOWN_SIGNALS: ReadonlySet<string> = new Set(DESKTOP_BACKEND_EXIT_SIGNALS);
-// Effect's child process reports a signal death only in this message.
-const SIGNAL_IN_MESSAGE = /receipt of signal: '(SIG[A-Z0-9]+)'/;
+// Effect's child process reports a signal death only in this message; the
+// backend manager turns it into a "killed by SIG..." exit reason.
+const SIGNAL_IN_MESSAGE = /(?:receipt of signal: '|^killed by )(SIG[A-Z0-9]+)/;
 
 /** The signal a backend died from, found in the exit status error's causes. */
 export function backendExitSignal(error: unknown): DesktopBackendExitSignal | null {
