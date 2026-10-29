@@ -357,7 +357,7 @@ describe("InstructionsSettingsPage reloads", () => {
     expect(setup.getPromptSettings).toHaveBeenCalledWith({ projectId: "project-a" });
     expect(tabLabels()).toEqual([
       "Task creation",
-      "Agent creation",
+      "Worker creation",
       "Automation creation",
       "Task execution",
     ]);

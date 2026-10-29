@@ -43,7 +43,7 @@ export function getTaskRunAgentPresentation(
     (candidate) => candidate.environmentId === run.environmentId && candidate.id === run.agentId,
   );
   return {
-    agentName: agent?.name ?? "Agent run",
+    agentName: agent?.name ?? "Worker run",
     modelLabel: getAgentModelLabel(entries, run.modelSelection),
   };
 }

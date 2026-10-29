@@ -13,7 +13,7 @@ import { usePlanner } from "./plannerContext.ts";
 import { pointBelow, type MenuPoint } from "./PointMenu.tsx";
 
 /**
- * An automation in the Agents side's Automations list: its name, project,
+ * An automation in the Workers side's Automations list: its name, project,
  * status, schedule with the next run and how many tasks it created. Drags to
  * reorder among automations; double-click or the arrow opens its window.
  */

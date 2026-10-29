@@ -11,7 +11,7 @@ import { ConfirmDeleteDialog } from "./TaskDialogs.tsx";
 import type { ListDropIndicator } from "./TaskList.tsx";
 
 /**
- * The environment's automations in the person's order, in the Agents side's
+ * The environment's automations in the person's order, in the Workers side's
  * Automations section. A row drags among automations; its menu enables,
  * disables or deletes it.
  */
@@ -39,7 +39,7 @@ export function AutomationList(props: {
         <p className="px-6 py-10 text-center text-sm text-muted-foreground">
           {props.snapshot.status === "loading"
             ? "Loading…"
-            : "No automations yet. An automation creates a task for agents on a schedule."}
+            : "No automations yet. An automation creates a task for workers on a schedule."}
         </p>
       ) : (
         rows.map((automation) => (

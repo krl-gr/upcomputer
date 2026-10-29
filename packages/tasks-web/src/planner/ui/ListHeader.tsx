@@ -35,7 +35,7 @@ export interface PlannerEnvironmentOption {
 
 /**
  * The list column's header, and the planner's title bar row with the week
- * header beside it: Me / Agents, Tasks / Routines, then New, the list menu
+ * header beside it: Me / Workers, Tasks / Routines, then New, the list menu
  * (Select, Show archive, environment) and hide the week. In select mode it
  * holds the bulk controls instead.
  */

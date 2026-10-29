@@ -87,7 +87,7 @@ interface TaskFormState {
 }
 
 /** Who does a task, in its details: changing it moves the task between Agents and Me. */
-const AUDIENCE_LABELS: Record<TaskAudience, string> = { agent: "Agents", person: "Me" };
+const AUDIENCE_LABELS: Record<TaskAudience, string> = { agent: "Workers", person: "Me" };
 const TASKS_OFFLINE_TEXT =
   "The environment with Tasks is not reachable right now. Tasks show when it connects.";
 
@@ -99,7 +99,7 @@ export interface TasksViewProps {
   readonly projectFilter: ViewProjectFilter | null;
   /** The shared project select, shown at the right of the header. */
   readonly projectSelect?: ReactNode;
-  /** The Me / Agents switch and the Tasks / Automations switch, at the left of the header. */
+  /** The Me / Workers switch and the Tasks / Automations switch, at the left of the header. */
   readonly viewSwitch?: ReactNode;
   /** Task status (server), last run (client), tags (server, all required) and archive (server). */
   readonly filters: TasksPageFilters;
@@ -221,7 +221,7 @@ export function TaskReorderHandle(props: {
       disabled={!props.enabled}
       className="cursor-grab rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"
       aria-label={`Reorder ${props.task.title}`}
-      title="Drag to reorder globally. Agent queues run from the bottom, so lower runs sooner. With filters, the task is placed between the visible neighbors; hidden tasks keep their order."
+      title="Drag to reorder globally. Worker queues run from the bottom, so lower runs sooner. With filters, the task is placed between the visible neighbors; hidden tasks keep their order."
       onClick={(event) => event.stopPropagation()}
       onDragStart={(event) => {
         event.stopPropagation();
@@ -1199,17 +1199,17 @@ export function TasksView(props: TasksViewProps) {
                 ) : null}
                 {detailRunsStatus === "error" ? (
                   <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-                    Could not refresh this task&apos;s agent runs. Showing cached results.
+                    Could not refresh this task&apos;s worker runs. Showing cached results.
                   </div>
                 ) : null}
                 {detailRunsStatus === "loading" && taskThreads.length === 0 ? (
                   <div className="px-2 py-5 text-sm text-muted-foreground">
-                    Loading agent runs...
+                    Loading worker runs...
                   </div>
                 ) : taskThreads.length === 0 ? (
                   <div className="px-2 py-5 text-sm text-muted-foreground">
                     {runFilter === ALL_FILTER
-                      ? "No agent has worked on this task yet."
+                      ? "No worker has worked on this task yet."
                       : "No runs match this status."}
                   </div>
                 ) : (

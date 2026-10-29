@@ -308,7 +308,7 @@ A bot's chat has no header; its row shows the same statuses as a thread row, and
 counts its background task too: **Waiting** while the task runs, **Awaiting Input**
 when it is blocked, and **Failed** when it fails or is interrupted, until you open
 the bot's conversation. It also shows **Pending Approval** or **Awaiting Input**
-while any task started from the conversation, the bot's own or another agent's,
+while any task started from the conversation, the bot's own or a worker's,
 waits for you. Hover the bot's name for the cause.
 
 Hover the row and click the settings button to open the bot's page. There you

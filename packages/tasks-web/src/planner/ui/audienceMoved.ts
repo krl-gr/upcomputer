@@ -4,16 +4,16 @@ import { toastManager } from "../../../../../apps/web/src/components/ui/toast.ts
 
 /**
  * A task whose audience changed moves to the other side of Tasks: Me (the
- * planner) lists person tasks, Agents (the table) agent tasks. The toast says
+ * planner) lists person tasks, Workers (the table) agent tasks. The toast says
  * where it went, and Open shows it there, so it never disappears silently.
  */
 export function toastAudienceMoved(audience: TaskAudience, title: string, open: () => void) {
   const id = toastManager.add({
     type: "info",
-    title: audience === "agent" ? "Handed to agents" : "Taken back from agents",
+    title: audience === "agent" ? "Handed to workers" : "Taken back from workers",
     description:
       audience === "agent"
-        ? `"${title}" is in Agents now.`
+        ? `"${title}" is in Workers now.`
         : `"${title}" is in your planner now. Runs already started keep running.`,
     actionProps: {
       children: "Open",

@@ -2,7 +2,7 @@ import { storeAutomationsView } from "../planner/data/preferences.ts";
 import { windowStoreFor } from "../planner/windows/windowStore.ts";
 
 /**
- * The Automations page is gone: automations are a section of the Agents side
+ * The Automations page is gone: automations are a section of the Workers side
  * of Tasks. A link to `/automations` opens that section, and
  * `?automation=<environment>:<id>` also opens that automation's window.
  * Returns where to navigate.

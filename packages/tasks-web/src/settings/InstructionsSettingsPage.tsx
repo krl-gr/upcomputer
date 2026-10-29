@@ -44,7 +44,7 @@ const ALL_CHATS_TAB = { id: "allChats", label: "All chats" } as const;
 
 const PROMPT_TABS = [
   { id: "taskCreation", label: "Task creation" },
-  { id: "agentCreation", label: "Agent creation" },
+  { id: "agentCreation", label: "Worker creation" },
   { id: "automationCreation", label: "Automation creation" },
   { id: "taskExecution", label: "Task execution" },
 ] as const;
@@ -378,7 +378,7 @@ function InstructionsEditor({
               Shared instructions for all agents across every project.
             </span>{" "}
             &ldquo;All chats&rdquo; applies to every agent in every chat and task run. The other
-            tabs apply when agents create tasks, agents, or automations, and when they run a task.
+            tabs apply when agents create tasks, workers, or automations, and when they run a task.
             They&apos;re added after an agent&apos;s own instructions.
           </>
         ) : (

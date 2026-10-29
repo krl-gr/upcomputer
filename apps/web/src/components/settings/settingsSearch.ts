@@ -659,7 +659,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "wake-chat-on-task-completion",
     title: "Wake chat when tasks complete",
     to: "/settings/threads",
-    searchTerms: ["task agent run done finished orchestrator notify reply tokens card delegate"],
+    searchTerms: [
+      "task agent worker run done finished orchestrator notify reply tokens card delegate",
+    ],
   },
   {
     id: "unpin-confirmation",

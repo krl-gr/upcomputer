@@ -25,8 +25,8 @@ const decodeAgentNotice = Schema.decodeUnknownOption(
 
 /** Events that explain why an agent did not act, so a waiting task is not silent. */
 const AGENT_NOTICE_TITLES: Record<string, string> = {
-  "task.agent-not-started": "Agent didn't start",
-  "task.no-matching-agent": "No agent will pick this up",
+  "task.agent-not-started": "Didn't start",
+  "task.no-matching-agent": "No worker will pick this up",
 };
 const decodeArchiveChange = Schema.decodeUnknownOption(TaskArchiveChangedPayload);
 
@@ -35,7 +35,7 @@ function actorLabel(actor: TaskActor, agentNameForRun: (runId: string) => string
     case "person":
       return "Person";
     case "agent-run":
-      return agentNameForRun(actor.agentRunId) ?? "Agent run";
+      return agentNameForRun(actor.agentRunId) ?? "Worker run";
     case "thread":
       return "Chat agent";
     case "server":

@@ -40,7 +40,7 @@ export function WorkingRunCount({ counts }: { counts: readonly TaskRunCount[] })
     0,
   );
   if (working <= 0) return null;
-  const summary = `Running task agents · ${working}`;
+  const summary = `Running workers · ${working}`;
   return (
     <span
       className={`tabular-nums opacity-80 ${WORKING_CLASS_NAME}`}

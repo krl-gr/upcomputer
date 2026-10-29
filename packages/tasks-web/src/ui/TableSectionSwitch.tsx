@@ -5,7 +5,7 @@ import {
 import type { TableSection } from "../planner/data/preferences.ts";
 
 /**
- * Tasks / Automations: what the Agents side lists, beside the Me / Agents
+ * Tasks / Automations: what the Workers side lists, beside the Me / Workers
  * switch. Automations are the agents' routines: each creates agent tasks on
  * a schedule, and those tasks show under Tasks.
  */
@@ -15,7 +15,7 @@ export function TableSectionSwitch(props: {
 }) {
   return (
     <ToggleGroup
-      aria-label="Agent tasks or automations"
+      aria-label="Worker tasks or automations"
       variant="segmented-outline"
       value={[props.value]}
       onValueChange={(value) => {

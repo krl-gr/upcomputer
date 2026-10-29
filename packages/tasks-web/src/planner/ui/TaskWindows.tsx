@@ -194,11 +194,11 @@ export function TaskDetailWindow(
                     })
                   }
                 >
-                  Take back from agents
+                  Take back from workers
                 </MenuItem>
               ) : (
                 <MenuItem disabled={!task} onClick={() => setHandingOff(true)}>
-                  Hand to an agent…
+                  Hand to a worker…
                 </MenuItem>
               )}
               <MenuSeparator />

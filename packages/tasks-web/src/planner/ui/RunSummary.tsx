@@ -9,11 +9,11 @@ import type { PlannerTask } from "../data/pendingOps.ts";
 import { usePlanner } from "./plannerContext.ts";
 
 /**
- * What agents did and may do with a task, in its row and window: "Agents"
+ * What agents did and may do with a task, in its row and window: "Workers"
  * and the tags of an agent task (a window opened from an automation shows
  * one), the latest run's status and the run counts (a click opens the task
  * in the table, which lists its runs). A person task's tags stay hidden:
- * handing it to an agent is the window's "Hand to an agent".
+ * handing it to an agent is the window's "Hand to a worker".
  */
 export function RunSummary(props: { readonly task: PlannerTask }) {
   const { triggerTags, openInTable } = usePlanner();
@@ -26,7 +26,7 @@ export function RunSummary(props: { readonly task: PlannerTask }) {
         <>
           <TablePill>
             <BotIcon className="size-3.5" aria-hidden />
-            Agents
+            Workers
           </TablePill>
           <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
         </>

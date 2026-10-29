@@ -10,19 +10,19 @@ when available. They also say whether the agent could connect to Up.computer's t
 many of your own MCP servers failed, without their names or addresses. During setup they also
 include which welcome steps you reached, which agent you tried to install or sign in to, and
 whether each agent CLI is installed (with its version) and signed in. In the app they include
-which sections you open (such as Tasks, Agents, or Settings), how long a window stays connected,
-which buttons you click, when you first create a task, agent, automation, or scheduled task, and
+which sections you open (such as Tasks, Workers, or Settings), how long a window stays connected,
+which buttons you click, when you first create a task, worker, automation, or scheduled task, and
 when an agent first answers. Turn events also say how long the agent took to start answering. A
 button is reported by a fixed name from the app's code, never by its text. Every event also says
 what kind of build sent it (such as a release or a test build) and carries a random ID that is
 new each time the app or server starts, so events from one session can be grouped.
 
-For tasks and agents, events say how each agent run ended (such as completed, blocked, or
+For tasks and workers, events say how each worker run ended (such as completed, blocked, or
 failed, with a reason from a fixed list), what started it, which agent CLI ran it, and how long
 it took. They say whether an automation, scheduled task, or webhook fired, and why one did not.
-When the server starts, they say roughly how many tasks, agents, bots, automations, scheduled
+When the server starts, they say roughly how many tasks, workers, bots, automations, scheduled
 tasks, webhooks, and working agent CLIs you have (as ranges such as "2-4"), and whether remote
-access is on. They never include task or agent text, webhook addresses or request contents.
+access is on. They never include task or worker text, webhook addresses or request contents.
 
 When something goes wrong, events say where an error happened (the server, the app window or
 the desktop app), the kind of error from a fixed list of names, the name of the app file it
@@ -31,7 +31,7 @@ unexpectedly, when a window crashed, and when the app did not shut down cleanly 
 They never include the error message, file paths or what you were working on.
 
 Events do not include prompts, responses, file contents, authentication tokens, conversation IDs,
-names or titles of your threads, tasks, projects, or agents, raw provider events, or child-agent
+names or titles of your threads, tasks, projects, or workers, raw provider events, or child-agent
 output. Child-agent token use is excluded from the totals.
 
 Up.computer also sends relay connection traces to Axiom to diagnose UpComputer Connect connectivity.

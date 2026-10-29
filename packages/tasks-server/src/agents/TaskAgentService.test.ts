@@ -129,7 +129,7 @@ test("an agent task whose tags no agent on its status takes is reported as waiti
   NodeAssert.equal(noMatchingAgentReason([agent()], task(), nowMs), null, "the agent takes it");
   NodeAssert.match(
     noMatchingAgentReason([agent()], task({ tags: ["tset"] }), nowMs) ?? "",
-    /No enabled agent starts on "new" with these tags/,
+    /No enabled worker starts on "new" with these tags/,
   );
   NodeAssert.equal(
     noMatchingAgentReason([agent()], task({ status: "Backlog", tags: [] }), nowMs),

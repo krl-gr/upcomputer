@@ -126,6 +126,6 @@ test("the Tasks entry shows only working runs, as one number", () => {
     { status: "running", count: 1 },
   ]);
   NodeAssert.match(html, /^<span [^>]*>3<\/span>$/, "environments sum into one number");
-  NodeAssert.match(html, /aria-label="Running task agents · 3"/);
+  NodeAssert.match(html, /aria-label="Running workers · 3"/);
   NodeAssert.match(html, /text-sky-600/, "the Working color");
 });
