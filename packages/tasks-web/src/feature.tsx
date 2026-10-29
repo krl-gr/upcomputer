@@ -151,6 +151,13 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
       icon: ListTodoIcon,
       accessory: NavigationRunCounts,
     },
-    { id: "agents", label: "Agents", path: "/agents", order: 30, icon: BotIcon },
+    {
+      id: "agents",
+      label: "Agents",
+      path: "/agents",
+      order: 30,
+      icon: BotIcon,
+      placement: "footer",
+    },
   ],
 });

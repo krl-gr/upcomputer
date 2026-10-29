@@ -32,6 +32,7 @@ import {
   visibleBackgroundNotices,
 } from "./sidebarNotifications.logic";
 import { type SidebarUpdates, useSidebarUpdates } from "./useSidebarUpdates";
+import { useSidebarFooterTooltipSide } from "../adaptiveSidebar/adaptiveSidebar";
 
 const DISMISSED_KEY = "upcomputer:background-notices-dismissed:v1";
 const DismissedNotices = Schema.Array(Schema.String);
@@ -78,6 +79,7 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
     update: updates.signal,
   });
   const navigate = useNavigate();
+  const tooltipSide = useSidebarFooterTooltipSide();
 
   return (
     <>
@@ -112,9 +114,13 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
                 />
               }
             />
-            <TooltipPopup side="top">{label}</TooltipPopup>
+            <TooltipPopup side={tooltipSide}>{label}</TooltipPopup>
           </Tooltip>
-          <PopoverPopup side="top" align="start" className="w-80">
+          <PopoverPopup
+            side={tooltipSide}
+            align={tooltipSide === "top" ? "start" : "end"}
+            className="w-80"
+          >
             <div className="flex flex-col gap-3 pb-1">
               <UpdatesSection updates={updates} onLeave={() => setOpen(false)} />
               <Separator />

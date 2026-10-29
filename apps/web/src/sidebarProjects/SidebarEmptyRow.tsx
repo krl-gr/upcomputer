@@ -1,5 +1,6 @@
 import { PlusIcon } from "lucide-react";
 
+import { SidebarCompactTooltip } from "../adaptiveSidebar/adaptiveSidebar";
 import { SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
 
 /**
@@ -13,10 +14,12 @@ export function SidebarEmptyRow(props: {
 }) {
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton disabled={props.disabled} onClick={props.onClick}>
-        <PlusIcon />
-        <span className="flex-1 truncate">{props.label}</span>
-      </SidebarMenuButton>
+      <SidebarCompactTooltip label={props.label}>
+        <SidebarMenuButton disabled={props.disabled} onClick={props.onClick}>
+          <PlusIcon />
+          <span className="flex-1 truncate">{props.label}</span>
+        </SidebarMenuButton>
+      </SidebarCompactTooltip>
     </SidebarMenuItem>
   );
 }

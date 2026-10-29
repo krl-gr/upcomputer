@@ -1,0 +1,122 @@
+/*
+ * The compact sidebar (surface `sidebarLayout`, see adaptiveSidebar.tsx): the
+ * same rows as the full sidebar, keyed off `data-sidebar-compact` on the
+ * sidebar wrapper so a drag across the threshold switches without rendering.
+ * Unlayered, so these rules win over the rows' own utility classes.
+ */
+
+/* Rows show only their leading icon, centred: no title, end labels or hover actions. */
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  :is([data-sidebar="menu-button"], [data-sidebar-list-row]):not([data-sidebar="footer"] *) {
+  justify-content: center;
+  gap: 0;
+  padding-inline: 0;
+}
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  :is([data-sidebar="menu-button"], [data-sidebar-list-row]):not([data-sidebar="footer"] *)
+  > :not(:first-child) {
+  display: none;
+}
+
+/* The thread list's shelves (Working, Snoozed) keep only their chevron, which still folds them. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-row^="shelf:"] {
+  justify-content: center;
+  gap: 0;
+  padding-inline: 0;
+}
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-row^="shelf:"] > :not(:last-child) {
+  display: none;
+}
+
+/* A thread row's icon slot: its first project only, even in a project-filtered list. */
+[data-sidebar-compact-only] {
+  display: none;
+}
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-compact-only] {
+  display: flex;
+}
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-project-icons] > :not(:first-child) {
+  display: none;
+}
+
+/* What a row's end said (task runs, a thread's status) becomes a dot on its icon. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-list-row] > :first-child {
+  position: relative;
+}
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-sidebar-list-row]:is(:has([data-slot="task-run-counts"]), :has([data-status]))
+  > :first-child::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background-color: var(--sidebar-compact-dot, var(--info-foreground));
+  box-shadow: 0 0 0 2px var(--sidebar);
+  pointer-events: none;
+}
+[data-sidebar-list-row]:has([data-status="approval"], [data-status="limited"]) {
+  --sidebar-compact-dot: var(--warning-foreground);
+}
+[data-sidebar-list-row]:has([data-status="input"]) {
+  --sidebar-compact-dot: oklch(58.5% 0.233 277.117);
+}
+[data-sidebar-list-row]:has([data-status="request"]) {
+  --sidebar-compact-dot: var(--guest-foreground);
+}
+[data-sidebar-list-row]:has([data-status="done"]) {
+  --sidebar-compact-dot: var(--success-foreground);
+}
+[data-sidebar-list-row]:has([data-status="failed"]) {
+  --sidebar-compact-dot: var(--error-foreground);
+}
+[data-sidebar-list-row]:has([data-status="waiting"]) {
+  --sidebar-compact-dot: var(--contrast-muted-foreground);
+}
+
+/* Search opens the command palette: the field needs the full width. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-compact-search] {
+  display: flex;
+}
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-compact-search] ~ * {
+  display: none;
+}
+
+/* An open section's header is a divider; a collapsed section is gone, its divider too. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-section-header] {
+  height: 1px;
+  margin: 0.5rem 0.625rem;
+  padding: 0;
+  background-color: var(--contrast-sidebar-border);
+}
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-section-header] > * {
+  display: none;
+}
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  :has(> [data-sidebar-section-header][data-open="false"]) {
+  display: none;
+}
+
+/* The footer stacks its buttons; its notices need the full width. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar="footer"] [data-sidebar="menu"] {
+  flex-direction: column;
+}
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-sidebar="footer"]
+  > :not([data-sidebar="menu"]) {
+  display: none;
+}
+[data-sidebar-compact="true"] [data-app-sidebar] [data-track="sidebar.back"] {
+  justify-content: center;
+  padding-inline: 0;
+}
+[data-sidebar-compact="true"] [data-app-sidebar] [data-track="sidebar.back"] > span {
+  display: none;
+}

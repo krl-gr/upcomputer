@@ -14,7 +14,8 @@ import {
 /**
  * Header of a collapsible sidebar section (Projects, Threads): the title with
  * its chevron right after it, turned down while open, and an optional action
- * at the right. Everything but the action toggles the section.
+ * at the right. Everything but the action toggles the section. In the compact
+ * sidebar an open section's header is a divider and a collapsed one is gone.
  */
 export function SidebarSectionHeader(props: {
   readonly title: string;
@@ -28,6 +29,8 @@ export function SidebarSectionHeader(props: {
   return (
     // The title starts where a row's icon does, and the action ends where a row's actions do.
     <div
+      data-sidebar-section-header=""
+      data-open={open}
       className={cn(
         "group/sidebar-section-header flex items-center gap-1",
         SIDEBAR_ROW_HEIGHT,

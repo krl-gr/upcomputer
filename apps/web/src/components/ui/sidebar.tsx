@@ -58,6 +58,13 @@ type SidebarResizableOptions = {
     wrapper: HTMLElement;
   }) => boolean;
   storageKey?: string;
+  /** UpComputer: maps each dragged width, such as to snap; created per drag and ended with it. */
+  dragWidth?: SidebarDragWidth;
+};
+
+type SidebarDragWidth = (wrapper: HTMLElement) => {
+  resolve: (width: number) => number;
+  end: (committed: boolean) => void;
 };
 
 type SidebarResolvedResizableOptions = {
@@ -73,6 +80,7 @@ type SidebarResolvedResizableOptions = {
     wrapper: HTMLElement;
   }) => boolean;
   storageKey: string | null;
+  dragWidth?: SidebarDragWidth;
 };
 
 type SidebarInstanceContextProps = {
@@ -257,6 +265,7 @@ function resolveSidebarResizable({
     storageKey: options.storageKey ?? null,
     ...(options.onResize ? { onResize: options.onResize } : {}),
     ...(options.shouldAcceptWidth ? { shouldAcceptWidth: options.shouldAcceptWidth } : {}),
+    ...(options.dragWidth ? { dragWidth: options.dragWidth } : {}),
   };
 }
 
@@ -466,12 +475,14 @@ function SidebarRail({
       element.style.setProperty("transition-duration", "0ms");
     });
     setTargetWidth(width);
+    const dragWidth = options.dragWidth?.(wrapper);
 
     return {
       width,
       edge: side === "left" ? "right" : "left",
       bounds: { min: options.minWidth, max: options.maxWidth },
-      resize(nextWidth) {
+      resize(pointerWidth) {
+        const nextWidth = dragWidth?.resolve(pointerWidth) ?? pointerWidth;
         const accepted =
           options.shouldAcceptWidth?.({
             currentWidth: width,
@@ -499,11 +510,12 @@ function SidebarRail({
         }
         options.onResize?.(finalWidth);
       },
-      cleanup() {
+      cleanup(committed) {
         widthTargets.forEach((element) => {
           element.style.removeProperty("width");
           element.style.removeProperty("transition-duration");
         });
+        dragWidth?.end(committed);
       },
     };
   });

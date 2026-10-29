@@ -403,8 +403,8 @@ function measureRows(names: ReadonlyArray<string>): MeasuredRow[] {
 }
 
 interface MeasuredHeader {
-  /** The sidebar toggle's icon, relative to the sidebar. */
-  readonly toggleIconLeft: number;
+  /** Whether upstream's sidebar toggle shows; the sidebar's width decides its mode instead. */
+  readonly toggleShown: boolean;
   readonly headerHeight: number;
   readonly topbarHeight: number;
   readonly hasBrand: boolean;
@@ -421,7 +421,7 @@ function measureHeader(): MeasuredHeader {
   const topbarHeight = probe.getBoundingClientRect().height;
   probe.remove();
   return {
-    toggleIconLeft: toggleIcon.getBoundingClientRect().left - sidebar.getBoundingClientRect().left,
+    toggleShown: toggleIcon.checkVisibility(),
     headerHeight: header.getBoundingClientRect().height,
     topbarHeight,
     hasBrand:
@@ -511,8 +511,8 @@ describe.skipIf(browser === null)("sidebar alignment (real layout in Chromium)",
     expect(sectionGaps[0]).toBeGreaterThan(gapsBetween(NAV.map(row))[0]!);
   });
 
-  it("starts the sidebar toggle's icon where the row icons do", () => {
-    expectWithinPixel("sidebar toggle icon", header.toggleIconLeft, row("Search").icon!.left);
+  it("shows no sidebar toggle on desktop, where the sidebar's width decides its mode", () => {
+    expect(header.toggleShown).toBe(false);
   });
 
   it("shows no brand or stage badge above Search, in a titlebar-high header", () => {

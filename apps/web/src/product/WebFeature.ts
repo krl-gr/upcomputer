@@ -40,6 +40,8 @@ export interface ExperimentalWebNavigationContribution {
   readonly icon?: ComponentType<{ readonly className?: string }>;
   /** Compact status after the label, such as a count. The host owns placement. */
   readonly accessory?: ComponentType;
+  /** `footer`: an icon button in the sidebar footer, after Settings, instead of a row. */
+  readonly placement?: "footer";
 }
 
 /** A section of the settings shell, listed after core's sections. */

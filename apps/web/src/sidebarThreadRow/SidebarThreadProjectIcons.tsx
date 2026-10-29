@@ -2,6 +2,7 @@ import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { memo } from "react";
 
+import { useSidebarCompact } from "../adaptiveSidebar/adaptiveSidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { NoProjectIcon, ProjectRowIcon } from "../sidebarProjects/sidebarProjectIcons";
 import { useProjects, useServerConfigs } from "../state/entities";
@@ -29,7 +30,7 @@ function projectIndex(projects: ReadonlyArray<EnvironmentProject>) {
  * without a project shows its linked projects, or V1's muted chat icon while
  * it has none. The links come from the thread shell the sidebar already
  * holds, so agents linking or unlinking a project update the row live. A
- * project-scoped list hides the icons, as V1's filtered list did.
+ * project-scoped list hides them, as V1's did, but for the compact sidebar.
  */
 export const SidebarThreadProjectIcons = memo(function SidebarThreadProjectIcons(props: {
   readonly thread: Pick<SidebarThreadSummary, "environmentId" | "linkedProjectIds">;
@@ -40,6 +41,8 @@ export const SidebarThreadProjectIcons = memo(function SidebarThreadProjectIcons
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
   const isProjectScoped = useUiStateStore((state) => state.sidebarProjectScopeKeys.length > 0);
+  // The row's title is its tooltip there.
+  const compact = useSidebarCompact();
   const stack = (() => {
     const index = projectIndex(projects);
     const scratchRoot = serverConfigs.get(environmentId)?.scratchWorkspaceRoot;
@@ -51,12 +54,15 @@ export const SidebarThreadProjectIcons = memo(function SidebarThreadProjectIcons
     });
   })();
 
-  if (isProjectScoped) return null;
+  // Rendered for the compact sidebar, which shows it from CSS so a drag needs no render.
+  const scopedProps = isProjectScoped ? { "data-sidebar-compact-only": "" } : {};
   if (stack.showScratchIcon) {
     return (
-      <Tooltip>
+      <Tooltip disabled={compact}>
         <TooltipTrigger
-          render={<span role="img" aria-label="No project" className="flex shrink-0" />}
+          render={
+            <span role="img" aria-label="No project" className="flex shrink-0" {...scopedProps} />
+          }
         >
           <NoProjectIcon />
         </TooltipTrigger>
@@ -67,13 +73,15 @@ export const SidebarThreadProjectIcons = memo(function SidebarThreadProjectIcons
   if (stack.visibleProjects.length === 0) return null;
   const projectNames = stack.allProjects.map((project) => project.title).join(", ");
   return (
-    <Tooltip>
+    <Tooltip disabled={compact}>
       <TooltipTrigger
         render={
           <span
             role="img"
             aria-label={projectNames}
+            data-sidebar-project-icons=""
             className="flex shrink-0 items-center gap-0.5"
+            {...scopedProps}
           />
         }
       >

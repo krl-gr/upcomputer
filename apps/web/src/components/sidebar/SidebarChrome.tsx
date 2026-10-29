@@ -34,6 +34,8 @@ import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUp
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { APP_BASE_NAME } from "~/branding";
 import { observeResize } from "~/lib/observeResize";
+import { ProductSidebarFooterNavigation } from "~/product/ProductSlots";
+import { useSidebarFooterTooltipSide } from "~/adaptiveSidebar/adaptiveSidebar";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -147,6 +149,7 @@ function SidebarUtilityItem({
   track: string;
   onClick: () => void;
 }) {
+  const tooltipSide = useSidebarFooterTooltipSide();
   return (
     <SidebarMenuItem className="shrink-0">
       <Tooltip>
@@ -157,7 +160,7 @@ function SidebarUtilityItem({
             </SidebarMenuButton>
           }
         />
-        <TooltipPopup side="top">{label}</TooltipPopup>
+        <TooltipPopup side={tooltipSide}>{label}</TooltipPopup>
       </Tooltip>
     </SidebarMenuItem>
   );
@@ -218,6 +221,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             track="sidebar.settings"
             onClick={handleSettingsClick}
           />
+          <ProductSidebarFooterNavigation />
           {pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<PullRequestGlyph.pullRequest />}

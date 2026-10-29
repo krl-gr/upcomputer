@@ -40,6 +40,7 @@ import {
   SIDEBAR_SECTION_GAP,
   SIDEBAR_SECTION_HEADER_GAP,
 } from "../sidebarMetrics/sidebarMetrics";
+import { SidebarCompactTooltip } from "../adaptiveSidebar/adaptiveSidebar";
 import { SidebarEmptyRow } from "./SidebarEmptyRow";
 import { SidebarProjectRow } from "./SidebarProjectRow";
 import { SidebarSectionHeader, SidebarSectionHeaderAction } from "./SidebarSectionHeader";
@@ -137,10 +138,15 @@ export function SidebarProjectsSection(props: {
             <SidebarMenu>
               {projectGroups.length === 0 ? null : (
                 <SidebarMenuItem>
-                  <SidebarMenuButton isActive={scopeKey === null} onClick={() => setScopeKey(null)}>
-                    <AllProjectsIcon />
-                    <span className="flex-1 truncate">All projects</span>
-                  </SidebarMenuButton>
+                  <SidebarCompactTooltip label="All projects">
+                    <SidebarMenuButton
+                      isActive={scopeKey === null}
+                      onClick={() => setScopeKey(null)}
+                    >
+                      <AllProjectsIcon />
+                      <span className="flex-1 truncate">All projects</span>
+                    </SidebarMenuButton>
+                  </SidebarCompactTooltip>
                 </SidebarMenuItem>
               )}
               {rows.preview.map((project) => (
@@ -252,10 +258,12 @@ export function SidebarProjectsMore(props: {
           <EllipsisIcon />
         </ComboboxTrigger>
       ) : (
-        <ComboboxTrigger render={<SidebarMenuButton />}>
-          <EllipsisIcon />
-          <span className="flex-1 truncate">More</span>
-        </ComboboxTrigger>
+        <SidebarCompactTooltip label="More projects">
+          <ComboboxTrigger render={<SidebarMenuButton />}>
+            <EllipsisIcon />
+            <span className="flex-1 truncate">More</span>
+          </ComboboxTrigger>
+        </SidebarCompactTooltip>
       )}
       <ComboboxPopup
         side={compact ? "right" : "bottom"}
