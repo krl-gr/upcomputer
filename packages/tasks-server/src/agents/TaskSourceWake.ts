@@ -36,13 +36,24 @@ const SOURCE_WAKE_RETRY_BASE_MS = 10_000;
  */
 export const SOURCE_SETTLE_MS = 15_000;
 /**
- * The longest a completed run waits for its chat's other tasks to settle. A
- * chat whose tasks never go quiet (a long run, or a queue other chats keep
- * feeding) still hears about it, at most about once per this interval. A
+ * The longest a completed run waits for runs that were already in progress when
+ * it ended (a long run beside it, or a queue other chats keep feeding). A
  * Developer and Reviewer pair takes 1 to 2 minutes on the bench and a
  * three-task queue about 3, so a short queue still ends in one report.
  */
 export const SOURCE_MAX_WAIT_MS = 5 * 60_000;
+/**
+ * A run that started at most this long before a completed run ended, and after it
+ * started, is its successor. A queue hand-off starts the next run before the run
+ * handing off records its end, 18 to 44 s earlier in practice.
+ */
+const SOURCE_HANDOFF_MS = 2 * 60_000;
+/**
+ * The longest a completed run waits for a chain of successors. A queue of six
+ * 30 to 60 minute steps fits; a chat whose tasks never stop still hears about
+ * four times a day.
+ */
+export const SOURCE_CHAIN_MAX_WAIT_MS = 6 * 60 * 60_000;
 
 /**
  * Dispatch failures that a retry cannot fix: the chat refused the message, or
@@ -252,9 +263,11 @@ const WakeBatchRow = Schema.Struct({
  *
  * A completed run waits until none of the chat's tasks has had a run in progress for
  * SOURCE_SETTLE_MS, so a chat that queued several tasks hears once at the end; the task
- * UI shows the progress in between. It waits at most SOURCE_MAX_WAIT_MS. A blocked,
- * failed or interrupted run goes out at once, ahead of the completed runs waiting for
- * the same chat, which go with it.
+ * UI shows the progress in between. It waits at most SOURCE_MAX_WAIT_MS for runs that
+ * were already in progress, and while a successor runs (a queue hand-off, a review
+ * after the work) at most SOURCE_CHAIN_MAX_WAIT_MS. A blocked, failed or interrupted
+ * run goes out at once, ahead of the completed runs waiting for the same chat, which
+ * go with it.
  *
  * Runs are first grouped into batches that are stored before anything is sent. The
  * batch id is the report's command id, so a retry repeats the same report (v2 replays
@@ -303,13 +316,19 @@ export const makeTaskSourceWake = Effect.gen(function* () {
    * Finished runs not yet told and not yet in a batch whose chat may hear now:
    * its tasks have settled (no run in progress or recently ended), one of them
    * ended in a way the chat may need to act on, or a completed one has waited
-   * SOURCE_MAX_WAIT_MS. The rest wait here, so a chat that delegates a queue
-   * hears once when it settles, not on every run.
+   * SOURCE_MAX_WAIT_MS with no successor in progress or recently ended, or
+   * SOURCE_CHAIN_MAX_WAIT_MS.
+   * The rest wait here, so a chat that delegates a queue hears once when it
+   * settles, not on every run.
    */
   const dueRows = SqlSchema.findAll({
-    Request: Schema.Struct({ settledBefore: Schema.String, waitedBefore: Schema.String }),
+    Request: Schema.Struct({
+      settledBefore: Schema.String,
+      waitedBefore: Schema.String,
+      chainedBefore: Schema.String,
+    }),
     Result: PendingWakeRow,
-    execute: ({ settledBefore, waitedBefore }) => sql`
+    execute: ({ settledBefore, waitedBefore, chainedBefore }) => sql`
       WITH busy_source AS (
         SELECT DISTINCT busy_task.source_thread_id AS id
         FROM task_agent_runs AS busy_run
@@ -336,6 +355,22 @@ export const makeTaskSourceWake = Effect.gen(function* () {
           AND waited_run.source_wake_batch_id IS NULL
           AND waited_run.status = 'completed'
           AND waited_task.archived_at IS NULL
+          AND (
+            waited_run.completed_at <= ${chainedBefore}
+            OR NOT EXISTS (
+              SELECT 1
+              FROM task_agent_runs AS next_run
+              JOIN tasks AS next_task ON next_task.id = next_run.task_id
+              WHERE next_task.source_thread_id = waited_task.source_thread_id
+                AND (next_run.completed_at IS NULL OR next_run.completed_at > ${settledBefore})
+                AND next_run.started_at > waited_run.started_at
+                AND next_run.started_at > strftime(
+                  '%Y-%m-%dT%H:%M:%fZ',
+                  waited_run.completed_at,
+                  ${`-${SOURCE_HANDOFF_MS / 1000} seconds`}
+                )
+            )
+          )
       )
       SELECT ${runColumns}
       FROM task_agent_runs AS run
@@ -408,6 +443,7 @@ export const makeTaskSourceWake = Effect.gen(function* () {
       const rows = yield* dueRows({
         settledBefore: before(SOURCE_SETTLE_MS),
         waitedBefore: before(SOURCE_MAX_WAIT_MS),
+        chainedBefore: before(SOURCE_CHAIN_MAX_WAIT_MS),
       });
       if (rows.length === 0) return;
       const at = DateTime.formatIso(current);
