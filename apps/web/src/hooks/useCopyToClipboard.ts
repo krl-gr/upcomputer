@@ -192,6 +192,19 @@ export async function readTextFromClipboard(target = "text"): Promise<string> {
   }
 }
 
+// Loaded lazily, and outside the hook for the React Compiler: the toast module imports this hook.
+function showCopyFailedToast() {
+  void import("~/components/ui/toast").then(({ toastManager }) =>
+    toastManager.add({
+      type: "error",
+      title: "Couldn't copy",
+      description:
+        "Up.computer couldn't copy to your clipboard. Select the text and copy it yourself.",
+      data: { hideCopyButton: true },
+    }),
+  );
+}
+
 export function useCopyToClipboard<TContext = void>({
   timeout = 2000,
   target = "text",
@@ -232,16 +245,7 @@ export function useCopyToClipboard<TContext = void>({
           return;
         }
         // Most callers pass no onError; a silent failed copy reads as success.
-        // Loaded lazily: the toast module imports this hook.
-        void import("~/components/ui/toast").then(({ toastManager }) =>
-          toastManager.add({
-            type: "error",
-            title: "Couldn't copy",
-            description:
-              "Up.computer couldn't copy to your clipboard. Select the text and copy it yourself.",
-            data: { hideCopyButton: true },
-          }),
-        );
+        showCopyFailedToast();
       },
     );
   });
