@@ -33,14 +33,15 @@ import {
 } from "./sidebarNotifications.logic";
 import { type SidebarUpdates, useSidebarUpdates } from "./useSidebarUpdates";
 import { useSidebarFooterTooltipSide } from "../adaptiveSidebar/adaptiveSidebar";
+import { BadgedIcon } from "../badgedIcon/BadgedIcon";
 
 const DISMISSED_KEY = "upcomputer:background-notices-dismissed:v1";
 const DismissedNotices = Schema.Array(Schema.String);
 
 const DOT_CLASS: Record<SidebarNotificationsDot, string> = {
-  error: "bg-destructive",
-  warning: "bg-warning",
-  neutral: "bg-sidebar-foreground",
+  error: "fill-destructive",
+  warning: "fill-warning",
+  neutral: "fill-sidebar-foreground",
 };
 
 const PROGRESS_RADIUS = 14;
@@ -96,18 +97,9 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
                       data-track="sidebar.notifications"
                       size="icon"
                     >
-                      <BellIcon />
+                      <BadgedIcon icon={BellIcon} dotClassName={dot ? DOT_CLASS[dot] : null} />
                       {updates.signal.kind === "downloading" ? (
                         <DownloadRing percent={updates.signal.percent} />
-                      ) : null}
-                      {dot ? (
-                        <span
-                          aria-hidden="true"
-                          className={cn(
-                            "pointer-events-none absolute top-1.5 right-1.5 size-1.5 rounded-full ring-2 ring-sidebar",
-                            DOT_CLASS[dot],
-                          )}
-                        />
                       ) : null}
                     </SidebarMenuButton>
                   }
