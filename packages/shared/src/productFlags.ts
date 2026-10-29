@@ -137,6 +137,11 @@ export interface ProductSurfaces {
    */
   readonly sidebarLayout: ProductSurfaceVariant;
   /**
+   * The thread details card on the chat canvas. With `upcomputer` it is closed
+   * in every thread until the user opens it, and nothing opens it for them.
+   */
+  readonly threadDetailsCard: ProductSurfaceVariant;
+  /**
    * First-run setup on a local or paired server. With `upcomputer` it is V1's
    * agent table: one screen to make an agent work, then project import only
    * when there is something to import. Hosted web keeps upstream's wizard,
@@ -156,6 +161,7 @@ export const UPSTREAM_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   sidebarVibrancy: "upstream",
   sidebarNotifications: "upstream",
   sidebarLayout: "upstream",
+  threadDetailsCard: "upstream",
   onboarding: "upstream",
 });
 
@@ -168,6 +174,7 @@ export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   sidebarVibrancy: "upcomputer",
   sidebarNotifications: "upcomputer",
   sidebarLayout: "upcomputer",
+  threadDetailsCard: "upcomputer",
   onboarding: "upcomputer",
 });
 
