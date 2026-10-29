@@ -1133,7 +1133,10 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
                   .pipe(Effect.flip);
 
           assert.deepInclude(error, { _tag: "GitCommandError", detail, reason: "ref_not_found" });
-          assert.include(error.message, `${detail} (ref_not_found)`);
+          assert.equal(
+            error.message,
+            "Git couldn't find that branch or commit. Check the name, then try again.",
+          );
           assert.notInclude(error.message, refName);
           assert.notInclude(yield* encodeGitCommandError(error), refName);
           assert.deepEqual(locales, ["C"]);

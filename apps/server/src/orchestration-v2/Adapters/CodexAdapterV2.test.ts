@@ -2338,7 +2338,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           assert.deepEqual(completed[1]?.completedAt, DateTime.makeUnsafe(1782622442000));
           assert.equal(harness.terminalEvents()[0]?.status, status);
           if (outcome === "failed") {
-            assert.equal(harness.terminalEvents()[0]?.failure?.message, error.message);
+            assert.equal(
+              harness.terminalEvents()[0]?.failure?.message,
+              "Codex reported an error: remote compaction stream disconnected. Send the message again.",
+            );
           }
         }).pipe(
           Effect.provide(
@@ -5004,9 +5007,14 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           assert.equal(terminal.failure.code, "responseTooManyFailedAttempts");
           assert.equal(terminal.threadDisposition, "reusable");
           const notificationClass = notificationStatus === 429 ? "usage_limit" : "provider_error";
+          const reason = (
+            expectedClass === notificationClass ? additionalDetails : message
+          ).replace(/^./u, (first) => first.toLowerCase());
           assert.equal(
             terminal.failure.message,
-            expectedClass === notificationClass ? additionalDetails : message,
+            expectedClass === "usage_limit"
+              ? `Codex usage limit reached (${reason.slice(0, -1)}). Switch to another model or provider to keep working now.`
+              : `Codex reported an error: ${reason} Send the message again.`,
           );
           if (willRetry) assert.equal(terminal.retry?.attempt, 1);
         }).pipe(

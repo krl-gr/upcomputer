@@ -949,7 +949,13 @@ effectIt.effect(
           },
         },
       ]);
-      expect(JSON.stringify(harness.events)).not.toContain("private git diagnostic");
+      // Git's own output is for the failure's details, never its message.
+      expect(projection.turnItems[0]).toMatchObject({
+        failure: { detail: expect.stringContaining("private git diagnostic") },
+      });
+      expect(
+        JSON.stringify(projection.turnItems.map((item) => Reflect.get(item, "failure")?.message)),
+      ).not.toContain("private git diagnostic");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 

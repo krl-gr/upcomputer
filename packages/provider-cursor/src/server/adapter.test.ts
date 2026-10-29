@@ -228,7 +228,8 @@ describe("CursorAdapterV2", () => {
       }),
       failure: {
         class: "provider_error",
-        message: "Model Blocked Please ask your admin to enable access to Claude Fable 5.",
+        message:
+          "Cursor reported an error: Model Blocked Please ask your admin to enable access to Claude Fable 5. Send the message again.",
       },
     },
     {
@@ -243,9 +244,10 @@ describe("CursorAdapterV2", () => {
         }),
       ),
       failure: {
-        class: "transport_error",
+        // Our reading of a 429 is the usage limit; the SDK's own text goes to the detail.
+        class: "usage_limit",
         message:
-          "Cursor Agent SDK run.wait failed: Too many requests (resource_exhausted, HTTP 429)",
+          "Cursor usage limit reached for claude-fable-5. Switch to another model or provider to keep working now.",
       },
     },
     {
@@ -264,7 +266,8 @@ describe("CursorAdapterV2", () => {
       }),
       failure: {
         class: "transport_error",
-        message: "Error: RetriableError: WritableIterable is closed",
+        message:
+          "Cursor's servers didn't respond (WritableIterable is closed). Check your connection and send again.",
       },
     },
     {
@@ -304,7 +307,8 @@ describe("CursorAdapterV2", () => {
       }),
       failure: {
         class: "provider_error",
-        message: "Agent turn stopped after repeated resume attempts made no progress",
+        message:
+          "Cursor reported an error: Agent turn stopped after repeated resume attempts made no progress. Send the message again.",
       },
     },
     {

@@ -7,7 +7,7 @@ import { getProviderOptionCurrentLabel, getProviderOptionDescriptors } from "@t3
 
 import { getProviderModelCapabilities } from "../../../../apps/web/src/providerModels.ts";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
-import { getTriggerDisplayModelName } from "../../../../apps/web/src/components/chat/providerIconUtils.ts";
+import { getDisplayModelName } from "../../../../apps/web/src/components/chat/providerIconUtils.ts";
 import type { ScopedTaskAgent, ScopedTaskAgentRun } from "../state/index.ts";
 
 /**
@@ -29,7 +29,8 @@ export function getAgentModelName(
   slug: string,
 ): string {
   const model = provider?.models.find((candidate) => candidate.slug === slug);
-  return model ? getTriggerDisplayModelName(model, provider?.driverKind) : slug;
+  // The full name: the composer trigger shortens it, which reads poorly in a task list.
+  return model ? getDisplayModelName(model) : slug;
 }
 
 /** A run's agent name and the harness and model it ran on, which can differ from the agent's current config. */

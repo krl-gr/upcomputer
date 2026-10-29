@@ -503,10 +503,6 @@ const SSH_TRANSPORT_REFUSAL_PATTERN =
  */
 const GIT_PLAIN_DIAGNOSTICS: ReadonlyArray<readonly [RegExp, string]> = [
   [
-    /\[rejected\].*\((?:non-fast-forward|fetch first)\)/i,
-    "The remote has newer commits. Pull first, then push again.",
-  ],
-  [
     /\[remote rejected\].*protected branch/i,
     "The remote branch is protected. Push to another branch and open a pull request.",
   ],

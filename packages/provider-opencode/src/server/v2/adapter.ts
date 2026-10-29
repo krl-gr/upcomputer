@@ -80,6 +80,7 @@ import {
   makeProviderCrashFailure,
   makeProviderFailure,
   makeProviderRetryTurnItem,
+  usageLimitMessage,
 } from "@t3tools/provider-core/server/failure";
 import {
   makeSubagentChildThread,
@@ -2145,12 +2146,15 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
             (type === "provider.quota" && status !== 402) || type === "provider.rate-limit";
           return yield* endExecution(state, turn, {
             status: "failed",
-            failure: makeNativeProviderFailure({
-              driver: OPENCODE_PROVIDER,
-              text: message,
-              code: type,
-              ...(usageLimit ? { class: "usage_limit" as const } : {}),
-            }),
+            failure: usageLimit
+              ? makeProviderFailure({
+                  driver: OPENCODE_PROVIDER,
+                  message: usageLimitMessage("OpenCode", message),
+                  code: type,
+                  class: "usage_limit",
+                  detail: message,
+                })
+              : makeNativeProviderFailure({ driver: OPENCODE_PROVIDER, text: message, code: type }),
           });
         }
         default:

@@ -277,8 +277,11 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
   it.effect("keeps a failed batch through a 20-minute outage and sends it once after", () =>
     Effect.gen(function* () {
       const ingest = failingFor(20);
-      const batches = yield* sendFor(40, ingest.respond);
-      const statuses = ingest.answers.map(({ status }) => status);
+      const batches = (yield* sendFor(40, ingest.respond)).filter((batch) =>
+        batch.some(({ event }) => event === "test.retry"),
+      );
+      // The last answer is the shutdown flush sending server.stopped.
+      const statuses = ingest.answers.slice(0, -1).map(({ status }) => status);
       assert.equal(statuses.at(-1), 204);
       assert.equal(statuses.filter((status) => status === 204).length, 1);
       const sentUuids = new Set(batches.map((batch) => batch.map(({ uuid }) => uuid).join()));
@@ -291,7 +294,8 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
     Effect.gen(function* () {
       const ingest = failingFor(Infinity);
       yield* sendFor(60, ingest.respond);
-      const lastSend = ingest.answers.at(-1)?.at ?? 0;
+      // The last send is the shutdown flush with server.stopped.
+      const lastSend = ingest.answers.at(-2)?.at ?? 0;
       assert.isAtLeast(lastSend, 30 * 60_000);
       assert.isBelow(lastSend, 36 * 60_000);
     }),
@@ -300,7 +304,10 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
   it.effect("drops a batch the endpoint rejects without sending it again", () =>
     Effect.gen(function* () {
       const batches = yield* sendFor(10, respondWithStatus(400));
-      assert.equal(batches.length, 1);
+      assert.equal(
+        batches.filter((batch) => batch.some(({ event }) => event === "test.retry")).length,
+        1,
+      );
     }),
   );
 
@@ -650,8 +657,11 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-telemetry-loop-" });
       const marker = path.join(baseDir, "userdata", "telemetry-session");
       const events: Array<SentEvent> = [];
+      // The test clock runs on across tests, so the window starts now.
       const crash = (uncleanStarts: number) =>
-        fileSystem.writeFileString(marker, JSON.stringify({ uncleanStarts, windowStartedAtMs: 0 }));
+        Effect.flatMap(Clock.currentTimeMillis, (windowStartedAtMs) =>
+          fileSystem.writeFileString(marker, JSON.stringify({ uncleanStarts, windowStartedAtMs })),
+        );
 
       yield* fileSystem.makeDirectory(path.dirname(marker), { recursive: true });
       // The tenth unclean start within the hour still reports.

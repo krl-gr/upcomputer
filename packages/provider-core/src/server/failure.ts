@@ -60,6 +60,11 @@ const ProviderFailureCode = {
 
 const AGENT = "The agent";
 
+/** A provider name inside a sentence: the generic "The agent" reads "the agent" there. */
+function midSentence(provider: string): string {
+  return provider === AGENT ? "the agent" : provider;
+}
+
 export function providerFailureName(
   driver: ProviderDriverKind | string | undefined,
   fallback: string = AGENT,
@@ -218,14 +223,20 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
             detail: undefined,
           };
         case "ProviderAdapterTurnStartError":
-          wrapper ??= "turn_start";
+          wrapper = "turn_start";
+          // The innermost wrapper names the failure; an outer reason does not carry into it.
+          reason = undefined;
           break;
         case "ProviderAdapterEventStreamError":
-          wrapper ??= "event_stream";
+          wrapper = "event_stream";
+          // The innermost wrapper names the failure; an outer reason does not carry into it.
+          reason = undefined;
           break;
         case "ProviderAdapterOpenSessionError":
         case "ProviderSessionOpenError":
-          wrapper ??= "open_session";
+          wrapper = "open_session";
+          // The innermost wrapper names the failure; an outer reason does not carry into it.
+          reason = undefined;
           break;
         case "ProviderWorkspaceMissingError":
           return {
@@ -244,7 +255,9 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
           };
         case "ProviderAdapterResumeThreadError":
         case "ProviderAdapterEnsureThreadError":
-          wrapper ??= "resume";
+          wrapper = "resume";
+          // The innermost wrapper names the failure; an outer reason does not carry into it.
+          reason = undefined;
           break;
         default: {
           const text = rawText(record);
@@ -293,7 +306,7 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
       };
     case "open_session":
       return {
-        message: `${provider} couldn't start${plain === undefined ? "" : `: ${plain}`}. Check ${provider} in Settings, then send the message again.`,
+        message: `${provider} couldn't start${plain === undefined ? "" : `: ${plain}`}. Check ${midSentence(provider)} in Settings, then send the message again.`,
         code: ProviderFailureCode.sessionOpen,
         retryable: true,
         detail,
@@ -309,7 +322,7 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
       if (plain === undefined)
         return detail === undefined ? undefined : unexplained(provider, detail);
       return {
-        message: `${provider} stopped before finishing: ${plain}. Send the message again; if it keeps happening, check ${provider} in Settings.`,
+        message: `${provider} stopped before finishing: ${plain}. Send the message again; if it keeps happening, check ${midSentence(provider)} in Settings.`,
         code: undefined,
         retryable: undefined,
         detail,
@@ -319,7 +332,7 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
 
 function unexplained(provider: string, detail: string | undefined): DescribedCause {
   return {
-    message: `${provider} stopped with an error it didn't explain. Send the message again; if it repeats, check ${provider} in Settings.`,
+    message: `${provider} stopped with an error it didn't explain. Send the message again; if it repeats, check ${midSentence(provider)} in Settings.`,
     code: undefined,
     retryable: undefined,
     detail,

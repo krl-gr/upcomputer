@@ -400,7 +400,8 @@ it.layer(
         );
         assert.deepStrictEqual(status.usageLimits?.unavailable, {
           reason: "probeFailed",
-          message: "Codex CLI is not authenticated. Run `codex login` and try again.",
+          message:
+            "Codex isn't signed in. Sign in with ChatGPT in Settings, or run `codex login` in a terminal.",
         });
       }),
     );

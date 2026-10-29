@@ -49,6 +49,7 @@ import {
 } from "@t3tools/shared/toolActivity";
 import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { CHATGPT_WORKSPACE_USAGE_LIMIT_CODE } from "@t3tools/shared/usageLimits";
 import type {
   ChatAttachment,
   OrchestrationV2AppThread,
@@ -184,7 +185,13 @@ function codexTurnFailure(input: {
       driver: CODEX_PROVIDER,
       message: managed.message,
       code: managed.code,
-      class: managed.code.includes("usage_limit") ? "usage_limit" : "permission_error",
+      // Only a workspace admin raises the workspace limit, so no reset is worth waiting for.
+      class:
+        managed.code === CHATGPT_WORKSPACE_USAGE_LIMIT_CODE
+          ? "provider_error"
+          : managed.code.includes("usage_limit")
+            ? "usage_limit"
+            : "permission_error",
       ...(input.retrying ? { retryable: true } : {}),
       detail: input.text,
     });

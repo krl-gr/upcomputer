@@ -1419,7 +1419,10 @@ it.effect.each([119_000, 120_000])(
           } else {
             assert.equal(yield* Queue.size(launches), 0);
             assert.equal(delivery.outcome, "dispatch_failed");
-            assert.equal(delivery.error, "The filled-in prompt is too long.");
+            assert.equal(
+              delivery.error,
+              "This request made the prompt longer than 120000 characters, so it didn't run. Use fewer or shorter placeholders in the prompt.",
+            );
           }
         }),
       { workers },
@@ -1694,7 +1697,10 @@ it.effect("removes a window with a render defect and dispatches the task's next 
           acceptAnyOutcome: true,
         })).delivery;
         assert.equal(failed.outcome, "dispatch_failed");
-        assert.equal(failed.error, "The pending webhook payload could not be prepared.");
+        assert.equal(
+          failed.error,
+          "A request arrived but Up.computer couldn't read it after a restart. Send the request again.",
+        );
         yield* workers.get("webhook-coalescing")!;
         assert.equal((yield* service.list()).tasks[0]!.runCount, 1);
       }),

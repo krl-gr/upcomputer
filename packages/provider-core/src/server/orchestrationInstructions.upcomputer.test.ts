@@ -39,7 +39,7 @@ describe("T3 orchestration provider instructions", () => {
       // Upstream's model-options guidance reads the catalog only while choosing a delegate.
       assert.match(
         sentence,
-        /Before `delegate_task`|Before delegating|before reporting|acp-mcp-call|use `delegate_task`|selected model's descriptors/,
+        /Before `delegate_task`|before the first `delegate_task`|Before delegating|before reporting|acp-mcp-call|use `delegate_task`|selected model's descriptors/,
         sentence,
       );
     }

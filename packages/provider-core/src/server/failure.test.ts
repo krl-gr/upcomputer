@@ -53,7 +53,7 @@ it("does not split a surrogate pair at the truncation boundary", () => {
 });
 
 const UNEXPLAINED =
-  "The agent stopped with an error it didn't explain. Send the message again; if it repeats, check The agent in Settings.";
+  "The agent stopped with an error it didn't explain. Send the message again; if it repeats, check the agent in Settings.";
 
 it("keeps arbitrary cause messages out of the main message and in the detail", () => {
   const cause = new Error("Adapter failed", {
@@ -89,23 +89,23 @@ it("preserves actionable handoff errors wrapped by turn startup", () => {
 });
 
 it("keeps unrecognized reasons and provider text out of category messages", () => {
+  // A protocol error's own detail is our adapters' text and may show; see its catalogue test.
   for (const cause of [
     "Private launch command",
-    { _tag: "ProviderAdapterProtocolError", detail: "Pi model 'private-config' is invalid" },
     { _tag: "ProviderAdapterProtocolError", reason: "private-config" },
     { _tag: "ProviderAdapterProtocolError", reason: "constructor" },
     { _tag: "constructor", cause: "private-config" },
   ]) {
     assert.equal(
       makeProviderFailure({ cause: { _tag: "ProviderAdapterTurnStartError", cause } }).message,
-      "The provider could not start this turn. Retry the turn; if it keeps failing, check the provider setup and server logs.",
+      "The agent couldn't start this reply. Send the message again.",
     );
   }
   assert.equal(
     makeProviderFailure({
       cause: { _tag: "ProviderAdapterProtocolError", reason: "previous_turn_active" },
     }).message,
-    "Provider turn failed.",
+    "The agent stopped before finishing: the previous turn is still running. Send the message again; if it keeps happening, check the agent in Settings.",
   );
 });
 
@@ -121,7 +121,7 @@ it("uses the innermost category without carrying an outer reason into it", () =>
         },
       },
     }).message,
-    "The provider session could not be opened. Check that the provider is installed and signed in, then retry the turn.",
+    "The agent couldn't start. Check the agent in Settings, then send the message again.",
   );
 });
 

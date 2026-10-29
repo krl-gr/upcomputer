@@ -1276,8 +1276,8 @@ describe("OrchestratorMcpService provider resolution", () => {
           assert.isFalse(disabledWithoutAdapter!.canRunChildTask);
           assert.isFalse(disabledWithoutAdapter!.canRunCrossProviderChildTask);
           assert.deepEqual(disabledWithoutAdapter!.constraints, [
-            "No V2 provider adapter is registered.",
-            "Provider instance is disabled.",
+            "it can't run as a helper in this version",
+            "it's turned off",
           ]);
 
           const fork = byId.get(forkOnlyInstanceId);
@@ -2392,11 +2392,11 @@ describe("OrchestratorMcpService provider resolution", () => {
                 testCase.name === "explicit-disabled-without-adapter"
               ) {
                 const expectedMessage =
-                  `Provider ${codexInstanceId} cannot run a child task: ` +
+                  `Can't hand this to ${codexInstanceId}: ` +
                   (testCase.name === "explicit-disabled-without-adapter"
-                    ? "No V2 provider adapter is registered. "
+                    ? "it can't run as a helper in this version, "
                     : "") +
-                  "Provider instance is disabled.";
+                  "it's turned off. Fix it in Settings, or pick another provider.";
                 assert.equal(error.message, expectedMessage);
                 const threadError = yield* service
                   .createThreads(scope, {

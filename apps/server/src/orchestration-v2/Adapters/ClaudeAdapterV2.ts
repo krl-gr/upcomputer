@@ -3530,12 +3530,14 @@ function terminalResultError(
 ): string | undefined {
   switch (reason) {
     case "api_error":
-      return (
-        failureHint ??
-        `Claude stopped after several failed requests to Anthropic${
-          apiErrorStatus == null ? "" : ` (${apiErrorStatus})`
-        }. Wait a minute and send the message again.`
-      );
+      if (failureHint !== undefined) return failureHint;
+      // A 4xx other than a rate limit is a rejection that waiting will not fix.
+      if (apiErrorStatus != null && apiErrorStatus >= 400 && apiErrorStatus < 500) {
+        return `Anthropic rejected this request (${apiErrorStatus}). Change the message or its attachments, then send it again.`;
+      }
+      return `Claude stopped after several failed requests to Anthropic${
+        apiErrorStatus == null ? "" : ` (${apiErrorStatus})`
+      }. Wait a minute and send the message again.`;
     case "malformed_tool_use_exhausted":
       return "Claude kept making tool calls it couldn't complete, so it gave up. Send the message again, or rephrase it.";
     case "budget_exhausted":

@@ -188,9 +188,9 @@ describe("ACP registry replay fixtures", () => {
             'The agent did not accept the model "replay-model-b". Choose another model for this provider, then retry.',
           );
         } else {
-          assert.match(
-            errors[0]?.failure.message ?? "",
-            /^Failed to open acpRegistry provider session \S+\.$/u,
+          assert.equal(
+            errors[0]?.failure.message,
+            "The agent couldn't start: authentication required. Check the agent in Settings, then send the message again.",
           );
         }
       }).pipe(

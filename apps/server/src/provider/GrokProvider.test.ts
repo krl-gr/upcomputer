@@ -370,7 +370,7 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
       );
 
       expect(snapshot.status).toBe("warning");
-      expect(snapshot.message).toContain("did not list any models");
+      expect(snapshot.message).toContain("didn't list any models");
       expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-build"]);
     }),
   );

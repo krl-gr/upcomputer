@@ -526,7 +526,8 @@ describe("AcpAdapterV2", () => {
               }
             : {
                 class: "provider_error",
-                message: "Provider turn failed.",
+                message:
+                  "The agent stopped with an error it didn't explain. Send the message again; if it repeats, check the agent in Settings.",
                 code: null,
                 retryable: null,
               },

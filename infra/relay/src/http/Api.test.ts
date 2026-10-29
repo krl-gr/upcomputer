@@ -184,7 +184,7 @@ describe("managed endpoint provisioning errors", () => {
       });
       const error = yield* decodeLinkUnavailableError(body);
       expect(relayProtectedErrorMessage(error)).toBe(
-        "Relay cannot provision the managed endpoint (managed_endpoint_provisioning_failed). Failed stage: ensure-tunnel.",
+        "UpComputer Connect couldn't set up access for this computer right now (failed at ensure-tunnel). Try again in a few minutes.",
       );
     }).pipe(Effect.scoped);
   });

@@ -5113,53 +5113,63 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  const REJECTED_400 =
+    "Anthropic rejected this request (400). Change the message or its attachments, then send it again.";
   it.effect.each([
     {
       name: "an unflagged result with surrounding whitespace",
       isError: false,
       result: "  API Error: 400 Request rejected by a safeguard.\n",
-      expected: "API Error: 400 Request rejected by a safeguard.",
+      expected: REJECTED_400,
+      detail: "Request rejected by a safeguard.",
     },
     {
       name: "a secret crossing the truncation boundary",
       isError: true,
       result: `API Error: 400 ${"x".repeat(440)} {"token":"${"synthetic-secret".repeat(100)}"} ${"y".repeat(100)}`,
-      expected: `API Error: 400 ${"x".repeat(440)} {"token":"[REDACTED]"} `.padEnd(500, "y"),
+      expected: REJECTED_400,
+      detail: '{"token":"[REDACTED]"}',
     },
     {
       name: "ordinary assistant text",
       isError: true,
       result: "I found three files.",
-      expected: "Claude gave up after repeated API errors.",
+      expected: REJECTED_400,
+      detail: "I found three files.",
     },
     {
       name: "a listed non-diagnostic error",
       isError: true,
       result: "API Error: 400 Request rejected.",
       errors: ["[ede_diagnostic] internal detail", "Tool execution failed: EACCES"],
-      expected: "Tool execution failed: EACCES",
+      expected: REJECTED_400,
+      detail: "Tool execution failed: EACCES",
     },
     {
       name: "an HTTP 529 overload",
       isError: true,
       result: "API Error: 529 Specific overload detail.",
       apiErrorStatus: 529,
-      expected: "Claude API is overloaded (529). Try again shortly.",
+      expected:
+        "Anthropic is overloaded right now (529). Wait a minute and send the message again.",
+      detail: "Specific overload detail.",
     },
     {
       name: "an HTTP 429 rate limit",
       isError: true,
       result: "API Error: 429 Specific rate limit detail.",
       apiErrorStatus: 429,
-      expected: "Claude API rate limit reached. Try again later.",
+      expected:
+        "Claude usage limit reached. Switch to another model or provider to keep working now.",
+      detail: "Specific rate limit detail.",
     },
     {
       name: "a different terminal reason",
       isError: true,
       result: "API Error: 400 Request rejected.",
       terminalReason: "prompt_too_long" as const,
-      expected:
-        "Claude stopped: the prompt exceeds the model's context window. Run /compact or start a new thread.",
+      expected: "This conversation is too long for the model. Run /compact or start a new thread.",
+      detail: "Request rejected.",
     },
   ])("reports terminal API error text for $name", (input) =>
     Effect.gen(function* () {
@@ -5192,6 +5202,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       assert.equal(terminal.status, "failed");
       if (terminal.status !== "failed") return;
       assert.equal(terminal.failure.message, input.expected);
+      // The provider's own text stays readable in the details, redacted.
+      assert.include(terminal.failure.detail ?? "", input.detail);
+      assert.notInclude(terminal.failure.detail ?? "", "synthetic-secret");
+      assert.notInclude(terminal.failure.detail ?? "", "[ede_diagnostic]");
       assert.equal(terminal.failure.code, `api_error_${apiErrorStatus}`);
       assert.equal(
         terminal.failure.class,
@@ -7768,12 +7782,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     {
       windowStatus: "allowed",
       expectedClass: "provider_error",
-      expectedMessage: "Claude stopped: the prompt exceeds the model's context window.",
+      expectedMessage: "This conversation is too long for the model.",
     },
     {
       windowStatus: "rejected",
       expectedClass: "usage_limit",
-      expectedMessage: "Claude usage limit reached. Send the message again once the limit resets.",
+      expectedMessage: "Claude usage limit reached.",
     },
   ] as const)(
     "classifies blocking_limit by its rate-limit evidence ($windowStatus window)",

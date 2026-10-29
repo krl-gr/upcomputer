@@ -37,6 +37,7 @@ import * as Stream from "effect/Stream";
 import * as Exit from "effect/Exit";
 import { TestClock } from "effect/testing";
 
+import { usageLimitMessage } from "@t3tools/provider-core/server/failure";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
@@ -498,6 +499,11 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped),
   );
 
+  const openCodeFailureMessage = (failureClass: string, text: string) =>
+    failureClass === "usage_limit"
+      ? usageLimitMessage("OpenCode", text)
+      : `OpenCode reported an error: ${text.replace(/^./u, (first) => first.toLowerCase())}. Send the message again.`;
+
   // regression: #18315 OpenCode Go quota stops were not shown as usage limits
   it.effect.each([
     ["provider.quota", "usage_limit"],
@@ -520,8 +526,9 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       assert.deepEqual(ended?.failure, {
         class: failureClass,
         code,
-        message: "Provider rejected the request",
+        message: openCodeFailureMessage(failureClass, "Provider rejected the request"),
         retryable: null,
+        detail: "Provider rejected the request",
       });
     }).pipe(Effect.scoped),
   );
@@ -585,8 +592,9 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       assert.deepEqual(ended?.failure, {
         class: failureClass,
         code: error.type,
-        message: error.message,
+        message: openCodeFailureMessage(failureClass, error.message),
         retryable: null,
+        detail: error.message,
       });
     }).pipe(Effect.scoped),
   );
@@ -3136,7 +3144,13 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         ],
         gate,
       );
-      const failed = { ...retrying, class: "usage_limit" as const, retryable: null };
+      const failed = {
+        ...retrying,
+        class: "usage_limit" as const,
+        message: usageLimitMessage("OpenCode", retrying.message),
+        retryable: null,
+        detail: retrying.message,
+      };
       const lastRetry = { attempt: 2, maxAttempts: null, retryDelayMs: 4_000 };
       const rows = errorRows(seen);
       assert.deepEqual(
@@ -3165,7 +3179,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           {
             id: rows[0]!.id,
             status: "failed",
-            title: "Usage limit reached",
+            title: "OpenCode usage limit reached",
             failure: failed,
             retry: lastRetry,
           },

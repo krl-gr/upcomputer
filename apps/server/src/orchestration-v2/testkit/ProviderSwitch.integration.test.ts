@@ -863,7 +863,7 @@ describe("orchestration v2 provider switching", () => {
               const failure = projection.turnItems.findLast((item) => item.type === "error");
               assert.equal(
                 failure?.type === "error" ? failure.failure.message : null,
-                "The target provider still has background work running. Wait for it to finish or stop it before retrying the handoff.",
+                "The agent is still finishing background work from earlier. Wait for it to finish, or stop it, then send the message again.",
               );
             }
             return;
