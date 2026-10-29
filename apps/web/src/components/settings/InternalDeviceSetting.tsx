@@ -48,18 +48,15 @@ function InternalDeviceRow() {
             checked={enabled === true}
             disabled={enabled === null || saving || !canEdit || !environmentId}
             aria-label="Internal device"
-            onCheckedChange={async (checked) => {
+            onCheckedChange={(checked) => {
               if (!environmentId) return;
               setSaving(true);
-              try {
-                const result = await setInternalDevice({
-                  environmentId,
-                  input: { enabled: checked },
-                });
-                if (result._tag === "Success") setEnabled(result.value.enabled);
-              } finally {
-                setSaving(false);
-              }
+              // The React Compiler skips components with try/finally.
+              void setInternalDevice({ environmentId, input: { enabled: checked } })
+                .then((result) => {
+                  if (result._tag === "Success") setEnabled(result.value.enabled);
+                })
+                .finally(() => setSaving(false));
             }}
           />
         }

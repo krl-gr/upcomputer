@@ -232,7 +232,7 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     capabilities: [],
     keybindingCommands: [],
     settingsSearchIds: [
-      "device-hosts",
+      "device-sources",
       "agent-device-access",
       "device-hub",
       "device-platform-support",

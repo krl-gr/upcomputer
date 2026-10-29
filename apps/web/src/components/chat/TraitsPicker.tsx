@@ -37,6 +37,7 @@ import {
 } from "../ui/menu";
 import { useComposerDraftStore, DraftId } from "../../composerDraftStore";
 import { getProviderModelCapabilities } from "../../providerModels";
+import { productSurface } from "../../product/productFlags";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -596,6 +597,8 @@ export const TraitsPicker = memo(function TraitsPicker({
     reportedModelSelection,
   });
   const isCodexStyle = provider === "codex";
+  // UpComputer: its footer puts a separator, not a read-on, between the model and effort.
+  const readsOnFromModel = isComposerOwned && productSurface("composerFooter") !== "upcomputer";
   // In the composer the glyph has no word, so the tooltip and label name the control.
   const triggerDescription = isComposerOwned
     ? [`Effort: ${triggerLabel}`, speedLabel, extraMenuHint].filter(Boolean).join(" · ")
@@ -652,9 +655,10 @@ export const TraitsPicker = memo(function TraitsPicker({
                     triggerClassName,
                     // Effort reads on from the model name, "Opus 5.5 High", at about the space
                     // inside the name: this cancels the model chip's end padding and the row gap.
-                    isComposerOwned && (effortWord !== null ? "-ms-1 ps-0" : "-ms-1 ps-0.5"),
+                    readsOnFromModel && (effortWord !== null ? "-ms-1 ps-0" : "-ms-1 ps-0.5"),
                     // The word is muted next to the model name and brightens like it on hover.
-                    effortWord !== null &&
+                    readsOnFromModel &&
+                      effortWord !== null &&
                       "text-muted-foreground hover:text-foreground data-pressed:text-foreground data-popup-open:text-foreground",
                   )}
                 />

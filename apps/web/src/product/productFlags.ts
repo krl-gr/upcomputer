@@ -63,8 +63,6 @@ const SURFACE_SETTINGS_SEARCH_IDS: Partial<
   Record<string, readonly [ProductSurface, ProductSurfaceVariant]>
 > = {
   "thread-list": ["sidebarThreadRow", "upcomputer"],
-  // The UpComputer composer never collapses on scroll; it compacts while idle instead.
-  "composer-collapse": ["composerFooter", "upstream"],
   "composer-compact": ["composerFooter", "upcomputer"],
 };
 

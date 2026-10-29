@@ -1,6 +1,5 @@
 import * as React from "react";
 import * as Schema from "effect/Schema";
-import { toastManager } from "~/components/ui/toast";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   encodeComposerContextClipboardHtml,
@@ -233,13 +232,16 @@ export function useCopyToClipboard<TContext = void>({
           return;
         }
         // Most callers pass no onError; a silent failed copy reads as success.
-        toastManager.add({
-          type: "error",
-          title: "Couldn't copy",
-          description:
-            "Up.computer couldn't copy to your clipboard. Select the text and copy it yourself.",
-          data: { hideCopyButton: true },
-        });
+        // Loaded lazily: the toast module imports this hook.
+        void import("~/components/ui/toast").then(({ toastManager }) =>
+          toastManager.add({
+            type: "error",
+            title: "Couldn't copy",
+            description:
+              "Up.computer couldn't copy to your clipboard. Select the text and copy it yourself.",
+            data: { hideCopyButton: true },
+          }),
+        );
       },
     );
   });
