@@ -1,10 +1,13 @@
 import * as Schema from "effect/Schema";
 
+import { UPCOMPUTER_PROTOCOL_SCHEME } from "./upcomputerIdentity.ts";
+
 const PAIRING_TOKEN_PARAM = "token";
 const HOSTED_PAIRING_HOST_PARAM = "host";
 const HOSTED_PAIRING_LABEL_PARAM = "label";
 const PAIRING_APP_LINK_PARAM = "pairingUrl";
-const APP_LINK_PROTOCOL = /^t3code(?:-[a-z]+)?:$/;
+// UpComputer: the desktop app registers `upcomputer`; upstream's `t3code` links still read.
+const APP_LINK_PROTOCOL = /^(?:upcomputer|t3code)(?:-[a-z]+)?:$/;
 const SUPPORTED_REMOTE_BACKEND_PROTOCOLS = new Set(["http:", "https:", "ws:", "wss:"]);
 
 export const readHashParams = (url: URL): URLSearchParams =>
@@ -188,11 +191,11 @@ export const readHostedPairingRequest = (url: URL): HostedPairingRequest | null 
   };
 };
 
-/** Wraps a pairing URL in the `t3code://pair` link that desktop opens and mobile scans. */
+/** Wraps a pairing URL in the `upcomputer://pair` link that the desktop app opens. */
 export const buildPairingAppLink = (pairingUrl: string): string =>
-  `t3code://pair?${new URLSearchParams([[PAIRING_APP_LINK_PARAM, pairingUrl]])}`;
+  `${UPCOMPUTER_PROTOCOL_SCHEME}://pair?${new URLSearchParams([[PAIRING_APP_LINK_PARAM, pairingUrl]])}`;
 
-/** Reads the pairing URL from a `t3code://pair` link on any app channel scheme. */
+/** Reads the pairing URL from a `pair` app link on any app channel scheme. */
 export const readPairingAppLink = (value: string): string | null => {
   if (!URL.canParse(value)) return null;
   const url = new URL(value);
