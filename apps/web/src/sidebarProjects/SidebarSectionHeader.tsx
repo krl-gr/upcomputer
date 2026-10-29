@@ -42,7 +42,7 @@ export function SidebarSectionHeader(props: {
         data-testid={testId}
         onClick={onToggle}
         className={cn(
-          "flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-md text-left text-sm font-medium outline-none hover:text-sidebar-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+          "flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-md text-left text-sm outline-none hover:text-sidebar-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
           SIDEBAR_DIM_TEXT,
           SIDEBAR_ROW_INSET,
         )}

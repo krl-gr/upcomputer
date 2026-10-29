@@ -787,11 +787,12 @@ describe.skipIf(browser === null)("sidebar text under the Up.computer theme (Chr
         search.painted.forEach((channel, index) =>
           expect(Math.abs(channel - v1Row[index]!), `channel ${index}`).toBeLessThanOrEqual(2),
         );
-        // Section titles stay a step dimmer than the rows.
+        // Section titles stay a step dimmer than the rows, at their weight.
         for (const title of ["Projects", "Threads"]) {
           expect(text[title]!.contrast, `${title} title`).toBeLessThan(search.contrast);
+          expect(text[title]!.weight, `${title} weight`).toBe(search.weight);
         }
-        // Hover and active keep the menu buttons' own look.
+        // Hover and active keep the menu buttons' own colours; active is no bolder.
         const agents = '[data-sidebar="menu-button"]:has-text("Agents")';
         await page.hover(agents);
         expect(await page.$eval(agents, (row) => getComputedStyle(row).color)).not.toBe(
@@ -805,7 +806,7 @@ describe.skipIf(browser === null)("sidebar text under the Up.computer theme (Chr
           },
         );
         expect(active.color).not.toBe(search.color);
-        expect(active.weight).toBe("500");
+        expect(active.weight).toBe(search.weight);
       } finally {
         await page.close();
       }
