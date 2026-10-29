@@ -226,12 +226,10 @@ describe("SidebarThreadProjectIcons", () => {
     expect(leadingIcons()).toMatchObject({ initials: ["LI"], chatIcon: false });
   });
 
-  it("hides the icons in a project-scoped list, as V1's filtered list did, but for the compact sidebar", async () => {
+  it("hides the icons in a project-scoped list, as V1's filtered list did", async () => {
     useUiStateStore.setState({ sidebarProjectScopeKeys: ["key-life"] });
     await render(rowProps("scratch", ["life"]));
-    const marker = container.querySelector("[data-testid='sidebar-row-compact'] [role='img']");
-    // adaptiveSidebar.css shows these only in the compact sidebar.
-    expect(marker?.hasAttribute("data-sidebar-compact-only")).toBe(true);
+    expect(leadingIcons()).toMatchObject({ initials: [], chatIcon: false, label: null });
   });
 });
 

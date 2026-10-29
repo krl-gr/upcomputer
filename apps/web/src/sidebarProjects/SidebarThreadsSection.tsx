@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 import { SquarePenIcon } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
+import { SidebarCompactNewThread } from "../adaptiveSidebar/adaptiveSidebar";
 import { SidebarMenu, useSidebar } from "../components/ui/sidebar";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
@@ -88,28 +89,36 @@ export function SidebarThreadsSectionHeader(
   const { newThreadDisabled, newThreadShortcutLabel } = props;
   const [open, setOpen] = useSidebarThreadsOpen();
   const newThread = useNewThreadWithoutProject(props);
+  const newThreadTooltip = newThreadShortcutLabel
+    ? `New thread (${newThreadShortcutLabel})`
+    : "New thread";
+  const newThreadShown = !(newThreadDisabled && !newThread.available);
   return (
-    <div className={cn(SIDEBAR_SECTION_GAP, SIDEBAR_FIXED_HEADER_END_GAP)}>
+    <div
+      data-sidebar-threads-section=""
+      className={cn(SIDEBAR_SECTION_GAP, SIDEBAR_FIXED_HEADER_END_GAP)}
+    >
       <SidebarSectionHeader
         title="Threads"
         open={open}
         onToggle={() => setOpen(!open)}
         testId="sidebar-threads-toggle"
         action={
-          newThreadDisabled && !newThread.available ? null : (
+          newThreadShown ? (
             <SidebarSectionHeaderAction
               label="New thread"
               track="sidebar.new_thread"
-              tooltip={
-                newThreadShortcutLabel ? `New thread (${newThreadShortcutLabel})` : "New thread"
-              }
+              tooltip={newThreadTooltip}
               onClick={newThread.start}
             >
               <SquarePenIcon />
             </SidebarSectionHeaderAction>
-          )
+          ) : null
         }
       />
+      {newThreadShown ? (
+        <SidebarCompactNewThread tooltip={newThreadTooltip} onClick={newThread.start} />
+      ) : null}
     </div>
   );
 }

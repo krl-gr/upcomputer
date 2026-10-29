@@ -13,7 +13,6 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
-import { useSidebarCompact } from "../adaptiveSidebar/adaptiveSidebar";
 import { makeWorkspaceFileDropHandlers } from "../components/chat/workspaceFileDrop";
 import {
   hasUnseenCompletion,
@@ -131,7 +130,6 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
   const threadKey = scopedThreadKey(threadRef);
   const localLastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
-  const compact = useSidebarCompact();
   const lastVisitedAt = resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt);
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
   const statusLabel = resolveThreadStatusLabel({
@@ -245,9 +243,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
         sortable?.isDragging && "relative z-20",
       )}
     >
-      <Tooltip
-        disabled={!(titleTruncated || compact) || menuOpen || isRenaming || sortable?.isDragging}
-      >
+      <Tooltip disabled={!titleTruncated || menuOpen || isRenaming || sortable?.isDragging}>
         <TooltipTrigger
           render={
             <div
@@ -257,7 +253,6 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
               aria-current={accessibility.current}
               aria-busy={thread.titleRegeneration != null || undefined}
               data-testid="sidebar-row-compact"
-              data-sidebar-list-row=""
               className={cn(
                 SIDEBAR_LIST_ROW,
                 props.isActive
@@ -275,9 +270,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
               onFocus={measureTitle}
               onClick={(event) => onThreadClick(event, threadRef)}
               onDoubleClick={(event) => {
-                // The compact sidebar has no room for the title field.
-                if (isRenaming || compact || event.metaKey || event.ctrlKey || event.shiftKey)
-                  return;
+                if (isRenaming || event.metaKey || event.ctrlKey || event.shiftKey) return;
                 if (event.altKey) return;
                 if ((event.target as HTMLElement).closest("button, a, input")) return;
                 event.preventDefault();
@@ -397,7 +390,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
             </span>
           ) : null}
         </TooltipTrigger>
-        <TooltipPopup side={compact ? "right" : "top"}>{thread.title}</TooltipPopup>
+        <TooltipPopup side="top">{thread.title}</TooltipPopup>
       </Tooltip>
     </li>
   );

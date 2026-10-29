@@ -1,7 +1,10 @@
 /** Below this dragged width the sidebar snaps to its compact column. Also the full sidebar's minimum. */
 export const SIDEBAR_COMPACT_THRESHOLD = 170;
-/** Width of the compact column. */
-export const SIDEBAR_COMPACT_WIDTH = 56;
+/**
+ * Width of the compact column: the macOS window controls (16px in, 60px wide
+ * on macOS 26) centred in it. The same in fullscreen and on other platforms.
+ */
+export const SIDEBAR_COMPACT_WIDTH = 92;
 const SIDEBAR_DEFAULT_WIDTH = 16 * 16;
 
 /** One drag of the sidebar's edge. */

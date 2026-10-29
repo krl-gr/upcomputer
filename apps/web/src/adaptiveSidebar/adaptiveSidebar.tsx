@@ -1,7 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
-import { SearchIcon } from "lucide-react";
-import { useState, useSyncExternalStore, type ReactElement, type ReactNode } from "react";
+import { SearchIcon, SquarePenIcon } from "lucide-react";
+import {
+  useState,
+  useSyncExternalStore,
+  type MouseEvent as ReactMouseEvent,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import {
@@ -28,8 +34,8 @@ import {
 } from "./sidebarWidthMode";
 
 // The adaptive sidebar (surface `sidebarLayout`): compact, the wrapper carries `data-sidebar-compact`
-// and `adaptiveSidebar.css` draws the same rows as icons from it. A drag sets that attribute itself
-// as it crosses the threshold, so nothing renders mid-drag; React state follows at commit.
+// and `adaptiveSidebar.css` draws the same sidebar as icons from it. A drag sets that attribute
+// itself as it crosses the threshold, so nothing renders mid-drag; React state follows at commit.
 
 const SIDEBAR_COMPACT_STORAGE_KEY = "upcomputer:sidebar-compact";
 // The `max-md` breakpoint, under which the sidebar is upstream's sheet.
@@ -127,6 +133,38 @@ function setCompactAttribute(wrapper: HTMLElement, compact: boolean) {
   wrapper.setAttribute("data-sidebar-compact", String(compact));
 }
 
+const switchTimers = new WeakMap<HTMLElement, number>();
+
+/** Marks a switch between full and compact for as long as `adaptiveSidebar.css` fades it in. */
+function markSidebarSwitching(wrapper: HTMLElement) {
+  const duration = Number.parseFloat(
+    getComputedStyle(wrapper).getPropertyValue("--panel-animation-duration"),
+  );
+  wrapper.setAttribute("data-sidebar-switching", "");
+  window.clearTimeout(switchTimers.get(wrapper));
+  switchTimers.set(
+    wrapper,
+    window.setTimeout(() => wrapper.removeAttribute("data-sidebar-switching"), duration || 0),
+  );
+}
+
+/**
+ * The rail moves the sidebar without a transition. A snap across the threshold
+ * eases like upstream's panel transition instead, then the edge follows the
+ * pointer again.
+ */
+function setSnapTransition(wrapper: HTMLElement, eased: boolean) {
+  if (wrapper.getAttribute("data-panel-animations") !== "true") return;
+  const container = wrapper.querySelector<HTMLElement>("[data-app-sidebar]");
+  const gap = container?.parentElement?.querySelector<HTMLElement>("[data-slot='sidebar-gap']");
+  for (const element of [container, gap]) {
+    element?.style.setProperty(
+      "transition-duration",
+      eased ? "var(--panel-animation-duration)" : "0ms",
+    );
+  }
+}
+
 /**
  * The app layout's sidebar width, resize options and reset under the adaptive
  * surface; null under upstream's. The full sidebar's width stays in upstream's
@@ -149,9 +187,15 @@ export function useAdaptiveSidebar(viewportWidth: number) {
         let drag = startSidebarWidthDrag({ compact, width: shownFullWidth });
         return {
           resolve: (pointerWidth: number) => {
-            const wasCompact = drag.compact;
+            const previous = drag;
             drag = moveSidebarWidthDrag(drag, pointerWidth);
-            if (drag.compact !== wasCompact) setCompactAttribute(wrapper, drag.compact);
+            if (drag.compact !== previous.compact) {
+              setCompactAttribute(wrapper, drag.compact);
+              markSidebarSwitching(wrapper);
+              setSnapTransition(wrapper, true);
+            } else if (previous.holding && !drag.holding) {
+              setSnapTransition(wrapper, false);
+            }
             return drag.width;
           },
           end: (committed: boolean) => {
@@ -190,8 +234,12 @@ export function useSidebarToggle(toggleSidebar: () => void): () => void {
   const [toggle] = useState(() =>
     isAdaptive()
       ? () => {
-          if (window.matchMedia(MOBILE_QUERY).matches) toggleSidebar();
-          else compactStore.toggle();
+          if (window.matchMedia(MOBILE_QUERY).matches) return toggleSidebar();
+          const wrapper = document.querySelector<HTMLElement>(
+            "[data-slot='sidebar-wrapper'][data-sidebar-compact]",
+          );
+          if (wrapper) markSidebarSwitching(wrapper);
+          compactStore.toggle();
         }
       : toggleSidebar,
   );
@@ -225,6 +273,9 @@ export function SidebarCompactTooltip(props: {
   );
 }
 
+const COMPACT_BUTTON_CLASS =
+  "hidden cursor-pointer items-center justify-center rounded-md text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+
 /**
  * The search row of the compact sidebar, rendered beside the search field and
  * shown in its place by `adaptiveSidebar.css`: the field needs the full width,
@@ -242,9 +293,34 @@ export function SidebarCompactSearch() {
         data-sidebar-compact-search=""
         data-track="sidebar.search"
         onClick={() => openCommandPalette()}
-        className="hidden h-8 w-full cursor-pointer items-center justify-center rounded-md text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className={COMPACT_BUTTON_CLASS}
       >
         <SearchIcon className="size-4 text-(--sidebar-icon-color)" />
+      </button>
+    </SidebarCompactTooltip>
+  );
+}
+
+/**
+ * New thread in the compact sidebar, which leaves the thread list out: rendered
+ * in the Threads header and shown in its place by `adaptiveSidebar.css`.
+ */
+export function SidebarCompactNewThread(props: {
+  readonly tooltip: string;
+  readonly onClick: (event: ReactMouseEvent) => void;
+}) {
+  if (!isAdaptive()) return null;
+  return (
+    <SidebarCompactTooltip label={props.tooltip}>
+      <button
+        type="button"
+        aria-label="New thread"
+        data-sidebar-compact-new-thread=""
+        data-track="sidebar.new_thread"
+        onClick={props.onClick}
+        className={COMPACT_BUTTON_CLASS}
+      >
+        <SquarePenIcon className="size-4 text-(--sidebar-icon-color)" />
       </button>
     </SidebarCompactTooltip>
   );
