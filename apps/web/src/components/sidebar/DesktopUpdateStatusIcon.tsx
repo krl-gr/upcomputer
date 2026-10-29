@@ -1,5 +1,11 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { CheckIcon, CircleArrowUpIcon, DownloadIcon, RotateCwIcon } from "lucide-react";
+import {
+  CheckIcon,
+  CircleArrowUpIcon,
+  DownloadIcon,
+  type LucideIcon,
+  RotateCwIcon,
+} from "lucide-react";
 import type { AnimationEventHandler } from "react";
 
 const DOWNLOAD_PROGRESS_RADIUS = 14;
@@ -40,13 +46,13 @@ export function shouldContinueDesktopUpdateCheckAnimation({
   return isChecking && !prefersReducedMotion;
 }
 
-function DesktopUpdateAvailableIcon() {
+function DesktopUpdateAvailableIcon({ Icon }: { readonly Icon: LucideIcon }) {
   return (
     <span className="relative grid size-4 place-items-center">
-      <DownloadIcon className="size-4" />
+      <Icon className="size-4" />
       <span
         aria-hidden="true"
-        className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-current ring-2 ring-sidebar-control-surface"
+        className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-current ring-2 ring-sidebar"
       />
     </span>
   );
@@ -57,7 +63,7 @@ function DesktopUpdateDownloadingIcon({ percent }: { readonly percent: number | 
   const progressOffset = DOWNLOAD_PROGRESS_CIRCUMFERENCE * (1 - normalizedPercent / 100);
 
   return (
-    <span className="relative grid size-8 place-items-center">
+    <span className="relative grid size-7 place-items-center">
       <svg
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 size-full -rotate-90"
@@ -111,12 +117,12 @@ export function DesktopUpdateStatusIcon({
   readonly onCheckAnimationIteration?: AnimationEventHandler<SVGSVGElement>;
   readonly status: DesktopUpdateStatusIconState;
 }) {
-  if (status === "available") return <DesktopUpdateAvailableIcon />;
+  if (status === "available") return <DesktopUpdateAvailableIcon Icon={DownloadIcon} />;
   if (status === "downloading") {
     return <DesktopUpdateDownloadingIcon percent={downloadPercent ?? null} />;
   }
   if (status === "downloaded") return <DesktopUpdateDownloadedIcon />;
-  if (status === "everything") return <CircleArrowUpIcon className="size-4" />;
+  if (status === "everything") return <DesktopUpdateAvailableIcon Icon={CircleArrowUpIcon} />;
 
   return (
     <RefreshIcon
