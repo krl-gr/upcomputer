@@ -47,6 +47,8 @@ export interface ProductFlags {
   readonly usageDataNotice: boolean;
   /** Linking a T3 Chat account for more Connect tunnels: the account page and upgrade links. */
   readonly t3Chat: boolean;
+  /** Triage an issue from the command palette; its playbook files reports upstream. */
+  readonly triage: boolean;
 }
 
 export type ProductFlag = keyof ProductFlags;
@@ -64,6 +66,7 @@ export const UPSTREAM_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   mcpApps: true,
   usageDataNotice: true,
   t3Chat: true,
+  triage: true,
 });
 
 export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
@@ -79,6 +82,7 @@ export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   mcpApps: true,
   usageDataNotice: true,
   t3Chat: false,
+  triage: false,
 });
 
 /**
@@ -273,6 +277,12 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
   },
   t3Chat: {
     capabilities: [],
+    keybindingCommands: [],
+    settingsSearchIds: [],
+    rightPanelSurfaces: [],
+  },
+  triage: {
+    capabilities: ["triage"],
     keybindingCommands: [],
     settingsSearchIds: [],
     rightPanelSurfaces: [],
