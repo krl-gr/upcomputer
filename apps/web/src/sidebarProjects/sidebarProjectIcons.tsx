@@ -1,5 +1,4 @@
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
-import { MessageSquareDashedIcon } from "lucide-react";
 
 import { ProjectFavicon, type ProjectFaviconProject } from "../components/ProjectFavicon";
 import { cn } from "../lib/utils";
@@ -37,11 +36,31 @@ export function AllProjectsIcon(props: { readonly className?: string }) {
   );
 }
 
-/** "No project", the primary environment's Scratch project. */
-export function NoProjectIcon() {
+/**
+ * "No project", the primary environment's Scratch project: a project monogram's
+ * tile (`ProjectMonogram`), empty and outlined with dashes.
+ */
+export function NoProjectIcon(props: { readonly className?: string }) {
   return (
-    <span className={cn("flex shrink-0", SIDEBAR_ICON_SIZE, projectIconColorClassName("gray"))}>
-      <MessageSquareDashedIcon className="size-full" />
+    <span
+      aria-hidden="true"
+      className={cn(
+        "inline-flex shrink-0",
+        props.className ?? SIDEBAR_ICON_SIZE,
+        projectIconColorClassName("gray"),
+      )}
+    >
+      <svg viewBox="0 0 16 16" fill="none" data-icon="no-project" className="size-full">
+        <rect
+          x="0.5"
+          y="0.5"
+          width="15"
+          height="15"
+          rx="3.5"
+          stroke="currentColor"
+          strokeDasharray="2.5 1.75"
+        />
+      </svg>
     </span>
   );
 }

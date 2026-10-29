@@ -220,7 +220,7 @@ describe("the chat's projects in the header", () => {
     await render();
     expect(trigger().getAttribute("aria-label")).toBe("Projects: UpComputer, Kv store");
     expect(visibleText(trigger())).toBe("UPKV");
-    expect(container.querySelector("[data-thread-header-no-project]")).toBeNull();
+    expect(container.querySelector("[data-icon='no-project']")).toBeNull();
 
     await click(trigger());
     // The own project first and fixed, never the scratch folder.
@@ -247,7 +247,7 @@ describe("the chat's projects in the header", () => {
     };
     await render();
     expect(trigger().getAttribute("aria-label")).toBe("Projects: No project");
-    expect(container.querySelector("[data-thread-header-no-project]")).not.toBeNull();
+    expect(container.querySelector("[data-icon='no-project']")).not.toBeNull();
     expect(container.querySelector("[data-testid=favicon]")).toBeNull();
 
     await click(trigger());
@@ -268,7 +268,7 @@ describe("the chat's projects in the header", () => {
       linkedProjectIds: [UPCOMPUTER.id, KV.id, RELAY.id, WEB.id],
     };
     await render();
-    expect(container.querySelector("[data-thread-header-no-project]")).toBeNull();
+    expect(container.querySelector("[data-icon='no-project']")).toBeNull();
     expect(visibleText(trigger())).toBe("UPKVRE+1");
   });
 
@@ -276,7 +276,7 @@ describe("the chat's projects in the header", () => {
     state.draftThread = { environmentId: ENV, threadId: THREAD, projectId: SCRATCH.id };
     state.draftId = "draft-1";
     await render();
-    expect(container.querySelector("[data-thread-header-no-project]")).not.toBeNull();
+    expect(container.querySelector("[data-icon='no-project']")).not.toBeNull();
     await click(trigger());
     await click(optionByText("Kv store")!);
     expect(state.retargetDraft).toHaveBeenCalledWith("draft-1", KV);

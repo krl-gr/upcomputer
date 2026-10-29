@@ -147,7 +147,7 @@ function leadingIcons() {
         ? marker.nextElementSibling.textContent
         : null,
     label: marker?.getAttribute("aria-label") ?? null,
-    chatIcon: row.querySelector(".lucide-message-square-dashed") !== null,
+    chatIcon: row.querySelector("[data-icon='no-project']") !== null,
     text: row.textContent,
   };
 }
