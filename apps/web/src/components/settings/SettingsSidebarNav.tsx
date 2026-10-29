@@ -425,7 +425,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                             </SidebarMenuItem>
                           );
                         })}
-                        <ProductSettingsNavItems pathname={pathname} />
+                        {/* UpComputer: feature pages (Browser Use, Computer Use, Instructions) are agent settings. */}
+                        {group.heading === "Agents" ? (
+                          <ProductSettingsNavItems pathname={pathname} />
+                        ) : null}
                       </SidebarMenu>
                     </div>
                   ))}
