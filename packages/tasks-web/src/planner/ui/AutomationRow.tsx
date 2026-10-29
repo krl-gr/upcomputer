@@ -93,22 +93,20 @@ export const AutomationRow = memo(function AutomationRow(props: {
           {count !== null ? (
             <span className="shrink-0">{count === 1 ? "1 task" : `${count} tasks`}</span>
           ) : null}
-          <span className="ml-auto flex items-center gap-1">
-            <IconAction
-              label="Open automation"
-              variant="outline"
-              onClick={() => windows.openAutomation(automation.id)}
-            >
-              <Maximize2Icon />
-            </IconAction>
-            <IconAction
-              label="More actions"
-              variant="outline"
-              onClick={(event) => props.onMenu(automation, pointBelow(event.currentTarget))}
-            >
-              <MoreHorizontalIcon />
-            </IconAction>
-          </span>
+          <IconAction
+            label="Open automation"
+            variant="outline"
+            onClick={() => windows.openAutomation(automation.id)}
+          >
+            <Maximize2Icon />
+          </IconAction>
+          <IconAction
+            label="More actions"
+            variant="outline"
+            onClick={(event) => props.onMenu(automation, pointBelow(event.currentTarget))}
+          >
+            <MoreHorizontalIcon />
+          </IconAction>
         </div>
       </div>
       {props.indicator === "below" ? <div className="mx-4 my-1 h-px bg-border" /> : null}

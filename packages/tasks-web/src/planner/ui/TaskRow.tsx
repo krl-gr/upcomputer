@@ -255,35 +255,33 @@ export const TaskRow = memo(function TaskRow(props: TaskRowProps) {
             <CalendarIcon />
             {preferences.showProgress && progress ? <span>{progress}</span> : null}
           </IconAction>
-          <span className="ml-auto flex items-center gap-1">
-            {props.selectMode ? (
+          {props.selectMode ? (
+            <IconAction
+              label={props.selected ? "Deselect" : "Select"}
+              variant="outline"
+              pressed={props.selected}
+              onClick={() => props.onToggleSelected(task.id)}
+            >
+              {props.selected ? <CircleCheckIcon /> : <CircleIcon />}
+            </IconAction>
+          ) : (
+            <>
               <IconAction
-                label={props.selected ? "Deselect" : "Select"}
+                label="Open details"
                 variant="outline"
-                pressed={props.selected}
-                onClick={() => props.onToggleSelected(task.id)}
+                onClick={() => windows.openDetail(task.id)}
               >
-                {props.selected ? <CircleCheckIcon /> : <CircleIcon />}
+                <Maximize2Icon />
               </IconAction>
-            ) : (
-              <>
-                <IconAction
-                  label="Open details"
-                  variant="outline"
-                  onClick={() => windows.openDetail(task.id)}
-                >
-                  <Maximize2Icon />
-                </IconAction>
-                <IconAction
-                  label="More actions"
-                  variant="outline"
-                  onClick={(event) => props.onMenu(task, pointBelow(event.currentTarget))}
-                >
-                  <MoreHorizontalIcon />
-                </IconAction>
-              </>
-            )}
-          </span>
+              <IconAction
+                label="More actions"
+                variant="outline"
+                onClick={(event) => props.onMenu(task, pointBelow(event.currentTarget))}
+              >
+                <MoreHorizontalIcon />
+              </IconAction>
+            </>
+          )}
         </div>
       </div>
       {props.indicator === "below" ? <div className="mx-4 my-1 h-px bg-border" /> : null}
