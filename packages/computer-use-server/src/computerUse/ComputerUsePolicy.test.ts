@@ -7,7 +7,7 @@ import { test } from "vite-plus/test";
 import { evaluateComputerUsePolicy } from "./ComputerUsePolicy.ts";
 import { systemCredentialAppNames } from "./SensitiveApps.ts";
 
-const settings = Schema.decodeUnknownSync(ComputerUseSettings)({});
+const settings = Schema.decodeSync(ComputerUseSettings)({});
 
 const decide = (toolName: string, app: string) =>
   evaluateComputerUsePolicy({ toolName, args: { app, elementIndex: 1 }, settings });
@@ -72,7 +72,7 @@ test.runIf(NodeFS.existsSync("/System/Applications/Passwords.app"))(
   },
 );
 
-const allowlisted = Schema.decodeUnknownSync(ComputerUseSettings)({
+const allowlisted = Schema.decodeSync(ComputerUseSettings)({
   mode: "control",
   allowedApps: ["Notes"],
 });

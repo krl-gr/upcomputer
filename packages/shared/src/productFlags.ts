@@ -45,6 +45,10 @@ export interface ProductFlags {
   readonly mcpApps: boolean;
   /** The notes on usage data, in onboarding and in Settings, with the privacy policy link. */
   readonly usageDataNotice: boolean;
+  /** Linking a T3 Chat account for more Connect tunnels: the account page and upgrade links. */
+  readonly t3Chat: boolean;
+  /** Triage an issue from the command palette; its playbook files reports upstream. */
+  readonly triage: boolean;
 }
 
 export type ProductFlag = keyof ProductFlags;
@@ -61,6 +65,8 @@ export const UPSTREAM_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   cliCommand: true,
   mcpApps: true,
   usageDataNotice: true,
+  t3Chat: true,
+  triage: true,
 });
 
 export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
@@ -75,6 +81,8 @@ export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   cliCommand: true,
   mcpApps: true,
   usageDataNotice: true,
+  t3Chat: false,
+  triage: false,
 });
 
 /**
@@ -124,13 +132,6 @@ export interface ProductSurfaces {
    * which has the Connect step it needs.
    */
   readonly onboarding: ProductSurfaceVariant;
-  /**
-   * The provider update prompt at launch. With `upcomputer` it waits a bounded
-   * time for provider checks and connecting local environments, then admits
-   * what settled once, so it never changes text or count; anything later waits
-   * for the next launch.
-   */
-  readonly providerUpdateLaunchNotification: ProductSurfaceVariant;
 }
 
 export type ProductSurface = keyof ProductSurfaces;
@@ -143,7 +144,6 @@ export const UPSTREAM_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   composerContextRow: "upstream",
   sidebarVibrancy: "upstream",
   onboarding: "upstream",
-  providerUpdateLaunchNotification: "upstream",
 });
 
 export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
@@ -154,7 +154,6 @@ export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   composerContextRow: "upcomputer",
   sidebarVibrancy: "upcomputer",
   onboarding: "upcomputer",
-  providerUpdateLaunchNotification: "upcomputer",
 });
 
 type CapabilityKey = {
@@ -190,7 +189,7 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     settingsSearchIds: [
       "pull-request-merge-method",
       "remove-agent-credits-on-merge",
-      "github-routing",
+      "pull-request-routing",
       "auto-settle-merged-threads",
       "review-guides",
       "review-guide-model",
@@ -233,7 +232,7 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     capabilities: [],
     keybindingCommands: [],
     settingsSearchIds: [
-      "device-hosts",
+      "device-sources",
       "agent-device-access",
       "device-hub",
       "device-platform-support",
@@ -274,6 +273,18 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     capabilities: [],
     keybindingCommands: [],
     settingsSearchIds: ["privacy-policy"],
+    rightPanelSurfaces: [],
+  },
+  t3Chat: {
+    capabilities: [],
+    keybindingCommands: [],
+    settingsSearchIds: [],
+    rightPanelSurfaces: [],
+  },
+  triage: {
+    capabilities: ["triage"],
+    keybindingCommands: [],
+    settingsSearchIds: [],
     rightPanelSurfaces: [],
   },
 };

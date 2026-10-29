@@ -216,11 +216,7 @@ export const make = Effect.gen(function* () {
       // A web device's subscription endpoint is its push token.
       const pushToken = registration.webPush?.endpoint ?? registration.pushToken;
 
-      // The drizzle handle is alchemy's lazy proxy chain: it only becomes a
-      // real Effect when consumed via `yield*`. Handing it to Effect.all sends
-      // the raw Proxy into the fiber runtime, which spins the isolate at 100%
-      // CPU (registrations then hang until the client aborts) — keep every db
-      // chain directly yielded.
+      // Alchemy's lazy drizzle proxies become Effects only at yield*; Effect.all sends raw proxies into a spinning fiber.
       const write = Effect.gen(function* () {
         if (registration.webPush) {
           yield* ensureWebPushEndpointOwnership({

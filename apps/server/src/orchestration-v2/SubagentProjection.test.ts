@@ -117,30 +117,6 @@ it("keeps a subagent child awake when its parent thread is snoozed", () => {
   });
 });
 
-it("attributes native subagent prompts to their parent thread", () => {
-  for (const role of ["user", "assistant"] as const) {
-    const artifacts = makeSubagentConversationArtifacts({
-      messageId: MessageId.make(`native-${role}`),
-      turnItemId: TurnItemId.make(`native-${role}`),
-      threadId: childThreadId,
-      senderThreadId: parentThreadId,
-      rootNodeId: NodeId.make("child-root"),
-      providerThreadId: null,
-      providerTurnId: null,
-      nativeItemRef: null,
-      role,
-      text: role === "user" ? "Review the changes" : "Review complete",
-      ordinal: 100,
-      now: childCreatedAt,
-    });
-    assert.equal(artifacts.message.threadId, childThreadId);
-    assert.equal(artifacts.message.senderThreadId, role === "user" ? parentThreadId : undefined);
-    if (artifacts.turnItem.type === "user_message") {
-      assert.equal(artifacts.turnItem.senderThreadId, parentThreadId);
-    }
-  }
-});
-
 function taskFixture() {
   const projection = emptyProjection({
     type: "thread.created",
@@ -205,6 +181,13 @@ it("waits for nested work and retains the report across monitor acknowledgements
     "result_available",
   );
   for (const state of ["pending", "claimed"] as const) {
+    assert.equal(
+      delegatedTaskProgress({
+        ...projection,
+        subagents: [{ status: "idle", completionDelivery: { state, observedByRunId: null } }],
+      }).state,
+      "result_available",
+    );
     assert.equal(
       delegatedTaskProgress({
         ...projection,
@@ -316,6 +299,43 @@ it("exposes the provider failure rather than a progress message from the failed 
   assert.isNull(result.messageId);
 });
 
+it("orders a task's assistant messages by turn item, not by timestamps", () => {
+  const { projection, run } = taskFixture();
+  const at = DateTime.makeUnsafe("2026-07-24T10:05:00.000Z");
+  const message = (id: string, text: string, ordinal: number) => {
+    const artifacts = makeSubagentConversationArtifacts({
+      messageId: MessageId.make(id),
+      turnItemId: TurnItemId.make(id),
+      threadId: parentThreadId,
+      rootNodeId: NodeId.make("root"),
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      role: "assistant",
+      text,
+      ordinal,
+      now: at,
+    });
+    return {
+      message: { ...artifacts.message, runId: run.id },
+      turnItem: { ...artifacts.turnItem, runId: run.id },
+    };
+  };
+  const progress = message("progress", "Starting step 0.", 1);
+  const report = message("report", "All steps passed.", 2);
+  const result = subagentResultForRun(
+    {
+      ...projection,
+      messages: [progress.message, report.message],
+      turnItems: [report.turnItem, progress.turnItem],
+    },
+    run,
+  );
+  assert.equal(result.text, "All steps passed.");
+  assert.equal(result.messageId, report.message.id);
+  assert.equal(result.turnItemId, report.turnItem.id);
+});
+
 it.effect("ends an orphaned native subagent's node when only its record already ended", () =>
   Effect.gen(function* () {
     const id = NodeId.make("node:orphaned-native-subagent");
@@ -355,6 +375,7 @@ it.effect("ends a runless root turn's items when its node already ended", () =>
       providerInstanceId: parentProviderInstanceId,
       projection: {
         nodes: [root],
+        providerTurns: [],
         turnItems: [item("turn-item:command"), item("turn-item:reasoning")],
       } as never,
       status: "cancelled",

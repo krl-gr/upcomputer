@@ -49,7 +49,6 @@ const INTRAWORD_UNDERSCORE_ESCAPE = /(?<=[\p{L}\p{N}])\\_(?=[\p{L}\p{N}])/gu;
 // Schemes a link may navigate to. A link without a scheme is relative or an
 // anchor and stays in the app.
 const SAFE_LINK_SCHEMES = new Set(["http", "https", "mailto"]);
-// oxlint-disable-next-line no-control-regex -- browsers strip these around a URL
 const SURROUNDING_URL_CONTROLS = /^[\u0000-\u0020]+|[\u0000-\u0020]+$/g;
 
 /**

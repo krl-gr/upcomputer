@@ -138,32 +138,32 @@ const make = Effect.gen(function* () {
   const entriesOn = (date: string) => repository.scheduleEntries({ dates: [date] });
 
   /** All requested entries, or a refusal naming the first missing one. */
-  const existingEntries = (ids: ReadonlyArray<TaskScheduleEntryId>) =>
-    Effect.gen(function* () {
-      const unique = [...new Set(ids)];
-      const found = yield* repository.scheduleEntries({ ids: unique });
-      const missing = unique.find((id) => !found.some((entry) => entry.id === id));
-      if (missing !== undefined) return yield* fail(`Schedule entry '${missing}' was not found.`);
-      return found.toSorted(byDateAndPosition);
-    });
+  const existingEntries = Effect.fn("TaskScheduleService.existingEntries")(function* (
+    ids: ReadonlyArray<TaskScheduleEntryId>,
+  ) {
+    const unique = [...new Set(ids)];
+    const found = yield* repository.scheduleEntries({ ids: unique });
+    const missing = unique.find((id) => !found.some((entry) => entry.id === id));
+    if (missing !== undefined) return yield* fail(`Schedule entry '${missing}' was not found.`);
+    return found.toSorted(byDateAndPosition);
+  });
 
   /** Writes a planned block plus any renumbered entries of its date. */
-  const placeBlock = (
+  const placeBlock = Effect.fn("TaskScheduleService.placeBlock")(function* (
     others: ReadonlyArray<TaskScheduleEntry>,
     placement: TaskSchedulePlacement | undefined,
     startTime: string | null,
     block: ReadonlyArray<Omit<TaskScheduleEntry, "position">>,
-  ) =>
-    Effect.gen(function* () {
-      const index = insertionIndex(others, placement, startTime);
-      if (typeof index === "string") return yield* fail(index);
-      const timestamp = yield* now;
-      const planned = planPositions(others, index, block.length);
-      return [
-        ...planned.others.map((entry) => ({ ...entry, updatedAt: timestamp })),
-        ...block.map((entry, at) => ({ ...entry, position: planned.block[at]! })),
-      ];
-    });
+  ) {
+    const index = insertionIndex(others, placement, startTime);
+    if (typeof index === "string") return yield* fail(index);
+    const timestamp = yield* now;
+    const planned = planPositions(others, index, block.length);
+    return [
+      ...planned.others.map((entry) => ({ ...entry, updatedAt: timestamp })),
+      ...block.map((entry, at) => ({ ...entry, position: planned.block[at]! })),
+    ];
+  });
 
   const write = (effect: ScheduleEffect<ReadonlyArray<TaskScheduleEntry>>) =>
     repository
@@ -172,14 +172,15 @@ const make = Effect.gen(function* () {
       )
       .pipe(Effect.map((entries) => ({ entries })));
 
-  const range: TaskScheduleServiceShape["range"] = (input) =>
-    Effect.gen(function* () {
+  const range: TaskScheduleServiceShape["range"] = Effect.fn("TaskScheduleService.range")(
+    function* (input) {
       const days = dayNumber(input.to) - dayNumber(input.from) + 1;
       if (days < 1) return yield* fail("The range ends before it starts.");
       if (days > TASK_SCHEDULE_RANGE_MAX_DAYS)
         return yield* fail(`A range covers at most ${TASK_SCHEDULE_RANGE_MAX_DAYS} days.`);
       return yield* repository.scheduleRange(input);
-    });
+    },
+  );
 
   const add: TaskScheduleServiceShape["add"] = (input) =>
     write(
@@ -230,31 +231,30 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  const moveBlock = (
+  const moveBlock = Effect.fn("TaskScheduleService.moveBlock")(function* (
     moved: ReadonlyArray<TaskScheduleEntry>,
     date: string,
     placement: TaskSchedulePlacement | undefined,
     timing: Pick<TaskScheduleMoveInput, "startTime" | "durationMinutes">,
-  ) =>
-    Effect.gen(function* () {
-      const ids = new Set(moved.map(({ id }) => id));
-      const others = (yield* entriesOn(date)).filter(({ id }) => !ids.has(id));
-      const timestamp = yield* now;
-      return yield* placeBlock(
-        others,
-        placement,
-        timing.startTime ?? null,
-        moved.map(({ position: _position, ...entry }) => ({
-          ...entry,
-          date,
-          ...(timing.startTime !== undefined ? { startTime: timing.startTime } : {}),
-          ...(timing.durationMinutes !== undefined
-            ? { durationMinutes: timing.durationMinutes }
-            : {}),
-          updatedAt: timestamp,
-        })),
-      );
-    });
+  ) {
+    const ids = new Set(moved.map(({ id }) => id));
+    const others = (yield* entriesOn(date)).filter(({ id }) => !ids.has(id));
+    const timestamp = yield* now;
+    return yield* placeBlock(
+      others,
+      placement,
+      timing.startTime ?? null,
+      moved.map(({ position: _position, ...entry }) => ({
+        ...entry,
+        date,
+        ...(timing.startTime !== undefined ? { startTime: timing.startTime } : {}),
+        ...(timing.durationMinutes !== undefined
+          ? { durationMinutes: timing.durationMinutes }
+          : {}),
+        updatedAt: timestamp,
+      })),
+    );
+  });
 
   const move: TaskScheduleServiceShape["move"] = (input) =>
     write(

@@ -83,26 +83,25 @@ const handlers = McpToolAccess.toLayer(
     const bots = yield* BotService;
     const repository = yield* TaskRepository;
     const threads = yield* ThreadManagementService;
-    const caller = (write: boolean) =>
-      Effect.gen(function* () {
-        const invocation = yield* McpInvocationContext;
-        if (!invocation.thread)
-          return yield* new TaskError({ message: "This tool needs a bot's calling thread." });
-        const { threadId } = invocation.thread;
-        const bot = yield* bots.forThread(threadId);
-        if (!bot) return yield* new TaskError({ message: "This chat does not belong to a bot." });
-        const { thread } = yield* threads.getThreadRecords(threadId, []);
-        if (write && thread.interactionMode === "plan")
-          return yield* new TaskError({
-            message: "Memory and task writes are unavailable in plan mode.",
-          });
-        const projectId = bot.threadId === threadId ? bot.projectId : thread.projectId;
-        if (!bot.allowedProjectIds.includes(projectId))
-          return yield* new TaskError({
-            message: `This chat is in a project ${bot.agent.name} isn't set up for, so its memory and tasks are unavailable here. Ask the user to open the bot's settings and choose its working project again.`,
-          });
-        return { bot, projectId, thread };
-      });
+    const caller = Effect.fn("BotMcpTools.caller")(function* (write: boolean) {
+      const invocation = yield* McpInvocationContext;
+      if (!invocation.thread)
+        return yield* new TaskError({ message: "This tool needs a bot's calling thread." });
+      const { threadId } = invocation.thread;
+      const bot = yield* bots.forThread(threadId);
+      if (!bot) return yield* new TaskError({ message: "This chat does not belong to a bot." });
+      const { thread } = yield* threads.getThreadRecords(threadId, []);
+      if (write && thread.interactionMode === "plan")
+        return yield* new TaskError({
+          message: "Memory and task writes are unavailable in plan mode.",
+        });
+      const projectId = bot.threadId === threadId ? bot.projectId : thread.projectId;
+      if (!bot.allowedProjectIds.includes(projectId))
+        return yield* new TaskError({
+          message: `This chat is in a project ${bot.agent.name} isn't set up for, so its memory and tasks are unavailable here. Ask the user to open the bot's settings and choose its working project again.`,
+        });
+      return { bot, projectId, thread };
+    });
     const result = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       effect.pipe(
         Effect.match({

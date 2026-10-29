@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { useClientSettings, useUpdateClientSettings } from "../hooks/useSettings";
+import { updateClientSettings, useClientSettings } from "../hooks/useSettings";
 import { isThreadListSettingShown } from "./threadListSetting";
 
 const THREAD_LIST_LABELS: Record<SidebarThreadList, string> = {
@@ -23,7 +23,6 @@ const THREAD_LIST_LABELS: Record<SidebarThreadList, string> = {
  */
 export function ThreadListSettingsRow() {
   const threadList = useClientSettings((settings) => settings.sidebarThreadList);
-  const updateClientSettings = useUpdateClientSettings();
   if (!isThreadListSettingShown()) return null;
   const setThreadList = (value: SidebarThreadList) =>
     void updateClientSettings({ sidebarThreadList: value });

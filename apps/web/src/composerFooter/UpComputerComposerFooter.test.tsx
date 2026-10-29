@@ -181,8 +181,8 @@ function footerProps(
     model: OPUS,
     models: claudeModels(descriptors),
     modelOptions: undefined,
-    prompt: "",
-    onPromptChange: () => undefined,
+    promptUltrathink: "none" as const,
+    onPromptEdit: () => undefined,
     planModeEnabled: true,
     isComposerOwned: true,
   };
@@ -212,9 +212,9 @@ function footerProps(
   };
 }
 
-/** ChatComposer's hook line: the footer row follows the surface; resting keeps upstream's. */
-function FooterRow(props: { footer: UpComputerComposerFooterProps; resting?: boolean }) {
-  return showsUpComputerComposerFooter(props.resting ?? false) ? (
+/** ChatComposer's hook line: the footer row follows the surface. */
+function FooterRow(props: { footer: UpComputerComposerFooterProps }) {
+  return showsUpComputerComposerFooter() ? (
     <UpComputerComposerFooter {...props.footer} />
   ) : (
     <div data-testid="upstream-footer" />
@@ -224,9 +224,9 @@ function FooterRow(props: { footer: UpComputerComposerFooterProps; resting?: boo
 let root: Root;
 let container: HTMLDivElement;
 
-function render(footer: UpComputerComposerFooterProps, resting = false) {
+function render(footer: UpComputerComposerFooterProps) {
   return act(async () => {
-    root.render(<FooterRow footer={footer} resting={resting} />);
+    root.render(<FooterRow footer={footer} />);
   });
 }
 
@@ -262,6 +262,8 @@ function click(element: Element) {
 function stubLayout(rowWidth: number) {
   const widthOf = (element: HTMLElement) => {
     if (element.dataset.testid === "tooltip" || element.matches("input")) return 0;
+    // The secondary trait ("1M") is counted in its block's 80px.
+    if (element.dataset.composerSecondaryTrait !== undefined) return 0;
     if (element.dataset.composerControlLabel !== undefined) return 50;
     if (element.dataset.composerControlCompactIcon !== undefined) return 16;
     if (element.dataset.composerFooterBlock !== undefined) return 80;
@@ -277,7 +279,10 @@ function stubLayout(rowWidth: number) {
   vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (
     this: HTMLElement,
   ) {
-    return this.dataset.composerControlLabel !== undefined ? 50 : 0;
+    return this.dataset.composerControlLabel !== undefined &&
+      this.dataset.composerSecondaryTrait === undefined
+      ? 50
+      : 0;
   });
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (
     this: HTMLElement,
@@ -312,11 +317,6 @@ describe("composer footer surface", () => {
     expect(container.querySelector('[data-testid="upstream-footer"]')).not.toBeNull();
   });
 
-  it("leaves the resting row to upstream", async () => {
-    await render(footerProps(), true);
-    expect(container.querySelector("[data-composer-footer-surface]")).toBeNull();
-  });
-
   it("uses V1's placeholders with its surface and upstream's text otherwise", () => {
     expect(composerIdlePlaceholder(false)).toBe(
       "Ask anything, @tag files/folders, $use skills, or / for commands",
@@ -346,8 +346,8 @@ describe("UpComputerComposerFooter", () => {
     expect(left).toEqual([
       "Attach files",
       "Build",
-      "Claude · Claude Opus 5.5",
-      "High · 1M",
+      "Claude · Opus 5.5",
+      "Effort: High · 1M",
       "Access: Full access",
     ]);
     const right = container.querySelector('[data-chat-composer-actions="right"]')!;
@@ -361,7 +361,7 @@ describe("UpComputerComposerFooter", () => {
   it("shows the provider and model in one label, and keeps upstream's trigger for several models", async () => {
     await render(footerProps());
     const label = container.querySelector('[data-chat-provider-model-picker-label="true"]');
-    expect(label?.textContent).toBe("Claude · Claude Opus 5.5");
+    expect(label?.textContent).toBe("Claude · Opus 5.5");
 
     await render(
       footerProps({
@@ -379,25 +379,24 @@ describe("UpComputerComposerFooter", () => {
     await act(async () => root.render(modelPicker()));
     expect(
       container.querySelector('[data-chat-provider-model-picker-label="true"]')?.textContent,
-    ).toBe("Claude Opus 5.5");
+    ).toBe("Opus 5.5");
   });
 
   it("combines effort and context, and shows only what the model has", async () => {
     await render(footerProps());
-    expect(block("traits")?.querySelector("[data-composer-control-label]")?.textContent).toBe(
-      "High · 1M",
-    );
+    const traitLabels = () =>
+      Array.from(
+        block("traits")?.querySelectorAll("[data-composer-control-label]") ?? [],
+        (label) => label.textContent,
+      ).join(" · ");
+    expect(traitLabels()).toBe("High · 1M");
 
     await render(footerProps({ descriptors: [EFFORT] }));
-    expect(block("traits")?.querySelector("[data-composer-control-label]")?.textContent).toBe(
-      "High",
-    );
-    // The brain shows only when the row runs out of room, like the access lock.
-    const brain = block("traits")!.querySelector<HTMLElement>(
-      "[data-composer-control-compact-icon]",
-    )!;
-    expect(brain.querySelector("svg")?.classList.contains("lucide-brain")).toBe(true);
-    expect(brain.className).toContain("invisible");
+    expect(traitLabels()).toBe("High");
+    // The gauge shows only when the row runs out of room, like the access lock.
+    const gauge = block("traits")!.querySelector("[data-composer-control-compact-icon]")!;
+    expect(gauge.classList.contains("lucide-gauge")).toBe(true);
+    expect(gauge.classList.contains("invisible")).toBe(true);
 
     await render(footerProps({ descriptors: [] }));
     expect(block("traits")).toBeNull();
@@ -565,9 +564,9 @@ describe("UpComputerComposerFooter", () => {
       "|",
       "Build",
       "|",
-      "Claude · Claude Opus 5.5",
+      "Claude · Opus 5.5",
       "|",
-      "High · 1M",
+      "Effort: High · 1M",
       "|",
       "Access: Full access",
     ]);
@@ -577,15 +576,15 @@ describe("UpComputerComposerFooter", () => {
     expect(visibleSequence()).toEqual([
       "Attach files",
       "|",
-      "Claude · Claude Opus 5.5",
+      "Claude · Opus 5.5",
       "|",
-      "High · 1M",
+      "Effort: High · 1M",
       "|",
       "Access: Full access",
     ]);
 
     await render(footerProps({ showInteractionModeToggle: false, attach: null, descriptors: [] }));
-    expect(visibleSequence()).toEqual(["Claude · Claude Opus 5.5", "|", "Access: Full access"]);
+    expect(visibleSequence()).toEqual(["Claude · Opus 5.5", "|", "Access: Full access"]);
   });
 
   it("never doubles, leads or trails a separator while controls fold", async () => {
@@ -633,7 +632,7 @@ describe("UpComputerComposerFooter", () => {
     const textTriggers = [
       buttonByText("Build")!,
       container.querySelector<HTMLElement>("[data-chat-provider-model-picker]")!,
-      block("traits")!.querySelector<HTMLElement>('[aria-label^="High"]')!,
+      block("traits")!.querySelector<HTMLElement>('[aria-label^="Effort"]')!,
       container.querySelector<HTMLElement>("[data-composer-footer-access]")!,
     ];
     // tailwind-merge drops the classes V1's trigger replaces, so compare V1's own.
@@ -644,9 +643,8 @@ describe("UpComputerComposerFooter", () => {
       expect(Array.from(trigger.classList)).toEqual(expect.arrayContaining(v1Text));
       expect(trigger.classList.contains("font-medium")).toBe(false);
     }
-    // Upstream's chevrons stay mounted for its own layout; V1's class hides each one.
+    // Upstream's composer draws no chevrons now; one that comes back is hidden by V1's class.
     const chevrons = Array.from(leftRow().querySelectorAll("[data-composer-control-chevron]"));
-    expect(chevrons.length).toBeGreaterThan(0);
     for (const chevron of chevrons) {
       expect(
         textTriggers.some(

@@ -1,3 +1,4 @@
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export const PASTED_TEXT_ATTACHMENT_THRESHOLD_BYTES = 32 * 1024;
 
 const textEncoder = new TextEncoder();
@@ -49,6 +50,7 @@ export function nextPastedTextFileName(existingNames: ReadonlyArray<string>): st
   }
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function replaceTextSelection(input: {
   readonly value: string;
   readonly selection: { readonly start: number; readonly end: number };

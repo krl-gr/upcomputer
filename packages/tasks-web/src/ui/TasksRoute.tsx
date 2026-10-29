@@ -3,7 +3,7 @@ import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { deriveProviderInstanceEntries } from "../../../../apps/web/src/providerInstances.ts";
-import { useServerConfigs } from "../../../../apps/web/src/state/entities.ts";
+import { useEnvironmentProviders } from "../../../../apps/web/src/state/environments.ts";
 import { useAnalyticsView } from "../../../../apps/web/src/uiAnalytics.ts";
 
 import {
@@ -170,16 +170,16 @@ function TasksTableRoute(props: {
     filters.tags,
     filters.archive ?? "active",
   );
-  const serverConfigs = useServerConfigs();
+  const providersByEnvironment = useEnvironmentProviders();
   const providerEntriesByEnvironment = useMemo(
     () =>
       new Map(
-        [...serverConfigs].map(([environmentId, config]) => [
+        [...providersByEnvironment].map(([environmentId, providers]) => [
           environmentId,
-          deriveProviderInstanceEntries(config.providers),
+          deriveProviderInstanceEntries(providers),
         ]),
       ),
-    [serverConfigs],
+    [providersByEnvironment],
   );
   const navigateBack = useCallback(() => {
     if (canGoBack) {

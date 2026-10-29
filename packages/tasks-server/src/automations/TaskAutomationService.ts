@@ -106,7 +106,7 @@ const make = Effect.gen(function* () {
    * automation is still enabled. A person who pauses, edits, or deletes an
    * automation mid-pass wins; the pass notices it lost the row and moves on.
    */
-  const persistSchedule = (
+  const persistSchedule = Effect.fn("TaskAutomationService.persistSchedule")(function* (
     automation: TaskAutomation,
     patch: {
       readonly nextRunAt: string | null;
@@ -114,24 +114,23 @@ const make = Effect.gen(function* () {
       readonly lastError?: string | null;
       readonly failureCount?: number;
     },
-  ) =>
-    Effect.gen(function* () {
-      const applied = yield* repository.updateAutomationSchedule({
-        id: automation.id,
-        nextRunAt: patch.nextRunAt,
-        firedAt: patch.fired?.at ?? null,
-        firedSlot: patch.fired?.slot ?? null,
-        firedTaskId: patch.fired?.taskId ?? null,
-        lastError: patch.lastError ?? null,
-        failureCount: patch.failureCount ?? 0,
-        updatedAt: yield* now,
-      });
-      if (!applied) {
-        yield* Effect.logInfo("Skipped a stale task automation write", {
-          automationId: automation.id,
-        });
-      }
+  ) {
+    const applied = yield* repository.updateAutomationSchedule({
+      id: automation.id,
+      nextRunAt: patch.nextRunAt,
+      firedAt: patch.fired?.at ?? null,
+      firedSlot: patch.fired?.slot ?? null,
+      firedTaskId: patch.fired?.taskId ?? null,
+      lastError: patch.lastError ?? null,
+      failureCount: patch.failureCount ?? 0,
+      updatedAt: yield* now,
     });
+    if (!applied) {
+      yield* Effect.logInfo("Skipped a stale task automation write", {
+        automationId: automation.id,
+      });
+    }
+  });
 
   const park = (automation: TaskAutomation, lastError: string, failureCount: number) =>
     now.pipe(
@@ -172,41 +171,43 @@ const make = Effect.gen(function* () {
       .countOpenAutomationTasks({ id: automation.id })
       .pipe(Effect.map((count) => count > 0));
 
-  const createTaskForSlot = (automation: TaskAutomation, slot: string) =>
-    Effect.gen(function* () {
-      const timestamp = yield* now;
-      const task: PersistTaskInput = {
-        id: TaskId.make(yield* randomId("task")),
-        projectId: automation.projectId,
-        title: automation.template.title,
-        description: automation.template.description,
-        output: null,
-        status: automation.template.status,
-        priority: automation.template.priority,
-        createdBy: automationTaskCreator(automation.id),
-        assigneeAgentRunId: null,
-        sourceThreadId: null,
-        sourceRunId: null,
-        metadata: {
-          source: "automation",
-          automationId: automation.id,
-          automationName: automation.name,
-          slot,
-        },
-        tags: automation.template.tags,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        archivedAt: null,
-      };
-      const saved = yield* repository.upsert(task);
-      // Agents pick the task up through the existing reconciler; automations
-      // never start a run themselves, so there stays one dispatch path.
-      yield* agents.scheduleTaskChanged({ task: saved, reason: "created" });
-      return saved;
-    });
+  const createTaskForSlot = Effect.fn("TaskAutomationService.createTaskForSlot")(function* (
+    automation: TaskAutomation,
+    slot: string,
+  ) {
+    const timestamp = yield* now;
+    const task: PersistTaskInput = {
+      id: TaskId.make(yield* randomId("task")),
+      projectId: automation.projectId,
+      title: automation.template.title,
+      description: automation.template.description,
+      output: null,
+      status: automation.template.status,
+      priority: automation.template.priority,
+      createdBy: automationTaskCreator(automation.id),
+      assigneeAgentRunId: null,
+      sourceThreadId: null,
+      sourceRunId: null,
+      metadata: {
+        source: "automation",
+        automationId: automation.id,
+        automationName: automation.name,
+        slot,
+      },
+      tags: automation.template.tags,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      archivedAt: null,
+    };
+    const saved = yield* repository.upsert(task);
+    // Agents pick the task up through the existing reconciler; automations
+    // never start a run themselves, so there stays one dispatch path.
+    yield* agents.scheduleTaskChanged({ task: saved, reason: "created" });
+    return saved;
+  });
 
-  const fire = (automation: TaskAutomation, slot: string, nextRunAt: string) =>
-    Effect.gen(function* () {
+  const fire = Effect.fn("TaskAutomationService.fire")(
+    function* (automation: TaskAutomation, slot: string, nextRunAt: string) {
       const claimedAt = yield* now;
       // The slot is claimed pessimistically: if the process dies between the
       // claim and the task write, the run record honestly reads as a failure
@@ -245,48 +246,51 @@ const make = Effect.gen(function* () {
         nextRunAt,
         fired: { at: claimedAt, slot, taskId: task.id },
       });
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.gen(function* () {
-          const failureCount = automation.failureCount + 1;
-          const message = `${automation.name} couldn't create its task${
-            readableReason(cause) === undefined ? "" : `: ${readableReason(cause)}`
-          }. It tries again at its next run.`;
-          yield* recordOutcome(automation, slot, "failed", null, message).pipe(Effect.ignore);
-          yield* recordFired("failed", "create_failed", failureCount >= AUTOMATION_FAILURE_LIMIT);
-          // Always advance the schedule, otherwise a permanently broken
-          // automation would retry every tick for as long as the server runs.
-          if (failureCount >= AUTOMATION_FAILURE_LIMIT) {
-            const parked = `${automation.name} was turned off after ${failureCount} failed runs${
+    },
+    (effect, automation, slot, nextRunAt) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Effect.gen(function* () {
+            const failureCount = automation.failureCount + 1;
+            const message = `${automation.name} couldn't create its task${
               readableReason(cause) === undefined ? "" : `: ${readableReason(cause)}`
-            }. Fix it, then turn it back on.`;
-            yield* park(automation, parked, failureCount).pipe(Effect.ignore);
-            yield* reportNotice({
-              id: `automation:${automation.id}:parked`,
-              area: "automations",
-              severity: "error",
-              title: "Automation turned off",
-              message: parked,
-              detail: Cause.pretty(cause),
+            }. It tries again at its next run.`;
+            yield* recordOutcome(automation, slot, "failed", null, message).pipe(Effect.ignore);
+            yield* recordFired("failed", "create_failed", failureCount >= AUTOMATION_FAILURE_LIMIT);
+            // Always advance the schedule, otherwise a permanently broken
+            // automation would retry every tick for as long as the server runs.
+            if (failureCount >= AUTOMATION_FAILURE_LIMIT) {
+              const parked = `${automation.name} was turned off after ${failureCount} failed runs${
+                readableReason(cause) === undefined ? "" : `: ${readableReason(cause)}`
+              }. Fix it, then turn it back on.`;
+              yield* park(automation, parked, failureCount).pipe(Effect.ignore);
+              yield* reportNotice({
+                id: `automation:${automation.id}:parked`,
+                area: "automations",
+                severity: "error",
+                title: "Automation turned off",
+                message: parked,
+                detail: Cause.pretty(cause),
+              });
+            } else {
+              yield* persistSchedule(automation, {
+                nextRunAt,
+                lastError: message,
+                failureCount,
+              }).pipe(Effect.ignore);
+            }
+            yield* Effect.logError("Task automation failed to fire", {
+              automationId: automation.id,
+              slot,
+              cause,
             });
-          } else {
-            yield* persistSchedule(automation, {
-              nextRunAt,
-              lastError: message,
-              failureCount,
-            }).pipe(Effect.ignore);
-          }
-          yield* Effect.logError("Task automation failed to fire", {
-            automationId: automation.id,
-            slot,
-            cause,
-          });
-        }),
+          }),
+        ),
       ),
-    );
+  );
 
-  const evaluate = (automation: TaskAutomation) =>
-    Effect.gen(function* () {
+  const evaluate = Effect.fn("TaskAutomationService.evaluate")(
+    function* (automation: TaskAutomation) {
       const instant = new Date(yield* now);
       const decision = decideAutomationSlot(automation, instant);
       switch (decision.kind) {
@@ -337,14 +341,17 @@ const make = Effect.gen(function* () {
           return;
         }
       }
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logError("Failed to evaluate a task automation", {
-          automationId: automation.id,
-          cause,
-        }),
+    },
+    (effect, automation) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logError("Failed to evaluate a task automation", {
+            automationId: automation.id,
+            cause,
+          }),
+        ),
       ),
-    );
+  );
 
   const tick = Effect.gen(function* () {
     const automations = yield* repository.listAutomationsByStatus({ status: "enabled" });

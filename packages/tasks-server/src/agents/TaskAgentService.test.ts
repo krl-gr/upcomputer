@@ -25,7 +25,6 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
 import {
@@ -334,12 +333,12 @@ async function firstTurn(input: {
         listAllAgents: () => Effect.succeed([configuredAgent]),
         listAllTasks: () => Effect.succeed([assignedTask]),
         listTriggerCandidates: () => Effect.succeed([assignedTask]),
-        getById: () => Effect.succeed(Option.some(assignedTask)),
-        getAgentById: () => Effect.succeed(Option.some(configuredAgent)),
-        findActiveAgentRunForTaskAgent: () => Effect.succeed(Option.none()),
+        getById: () => Effect.succeedSome(assignedTask),
+        getAgentById: () => Effect.succeedSome(configuredAgent),
+        findActiveAgentRunForTaskAgent: () => Effect.succeedNone,
         searchAgentRuns: () =>
           Effect.succeed(input.previousRun === undefined ? [] : [input.previousRun]),
-        startAgentRun: (run: unknown) => Effect.succeed(Option.some(run as never)),
+        startAgentRun: (run: unknown) => Effect.succeedSome(run as never),
         events: () => Effect.succeed({ events: input.events ?? [] }),
         appendEvent: (event: unknown) => Effect.succeed(event as never),
       } as unknown as TaskRepositoryShape,
@@ -364,7 +363,7 @@ async function firstTurn(input: {
           } as never),
           Layer.succeed(ProjectStoreV2, {
             getShell: (projectId: string) =>
-              Effect.succeed(Option.some({ id: projectId, title: "UpComputer" })),
+              Effect.succeedSome({ id: projectId, title: "UpComputer" }),
           } as never),
           deterministicCrypto(),
         ),

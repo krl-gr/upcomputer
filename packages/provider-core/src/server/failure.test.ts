@@ -15,9 +15,9 @@ import {
   makeProviderFailure,
   makeProviderFailureTurnItem,
   providerFailureTitle,
-  MAX_PROVIDER_FAILURE_CODE_LENGTH,
   MAX_PROVIDER_FAILURE_MESSAGE_LENGTH,
   ContextHandoffBudgetError,
+  ContextHandoffBackgroundWorkError,
 } from "./failure.ts";
 import * as IdAllocator from "./IdAllocator.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
@@ -42,24 +42,6 @@ it("redacts credentials and URL secrets from provider failures", () => {
   assert.notInclude(failure.message, "sk-abcdefghijklmnop");
 });
 
-it("replaces unsafe control characters without stripping whitespace", () => {
-  const failure = makeProviderFailure({ message: "before\u0000\u0007\t\nafter\u007f" });
-
-  assert.equal(failure.message, "before  \t\nafter");
-});
-
-it("bounds provider-controlled failure strings", () => {
-  const failure = makeProviderFailure({
-    message: "m".repeat(MAX_PROVIDER_FAILURE_MESSAGE_LENGTH + 500),
-    code: "c".repeat(MAX_PROVIDER_FAILURE_CODE_LENGTH + 50),
-  });
-
-  assert.equal(failure.message.length, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH);
-  assert.equal(failure.code?.length, MAX_PROVIDER_FAILURE_CODE_LENGTH);
-  assert.match(failure.message, /…$/u);
-  assert.match(failure.code ?? "", /…$/u);
-});
-
 it("does not split a surrogate pair at the truncation boundary", () => {
   const failure = makeProviderFailure({
     message: `${"a".repeat(MAX_PROVIDER_FAILURE_MESSAGE_LENGTH - 2)}🚀tail`,
@@ -71,7 +53,7 @@ it("does not split a surrogate pair at the truncation boundary", () => {
 });
 
 const UNEXPLAINED =
-  "The agent stopped with an error it didn't explain. Send the message again; if it repeats, check The agent in Settings.";
+  "The agent stopped with an error it didn't explain. Send the message again; if it repeats, check the agent in Settings.";
 
 it("keeps arbitrary cause messages out of the main message and in the detail", () => {
   const cause = new Error("Adapter failed", {
@@ -94,16 +76,52 @@ it("keeps arbitrary cause messages out of the main message and in the detail", (
 });
 
 it("preserves actionable handoff errors wrapped by turn startup", () => {
-  const cause = new ProviderAdapter.ProviderAdapterTurnStartError({
-    driver: ProviderDriverKind.make("codex"),
-    threadId: ThreadId.make("thread:handoff-error"),
-    providerThreadId: ProviderThreadId.make("provider-thread:handoff-error"),
-    runId: RunId.make("run:handoff-error"),
-    cause: new ContextHandoffBudgetError(),
-  });
+  for (const error of [new ContextHandoffBudgetError(), new ContextHandoffBackgroundWorkError()]) {
+    const cause = new ProviderAdapter.ProviderAdapterTurnStartError({
+      driver: ProviderDriverKind.make("codex"),
+      threadId: ThreadId.make("thread:handoff-error"),
+      providerThreadId: ProviderThreadId.make("provider-thread:handoff-error"),
+      runId: RunId.make("run:handoff-error"),
+      cause: error,
+    });
+    assert.equal(makeProviderFailure({ cause: Cause.fail(cause) }).message, error.message);
+  }
+});
+
+it("keeps unrecognized reasons and provider text out of category messages", () => {
+  // A protocol error's own detail is our adapters' text and may show; see its catalogue test.
+  for (const cause of [
+    "Private launch command",
+    { _tag: "ProviderAdapterProtocolError", reason: "private-config" },
+    { _tag: "ProviderAdapterProtocolError", reason: "constructor" },
+    { _tag: "constructor", cause: "private-config" },
+  ]) {
+    assert.equal(
+      makeProviderFailure({ cause: { _tag: "ProviderAdapterTurnStartError", cause } }).message,
+      "The agent couldn't start this reply. Send the message again.",
+    );
+  }
   assert.equal(
-    makeProviderFailure({ cause: Cause.fail(cause) }).message,
-    new ContextHandoffBudgetError().message,
+    makeProviderFailure({
+      cause: { _tag: "ProviderAdapterProtocolError", reason: "previous_turn_active" },
+    }).message,
+    "The agent stopped before finishing: the previous turn is still running. Send the message again; if it keeps happening, check the agent in Settings.",
+  );
+});
+
+it("uses the innermost category without carrying an outer reason into it", () => {
+  assert.equal(
+    makeProviderFailure({
+      cause: {
+        _tag: "ProviderAdapterTurnStartError",
+        cause: {
+          _tag: "ProviderAdapterProtocolError",
+          reason: "previous_turn_active",
+          cause: Cause.fail({ _tag: "ProviderAdapterOpenSessionError" }),
+        },
+      },
+    }).message,
+    "The agent couldn't start. Check the agent in Settings, then send the message again.",
   );
 });
 

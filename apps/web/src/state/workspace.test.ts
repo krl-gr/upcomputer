@@ -35,6 +35,8 @@ function shellState(status: EnvironmentShellState["status"]): EnvironmentShellSt
             archivedThreads: [],
           }),
     error: Option.none(),
+    generation: status === "empty" ? 0 : 1,
+    removedAt: new Map(),
   };
 }
 

@@ -1,5 +1,4 @@
 import {
-  AuthAdministrativeScopes,
   AuthStandardClientScopes,
   type AuthEnvironmentScope,
   type AuthPairingLink,
@@ -255,7 +254,7 @@ const PAIRING_TOKEN_LENGTH = 12;
 const PAIRING_TOKEN_REJECTION_LIMIT =
   Math.floor(256 / PAIRING_TOKEN_ALPHABET.length) * PAIRING_TOKEN_ALPHABET.length;
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const config = yield* ServerConfig.ServerConfig;
   const pairingLinks = yield* AuthPairingLinks.AuthPairingLinkRepository;
@@ -304,9 +303,7 @@ export const make = Effect.gen(function* () {
       id,
     }).pipe(Effect.asVoid);
 
-  // A desktop that sends its secret rotates the renderer's token, so accept
-  // whichever token the secret derives for the current window instead of
-  // seeding one fixed token. Older desktops only send the token.
+  // Accept tokens derived from the rotating desktop secret; older desktops send only a token.
   const desktopBootstrapSecret = config.desktopBootstrapSecret;
   const consumeRotatingDesktopToken = (credential: string, nowMs: number) =>
     desktopBootstrapSecret !== undefined &&
@@ -316,16 +313,12 @@ export const make = Effect.gen(function* () {
     const now = yield* DateTime.now;
     yield* seedGrant(config.desktopBootstrapToken, {
       method: "desktop-bootstrap",
-      scopes: AuthAdministrativeScopes,
+      scopes: AuthStandardClientScopes,
       subject: "desktop-bootstrap",
       expiresAt: DateTime.add(now, {
         milliseconds: Duration.toMillis(DESKTOP_BOOTSTRAP_TTL_HOURS),
       }),
-      // Unbounded uses so the renderer can re-exchange the seed for a
-      // fresh bearer session after a page reload (or after the prior
-      // bearer expires). The seed itself stays inside the desktop
-      // process and the rendered page, both of which the user already
-      // implicitly trusts.
+      // Reloads and expired bearer sessions must be able to re-exchange the desktop seed.
       remainingUses: "unbounded",
     });
   }
@@ -441,7 +434,7 @@ export const make = Effect.gen(function* () {
       if (consumeRotatingDesktopToken(credential, now.epochMilliseconds)) {
         return {
           method: "desktop-bootstrap",
-          scopes: AuthAdministrativeScopes,
+          scopes: AuthStandardClientScopes,
           subject: "desktop-bootstrap",
           expiresAt: DateTime.add(now, {
             milliseconds: DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS,
@@ -539,9 +532,7 @@ export const make = Effect.gen(function* () {
         return yield* seededResult.error;
       }
 
-      // The scope check is part of the UPDATE's WHERE clause so a rejected
-      // request cannot consume a one-time link. The re-check below only
-      // explains why nothing matched.
+      // Check scopes in the UPDATE so rejected requests cannot spend one-time links.
       const consumed = yield* pairingLinks
         .consumeAvailable({
           credential,

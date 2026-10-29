@@ -5,7 +5,7 @@ commands, tool inputs, status, and exit codes. Expand a tool call to see its out
 command's output updates live, and long output shows only its most recent part. Use **Open diff** on
 a file change to review its contents.
 
-T3 Orchestrator summaries describe the actions taken, such as **Ran 2 commands and sent messages
+Up.computer Orchestrator summaries describe the actions taken, such as **Ran 2 commands and sent messages
 to 3 threads**. Repeated messages to the same destinations show both counts: **Sent 5 messages to
 2 threads**. Thread creation counts the threads returned by the tool, including batches.
 

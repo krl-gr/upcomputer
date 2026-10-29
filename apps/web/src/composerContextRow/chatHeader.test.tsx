@@ -53,6 +53,7 @@ vi.mock("../state/entities", () => ({
   useThreadShell: () => state.thread,
   useProjects: () => state.projects,
   useServerConfigs: () => new Map(),
+  useQuietThreadProjection: () => null,
 }));
 vi.mock("../state/threads", () => ({ threadEnvironment: { updateMetadata: "updateMetadata" } }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));

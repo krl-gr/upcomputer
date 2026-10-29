@@ -21,8 +21,9 @@ const MAX_EVENTS_PER_TYPE = 20;
 const encodeMessage = Schema.encodeSync(Schema.fromJsonString(DesktopProductEventMessage));
 const textEncoder = new TextEncoder();
 const KNOWN_SIGNALS: ReadonlySet<string> = new Set(DESKTOP_BACKEND_EXIT_SIGNALS);
-// Effect's child process reports a signal death only in this message.
-const SIGNAL_IN_MESSAGE = /receipt of signal: '(SIG[A-Z0-9]+)'/;
+// Effect's child process reports a signal death only in this message; the
+// backend manager turns it into a "killed by SIG..." exit reason.
+const SIGNAL_IN_MESSAGE = /(?:receipt of signal: '|^killed by )(SIG[A-Z0-9]+)/;
 
 /** The signal a backend died from, found in the exit status error's causes. */
 export function backendExitSignal(error: unknown): DesktopBackendExitSignal | null {
@@ -55,7 +56,7 @@ export class DesktopProductEvents extends Context.Service<
   }
 >()("@t3tools/desktop/telemetry/DesktopProductEvents") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const runFork = Effect.runForkWith(yield* Effect.context<never>());
   const queue = yield* Queue.sliding<DesktopProductEvent>(QUEUE_CAPACITY);
@@ -96,7 +97,9 @@ export const make = Effect.gen(function* () {
   );
 
   return DesktopProductEvents.of({
-    record: (event) => Effect.sync(() => recordUnsafe(event)),
+    record: Effect.fn("DesktopProductEvents.record")(function* (event) {
+      return yield* Effect.sync(() => recordUnsafe(event));
+    }),
     encoded: Stream.fromQueue(queue).pipe(
       Stream.map((event) =>
         textEncoder.encode(
@@ -109,7 +112,12 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(DesktopProductEvents, make);
 
-const disabled = DesktopProductEvents.of({ record: () => Effect.void, encoded: Stream.empty });
+const disabled = DesktopProductEvents.of({
+  record: Effect.fn("DesktopProductEvents.record")(function* () {
+    return yield* Effect.void;
+  }),
+  encoded: Stream.empty,
+});
 
 /**
  * The service where the app provides it. Tests and tools that build a backend

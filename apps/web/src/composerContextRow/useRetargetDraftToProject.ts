@@ -2,7 +2,6 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { ServerSettings } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import { useCallback } from "react";
 
 import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
 import { useClientSettings } from "../hooks/useSettings";
@@ -10,7 +9,7 @@ import { hasExplicitComposerModelSelection } from "../lib/chatThreadActions";
 import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
-} from "../logicalProject";
+} from "@t3tools/client-runtime/state/project-grouping";
 import { useEnvironments } from "../state/environments";
 
 /**
@@ -48,14 +47,11 @@ export function useRetargetDraftToProject() {
   const { environments } = useEnvironments();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
 
-  return useCallback(
-    (draftId: DraftId, project: EnvironmentProject) =>
-      retargetDraftToProject(draftId, project, {
-        serverSettings: environments.find(
-          (environment) => environment.environmentId === project.environmentId,
-        )?.serverConfig?.settings,
-        projectGroupingSettings,
-      }),
-    [environments, projectGroupingSettings],
-  );
+  return (draftId: DraftId, project: EnvironmentProject) =>
+    retargetDraftToProject(draftId, project, {
+      serverSettings: environments.find(
+        (environment) => environment.environmentId === project.environmentId,
+      )?.serverConfig?.settings,
+      projectGroupingSettings,
+    });
 }

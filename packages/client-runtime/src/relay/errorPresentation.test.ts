@@ -3,8 +3,8 @@ import {
   RelayEnvironmentLinkProofExpiredError,
   RelayEnvironmentLinkProofInvalidError,
 } from "@t3tools/contracts/relay";
-import { describe, expect, it } from "@effect/vitest";
 import * as Base64Url from "effect/encoding/Base64Url";
+import { describe, expect, it } from "@effect/vitest";
 
 import {
   DPOP_CLOCK_HINT,
@@ -49,18 +49,6 @@ describe("relayProtectedErrorMessage", () => {
 
     expect(relayProtectedErrorMessage(error)).toBe(
       `UpComputer Connect didn't accept this device's sign-in. ${DPOP_RETRY_HINT}`,
-    );
-  });
-
-  it("preserves the existing message for other authentication failures", () => {
-    const error = new RelayAuthInvalidError({
-      code: "auth_invalid",
-      reason: "invalid_bearer",
-      traceId: "trace-1",
-    });
-
-    expect(relayProtectedErrorMessage(error)).toBe(
-      "Your UpComputer Connect sign-in is no longer valid. Sign in again, then reconnect.",
     );
   });
 });

@@ -26,6 +26,7 @@ import {
   ThreadId,
   type ModelSelection,
   type RuntimeMode,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import {
   BOT_MEMORY_CONTEXT_BUDGET,
@@ -46,7 +47,10 @@ import {
   useThreadShell,
   waitForThreadShell,
 } from "../../../../apps/web/src/state/entities.ts";
-import { usePrimaryEnvironmentId } from "../../../../apps/web/src/state/environments.ts";
+import {
+  useEnvironmentProviders,
+  usePrimaryEnvironmentId,
+} from "../../../../apps/web/src/state/environments.ts";
 import { usePrimarySettings } from "../../../../apps/web/src/hooks/useSettings.ts";
 import {
   deriveProviderInstanceEntries,
@@ -123,6 +127,8 @@ import {
 } from "./botData.tsx";
 import { botStatus, type BotCharacterState } from "./botStatus.ts";
 import { BotPortraitPicker } from "./portraits/BotPortraitPicker.tsx";
+
+const NO_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [];
 
 const readSearchString = (search: Record<string, unknown>, key: string) => {
   const value = search[key];
@@ -246,12 +252,13 @@ function BotForm({
   const [adoptRefusal, setAdoptRefusal] = useState<string | null>(null);
   const [removal, setRemoval] = useState<number | null>(null);
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
+  const providersByEnvironment = useEnvironmentProviders();
   const configs = useServerConfigs();
   const settings = usePrimarySettings();
-  const serverProviders = configs.get(environmentId)?.providers ?? [];
+  const serverProviders = providersByEnvironment.get(environmentId) ?? NO_SERVER_PROVIDERS;
   const providers = useMemo(
-    () => deriveProviderInstanceEntries(configs.get(environmentId)?.providers ?? []),
-    [configs, environmentId],
+    () => deriveProviderInstanceEntries(serverProviders),
+    [serverProviders],
   );
   const fallbackInstance = providers.find((entry) => entry.enabled)?.instanceId;
   const fallbackModel = fallbackInstance
@@ -540,8 +547,7 @@ function BotForm({
                       models={selectedProvider.models}
                       model={selection.model}
                       modelOptions={selection.options}
-                      prompt={instructions}
-                      onPromptChange={setInstructions}
+                      onPromptEdit={setInstructions}
                       onModelOptionsChange={(options) =>
                         setSelection({
                           instanceId: selection.instanceId,

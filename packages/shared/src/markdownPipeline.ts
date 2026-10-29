@@ -1,6 +1,8 @@
-import type { Processor } from "unified";
-import { isWindowsAbsolutePath } from "./path.ts";
-import type { PluggableList } from "unified";
+import type { Paragraph, PhrasingContent, Root, RootContent } from "mdast";
+import { remarkKeepWindowsPaths } from "./markdownWindowsPaths.ts";
+import { type PluggableList, unified } from "unified";
+import remarkParse from "remark-parse";
+import remarkRehype from "remark-rehype";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
@@ -11,7 +13,7 @@ import {
   CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES,
   remarkCodexDirectives,
 } from "./codexMarkdownDirectives.ts";
-import { isWindowsDrivePathHref } from "./markdownLinks.ts";
+import { isWindowsDrivePathHref, normalizeMarkdownLinkDestination } from "./markdownLinks.ts";
 import { THREAD_LINK_PROTOCOL } from "./threadLinks.ts";
 
 type MarkdownImageHastNode = {
@@ -66,8 +68,7 @@ function rehypePreserveBareAnchorPlaceholders() {
     let rawTextTag: string | undefined;
     const visit = (node: MarkdownImageHastNode) => {
       if (node.type === "raw" && typeof node.value === "string") {
-        // Raw blocks can contain several tags. Consume whole tags, quoted attributes,
-        // and comments so text resembling a closing anchor cannot pair a placeholder.
+        // Scan whole tags, attributes, and comments so embedded closing-anchor text cannot match a placeholder.
         const tags = /<!--[\s\S]*?(?:-->|$)|<\/?[A-Za-z](?:[^"'<>]|"[^"]*"|'[^']*')*>/g;
         let offset = 0;
         while (rawTextTag !== "plaintext") {
@@ -132,7 +133,12 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
   attributes: {
     ...defaultSchema.attributes,
     "*": (defaultSchema.attributes?.["*"] ?? []).filter((attribute) => attribute !== "title"),
-    code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta", "dataInlineCode"],
+    // Fence languages plus the two math classes the web chat's math plugin emits.
+    code: [
+      ["className", /^language-./, "math-inline", "math-display"],
+      "dataCodeMeta",
+      "dataInlineCode",
+    ],
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
     div: [...(defaultSchema.attributes?.div ?? []), ...CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES],
     a: [...(defaultSchema.attributes?.a ?? []), "dataPullRequestAutolink"],
@@ -158,20 +164,22 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
 
 export const CHAT_MARKDOWN_REMARK_PLUGINS: PluggableList = [
   remarkGfm,
-  remarkKeepWindowsPathDestinations,
+  remarkKeepWindowsPaths,
   remarkGithubAlerts,
   remarkNormalizeListItemIndentation,
   remarkCodexDirectives,
+  remarkBreakAroundImageLines,
   remarkPreserveCodeMeta,
   remarkNormalizeLinksAndTagInlineCode,
 ];
 
 export const CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS: PluggableList = [
   remarkGfm,
-  remarkKeepWindowsPathDestinations,
+  remarkKeepWindowsPaths,
   remarkGithubAlerts,
   remarkNormalizeListItemIndentation,
   remarkCodexDirectives,
+  remarkBreakAroundImageLines,
   remarkBreaks,
   remarkPreserveCodeMeta,
   remarkNormalizeLinksAndTagInlineCode,
@@ -183,6 +191,61 @@ export const CHAT_MARKDOWN_REHYPE_PLUGINS: PluggableList = [
   rehypePreserveImageSourceMeta,
   [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA],
 ];
+
+const isImageNode = (node: PhrasingContent | undefined): boolean =>
+  node?.type === "image" ||
+  node?.type === "imageReference" ||
+  ((node?.type === "link" || node?.type === "linkReference") &&
+    node.children.length === 1 &&
+    isImageNode(node.children[0]));
+const endsLine = (node: PhrasingContent | undefined) =>
+  node === undefined ||
+  node.type === "break" ||
+  (node.type === "text" && /\n[ \t]*$/.test(node.value));
+const startsLine = (node: PhrasingContent | undefined) =>
+  node === undefined ||
+  node.type === "break" ||
+  (node.type === "text" && /^[ \t]*\n/.test(node.value));
+
+function breakLinesAroundImages(paragraph: Paragraph) {
+  const children = paragraph.children;
+  const ownsLine = (index: number) =>
+    isImageNode(children[index]) &&
+    endsLine(children[index - 1]) &&
+    startsLine(children[index + 1]);
+  paragraph.children = children.flatMap((child, index): PhrasingContent[] => {
+    if (child.type !== "text") return [child];
+    const afterImage = ownsLine(index - 1);
+    const beforeImage = ownsLine(index + 1);
+    if (!afterImage && !beforeImage) return [child];
+    const parts: PhrasingContent[] = [];
+    let value = child.value;
+    if (afterImage) {
+      value = value.replace(/^[ \t]*\n/, "");
+      parts.push({ type: "break" });
+    }
+    const breakAfter = beforeImage && /\n[ \t]*$/.test(value);
+    if (breakAfter) value = value.replace(/[ \t]*\n[ \t]*$/, "");
+    if (value) parts.push({ type: "text", value });
+    if (breakAfter) parts.push({ type: "break" });
+    return parts;
+  });
+}
+
+/**
+ * Agents label screenshots with a line like `**Palette**` right above the image. CommonMark
+ * joins those lines into one paragraph, which puts the image inline beside its label. An
+ * image alone on its source line keeps that line; prose and inline badges still wrap.
+ */
+function remarkBreakAroundImageLines() {
+  return (tree: Root) => {
+    const visit = (node: Root | RootContent) => {
+      if (node.type === "paragraph") breakLinesAroundImages(node);
+      else if ("children" in node) node.children.forEach(visit);
+    };
+    visit(tree);
+  };
+}
 
 type MarkdownAstNode = {
   type?: string;
@@ -240,36 +303,41 @@ function remarkNormalizeLinksAndTagInlineCode() {
   };
 }
 
-interface DestinationCompileContext {
-  readonly stack: ReadonlyArray<{ readonly type: string; url?: string }>;
-  resume(): string;
-  sliceSerialize(token: unknown): string;
+export function shouldPreserveAssistantLineBreaks(text: string): boolean {
+  return /^★ Insight(?:\s|─)/mu.test(text);
 }
 
-function keepWindowsPathDestination(this: DestinationCompileContext, token: unknown) {
-  const decoded = this.resume();
-  const authored = this.sliceSerialize(token);
-  const node = this.stack.at(-1);
-  // Character references still need decoding, so those destinations keep the parsed URL.
-  if (node)
-    node.url = isWindowsAbsolutePath(authored) && !authored.includes("&") ? authored : decoded;
+const imageSourceProcessor = unified()
+  .use(remarkParse)
+  .use(CHAT_MARKDOWN_REMARK_PLUGINS)
+  .use(remarkRehype, { allowDangerousHtml: true })
+  .use(CHAT_MARKDOWN_REHYPE_PLUGINS);
+
+interface ImageSourceNode {
+  readonly type: string;
+  readonly tagName?: string;
+  readonly properties?: { readonly src?: unknown; readonly dataLocalSrc?: unknown };
+  readonly children?: ReadonlyArray<ImageSourceNode>;
 }
 
 /**
- * CommonMark reads the `\.` in `C:\me\.t3\shot.png` as an escape, even in a link
- * destination. Every backslash in a Windows path is a separator, so link, image, and
- * definition destinations that are Windows paths keep the text as written.
+ * The sources of the images chat markdown shows, read as ChatMarkdown's `img` renderer reads
+ * them. Code, comments, and plain links show no image, so they add none.
  */
-function remarkKeepWindowsPathDestinations(this: Processor) {
-  const data = this.data();
-  (data.fromMarkdownExtensions ??= []).push({
-    exit: {
-      resourceDestinationString: keepWindowsPathDestination,
-      definitionDestinationString: keepWindowsPathDestination,
-    },
-  });
-}
-
-export function shouldPreserveAssistantLineBreaks(text: string): boolean {
-  return /^★ Insight(?:\s|─)/mu.test(text);
+export function chatMarkdownImageSources(markdown: string): Array<string> {
+  const sources: Array<string> = [];
+  const visit = (node: ImageSourceNode) => {
+    if (node.type === "element" && node.tagName === "img") {
+      const { src, dataLocalSrc } = node.properties ?? {};
+      // The sanitizer drops a Windows drive path from `src`; the renderer reads it from here.
+      if (typeof dataLocalSrc === "string") {
+        sources.push(normalizeMarkdownLinkDestination(dataLocalSrc).replaceAll("\\", "/"));
+      } else if (typeof src === "string") {
+        sources.push(normalizeMarkdownLinkDestination(src));
+      }
+    }
+    node.children?.forEach(visit);
+  };
+  visit(imageSourceProcessor.runSync(imageSourceProcessor.parse(markdown)) as ImageSourceNode);
+  return sources;
 }

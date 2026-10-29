@@ -334,8 +334,10 @@ const make = Effect.gen(function* () {
   const providerRegistry = yield* ProviderRegistry;
   const settingsService = yield* ServerSettingsService;
 
-  const resolve: TaskToolContextResolverShape["resolve"] = ({ args, invocationContext }) =>
-    Effect.gen(function* () {
+  const resolve: TaskToolContextResolverShape["resolve"] = Effect.fn(
+    "TaskToolContextResolver.resolve",
+  )(
+    function* ({ args, invocationContext }) {
       const projects = yield* projectStore.listShells();
       const providers = yield* providerRegistry.getProviders;
       const settings = yield* settingsService.getSettings;
@@ -390,31 +392,34 @@ const make = Effect.gen(function* () {
         warnings,
         errors,
       };
-    }).pipe(
-      Effect.catch((cause) =>
-        Effect.succeed({
-          invocation: {
-            source: invocationContext.source,
-            threadId: invocationContext.threadId ?? null,
-            turnId: invocationContext.turnId ?? null,
-            interactionMode: invocationContext.interactionMode ?? null,
-            runtimeMode: invocationContext.runtimeMode ?? null,
-            mutationPolicy: invocationContext.mutationPolicy ?? "deny",
-          },
-          projects: [],
-          providers: [],
-          providersNotSetUp: [],
-          resolvedProject: null,
-          resolvedModel: null,
-          warnings: [],
-          errors: [
-            cause instanceof Error && cause.message.trim()
-              ? cause.message
-              : "Task context could not be loaded.",
-          ],
-        }),
+    },
+    (effect, { invocationContext }) =>
+      effect.pipe(
+        Effect.catch((cause) =>
+          Effect.succeed({
+            invocation: {
+              source: invocationContext.source,
+              threadId: invocationContext.threadId ?? null,
+              turnId: invocationContext.turnId ?? null,
+              interactionMode: invocationContext.interactionMode ?? null,
+              runtimeMode: invocationContext.runtimeMode ?? null,
+              mutationPolicy: invocationContext.mutationPolicy ?? "deny",
+            },
+            projects: [],
+            providers: [],
+            providersNotSetUp: [],
+            resolvedProject: null,
+            resolvedModel: null,
+            warnings: [],
+            errors: [
+              cause instanceof Error && cause.message.trim()
+                ? cause.message
+                : "Task context could not be loaded.",
+            ],
+          }),
+        ),
       ),
-    );
+  );
   return { resolve } satisfies TaskToolContextResolverShape;
 });
 

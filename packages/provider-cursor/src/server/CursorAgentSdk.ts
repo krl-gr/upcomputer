@@ -36,7 +36,31 @@ export class CursorAgentSdkRunnerError extends Schema.TaggedError<CursorAgentSdk
   }
 }
 
-const isCursorAgentSdkRunnerError = Schema.is(CursorAgentSdkRunnerError);
+export function cursorSdkFailureMessage(error: CursorAgentSdkRunnerError): string {
+  const reason = sdkErrorReason(error.cause);
+  return reason === undefined
+    ? error.message
+    : `Cursor Agent SDK ${error.method} failed: ${reason}`;
+}
+
+const GENERIC_SDK_ERROR_CODES = new Set(["", "error", "unknown"]);
+
+function sdkErrorReason(cause: unknown): string | undefined {
+  if (!(cause instanceof Error)) return undefined;
+  const message = cause.message.trim();
+  if (message.length === 0) return undefined;
+  const code = Reflect.get(cause, "code");
+  const status = Reflect.get(cause, "status");
+  const details = [
+    ...(typeof code === "string" && !GENERIC_SDK_ERROR_CODES.has(code) && !message.includes(code)
+      ? [code]
+      : []),
+    ...(typeof status === "number" ? [`HTTP ${status}`] : []),
+  ];
+  return details.length === 0 ? message : `${message} (${details.join(", ")})`;
+}
+
+export const isCursorAgentSdkRunnerError = Schema.is(CursorAgentSdkRunnerError);
 
 export interface CursorAgentSdkOpenInput {
   readonly operation: "create" | "resume";
@@ -303,13 +327,7 @@ export const makeCursorAgentSdkRunner = Effect.fn("makeCursorAgentSdkRunner")(fu
 ) {
   const { Agent, createAgentPlatform } = yield* CursorSdk.CursorSdk;
 
-  /**
-   * The Cursor SDK decides once per process whether local sandboxing works, and
-   * caches the answer the first time any run starts. Only sandboxed runs point it
-   * at its `cursorsandbox` helper first, so after an unsandboxed (Full access)
-   * run it caches "unsupported" and rejects every later sandboxed run until the
-   * server restarts.
-   */
+  // Prime with cursorsandbox before any Full access run; the SDK caches sandbox support per process.
   const sandboxSupportPrimeStarted = yield* Ref.make(false);
   const sandboxSupportPrimed = yield* Deferred.make<void>();
   const primeCursorSandboxSupport = Effect.fn("CursorAgentSdkRunner.primeSandboxSupport")(

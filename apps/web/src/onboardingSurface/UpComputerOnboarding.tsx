@@ -11,15 +11,7 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import { ArrowLeftIcon, CheckIcon, LoaderIcon, XIcon } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
 import { CommandBlock } from "../components/CommandBlock";
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
@@ -39,7 +31,7 @@ import { buildProviderInstanceUpdatePatch } from "../components/settings/Setting
 import { Skeleton } from "../components/ui/skeleton";
 import { toastManager } from "../components/ui/toast";
 import { useRecordClientEvent } from "../hooks/useRecordClientEvent";
-import { useCompleteOnboarding } from "../onboarding/firstRun";
+import { completeOnboarding } from "../onboarding/firstRun";
 import {
   getOnboardingProviderState,
   ONBOARDING_RECHECK_STREAM_WAIT_MS,
@@ -161,7 +153,6 @@ export function UpComputerOnboarding({
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, "Agent setup settings");
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   const recordClientEvent = useRecordClientEvent();
-  const completeOnboarding = useCompleteOnboarding();
   const [codexAutoStart, setCodexAutoStart] = useState(false);
   const [terminalSession, setTerminalSession] = useState<AgentTerminalSession | null>(null);
   const [installFailed, setInstallFailed] = useState<ReadonlySet<UpComputerOnboardingDriver>>(
@@ -201,7 +192,7 @@ export function UpComputerOnboarding({
     });
   }, [environmentId, recordClientEvent]);
 
-  const byDriver = useMemo(() => selectOnboardingProvidersByDriver(providers), [providers]);
+  const byDriver = selectOnboardingProvidersByDriver(providers);
   const codexProvider = byDriver.get("codex");
   const codexInstanceId =
     codexProvider?.instanceId ?? defaultInstanceIdForDriver(ProviderDriverKind.make("codex"));
@@ -336,7 +327,7 @@ export function UpComputerOnboarding({
   };
 
   const finishingRef = useRef<Promise<void> | null>(null);
-  const finish = useCallback(() => {
+  const finish = () => {
     if (finishingRef.current !== null) return;
     const completion = completeOnboarding()
       .then(async () => {
@@ -359,7 +350,7 @@ export function UpComputerOnboarding({
         if (finishingRef.current === completion) finishingRef.current = null;
       });
     finishingRef.current = completion;
-  }, [completeOnboarding, environmentId, onDone, recordClientEvent]);
+  };
 
   const completeAgents = (outcome: "continued" | "skipped") => {
     recordClientEvent(environmentId, {

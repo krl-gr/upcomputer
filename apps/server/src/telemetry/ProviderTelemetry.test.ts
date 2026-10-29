@@ -331,6 +331,7 @@ it.effect("records each provider's state once, then again only when it changes",
                     ? Queue.offer(recorded, properties).pipe(Effect.asVoid)
                     : Effect.void,
                 recordMilestone: () => Effect.void,
+                recordOwners: () => Effect.void,
                 flush: Effect.void,
                 enabled: true,
                 sessionId: undefined,

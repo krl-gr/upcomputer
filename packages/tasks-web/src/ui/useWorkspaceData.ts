@@ -31,7 +31,7 @@ import { usePrimarySettings } from "../../../../apps/web/src/hooks/useSettings.t
 import {
   getProjectOrderKey,
   selectProjectGroupingSettings,
-} from "../../../../apps/web/src/logicalProject.ts";
+} from "@t3tools/client-runtime/state/project-grouping";
 import { buildSidebarProjectSnapshots } from "../../../../apps/web/src/sidebarProjectGrouping.ts";
 import { orderItemsByPreferredIds } from "../../../../apps/web/src/components/Sidebar.logic.ts";
 

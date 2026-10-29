@@ -1,7 +1,4 @@
-/**
- * Do not import t3code modules from the string body. The Pi process resolves
- * `@earendil-works/pi-coding-agent` and `typebox` from the user's pi install.
- */
+// No T3 imports inside the string; resolve Pi and typebox from the user's Pi install.
 import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
 
 export const PI_T3_MCP_EXTENSION_FILENAME = "pi-t3-mcp-extension.ts";
@@ -19,10 +16,7 @@ export const T3_PI_USER_INSTRUCTIONS_PATH_ENV = "T3_PI_USER_INSTRUCTIONS_PATH";
 /** Set to "omit" when the session's agent should not get the orchestration block. */
 export const T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV = "T3_PI_ORCHESTRATION_INSTRUCTIONS";
 
-/**
- * Pi tools whose confirmations the bridge raises as file-change approvals.
- * Auto-accept edits skips them; the adapter keys the approval kind off them.
- */
+// These tools trigger file-change approvals, bypassed by Auto-accept edits.
 export const PI_FILE_CHANGE_TOOLS = ["edit", "write"] as const;
 
 export const PI_T3_MCP_EXTENSION_SOURCE = `\
@@ -101,7 +95,13 @@ function parseSseOrJson(body: string, contentType: string): JsonRpcResponse {
 function jsonSchemaToTypebox(schema: Record<string, unknown> | undefined) {
   const unsafe = (Type as { Unsafe?: (value: unknown) => unknown }).Unsafe;
   if (typeof unsafe === "function" && schema !== undefined) {
-    return unsafe(schema);
+    // Zero-argument MCP tools may omit "properties", which some OpenAI-compatible
+    // servers reject. Declare it, as Pi does for its own MCP tools.
+    return unsafe({
+      ...schema,
+      type: schema.type ?? "object",
+      ...(schema.properties === undefined ? { properties: {} } : {}),
+    });
   }
   return Type.Object({}, { additionalProperties: true });
 }
@@ -368,10 +368,17 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event, ctx) => {
     reconcileOnPrompt?.(ctx);
     const instructions = await userInstructions();
-    const orchestration =
-      endpoint === undefined || token === undefined || env(ORCHESTRATION_INSTRUCTIONS_ENV) === "omit"
-        ? ""
-        : "\\n\\n" + ORCHESTRATION_INSTRUCTIONS;
+    const wantsOrchestration =
+      endpoint !== undefined && token !== undefined && env(ORCHESTRATION_INSTRUCTIONS_ENV) !== "omit";
+    const sections = event.systemPromptOptions?.sections;
+    if (sections && typeof sections === "object" && event.systemPromptOptions?.forceSystemPrompt === undefined) {
+      // Keep guidance in Pi's prompt sections; a full prompt override bypasses
+      // Pi's later section rendering, so that case appends to the prompt below.
+      if (wantsOrchestration) sections.t3_code_orchestration = ORCHESTRATION_INSTRUCTIONS;
+      if (instructions !== "") sections.t3_code_user_instructions = instructions;
+      return undefined;
+    }
+    const orchestration = wantsOrchestration ? "\\n\\n" + ORCHESTRATION_INSTRUCTIONS : "";
     return {
       systemPrompt:
         event.systemPrompt + orchestration + (instructions === "" ? "" : "\\n\\n" + instructions),

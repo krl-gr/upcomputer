@@ -1,7 +1,7 @@
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { type Ref, memo, useCallback, useImperativeHandle, useMemo, useRef } from "react";
+import { type Ref, memo, useImperativeHandle, useRef } from "react";
 
 import type { BranchToolbarHandle } from "../components/BranchToolbar";
 import {
@@ -79,10 +79,7 @@ export const UpComputerComposerContextRow = memo(function UpComputerComposerCont
   onAutoEnvironment,
 }: UpComputerComposerContextRowProps) {
   const branchSelectorRef = useRef<BranchToolbarBranchSelectorHandle>(null);
-  const threadRef = useMemo(
-    () => scopeThreadRef(environmentId, threadId),
-    [environmentId, threadId],
-  );
+  const threadRef = scopeThreadRef(environmentId, threadId);
   const draftThread = useComposerDraftStore((store) =>
     draftId ? store.getDraftSession(draftId) : store.getDraftThreadByRef(threadRef),
   );
@@ -104,25 +101,19 @@ export const UpComputerComposerContextRow = memo(function UpComputerComposerCont
   const envModeLocked = envLocked || (serverThread !== null && activeWorktreePath !== null);
   const canUsePreviousWorktree =
     draftThread !== null && serverThread === null && !envModeLocked && !forceNewWorktree;
-  const projectRefsForWorktreeLookup = useMemo(
-    () => (canUsePreviousWorktree && activeProjectRef ? [activeProjectRef] : []),
-    [canUsePreviousWorktree, activeProjectRef],
-  );
+  const projectRefsForWorktreeLookup =
+    canUsePreviousWorktree && activeProjectRef ? [activeProjectRef] : [];
   const projectThreads = useThreadShellsForProjectRefs(projectRefsForWorktreeLookup);
-  const previousWorktreeSeed = useMemo(
-    () =>
-      canUsePreviousWorktree
-        ? resolvePreviousWorktreeSeed({
-            threads: projectThreads,
-            currentWorktreePath: activeWorktreePath,
-          })
-        : null,
-    [activeWorktreePath, canUsePreviousWorktree, projectThreads],
-  );
+  const previousWorktreeSeed = canUsePreviousWorktree
+    ? resolvePreviousWorktreeSeed({
+        threads: projectThreads,
+        currentWorktreePath: activeWorktreePath,
+      })
+    : null;
   const previousWorktreeLabel = previousWorktreeSeed
     ? resolvePreviousWorktreeLabel(previousWorktreeSeed)
     : null;
-  const onUsePreviousWorktree = useCallback(() => {
+  const onUsePreviousWorktree = () => {
     if (!previousWorktreeSeed || !activeProjectRef) return;
     setDraftThreadContext(draftId ?? threadRef, {
       branch: previousWorktreeSeed.branch,
@@ -130,7 +121,7 @@ export const UpComputerComposerContextRow = memo(function UpComputerComposerCont
       envMode: "worktree",
       projectRef: activeProjectRef,
     });
-  }, [activeProjectRef, draftId, previousWorktreeSeed, setDraftThreadContext, threadRef]);
+  };
 
   const isScratch =
     activeProject !== null &&

@@ -1,14 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
-import { Atom } from "effect/reactivity";
-import { useMemo } from "react";
 
 import { APP_VERSION } from "~/branding";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isElectron } from "~/env";
 import { useEnvironments } from "~/state/environments";
-import { serverEnvironment } from "~/state/server";
-import { environmentSession } from "~/state/session";
+import { environmentIdsKey } from "~/state/environmentAtomList";
+import { environmentUpdateStatesAtom } from "~/state/server";
+import { environmentSessionStatesAtom } from "~/state/session";
 import { getProviderUpdateRunOutcome } from "../ProviderUpdateLaunchNotification.logic";
 import { useProviderUpdates } from "../ProviderUpdatesAction";
 import { canUpdateServer, type ServerUpdateOutcome, useServerUpdate } from "../ServerUpdateAction";
@@ -39,27 +38,21 @@ export type ReportLocalUpdateError = (title: string, description: string) => voi
 export function useUpdateEverything(localUpdateVersion: string | null) {
   const targetVersion = localUpdateVersion ?? APP_VERSION;
   const { environments } = useEnvironments();
-  const machinesAtom = useMemo(
-    () =>
-      Atom.make((get) =>
-        environments.map((environment) => ({
-          environmentId: environment.environmentId,
-          label: environment.label,
-          serverConfig: environment.serverConfig,
-          connected: environment.connection.phase === "connected",
-          hostedByThisApp:
-            isElectron &&
-            (environment.entry.target._tag === "PrimaryConnectionTarget" ||
-              isDesktopLocalConnectionTarget(environment.entry.target)),
-          canMaintain: canUpdateServer(
-            get(environmentSession.sessionStateAtom(environment.environmentId)),
-          ),
-          updateState: get(serverEnvironment.updateStateAtom(environment.environmentId)),
-        })),
-      ),
-    [environments],
-  );
-  const machines = useAtomValue(machinesAtom);
+  const environmentIds = environmentIdsKey(environments.map(({ environmentId }) => environmentId));
+  const sessionStates = useAtomValue(environmentSessionStatesAtom(environmentIds));
+  const updateStates = useAtomValue(environmentUpdateStatesAtom(environmentIds));
+  const machines = environments.map((environment, index) => ({
+    environmentId: environment.environmentId,
+    label: environment.label,
+    serverConfig: environment.serverConfig,
+    connected: environment.connection.phase === "connected",
+    hostedByThisApp:
+      isElectron &&
+      (environment.entry.target._tag === "PrimaryConnectionTarget" ||
+        isDesktopLocalConnectionTarget(environment.entry.target)),
+    canMaintain: canUpdateServer(sessionStates[index]!),
+    updateState: updateStates[index]!,
+  }));
   const { targets: behindServers, skipped: unreachable } = collectServerUpdateTargets(
     machines,
     targetVersion,
@@ -81,9 +74,11 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
   const providers = useProviderUpdates();
   const updateServer = useServerUpdate();
 
-  const { summary, lines } = describeUpdateEverything({
+  const view = describeUpdateEverything({
     localVersion: localUpdateVersion,
+    localMachines: machines.filter((machine) => machine.hostedByThisApp),
     servers,
+    skipped,
     providerMachines: providers.machines.map((machine) => ({
       environmentId: machine.environmentId,
       label: machine.label,
@@ -95,10 +90,8 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
 
   return {
     hasUpdates: servers.length > 0 || providers.machines.length > 0,
-    summary,
-    lines,
+    ...view,
     restarts,
-    skipped,
     run: async ({
       downloadLocal,
       installLocal,

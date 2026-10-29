@@ -40,10 +40,11 @@ export const AllChatsInstructionsLive = Layer.effect(
         Effect.map((value) => value.customInstructions),
         Effect.mapError(settingsError),
       ),
-      set: (text) =>
-        settings
+      set: Effect.fn("AllChatsInstructions.set")(function* (text) {
+        yield* settings
           .updateSettings({ customInstructions: text })
-          .pipe(Effect.asVoid, Effect.mapError(settingsError)),
+          .pipe(Effect.mapError(settingsError));
+      }),
     };
   }),
 );

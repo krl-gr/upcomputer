@@ -6,18 +6,22 @@ name: Deploy UpComputer Connect relay
 # repository or organization variable: a job-level `if` cannot read variables
 # scoped to the production environment. While both are unset, the job is
 # skipped and no runner is allocated.
+#
+# A push that brings an upstream sync merge (a commit whose subject starts with
+# "chore(sync): merge upstream", see docs/operations/upstream-sync.md) does not
+# deploy: upstream's relay changes go to production only by a manual run of
+# this workflow on main, after their config is in place.
 
 on:
   push:
     branches:
       - main
   # Redeploys main after a variable or secret change. Alchemy redeploys the
-  # Worker when a value it reads changes, so force is rarely needed, and it
-  # replaces the Postgres runtime role (alchemy-run/alchemy#1832).
+  # Worker when a value it reads changes, so force is rarely needed.
   workflow_dispatch:
     inputs:
       force:
-        description: Redeploy every resource, including ones with no detected changes. Replaces the Postgres runtime role.
+        description: Redeploy every resource, including ones with no detected changes.
         type: boolean
         default: false
 
@@ -31,10 +35,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  sync_gate:
+    name: Skip upstream sync merges
+    if: ${{ github.repository == 'krl-gr/upcomputer' && github.ref == 'refs/heads/main' && (vars.RELAY_DOMAIN != '' || vars.RELAY_API_ZONE_NAME != '') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      deploy: ${{ steps.gate.outputs.deploy }}
+    steps:
+      - name: Checkout history
+        if: github.event_name == 'push'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: .github
+
+      - name: Look for an upstream sync merge in the push
+        id: gate
+        env:
+          BEFORE: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" != "push" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          range="$GITHUB_SHA"
+          if git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then range="$BEFORE..$GITHUB_SHA"; fi
+          if git log --format=%s "$range" | grep -q '^chore(sync): merge upstream'; then
+            echo "::notice::This push brings an upstream sync merge; the relay was not deployed. Run this workflow manually on main to deploy it."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
   deploy_relay:
     name: Deploy production relay
+    needs: sync_gate
     # A manual run from another branch would deploy that branch to production.
-    if: ${{ github.repository == 'krl-gr/upcomputer' && github.ref == 'refs/heads/main' && (vars.RELAY_DOMAIN != '' || vars.RELAY_API_ZONE_NAME != '') }}
+    if: ${{ github.repository == 'krl-gr/upcomputer' && github.ref == 'refs/heads/main' && (vars.RELAY_DOMAIN != '' || vars.RELAY_API_ZONE_NAME != '') && needs.sync_gate.outputs.deploy == 'true' }}
     # GitHub-hosted: Blacksmith runners are not set up for the Up.computer repository.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -51,6 +91,10 @@ jobs:
       RELAY_LEGACY_TUNNEL_CLEANUP_MODE: ${{ vars.RELAY_LEGACY_TUNNEL_CLEANUP_MODE }}
       CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
       CLERK_JWT_AUDIENCE: ${{ vars.CLERK_JWT_AUDIENCE }}
+      # Axiom monitors and the health dashboard: created only while the paging
+      # notifier is set; warnings use their own notifier, or only show in Axiom.
+      RELAY_ALERT_NOTIFIER_ID: ${{ vars.RELAY_ALERT_NOTIFIER_ID }}
+      RELAY_WARNING_NOTIFIER_ID: ${{ vars.RELAY_WARNING_NOTIFIER_ID }}
       # APNs stays off until the variable is set to true. Only then does the
       # deploy read the APNS_* variables and the APNS_PRIVATE_KEY secret.
       APNS_ENABLED: ${{ vars.APNS_ENABLED || 'false' }}
@@ -100,6 +144,7 @@ jobs:
           APNS_PRIVATE_KEY: ${{ secrets.APNS_PRIVATE_KEY }}
           FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
           WEB_PUSH_VAPID_PRIVATE_KEY: ${{ secrets.WEB_PUSH_VAPID_PRIVATE_KEY }}
+          T3CHAT_LINK_SECRET: ${{ secrets.T3CHAT_LINK_SECRET }}
 
       - name: Publish relay deploy commit status
         uses: actions/github-script@v8

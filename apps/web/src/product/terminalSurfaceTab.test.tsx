@@ -60,6 +60,7 @@ vi.mock("~/terminal/ghostty/surface", () => ({
           resetAndWrite: (data: string) => fakes.surfaceOutput.push(data),
           write: (data: string) => fakes.surfaceOutput.push(data),
           hasSelection: () => false,
+          input: document.createElement("textarea"),
         } as Record<string, unknown>,
         {
           get: (target, key) =>
@@ -74,11 +75,12 @@ vi.mock("~/terminal/ghostty/surface", () => ({
 vi.mock("../state/terminalSessions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../state/terminalSessions")>();
   const { EMPTY_TERMINAL_SESSION_STATE } = await import("@t3tools/client-runtime/state/terminal");
+  const { Atom } = await import("effect/reactivity");
   return {
     ...actual,
-    useAttachedTerminalSession: (input: { terminal: unknown }) => {
-      fakes.attached.push(input.terminal);
-      return {
+    attachedTerminalSessionAtom: (_environmentId: unknown, terminal: unknown) => {
+      fakes.attached.push(terminal);
+      return Atom.make({
         ...EMPTY_TERMINAL_SESSION_STATE,
         status: "running",
         version: 1,
@@ -89,7 +91,7 @@ vi.mock("../state/terminalSessions", async (importOriginal) => {
           resetVersion: 0,
           nextOffset: 9,
         },
-      };
+      });
     },
   };
 });
@@ -173,7 +175,6 @@ describe("the right-panel terminal tab in the UpComputer product", () => {
         activeTerminalId="term-1"
         terminalGroups={[{ id: "terminal:term-1", terminalIds: ["term-1"] }]}
         activeTerminalGroupId="terminal:term-1"
-        focusRequestId={0}
         onSplitTerminal={() => undefined}
         onSplitTerminalVertical={() => undefined}
         onNewTerminal={() => undefined}

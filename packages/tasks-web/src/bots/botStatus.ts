@@ -2,8 +2,8 @@ import type { BotCharacterState } from "../../../../apps/web/src/components/bot-
 import {
   hasUnseenCompletion,
   resolveSidebarThreadStatus,
-  resolveSidebarV2TopStatus,
 } from "../../../../apps/web/src/components/Sidebar.logic.ts";
+import { resolveSidebarV2TopStatus } from "../../../../apps/web/src/sidebarThreadRow/topStatus.ts";
 import {
   THREAD_STATUS_LABELS,
   type ThreadStatusLabelEntry,
@@ -31,6 +31,7 @@ const CHARACTER_STATE: { readonly [Kind in ThreadStatusLabelKind]: BotCharacterS
   waiting: "waiting",
   approval: "attention",
   input: "attention",
+  request: "attention",
   done: "done",
   failed: "failed",
   limited: "limited",
@@ -41,6 +42,7 @@ const CHARACTER_STATE: { readonly [Kind in ThreadStatusLabelKind]: BotCharacterS
 const PRIORITY: ReadonlyArray<ThreadStatusLabelKind> = [
   "approval",
   "input",
+  "request",
   "working",
   "waiting",
   "failed",

@@ -2,7 +2,11 @@
 import * as NodeCrypto from "node:crypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { EnvironmentId } from "@t3tools/contracts";
+import {
+  AuthSessionId,
+  EnvironmentAuthenticatedPrincipal,
+  EnvironmentId,
+} from "@t3tools/contracts";
 import {
   RelayEnvironmentLinkProofPayload,
   RelayEnvironmentMintResponseProofPayload,
@@ -36,6 +40,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
 import * as CliTokenManager from "./CliTokenManager.ts";
 import * as CloudLink from "./CloudLink.ts";
+import * as ConnectReachability from "./ConnectReachability.ts";
 import {
   CLOUD_ENDPOINT_RUNTIME_CONFIG,
   CLOUD_LINK_REVOKED,
@@ -157,7 +162,16 @@ const provideCloudLink =
           recoveryRequests: Stream.empty,
           requestRecovery: () => Effect.void,
           tunnelConnected: Stream.empty,
+          inspectConnector: Effect.succeed(null),
+          readinessChanged: Stream.empty,
           withLinkStateLock: (effect) => effect,
+        }),
+      ),
+      Effect.provideService(
+        ConnectReachability.ConnectReachability,
+        ConnectReachability.ConnectReachability.of({
+          check: Effect.die("unused"),
+          latest: Effect.succeedNone,
         }),
       ),
       Effect.provideService(
@@ -215,21 +229,30 @@ describe("relay proofs on a computer with a skewed clock", () => {
         },
       });
       const link = yield* CloudLink.CloudLink;
-      const proof = yield* link.linkProof(
-        {
-          challenge,
-          relayIssuer: RELAY_ISSUER,
-          endpoint: {
-            httpBaseUrl: "http://127.0.0.1:3773",
-            wsBaseUrl: "ws://127.0.0.1:3773",
-            providerKind: "manual",
+      const proof = yield* link
+        .linkProof(
+          {
+            challenge,
+            relayIssuer: RELAY_ISSUER,
+            endpoint: {
+              httpBaseUrl: "http://127.0.0.1:3773",
+              wsBaseUrl: "ws://127.0.0.1:3773",
+              providerKind: "manual",
+            },
+            origin: { localHttpHost: "127.0.0.1", localHttpPort: 3773 },
           },
-          origin: { localHttpHost: "127.0.0.1", localHttpPort: 3773 },
-        },
-        HttpServerRequest.fromWeb(
-          new Request("http://127.0.0.1:3773/api/connect/link-proof", { method: "POST" }),
-        ),
-      );
+          HttpServerRequest.fromWeb(
+            new Request("http://127.0.0.1:3773/api/connect/link-proof", { method: "POST" }),
+          ),
+        )
+        .pipe(
+          Effect.provideService(EnvironmentAuthenticatedPrincipal, {
+            sessionId: AuthSessionId.make("skewed-clock-session"),
+            subject: "skewed-clock-session",
+            method: "browser-session-cookie",
+            scopes: new Set([]),
+          }),
+        );
       const claims = decodeRelayJwt(proof);
       expect(claims.iat).toBe(relayNowSeconds());
       expect(Number(claims.exp) - Number(claims.iat)).toBe(5 * 60);

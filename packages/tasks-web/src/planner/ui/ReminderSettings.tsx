@@ -54,6 +54,7 @@ function useScheduleSettings(environmentId: string) {
     return () => {
       live = false;
     };
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- attempt re-runs the load on Retry
   }, [environmentId, attempt]);
   const retry = useCallback(() => {
     setLoadFailed(false);

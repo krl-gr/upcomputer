@@ -56,7 +56,7 @@ vi.mock("../hooks/useSettings", () => ({
     select({ onboardingCompletedAt: null }),
 }));
 vi.mock("../hooks/useRecordClientEvent", () => ({ useRecordClientEvent: () => mocks.record }));
-vi.mock("../onboarding/firstRun", () => ({ useCompleteOnboarding: () => mocks.complete }));
+vi.mock("../onboarding/firstRun", () => ({ completeOnboarding: () => mocks.complete() }));
 
 import { FirstRunAgentStarter, useFirstRunAgentStatus } from "./FirstRunAgent";
 import {

@@ -1,10 +1,10 @@
 import * as React from "react";
 import * as Schema from "effect/Schema";
-import { toastManager } from "~/components/ui/toast";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   encodeComposerContextClipboardHtml,
 } from "@t3tools/shared/composerContextClipboard";
+import { useStableCallback } from "./useStableCallback";
 
 export class ClipboardApiUnavailableError extends Schema.TaggedError<ClipboardApiUnavailableError>()(
   "ClipboardApiUnavailableError",
@@ -192,6 +192,19 @@ export async function readTextFromClipboard(target = "text"): Promise<string> {
   }
 }
 
+// Loaded lazily, and outside the hook for the React Compiler: the toast module imports this hook.
+function showCopyFailedToast() {
+  void import("~/components/ui/toast").then(({ toastManager }) =>
+    toastManager.add({
+      type: "error",
+      title: "Couldn't copy",
+      description:
+        "Up.computer couldn't copy to your clipboard. Select the text and copy it yourself.",
+      data: { hideCopyButton: true },
+    }),
+  );
+}
+
 export function useCopyToClipboard<TContext = void>({
   timeout = 2000,
   target = "text",
@@ -207,20 +220,8 @@ export function useCopyToClipboard<TContext = void>({
 } = {}): { copyToClipboard: (value: string, ctx: TContext) => void; isCopied: boolean } {
   const [isCopied, setIsCopied] = React.useState(false);
   const timeoutIdRef = React.useRef<NodeJS.Timeout | null>(null);
-  const onCopyRef = React.useRef(onCopy);
-  const onErrorRef = React.useRef(onError);
-  const targetRef = React.useRef(target);
-  const timeoutRef = React.useRef(timeout);
-
-  onCopyRef.current = onCopy;
-  onErrorRef.current = onError;
-  const extraFlavorsRef = React.useRef(extraFlavors);
-  targetRef.current = target;
-  timeoutRef.current = timeout;
-  extraFlavorsRef.current = extraFlavors;
-
-  const copyToClipboard = React.useCallback((value: string, ctx: TContext): void => {
-    void writeTextToClipboard(value, targetRef.current, extraFlavorsRef.current).then(
+  const copyToClipboard = useStableCallback((value: string, ctx: TContext): void => {
+    void writeTextToClipboard(value, target, extraFlavors).then(
       (didCopy) => {
         if (!didCopy) return;
         if (timeoutIdRef.current) {
@@ -228,33 +229,28 @@ export function useCopyToClipboard<TContext = void>({
         }
         setIsCopied(true);
 
-        onCopyRef.current?.(ctx);
+        onCopy?.(ctx);
 
-        if (timeoutRef.current !== 0) {
+        if (timeout !== 0) {
           timeoutIdRef.current = setTimeout(() => {
             setIsCopied(false);
             timeoutIdRef.current = null;
-          }, timeoutRef.current);
+          }, timeout);
         }
       },
       (error) => {
         console.error(error);
-        if (onErrorRef.current) {
-          onErrorRef.current(error, ctx);
+        if (onError) {
+          onError(error, ctx);
           return;
         }
         // Most callers pass no onError; a silent failed copy reads as success.
-        toastManager.add({
-          type: "error",
-          title: "Couldn't copy",
-          description:
-            "Up.computer couldn't copy to your clipboard. Select the text and copy it yourself.",
-          data: { hideCopyButton: true },
-        });
+        showCopyFailedToast();
       },
     );
-  }, []);
+  });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the copied-state reset timer on unmount
   React.useEffect(() => {
     return (): void => {
       if (timeoutIdRef.current) {

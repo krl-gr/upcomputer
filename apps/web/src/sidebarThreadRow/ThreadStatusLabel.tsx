@@ -1,8 +1,5 @@
-import {
-  resolveSidebarV2TopStatus,
-  type SidebarThreadStatus,
-  type SidebarV2TopStatusKind,
-} from "../components/Sidebar.logic";
+import type { SidebarThreadStatus, SidebarV2TopStatusKind } from "../components/Sidebar.logic";
+import { resolveSidebarV2TopStatus } from "./topStatus";
 import { cn } from "../lib/utils";
 
 /** Upstream's status kinds that have a text label. Woke has none: it stays hidden. */
@@ -25,6 +22,7 @@ export const THREAD_STATUS_LABELS: {
   working: { label: "Working", className: "text-info-foreground" },
   approval: { label: "Pending Approval", className: "text-warning-foreground" },
   input: { label: "Awaiting Input", className: "text-indigo-600 dark:text-indigo-300" },
+  request: { label: "Guest Request", className: "text-guest-foreground" },
   done: { label: "Completed", className: "text-success-foreground" },
   failed: { label: "Failed", className: "text-error-foreground" },
   limited: { label: "Limited", className: "text-warning-foreground" },

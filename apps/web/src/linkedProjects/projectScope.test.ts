@@ -28,7 +28,9 @@ describe("linked projects in the sidebar project scope", () => {
   });
   const threads = [linkedThread, plainThread, infraThread];
   const ids = (projectId: ProjectId, links?: ReadonlyMap<string, ReadonlyArray<string>>) =>
-    filterSidebarV2VisibleThreads(threads, scope(projectId), links).map((thread) => thread.id);
+    filterSidebarV2VisibleThreads(threads, scope(projectId), new Set(), links).map(
+      (thread) => thread.id,
+    );
 
   it("shows a linked thread under its own project and under the project it links", () => {
     expect(ids(home)).toEqual([linkedThread.id, plainThread.id]);
@@ -48,6 +50,6 @@ describe("linked projects in the sidebar project scope", () => {
 
   it("matches links only within the thread's environment", () => {
     const otherEnvironment = new Set([`${EnvironmentId.make("environment-other")}:${docs}`]);
-    expect(filterSidebarV2VisibleThreads(threads, otherEnvironment)).toEqual([]);
+    expect(filterSidebarV2VisibleThreads(threads, otherEnvironment, new Set())).toEqual([]);
   });
 });

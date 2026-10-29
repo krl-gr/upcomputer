@@ -78,34 +78,35 @@ export function agentQueues(
  * The project's enabled agents (its own and global ones) with their queues, so
  * a chat can route and queue a task without task_search or agent_get.
  */
-export const projectAgentQueues = (repository: TaskRepositoryShape, projectId: ProjectId) =>
-  Effect.gen(function* () {
-    const enabled = yield* repository.searchAgents({ projectId, enabled: true, limit: 500 });
-    const agents = enabled.slice(0, MAX_AGENTS);
-    const queued = agents.filter((agent) => agent.startRunStatuses.length === 0);
-    const tasks = yield* Effect.forEach(
-      queued.length === 0 ? [] : queueStatuses(queued),
-      (status) => repository.search({ projectId, status, limit: MAX_TASKS_PER_STATUS }),
-    );
-    const agentIds = new Set(agents.map((agent) => agent.id));
-    const runs = (yield* repository.listAllActiveAgentRuns()).filter((run) =>
-      agentIds.has(run.agentId),
-    );
-    // Global agents also run in other projects; only this project's tasks show.
-    const held = yield* Effect.forEach(new Set(runs.map((run) => run.taskId)), (id) =>
-      repository.getById({ id }),
-    );
-    const projectTaskIds = new Set(
-      held.flatMap((task) =>
-        Option.isSome(task) && task.value.projectId === projectId ? [task.value.id] : [],
-      ),
-    );
-    return {
-      agents: agentQueues(
-        agents,
-        tasks.flat(),
-        runs.filter((run) => projectTaskIds.has(run.taskId)),
-      ),
-      ...(enabled.length > agents.length ? { agentsOmitted: enabled.length - agents.length } : {}),
-    };
-  });
+export const projectAgentQueues = Effect.fn("AgentQueues.projectAgentQueues")(function* (
+  repository: TaskRepositoryShape,
+  projectId: ProjectId,
+) {
+  const enabled = yield* repository.searchAgents({ projectId, enabled: true, limit: 500 });
+  const agents = enabled.slice(0, MAX_AGENTS);
+  const queued = agents.filter((agent) => agent.startRunStatuses.length === 0);
+  const tasks = yield* Effect.forEach(queued.length === 0 ? [] : queueStatuses(queued), (status) =>
+    repository.search({ projectId, status, limit: MAX_TASKS_PER_STATUS }),
+  );
+  const agentIds = new Set(agents.map((agent) => agent.id));
+  const runs = (yield* repository.listAllActiveAgentRuns()).filter((run) =>
+    agentIds.has(run.agentId),
+  );
+  // Global agents also run in other projects; only this project's tasks show.
+  const held = yield* Effect.forEach(new Set(runs.map((run) => run.taskId)), (id) =>
+    repository.getById({ id }),
+  );
+  const projectTaskIds = new Set(
+    held.flatMap((task) =>
+      Option.isSome(task) && task.value.projectId === projectId ? [task.value.id] : [],
+    ),
+  );
+  return {
+    agents: agentQueues(
+      agents,
+      tasks.flat(),
+      runs.filter((run) => projectTaskIds.has(run.taskId)),
+    ),
+    ...(enabled.length > agents.length ? { agentsOmitted: enabled.length - agents.length } : {}),
+  };
+});

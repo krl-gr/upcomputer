@@ -31,6 +31,7 @@ export const COPY_RULES: ReadonlyArray<CopyRule> = [
 ];
 
 const COPY_ROOTS = [
+  "docs/user/",
   "apps/web/src/",
   "apps/web/index.html",
   "apps/desktop/src/",
@@ -42,7 +43,31 @@ const COPY_ROOTS = [
   "infra/relay/src/agentActivity/",
 ] as const;
 
-const COPY_EXTENSIONS = /\.(ts|tsx|mjs|cjs|js|html)$/;
+const COPY_EXTENSIONS = /\.(ts|tsx|mjs|cjs|js|html|md)$/;
+
+/**
+ * User docs, on top of the copy rules: the home directory, the hosted app, the
+ * `up` command the desktop app installs, and T3 standing alone for the app.
+ * Upstream's install scripts, package managers and release links need a manual
+ * edit; check-branding does not catch those.
+ */
+const DOC_RULES: ReadonlyArray<CopyRule> = [
+  {
+    // T3 Chat is another product; its account link stays hidden in ours.
+    pattern: /\bT3(?! Code\b| Connect\b| Chat\b)(?='s\b|-owned\b|-managed\b|\s|$)/g,
+    replacement: "Up.computer",
+  },
+  { pattern: /~\/\.t3(?=[/\s`)]|$)/g, replacement: "~/.upcomputer" },
+  { pattern: /\bapp\.t3\.codes\b/g, replacement: "app.up.computer" },
+  { pattern: /`t3(?=[ `])/g, replacement: "`up" },
+  { pattern: /\$\(t3 /g, replacement: "$(up " },
+  { pattern: /\bnpx t3(?= )/g, replacement: "up" },
+  { pattern: /\*\*t3 command\*\*/g, replacement: "**up command**" },
+  // Commands at the start of a line, in code blocks.
+  { pattern: /^(\s*(?:sudo )?)t3(?=\s|$)/g, replacement: "$1up" },
+];
+
+const isDocFile = (path: string): boolean => path.endsWith(".md");
 
 /**
  * Files whose T3 text is not ours to rebrand: upstream's issue triage tool
@@ -99,6 +124,9 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
     path: /^apps\/server\/src\/orchestration-v2\/Adapters\/AcpAdapterV2\.test\.ts$/,
     line: /snippet: "T3 Code page"/,
   },
+  // Its headings are the anchors clients link to (T3_CONNECT_TROUBLESHOOTING_SECTIONS in
+  // packages/contracts/src/environmentHttp.ts), so they keep upstream's wording.
+  { path: /^docs\/user\/t3-connect-troubleshooting\.md$/, line: /^#{2,3} / },
   {
     path: /^packages\/shared\/src\/t3McpToolPresentation\.test\.ts$/,
     line: /^\s*"T3 Code( delegate_task)? ?",$/,
@@ -106,6 +134,13 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
 ];
 
 export function rebrandLine(line: string, path = ""): string {
+  if (KEEP_LINES.some((keep) => keep.path.test(path) && keep.line.test(line))) return line;
+  if (isDocFile(path)) {
+    return [...DOC_RULES, ...COPY_RULES].reduce(
+      (text, rule) => text.replace(rule.pattern, rule.replacement),
+      line,
+    );
+  }
   if (COMMENT_LINE.test(line)) return line;
   if (KEEP_LINES.some((keep) => keep.path.test(path) && keep.line.test(line))) return line;
   return COPY_RULES.reduce((text, rule) => text.replace(rule.pattern, rule.replacement), line);

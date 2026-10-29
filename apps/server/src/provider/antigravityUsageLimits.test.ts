@@ -50,8 +50,12 @@ const summary = {
 const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
   options: {
     summary?: unknown;
+    /** Per-host quota summaries; hosts not listed fall back to `summary`. */
+    summaryByHost?: Record<string, unknown>;
     models?: unknown;
     summaryStatus?: number;
+    /** Per-host summary statuses; hosts not listed fall back to `summaryStatus`. */
+    summaryStatusByHost?: Record<string, number>;
     tokenStatus?: number;
     refreshToken?: string;
     userId?: string;
@@ -76,7 +80,7 @@ const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
     );
   if (!options.missingToken) yield* writeToken(options.refreshToken ?? "refresh-a");
   const requests: Array<{ url: string; body: string }> = [];
-  const http = HttpClient.make((request, _url, _signal, fiber) =>
+  const http = HttpClient.make((request, url, _signal, fiber) =>
     Effect.sync(() => {
       const init = Context.getOrUndefined(fiber.context, FetchHttpClient.RequestInit);
       expect(init?.redirect).toBe("manual");
@@ -106,7 +110,9 @@ const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
       return HttpClientResponse.fromWeb(
         request,
         request.url.endsWith(":retrieveUserQuotaSummary")
-          ? Response.json(options.summary ?? summary, { status: options.summaryStatus ?? 200 })
+          ? Response.json(options.summaryByHost?.[url.host] ?? options.summary ?? summary, {
+              status: options.summaryStatusByHost?.[url.host] ?? options.summaryStatus ?? 200,
+            })
           : Response.json(options.models ?? { models: {} }),
       );
     }),
@@ -142,7 +148,50 @@ describe("Antigravity subscription limits", () => {
       expect(requests.filter((request) => request.url.endsWith("/token"))).toHaveLength(1);
       expect(
         requests.filter((request) => request.url.endsWith(":retrieveUserQuotaSummary")),
-      ).toHaveLength(2);
+      ).toHaveLength(4);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("merges quota groups that only one endpoint reports", () =>
+    Effect.gen(function* () {
+      const { probe } = yield* fixture({
+        summaryByHost: {
+          // The daily endpoint can omit Gemini while the other endpoint returns all groups.
+          "daily-cloudcode-pa.googleapis.com": {
+            groups: [
+              {
+                displayName: "Claude and GPT models",
+                buckets: [
+                  { bucketId: "3p-weekly", window: "weekly", remainingFraction: 0.5 },
+                  { bucketId: "3p-5h", window: "5h", remainingFraction: 0.3 },
+                ],
+              },
+            ],
+          },
+        },
+      });
+      const limits = yield* probe;
+      expect(limits.windows.map((window) => window.id).toSorted()).toEqual([
+        "3p-5h",
+        "3p-weekly",
+        "gemini-5h",
+        "gemini-weekly",
+      ]);
+      const byId = new Map(limits.windows.map((window) => [window.id, window]));
+      expect(byId.get("gemini-weekly")?.label).toBe("Gemini · Weekly");
+      expect(byId.get("3p-5h")?.usedPercent).toBeCloseTo(70);
+      expect(byId.get("3p-weekly")?.usedPercent).toBe(100);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("keeps one endpoint's quotas when the other fails", () =>
+    Effect.gen(function* () {
+      const { probe } = yield* fixture({
+        summaryStatusByHost: { "daily-cloudcode-pa.googleapis.com": 503 },
+      });
+      const limits = yield* probe;
+      expect(limits.unavailable).toBeUndefined();
+      expect(limits.windows).toHaveLength(4);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
@@ -228,21 +277,6 @@ describe("Antigravity subscription limits", () => {
           windowDurationMins: 300,
         },
       ]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-  );
-
-  it.effect("preserves cached access token when quota endpoints return no usable windows", () =>
-    Effect.gen(function* () {
-      const { probe, requests } = yield* fixture({
-        summary: { groups: [] },
-        models: { models: {} },
-      });
-      const first = yield* probe;
-      expect(first.unavailable?.reason).toBe("probeFailed");
-      expect(requests.filter((request) => request.url.endsWith("/token"))).toHaveLength(1);
-      const second = yield* probe;
-      expect(second.unavailable?.reason).toBe("probeFailed");
-      expect(requests.filter((request) => request.url.endsWith("/token"))).toHaveLength(1);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

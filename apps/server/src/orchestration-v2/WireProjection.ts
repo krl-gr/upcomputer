@@ -1,9 +1,19 @@
 import type {
+  CheckpointId,
+  MessageId,
+  NodeId,
+  OrchestrationV2Checkpoint,
   OrchestrationV2DomainEvent,
   OrchestrationV2ContextHandoff,
+  OrchestrationV2Subagent,
   OrchestrationV2ThreadProjection,
+  OrchestrationV2ThreadStreamItem,
   OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
+import {
+  dedupeSubagentBodies,
+  dedupeTurnItemBodies,
+} from "@t3tools/shared/orchestrationV2DedupedBodies";
 import {
   compactDynamicToolOutput,
   omitToolOutputImageData,
@@ -25,8 +35,7 @@ function truncateDetail(
   ) {
     return value;
   }
-  // UTF-8 needs at least one byte per UTF-16 code unit. Only encode the prefix
-  // that could fit, rather than allocating a buffer for the complete output.
+  // UTF-8 needs at least one byte per UTF-16 unit; encode only a potentially fitting prefix.
   const prefix = Buffer.from(value.slice(0, maxBytes), "utf8")
     .subarray(0, maxBytes)
     .toString("utf8")
@@ -34,11 +43,7 @@ function truncateDetail(
   return `${prefix}\n… output truncated for transport`;
 }
 
-/**
- * Clients never receive more than this (see projectTurnItemForWire), so a full
- * diff of a large file would only grow the database and the heap that reads it
- * back.
- */
+/** Bound stored diffs to the client wire limit to avoid retaining invisible data in SQLite and heap. */
 export function boundFileChangeForStorage(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
   if (item.type !== "file_change") return item;
   const { diffStr, oldStr, newStr } = item;
@@ -159,10 +164,7 @@ function boundDynamicValue(value: unknown): unknown {
     : truncateDetail(json, MAX_ON_DEMAND_BYTES);
 }
 
-/**
- * When the rest is too large to send whole, its truncated text still comes with
- * the image markers, in order, so clients can load each image by index.
- */
+/** Preserve ordered image markers in truncated output so clients can load images by index. */
 function boundToolOutput(output: unknown): unknown {
   const omitted = omitToolOutputImageData(output);
   const bounded = boundDynamicValue(omitted);
@@ -198,8 +200,20 @@ export function projectTurnItemForDetail(item: OrchestrationV2TurnItem): Orchest
         result:
           item.result === null ? null : (truncateDetail(item.result, MAX_ON_DEMAND_BYTES) ?? null),
       };
-    case "handoff":
     case "file_change":
+      return {
+        ...projectTurnItemForWire(item),
+        ...(item.diffStr === undefined
+          ? {}
+          : { diffStr: truncateDetail(item.diffStr, MAX_ON_DEMAND_BYTES) }),
+        ...(!item.diffStr?.trim() && item.oldStr !== undefined
+          ? { oldStr: truncateDetail(item.oldStr, MAX_ON_DEMAND_BYTES) }
+          : {}),
+        ...(!item.diffStr?.trim() && item.newStr !== undefined
+          ? { newStr: truncateDetail(item.newStr, MAX_ON_DEMAND_BYTES) }
+          : {}),
+      };
+    case "handoff":
       return projectTurnItemForWire(item);
     default:
       return item;
@@ -244,4 +258,65 @@ export function projectDomainEventForWire(
     : event.type === "context-handoff.updated"
       ? { ...event, payload: projectContextHandoffForWire(event.payload) }
       : event;
+}
+
+const LIVE_DEDUPE_MEMORY = 32;
+
+function remember<K, V>(memory: Map<K, V>, key: K, value: V): void {
+  memory.delete(key);
+  memory.set(key, value);
+  if (memory.size > LIVE_DEDUPE_MEMORY) memory.delete(memory.keys().next().value as K);
+}
+
+/**
+ * One per subscription, after coalescing, so it remembers only records the client received. A
+ * record event comes before the turn item that repeats its body, so the item (or a repeated
+ * subagent record) ships blank and marked. The other order, or a forgotten record, only costs
+ * bytes: the repeat ships whole.
+ */
+export function makeLiveBodyDeduper(): (
+  item: OrchestrationV2ThreadStreamItem,
+) => OrchestrationV2ThreadStreamItem {
+  const messageText = new Map<MessageId, string>();
+  const checkpointFiles = new Map<CheckpointId, OrchestrationV2Checkpoint["files"]>();
+  const subagents = new Map<NodeId, Pick<OrchestrationV2Subagent, "prompt" | "result">>();
+  const source = {
+    messageText: (id: MessageId) => messageText.get(id),
+    checkpointFiles: (id: CheckpointId) => checkpointFiles.get(id),
+    subagent: (id: NodeId) => subagents.get(id),
+  };
+  const rememberSubagent = ({ id, prompt, result }: OrchestrationV2Subagent) =>
+    remember(subagents, id, { prompt, result });
+  return (item) => {
+    if (item.kind === "snapshot") {
+      // The client now holds exactly these records; their bodies are never blanked.
+      const { messages, checkpoints, subagents: records } = item.projection;
+      for (const message of messages) remember(messageText, message.id, message.text);
+      for (const checkpoint of checkpoints)
+        remember(checkpointFiles, checkpoint.id, checkpoint.files);
+      for (const subagent of records) rememberSubagent(subagent);
+      return item;
+    }
+    if (item.kind !== "event") return item;
+    const { event } = item;
+    switch (event.type) {
+      case "message.updated":
+        remember(messageText, event.payload.id, event.payload.text);
+        return item;
+      case "checkpoint.captured":
+        remember(checkpointFiles, event.payload.id, event.payload.files);
+        return item;
+      case "subagent.updated": {
+        const payload = dedupeSubagentBodies(event.payload, subagents.get(event.payload.id));
+        rememberSubagent(event.payload);
+        return payload === event.payload ? item : { ...item, event: { ...event, payload } };
+      }
+      case "turn-item.updated": {
+        const payload = dedupeTurnItemBodies(event.payload, source);
+        return payload === event.payload ? item : { ...item, event: { ...event, payload } };
+      }
+      default:
+        return item;
+    }
+  };
 }

@@ -7,8 +7,6 @@ export {
   VOICE_RECORDING_LIMIT_SECONDS,
   /** @public */
   voiceInputBlocksSubmission,
-  /** @public */
-  voiceInputFreezesEditor,
   type VoiceDraftSnapshot,
   type VoiceInputControllerDependencies,
   type VoiceInputPhase,

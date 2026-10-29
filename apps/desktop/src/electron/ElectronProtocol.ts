@@ -71,7 +71,7 @@ export class ElectronProtocol extends Context.Service<
   }
 >()("@t3tools/desktop/electron/ElectronProtocol") {}
 
-export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrationInput): string {
+function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrationInput): string {
   const clerkOrigin = input.clerkFrontendApiHostname
     ? `https://${input.clerkFrontendApiHostname}`
     : undefined;
@@ -83,11 +83,8 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     "https://challenges.cloudflare.com",
   ];
 
-  // The renderer connects directly to user-configured environments in addition to
-  // the build-configured Clerk, relay, and OTLP endpoints. Those environment
-  // origins are not known when this response policy is created, so restrict
-  // connections by the network schemes the client supports instead of by host.
-  // GLTFLoader fetches embedded textures through blob URLs after parsing the model.
+  // User-configured environment origins are unknown here, so allow supported network schemes.
+  // GLTFLoader fetches embedded textures through blob URLs.
   const connectSources = ["'self'", "blob:", "http:", "https:", "ws:", "wss:"];
 
   return [
@@ -100,6 +97,7 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     `font-src 'self' ${input.scheme}: data:`,
     "worker-src 'self' blob:",
     "frame-src 'self' blob: http: https:",
+    "object-src 'self' blob: http: https:",
     "form-action 'self'",
   ].join("; ");
 }
@@ -114,9 +112,7 @@ function withContentSecurityPolicy(response: Response, policy: string): Response
   });
 }
 
-/**
- * Must run synchronously during process bootstrap, before Electron emits `ready`.
- */
+// Must run synchronously before Electron emits ready.
 function registerDesktopSchemePrivilegesSync(): void {
   Electron.protocol.registerSchemesAsPrivileged([
     {
@@ -127,8 +123,7 @@ function registerDesktopSchemePrivilegesSync(): void {
         supportFetchAPI: true,
         corsEnabled: true,
         stream: true,
-        // Custom schemes skip Chromium's V8 code cache unless they opt in.
-        // Dev stays off: Vite serves changing code at stable URLs.
+        // Custom schemes must opt into V8 caching; dev URLs serve changing code.
         codeCache: true,
       },
     },
@@ -250,7 +245,7 @@ const serveDesktopAsset = Effect.fn("desktop.protocol.serveAsset")(function* (
   });
 });
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const registered = yield* Ref.make(false);
   const context = yield* Effect.context<FileSystem.FileSystem | Path.Path>();

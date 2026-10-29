@@ -13,7 +13,6 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
@@ -126,7 +125,7 @@ const harness = (threads: ReadonlyMap<ThreadId, OrchestrationV2AppThread>) =>
             }),
             Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
               namedProjectsRoot: "/projects",
-              scratchRoot: Effect.succeed(Option.some("/data/scratch")),
+              scratchRoot: Effect.succeedSome("/data/scratch"),
             }),
             NodeServices.layer,
           ),

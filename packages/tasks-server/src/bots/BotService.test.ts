@@ -118,9 +118,7 @@ const harness = Effect.gen(function* () {
     Layer.provideMerge(TaskRepositoryLive),
     Layer.provideMerge(database),
     Layer.provide(threads),
-    Layer.provide(
-      Layer.mock(ProjectStoreV2)({ getShell: () => Effect.succeed(Option.some({} as never)) }),
-    ),
+    Layer.provide(Layer.mock(ProjectStoreV2)({ getShell: () => Effect.succeedSome({} as never) })),
     Layer.provide(Layer.mock(TaskAgentService)({ scheduleTaskChanged: () => Effect.void })),
     Layer.provide(
       Layer.succeed(

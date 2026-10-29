@@ -10,8 +10,7 @@ import {
   useClientSettings,
   useClientSettingsHydrationStatus,
 } from "../../hooks/useSettings";
-import { isLocalEnvironmentDisabled } from "../../localEnvironment";
-import { useCompleteOnboarding } from "../../onboarding/firstRun";
+import { completeOnboarding } from "../../onboarding/firstRun";
 import { FirstRunAgentStarter } from "../../onboardingSurface/FirstRunAgent";
 import { productSurface } from "../../product/productFlags";
 import {
@@ -22,11 +21,7 @@ import {
   transitionFirstRunGateState,
   type FirstRunGateState,
 } from "../../onboarding/firstRun.logic";
-import {
-  useAllEnvironmentShellsBootstrapped,
-  useProjects,
-  useThreadShells,
-} from "../../state/entities";
+import { useAllEnvironmentShellsBootstrapped, useProjects } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { environmentProjects } from "../../state/projects";
 import { primaryServerConfigAtom, primaryServerWelcomeAtom } from "../../state/server";
@@ -65,6 +60,17 @@ const workspaceEvidenceLiveAtom = Atom.make((get) => {
   return true;
 }).pipe(Atom.withLabel("web-onboarding-workspace-evidence-live"));
 
+// Subscribe only to thread count and the sole thread so populated-workspace shell updates cannot rerender the
+// app root.
+const threadCountAtom = Atom.make(
+  (get) => get(environmentThreadShells.threadShellsAtom).length,
+).pipe(Atom.withLabel("web-onboarding-thread-count"));
+
+const soleThreadAtom = Atom.make((get) => {
+  const threads = get(environmentThreadShells.threadShellsAtom);
+  return threads.length === 1 ? threads[0]! : null;
+}).pipe(Atom.withLabel("web-onboarding-sole-thread"));
+
 export function FirstRunGate({
   enabled,
   hostedStatic,
@@ -78,12 +84,12 @@ export function FirstRunGate({
   const pathname = useLocation({ select: (location) => location.pathname });
   const hydrationStatus = useClientSettingsHydrationStatus();
   const hydrated = hydrationStatus === "ready";
-  const completeOnboarding = useCompleteOnboarding();
   const onboardingCompletedAt = useClientSettings((settings) => settings.onboardingCompletedAt);
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
-  const { environments, isReady: environmentCatalogReady } = useEnvironments();
+  const { isReady: environmentCatalogReady } = useEnvironments();
   const projects = useProjects();
-  const threads = useThreadShells();
+  const threadCount = useAtomValue(threadCountAtom);
+  const soleThread = useAtomValue(soleThreadAtom);
   const serverConfig = useAtomValue(primaryServerConfigAtom);
   const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
   const primaryShellLive = useAtomValue(primaryShellLiveAtom);
@@ -97,31 +103,24 @@ export function FirstRunGate({
   }));
   const { decision, stalled } = gateState;
   const settingsReadFailed = hydrationStatus === "failed" || hydrationStatus === "retrying";
-  // A workspace still counts as fresh when its only content is the server's own
-  // cwd auto-bootstrap: web mode creates a project + thread from cwd at startup
-  // (`autoBootstrapProjectFromCwd` defaults on there), so "no projects at all"
-  // would mean `npx t3` users never see the wizard.
+  // The server's sole cwd-bootstrap project/thread still counts as fresh so npx t3 users see onboarding.
   const serverCwd = serverConfig?.cwd ?? null;
   const primaryEnvironmentId = serverConfig?.environment.environmentId ?? null;
-  const workspaceFresh = isFreshFirstRunWorkspace({
-    primaryEnvironmentId,
-    serverCwd,
-    bootstrapProjectId: serverWelcome?.bootstrapProjectId,
-    bootstrapThreadId: serverWelcome?.bootstrapThreadId,
-    bootstrapProjectCreated: serverWelcome?.bootstrapProjectCreated,
-    bootstrapThreadCreated: serverWelcome?.bootstrapThreadCreated,
-    projects,
-    threads,
-  });
+  const workspaceFresh =
+    threadCount <= 1 &&
+    isFreshFirstRunWorkspace({
+      primaryEnvironmentId,
+      serverCwd,
+      bootstrapProjectId: serverWelcome?.bootstrapProjectId,
+      bootstrapThreadId: serverWelcome?.bootstrapThreadId,
+      bootstrapProjectCreated: serverWelcome?.bootstrapProjectCreated,
+      bootstrapThreadCreated: serverWelcome?.bootstrapThreadCreated,
+      projects,
+      threads: soleThread === null ? [] : [soleThread],
+    });
 
   const { decision: nextDecision, persistCompletion } = hostedStatic
-    ? resolveHostedFirstRunDecision({
-        localEnvironmentDisabled: isLocalEnvironmentDisabled(),
-        hydrated,
-        completed: onboardingCompletedAt !== null,
-        catalogReady: environmentCatalogReady,
-        environmentCount: environments.length,
-      })
+    ? resolveHostedFirstRunDecision(hydrated)
     : resolveFirstRunDecision({
         enabled,
         hydrated,
@@ -137,12 +136,20 @@ export function FirstRunGate({
         serverConfigAvailable: serverConfig !== null,
         workspaceFresh,
         projectCount: projects.length,
-        threadCount: threads.length,
+        threadCount,
       });
 
+  if (hydrated) {
+    const transitioned = transitionFirstRunGateState(gateState, {
+      type: "evidence",
+      decision: nextDecision,
+    });
+    if (transitioned !== gateState) setGateState(transitioned);
+  }
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists onboarding completion to settings once the gate settles on skipping the wizard
   useEffect(() => {
     if (decision === "wizard" || !hydrated) return;
-
     if (persistCompletion && onboardingCompletedAt === null) {
       void completeOnboarding().catch(() =>
         toastManager.add({
@@ -153,19 +160,9 @@ export function FirstRunGate({
         }),
       );
     }
+  }, [decision, hydrated, onboardingCompletedAt, persistCompletion]);
 
-    setGateState((state) =>
-      transitionFirstRunGateState(state, { type: "evidence", decision: nextDecision }),
-    );
-  }, [
-    completeOnboarding,
-    decision,
-    hydrated,
-    nextDecision,
-    onboardingCompletedAt,
-    persistCompletion,
-  ]);
-
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer gives up on a pending first-run decision after the timeout
   useEffect(() => {
     if (!enabled || decision !== "pending" || !hydrated) return;
     const timer = window.setTimeout(
@@ -183,11 +180,15 @@ export function FirstRunGate({
     primaryEnvironmentId !== null &&
     productSurface("onboarding") === "upcomputer";
 
+  // Setup opens by itself only from the home route. A direct link, such as
+  // Settings, opens as asked so setup can never lock a user out of the app.
+  const wizardOwnsRoute = pathname === "/";
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- navigates from the home route to /welcome when the gate decides on the wizard
   useEffect(() => {
-    if (decision === "wizard" && !installsFirstAgent && pathname !== "/welcome") {
+    if (decision === "wizard" && !installsFirstAgent && wizardOwnsRoute) {
       void navigate({ to: "/welcome", replace: true });
     }
-  }, [decision, installsFirstAgent, navigate, pathname]);
+  }, [decision, installsFirstAgent, navigate, wizardOwnsRoute]);
 
   if (settingsReadFailed) {
     return <FirstRunRecovery reason="settings" retrying={hydrationStatus === "retrying"} />;
@@ -199,6 +200,9 @@ export function FirstRunGate({
         {children}
       </>
     );
+  }
+  if (decision === "wizard" && !wizardOwnsRoute) {
+    return children;
   }
   if (decision !== "app") {
     return stalled ? <FirstRunRecovery reason="connection" /> : <BootSplash />;

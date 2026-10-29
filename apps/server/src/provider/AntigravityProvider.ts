@@ -160,9 +160,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     draft: initialDraft,
     authRevision: 0,
   });
-  // Skills the driver discovered on disk per workspace. Session callbacks
-  // rewrite the workspace entry with native commands and must keep these, or
-  // the registry drops the suggestions and never re-reads the workspace.
+  // Preserve disk-discovered skills when callbacks replace workspace commands; the registry will not rescan them.
   const discoveredSkills = new Map<string, ServerProvider["skills"]>();
   const getSnapshot = SubscriptionRef.get(metadata).pipe(
     Effect.flatMap((state) => options.stampIdentity(state.draft)),
@@ -177,6 +175,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     );
     const initialized =
       Result.isSuccess(result) && Option.isSome(result.success) ? result.success.value : undefined;
+    const version = initialized?.agentInfo?.version;
     const failure = Result.isFailure(result) ? result.failure : undefined;
     const missingInstallation = failure !== undefined && isMissingInstallation(failure);
     const errorMessage =
@@ -210,7 +209,8 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
         draft: {
           ...draft,
           installed: !missingInstallation,
-          version: initialized?.agentInfo?.version || draft.version,
+          // Lightweight custom-launcher probes lack versions; preserve the real handshake's version.
+          version: version === "unknown" ? draft.version : version || draft.version,
           status: errorMessage ? "error" : authenticated ? "ready" : "warning",
           checkedAt: updatedAt,
           usageLimits: missingInstallation

@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   disableWebPush,
@@ -26,7 +26,7 @@ export function WebPushSettings() {
 function WebPushSettingsRow({ vapidPublicKey }: { readonly vapidPublicKey: string }) {
   const session = useAtomValue(managedRelaySessionAtom);
   const accountId = session?.accountId ?? null;
-  const environment = useMemo(() => readWebPushEnvironment(isElectron), []);
+  const environment = readWebPushEnvironment(isElectron);
   const support = webPushSupport(environment);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
@@ -85,9 +85,9 @@ function WebPushSettingsRow({ vapidPublicKey }: { readonly vapidPublicKey: strin
           : "Could not turn on notifications on this device. Try again.",
       );
       setEnabled(enabled ? false : await readWebPushEnabled(session.accountId).catch(() => false));
-    } finally {
-      setBusy(false);
     }
+    // Not a finally: the React Compiler skips components with one, and the catch cannot throw.
+    setBusy(false);
   };
 
   return (

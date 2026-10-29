@@ -53,6 +53,9 @@ literals against it and against the electron-builder config.
   render tools' descriptions and errors, in the web app, desktop shell, server, shared packages and
   the relay's push text. Rules, scope and the protocol lines it keeps are in
   `scripts/lib/branding.ts`. Comments are left as upstream wrote them.
+- **User docs:** the same pass rewrites `docs/user`, plus `~/.t3` to `~/.upcomputer`, app.t3.codes
+  to app.up.computer and the `t3` command to `up`. Upstream's install scripts, package managers
+  and release links are edited by hand after a sync; check-branding does not catch them.
 - **Names in code:** `APP_BASE_NAME` in `apps/web/src/branding.ts` and
   `apps/desktop/src/app/DesktopEnvironment.ts` (window titles, about panel, menus), the sidebar and
   welcome wizard (`SidebarChrome.tsx`, `WelcomeWizard.tsx`), `apps/web/index.html`,

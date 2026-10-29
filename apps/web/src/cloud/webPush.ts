@@ -183,17 +183,12 @@ function sameKey(key: ArrayBuffer | null, expected: Uint8Array) {
 }
 
 const requireClerkToken = (session: ManagedRelaySession) =>
-  session
-    .readClerkToken()
-    .pipe(
-      Effect.flatMap((token) =>
-        token
-          ? Effect.succeed(token)
-          : Effect.fail(
-              new ManagedRelaySessionError({ message: "Sign in to UpComputer Connect first." }),
-            ),
-      ),
-    );
+  session.readClerkToken().pipe(
+    Effect.filterOrFail(
+      (token): token is string => Boolean(token),
+      () => new ManagedRelaySessionError({ message: "Sign in to UpComputer Connect first." }),
+    ),
+  );
 
 /** On for this device: subscribed, permitted, and registered for this account. */
 export async function readWebPushEnabled(accountId: string): Promise<boolean> {

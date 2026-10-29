@@ -4,10 +4,7 @@ import * as ErrorReporter from "effect/ErrorReporter";
 
 import { ErrorTelemetry } from "../telemetry/ErrorTelemetry.ts";
 
-/**
- * RpcServer reports every failed handler exit; typed failures are expected responses, so only
- * dies are logged and sent as `app.error`.
- */
+// RpcServer reports typed failures too; log only defects and send them as `app.error`.
 const makeReporter = (telemetry: ErrorTelemetry["Service"]): ErrorReporter.ErrorReporter => ({
   [ErrorReporter.TypeId]: ErrorReporter.TypeId,
   report: ({ cause, fiber }) => {

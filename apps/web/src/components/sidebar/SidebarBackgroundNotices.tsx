@@ -2,7 +2,7 @@ import type { BackgroundNotice, EnvironmentId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { BellIcon } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { memo, useState } from "react";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useServerConfigs } from "../../state/entities";
@@ -50,15 +50,11 @@ export const SidebarBackgroundNotices = memo(function SidebarBackgroundNotices()
     [] as ReadonlyArray<string>,
     DismissedNotices,
   );
-  const notices = useMemo(
-    () =>
-      visibleBackgroundNotices(
-        [...configs].map(([environmentId, config]) =>
-          config.backgroundNotices?.map((notice) => ({ ...notice, environmentId })),
-        ),
-        new Set(dismissedList),
-      ),
-    [configs, dismissedList],
+  const notices = visibleBackgroundNotices(
+    [...configs].map(([environmentId, config]) =>
+      config.backgroundNotices?.map((notice) => ({ ...notice, environmentId })),
+    ),
+    new Set(dismissedList),
   );
   if (notices.length === 0) return null;
   const dismiss = (keys: ReadonlyArray<string>) =>

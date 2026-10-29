@@ -1,17 +1,7 @@
 import { assert, it } from "@effect/vitest";
-import * as Schema from "effect/Schema";
-import {
-  ContextHandoffId,
-  OrchestrationV2Command,
-  type OrchestrationV2ProviderThread,
-  ThreadId,
-} from "@t3tools/contracts";
 
-import {
-  appendContextHandoffId,
-  canReplayCommandReceipt,
-  shouldPrepareLegacyImportHandoff,
-} from "./Orchestrator.ts";
+import { shouldPrepareLegacyImportHandoff } from "./Orchestrator.ts";
+import { type OrchestrationV2ProviderThread } from "@t3tools/contracts";
 
 it("reissues imported context until a V2 run completes", () => {
   assert.isTrue(
@@ -72,61 +62,5 @@ it("does not hand imported history to an imported native session it already hold
         nativeThreadRef: { driver: "pi", nativeId: "/sessions/a.jsonl", strength: "weak" },
       } as OrchestrationV2ProviderThread,
     }),
-  );
-});
-
-it("records a reissued legacy handoff on an existing provider thread", () => {
-  const existingHandoffId = ContextHandoffId.make("handoff:legacy-import:existing");
-  const retryHandoffId = ContextHandoffId.make("handoff:legacy-import:retry");
-
-  assert.deepEqual(appendContextHandoffId([existingHandoffId], retryHandoffId), [
-    existingHandoffId,
-    retryHandoffId,
-  ]);
-  assert.deepEqual(appendContextHandoffId([existingHandoffId], existingHandoffId), [
-    existingHandoffId,
-  ]);
-  assert.deepEqual(appendContextHandoffId([existingHandoffId], null), [existingHandoffId]);
-});
-
-it("only replays a command receipt for the thread it was recorded against", () => {
-  const threadA = ThreadId.make("thread-a");
-  const threadB = ThreadId.make("thread-b");
-
-  assert.strictEqual(canReplayCommandReceipt(threadA, threadA), true);
-  assert.strictEqual(canReplayCommandReceipt(threadA, threadB), false);
-});
-
-it("links and unlinks a pull request through thread.metadata.update (#8160)", () => {
-  const decode = Schema.decodeUnknownSync(OrchestrationV2Command);
-  const linked = decode({
-    type: "thread.metadata.update",
-    commandId: "command-link",
-    threadId: "thread-1",
-    linkedPullRequest: {
-      projectId: "project-1",
-      repository: "pingdotgg/t3code",
-      number: 8160,
-      url: "https://github.com/pingdotgg/t3code/pull/8160",
-    },
-  });
-  assert.deepStrictEqual(
-    (linked as Extract<typeof linked, { type: "thread.metadata.update" }>).linkedPullRequest,
-    {
-      projectId: "project-1",
-      repository: "pingdotgg/t3code",
-      number: 8160,
-      url: "https://github.com/pingdotgg/t3code/pull/8160",
-    },
-  );
-  const unlinked = decode({
-    type: "thread.metadata.update",
-    commandId: "command-unlink",
-    threadId: "thread-1",
-    linkedPullRequest: null,
-  });
-  assert.strictEqual(
-    (unlinked as Extract<typeof unlinked, { type: "thread.metadata.update" }>).linkedPullRequest,
-    null,
   );
 });

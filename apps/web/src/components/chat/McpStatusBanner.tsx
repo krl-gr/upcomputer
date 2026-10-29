@@ -23,7 +23,7 @@ export function mcpStatusBannerItems(input: {
     items.push({
       id: `mcp-t3:${input.threadKey}`,
       variant: "warning",
-      priority: "urgent",
+      group: "attention",
       icon: <UnplugIcon />,
       title: notices.t3.title,
       description: notices.t3.description,

@@ -1,5 +1,4 @@
 import type { ClientTelemetryEvent, EnvironmentId } from "@t3tools/contracts";
-import { useCallback } from "react";
 
 import { serverEnvironment } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -13,10 +12,7 @@ export function useRecordClientEvent() {
     reportFailure: false,
     reportDefect: false,
   });
-  return useCallback(
-    (environmentId: EnvironmentId | undefined, input: ClientTelemetryEvent) => {
-      if (environmentId !== undefined) void record({ environmentId, input });
-    },
-    [record],
-  );
+  return (environmentId: EnvironmentId | undefined, input: ClientTelemetryEvent) => {
+    if (environmentId !== undefined) void record({ environmentId, input });
+  };
 }

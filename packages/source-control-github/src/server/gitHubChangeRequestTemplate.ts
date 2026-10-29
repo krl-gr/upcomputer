@@ -92,13 +92,13 @@ type DirectoryTemplateResult =
   | { readonly _tag: "Ambiguous" }
   | { readonly _tag: "Template"; readonly template: string };
 
-function readTemplateDirectory(input: {
-  readonly cwd: string;
-  readonly executeGit: ExecuteGit;
-  readonly entries: ReadonlyArray<TemplateTreeEntry>;
-  readonly directory: string;
-}): Effect.Effect<DirectoryTemplateResult, GitCommandError> {
-  return Effect.gen(function* () {
+const readTemplateDirectory = Effect.fn("gitHubChangeRequestTemplate.readTemplateDirectory")(
+  function* (input: {
+    readonly cwd: string;
+    readonly executeGit: ExecuteGit;
+    readonly entries: ReadonlyArray<TemplateTreeEntry>;
+    readonly directory: string;
+  }): Effect.fn.Return<DirectoryTemplateResult, GitCommandError> {
     const prefix = `${input.directory}/`;
     const candidates = input.entries.filter((entry) => {
       if (!entry.path.startsWith(prefix)) {
@@ -122,8 +122,8 @@ function readTemplateDirectory(input: {
     return templates[0]
       ? ({ _tag: "Template", template: templates[0] } as const)
       : ({ _tag: "None" } as const);
-  });
-}
+  },
+);
 
 export const detect = Effect.fn("gitHubChangeRequestTemplate.detect")(function* (
   cwd: string,
@@ -131,8 +131,7 @@ export const detect = Effect.fn("gitHubChangeRequestTemplate.detect")(function* 
   executeGit: ExecuteGit,
 ) {
   return yield* Effect.gen(function* () {
-    // Worktree paths can be replaced between validation and open. Read regular blobs from the
-    // committed base tree so repository-controlled symlinks and path races never reach the host filesystem.
+    // Read committed regular blobs; worktree paths can become symlinks between validation and open.
     const result = yield* executeGit({
       operation: "gitHubChangeRequestTemplate.listTemplates",
       cwd,

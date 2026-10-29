@@ -1,157 +1,88 @@
 import { assert, describe, it } from "@effect/vitest";
-import { ThreadId } from "@t3tools/contracts";
-import * as Effect from "effect/Effect";
 
 import {
+  T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
+  T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
   T3_CODE_ORCHESTRATION_INSTRUCTIONS,
-  namesOrchestrationTool,
-  orchestrationInstructionsFor,
-  registerOrchestrationInstructionsResolver,
   t3AcpPromptWithInstructions,
-  t3OrchestrationPromptForFirstRun,
+  t3OrchestrationPrompt,
   t3OrchestrationSystemPrompt,
 } from "./orchestrationInstructions.ts";
 
-describe("T3 orchestration provider instructions", () => {
-  it("distinguishes delegated subagents from ordinary top-level threads", () => {
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "Use `delegate_task`");
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "ordinary top-level T3 conversations");
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "Never use them merely");
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "cross-provider");
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "call `delegate_task` again");
-    assert.include(
-      T3_CODE_ORCHESTRATION_INSTRUCTIONS,
-      "Do not use `t3_thread_send` on `childThreadId`",
-    );
-  });
-
-  it("asks for the provider catalog only to delegate or to report it missing", () => {
-    // A chat that only queues a task must not fetch the catalog (perf round 3).
-    const sentences = T3_CODE_ORCHESTRATION_INSTRUCTIONS.split(/(?<=\.)\s+/).filter((sentence) =>
-      sentence.includes("orchestrator_capabilities"),
-    );
-    assert.isAbove(sentences.length, 0);
-    for (const sentence of sentences) {
-      assert.match(sentence, /Before delegating|before reporting|acp-mcp-call/, sentence);
+describe("T3 device instructions", () => {
+  it("route device work through device_open and give Claude the line that loads the tools", () => {
+    for (const intent of ["`device_list`", "`device_open`", "`agent-device`", "ssh", "`hostId`"]) {
+      assert.include(T3_CODE_DEVICE_TOOL_INSTRUCTIONS, intent);
     }
-  });
-
-  it("documents structured schedules instead of JSON strings", () => {
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "structured object, never as JSON text");
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, '"everyMs":3600000');
-    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "bindToCurrentThread=false");
-  });
-
-  it("injects prompt fallback only for an MCP-enabled first run", () => {
-    const prompt = "Inspect the repository.";
-    const injected = t3OrchestrationPromptForFirstRun({
-      prompt,
-      runOrdinal: 1,
-      hasT3Mcp: true,
-    });
-
-    assert.include(injected, "<t3_code_orchestration_instructions>");
-    assert.include(injected, `<user_request>\n${prompt}\n</user_request>`);
+    assert.notInclude(T3_CODE_DEVICE_TOOL_INSTRUCTIONS, "ToolSearch");
+    const loadLine =
+      " Load them with ToolSearch `select:mcp__t3-code__device_list,mcp__t3-code__device_open,mcp__t3-code__device_screenshot,mcp__t3-code__device_close`.";
+    assert.include(T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH, loadLine);
     assert.equal(
-      t3OrchestrationPromptForFirstRun({ prompt, runOrdinal: 2, hasT3Mcp: true }),
-      prompt,
-    );
-    assert.equal(
-      t3OrchestrationPromptForFirstRun({ prompt, runOrdinal: 1, hasT3Mcp: false }),
-      prompt,
+      T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH.replace(loadLine, ""),
+      T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
     );
   });
 
-  it("only exposes the system prompt when the T3 MCP server is attached", () => {
-    assert.equal(t3OrchestrationSystemPrompt(false), undefined);
-    assert.equal(t3OrchestrationSystemPrompt(true), T3_CODE_ORCHESTRATION_INSTRUCTIONS);
-  });
-
-  it("gives ACP sessions provider-neutral mode, browser, and orchestration guidance", () => {
-    const injected = t3AcpPromptWithInstructions({
-      prompt: "Inspect the repository.",
-      state: { interactionMode: "default", hasT3Mcp: true },
-    });
-
-    assert.include(injected, "Up.computer interaction mode: Default");
-    assert.include(injected, "Up.computer collaborative browser");
-    assert.include(injected, "Up.computer orchestration");
-    assert.include(injected, "<user_request>\nInspect the repository.\n</user_request>");
-  });
-
-  it("reinjects ACP guidance only when mode or tool availability changes", () => {
-    const prompt = "Continue.";
-    const defaultState = { interactionMode: "default", hasT3Mcp: true } as const;
-
-    assert.equal(
-      t3AcpPromptWithInstructions({ prompt, state: defaultState, previousState: defaultState }),
-      prompt,
-    );
+  it("open the app before the returned command's snapshots, screenshots and input", () => {
     assert.include(
-      t3AcpPromptWithInstructions({
-        prompt,
-        state: { ...defaultState, interactionMode: "plan" },
-        previousState: defaultState,
-      }),
-      "Up.computer interaction mode: Plan",
+      T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
+      "its snapshots, screenshots and input need `open <app>` first,",
     );
-    const withoutMcp = t3AcpPromptWithInstructions({
-      prompt,
-      state: { interactionMode: "default", hasT3Mcp: false },
-    });
-    assert.include(withoutMcp, "Up.computer interaction mode: Default");
-    assert.notInclude(withoutMcp, "Up.computer collaborative browser");
-    assert.notInclude(withoutMcp, "Up.computer orchestration");
   });
 
-  it("keeps the ACP browser guidance when the session's agent does not get orchestration", () => {
-    const prompt = "Continue.";
-    const withBlock = { interactionMode: "default", hasT3Mcp: true } as const;
-    const withoutBlock = { ...withBlock, orchestrationInstructions: false } as const;
-
-    const injected = t3AcpPromptWithInstructions({ prompt, state: withoutBlock });
-    assert.include(injected, "Up.computer collaborative browser");
-    assert.notInclude(injected, "Up.computer orchestration");
-    assert.equal(
-      t3AcpPromptWithInstructions({ prompt, state: withoutBlock, previousState: withoutBlock }),
-      prompt,
-    );
+  it("keep the failure rule from taking over or closing a session another thread holds", () => {
+    // agent-device's DEVICE_IN_USE advice is to rerun with the owner's --session or close it first.
     assert.include(
-      t3AcpPromptWithInstructions({ prompt, state: withBlock, previousState: withoutBlock }),
-      "Up.computer orchestration",
+      T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
+      "follow its advice once, but never reuse or close another session; if it still fails,",
     );
   });
 
-  it("recognizes orchestration tools in a configured tool list", () => {
-    assert.isTrue(namesOrchestrationTool(["read", "delegate_task"]));
-    assert.isTrue(namesOrchestrationTool(["mcp__t3-code__schedule_task"]));
-    assert.isTrue(namesOrchestrationTool(["t3_thread_launch"]));
-    assert.isFalse(
-      namesOrchestrationTool(["read", "bash", "edit", "task_get", "task_update", "task_search"]),
-    );
-    assert.isFalse(namesOrchestrationTool([]));
+  it("reach OpenCode and Cursor only when the session holds device access", () => {
+    assert.include(t3OrchestrationSystemPrompt(true, true), T3_CODE_DEVICE_TOOL_INSTRUCTIONS);
+    assert.notInclude(t3OrchestrationSystemPrompt(true, false), "## Up.computer devices");
+    assert.isUndefined(t3OrchestrationSystemPrompt(false, true));
+
+    const firstRun = (hasDeviceTools: boolean) =>
+      t3OrchestrationPrompt({
+        prompt: "Check the login screen.",
+        hasT3Mcp: true,
+        hasDeviceTools,
+        orchestrationDelivered: false,
+        deviceInstructionsDelivered: false,
+      });
+    assert.include(firstRun(true), T3_CODE_DEVICE_TOOL_INSTRUCTIONS);
+    assert.notInclude(firstRun(false), "## Up.computer devices");
+
+    const laterRun = (deviceInstructionsDelivered: boolean) =>
+      t3OrchestrationPrompt({
+        prompt: "Check the login screen.",
+        hasT3Mcp: true,
+        hasDeviceTools: true,
+        orchestrationDelivered: true,
+        deviceInstructionsDelivered,
+      });
+    assert.include(laterRun(false), T3_CODE_DEVICE_TOOL_INSTRUCTIONS);
+    assert.notInclude(laterRun(false), T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim());
+    assert.equal(laterRun(true), "Check the login screen.");
   });
 
-  it.effect("keeps the block unless a registered resolver narrows the thread", () =>
-    Effect.gen(function* () {
-      const chat = ThreadId.make("thread-chat");
-      const run = ThreadId.make("thread-task-agent-run");
-      const broken = ThreadId.make("thread-resolver-fails");
-      assert.isTrue(yield* orchestrationInstructionsFor(run));
-
-      yield* Effect.scoped(
-        Effect.gen(function* () {
-          yield* registerOrchestrationInstructionsResolver((threadId) =>
-            threadId === broken
-              ? Effect.die("database unavailable")
-              : Effect.succeed(threadId === run ? false : undefined),
-          );
-          assert.isTrue(yield* orchestrationInstructionsFor(chat));
-          assert.isFalse(yield* orchestrationInstructionsFor(run));
-          assert.isTrue(yield* orchestrationInstructionsFor(broken));
-        }),
-      );
-      assert.isTrue(yield* orchestrationInstructionsFor(run));
-    }),
-  );
+  it("reach ACP agents again when device access changes mid-thread", () => {
+    const state = { interactionMode: "default", hasT3Mcp: true, hasDeviceTools: false } as const;
+    const withDevices = t3AcpPromptWithInstructions({
+      prompt: "Check the login screen.",
+      state: { ...state, hasDeviceTools: true },
+      previousState: state,
+    });
+    assert.include(withDevices, T3_CODE_DEVICE_TOOL_INSTRUCTIONS);
+    assert.equal(
+      t3AcpPromptWithInstructions({ prompt: "Again.", state, previousState: state }),
+      "Again.",
+    );
+    assert.notInclude(
+      t3AcpPromptWithInstructions({ prompt: "Hi.", state }),
+      "## Up.computer devices",
+    );
+  });
 });

@@ -5,7 +5,6 @@ import {
   parseNewThreadLink,
   parseThreadLinkPrompt,
   promptLinkAppPath,
-  promptLinkDeepLink,
   sanitizeLinkedPrompt,
   withoutPromptLinkParams,
 } from "./promptLinks.ts";
@@ -118,12 +117,5 @@ describe("link round trips", () => {
     expect(promptLinkAppPath("upcomputer://app/index.html")).toBeNull();
     expect(promptLinkAppPath("t3code://new?prompt=hi")).toBeNull();
     expect(promptLinkAppPath("https://up.computer/new?prompt=hi")).toBeNull();
-  });
-
-  it("hands an in-app path to the installed app", () => {
-    expect(promptLinkDeepLink("/new?prompt=hi")).toBe("upcomputer://new?prompt=hi");
-    expect(promptLinkDeepLink("/env-1/thread-1?prompt=hi")).toBe(
-      "upcomputer://threads/env-1/thread-1?prompt=hi",
-    );
   });
 });

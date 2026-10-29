@@ -11,7 +11,7 @@ import {
   deriveProviderInstanceEntries,
   sortProviderInstanceEntries,
 } from "../../../../apps/web/src/providerInstances.ts";
-import { useServerConfigs } from "../../../../apps/web/src/state/entities.ts";
+import { useEnvironmentProviders } from "../../../../apps/web/src/state/environments.ts";
 
 import { AgentsView } from "./AgentsView.tsx";
 import { useTasksWorkspaceData } from "./useWorkspaceData.ts";
@@ -29,7 +29,7 @@ export default function AgentsRoute() {
   });
   const data = useTasksWorkspaceData();
   const { projectFilter, projectGroups, setProjectKey } = usePagesProjectFilter();
-  const serverConfigs = useServerConfigs();
+  const providersByEnvironment = useEnvironmentProviders();
   const settings = usePrimarySettings();
   const providerCatalogByEnvironment = useMemo(() => {
     const catalogs = new Map<
@@ -42,9 +42,11 @@ export default function AgentsRoute() {
     for (const environmentId of new Set(
       data.agentProjects.map((project) => project.environmentId),
     )) {
-      const config = serverConfigs.get(environmentId) ?? null;
-      if (!config) continue;
-      const entries = sortProviderInstanceEntries(deriveProviderInstanceEntries(config.providers));
+      const environmentProviders = providersByEnvironment.get(environmentId);
+      if (!environmentProviders) continue;
+      const entries = sortProviderInstanceEntries(
+        deriveProviderInstanceEntries(environmentProviders),
+      );
       const modelOptionsByInstance = new Map<ProviderInstanceId, readonly AppModelOption[]>();
       for (const entry of entries) {
         modelOptionsByInstance.set(
@@ -55,7 +57,7 @@ export default function AgentsRoute() {
       catalogs.set(environmentId, { entries, modelOptionsByInstance });
     }
     return catalogs;
-  }, [data.agentProjects, serverConfigs, settings]);
+  }, [data.agentProjects, providersByEnvironment, settings]);
   const navigateBack = useCallback(() => {
     if (canGoBack) {
       window.history.back();

@@ -15,17 +15,15 @@ import { TaskRepository, type TaskRepositoryShape } from "../persistence/index.t
  * its agent's tool list names one of those tools; an agent without a tool
  * list keeps it, and so does every thread that no run used.
  */
-export const taskAgentOrchestrationInstructions = (
-  repository: TaskRepositoryShape,
-  threadId: ThreadId,
-) =>
-  Effect.gen(function* () {
-    const run = yield* repository.findLatestAgentRunByThreadId({ threadId });
-    if (Option.isNone(run)) return undefined;
-    const agent = yield* repository.getAgentById({ id: run.value.agentId });
-    const tools = Option.isSome(agent) ? agent.value.config.tools : undefined;
-    return tools === undefined ? undefined : namesOrchestrationTool(tools);
-  });
+export const taskAgentOrchestrationInstructions = Effect.fn(
+  "TaskAgentOrchestrationInstructions.taskAgentOrchestrationInstructions",
+)(function* (repository: TaskRepositoryShape, threadId: ThreadId) {
+  const run = yield* repository.findLatestAgentRunByThreadId({ threadId });
+  if (Option.isNone(run)) return undefined;
+  const agent = yield* repository.getAgentById({ id: run.value.agentId });
+  const tools = Option.isSome(agent) ? agent.value.config.tools : undefined;
+  return tools === undefined ? undefined : namesOrchestrationTool(tools);
+});
 
 export const TaskAgentOrchestrationInstructionsLive = Layer.effectDiscard(
   Effect.gen(function* () {

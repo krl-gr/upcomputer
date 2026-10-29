@@ -13,7 +13,7 @@ import { openCommandPalette } from "../../commandPaletteBus";
 import { isElectron } from "../../env";
 import { useHandleNewThread } from "../../hooks/useHandleNewThread";
 import { useScratchProject } from "../../hooks/useScratchProject";
-import { useLegacySidebarEnabled } from "../../hooks/useSettings";
+import { useBoringSidebarEnabled } from "../../hooks/useSettings";
 import { useSidebarProjectGroups } from "../../hooks/useSidebarProjectGroups";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { startNewThreadFromContext } from "../../lib/chatThreadActions";
@@ -112,8 +112,11 @@ function CompactProjects() {
   const navigate = useNavigate();
   const { setOpen } = useSidebar();
   const projectGroups = useSidebarProjectGroups();
-  const scopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
-  const setScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);
+  // Our Projects section scopes to one project; upstream's scope can hold several.
+  const scopeKey = useUiStateStore((store) => store.sidebarProjectScopeKeys[0] ?? null);
+  const setScopeKeys = useUiStateStore((store) => store.setSidebarProjectScopeKeys);
+  const setScopeKey = (projectKey: string | null) =>
+    setScopeKeys(projectKey === null ? [] : [projectKey]);
   const rows = useSidebarProjectsRows(projectGroups, scopeKey);
   const selectScope = (projectKey: string | null) => {
     setScopeKey(projectKey);
@@ -180,14 +183,14 @@ function CompactProjects() {
  */
 function CompactThreads() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const legacySidebarEnabled = useLegacySidebarEnabled();
+  const boringSidebarEnabled = useBoringSidebarEnabled();
   const projectGroups = useSidebarProjectGroups();
   const newThreadContext = useHandleNewThread();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { scratchEnvironmentId, startScratchThread } = useScratchProject();
   const shortcutLabel = shortcutLabelForCommand(keybindings, "chat.new");
   const startNewThread = (event: ReactMouseEvent) => {
-    const scratchTarget = newThreadStartsWithoutProject(legacySidebarEnabled)
+    const scratchTarget = newThreadStartsWithoutProject(boringSidebarEnabled)
       ? scratchEnvironmentId(
           newThreadContext.activeThread?.environmentId ??
             newThreadContext.activeDraftThread?.environmentId ??

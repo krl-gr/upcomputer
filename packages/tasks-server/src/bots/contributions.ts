@@ -56,17 +56,12 @@ export const BOTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
         [M.memory]: (input) => Effect.flatMap(BotService, (bots) => bots.memory(input.agentId)),
         [M.remember]: (input) =>
           Effect.flatMap(BotService, (bots) =>
-            bots
-              .remember(input, "user")
-              .pipe(
-                Effect.flatMap((entry) =>
-                  entry === null
-                    ? Effect.fail(
-                        new TaskError({ message: "This entry was deleted. Create a new memory." }),
-                      )
-                    : Effect.succeed(entry),
-                ),
+            bots.remember(input, "user").pipe(
+              Effect.filterOrFail(
+                (entry) => entry !== null,
+                () => new TaskError({ message: "This entry was deleted. Create a new memory." }),
               ),
+            ),
           ),
         [M.forget]: (input) =>
           Effect.flatMap(BotService, (bots) => bots.forget(input.agentId, input.id, "user")),

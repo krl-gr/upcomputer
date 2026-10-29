@@ -1,22 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  ACP_STDERR_TAIL_MAX_CHARS,
-  appendAcpStderrTail,
-  sanitizeAcpStderrExcerpt,
-} from "./stderr.ts";
+import { sanitizeAcpStderrExcerpt } from "./stderr.ts";
 
 describe("AcpStderr", () => {
-  it("keeps a bounded tail of stderr chunks", () => {
-    const prefix = "x".repeat(ACP_STDERR_TAIL_MAX_CHARS);
-    expect(appendAcpStderrTail(prefix, "abc")).toBe(`${prefix.slice(3)}abc`);
-  });
-
   it("redacts home paths, pairing URLs, and tokens from stderr excerpts", () => {
     const excerpt = sanitizeAcpStderrExcerpt(
       [
         "Invalid project config at /Users/ada/.cursor/cli.json",
         "Authorization: Bearer secret-token-value",
+        "Sign in: https://accounts.google.com/o/oauth2/v2/auth?state=oauth-state-value",
         "Visit http://localhost:5733/pair#token=ABCDEF for pairing",
         "key=sk-abcdefghijklmnopqrstuv",
       ].join("\n"),
@@ -30,6 +22,8 @@ describe("AcpStderr", () => {
     expect(excerpt).toContain("[redacted]");
     expect(excerpt).not.toContain("secret-token-value");
     expect(excerpt).not.toContain("ABCDEF");
+    expect(excerpt).toContain("[sign-in-url]");
+    expect(excerpt).not.toContain("oauth-state-value");
     expect(excerpt).not.toContain("sk-abcdefghijklmnopqrstuv");
   });
 

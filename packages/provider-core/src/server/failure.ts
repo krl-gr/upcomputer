@@ -15,6 +15,7 @@ import * as DateTime from "effect/DateTime";
 import * as Cause from "effect/Cause";
 
 import * as IdAllocator from "./IdAllocator.ts";
+import type { ProviderAdapterFailureReason } from "./ProviderAdapter.ts";
 import * as Schema from "effect/Schema";
 
 export class ContextHandoffBudgetError extends Schema.TaggedError<ContextHandoffBudgetError>()(
@@ -22,12 +23,21 @@ export class ContextHandoffBudgetError extends Schema.TaggedError<ContextHandoff
   {},
 ) {
   override get message() {
-    return "This conversation is too long for this model. Compact it with /compact or pick a model with a larger context window.";
+    return "Your message and attachments leave too little room for this model, even in a fresh conversation. Shorten the message or pick a model with a larger context window.";
+  }
+}
+
+export class ContextHandoffBackgroundWorkError extends Schema.TaggedError<ContextHandoffBackgroundWorkError>()(
+  "ContextHandoffBackgroundWorkError",
+  {},
+) {
+  override get message() {
+    return "The agent is still finishing background work from earlier. Wait for it to finish, or stop it, then send the message again.";
   }
 }
 
 export const MAX_PROVIDER_FAILURE_MESSAGE_LENGTH = 4_096;
-export const MAX_PROVIDER_FAILURE_CODE_LENGTH = 128;
+const MAX_PROVIDER_FAILURE_CODE_LENGTH = 128;
 const MAX_PROVIDER_FAILURE_REASON_LENGTH = 240;
 
 /**
@@ -49,6 +59,11 @@ const ProviderFailureCode = {
 } as const;
 
 const AGENT = "The agent";
+
+/** A provider name inside a sentence: the generic "The agent" reads "the agent" there. */
+function midSentence(provider: string): string {
+  return provider === AGENT ? "the agent" : provider;
+}
 
 export function providerFailureName(
   driver: ProviderDriverKind | string | undefined,
@@ -109,9 +124,20 @@ const PROPER_NOUNS = new Set([
  * Typed fields our own code writes for the user. Free-form `message` and defect
  * text are never promoted to the main message; they only go to the detail.
  */
+const PROVIDER_FAILURE_REASONS: Record<ProviderAdapterFailureReason, string> = {
+  previous_turn_active: "the previous turn is still running",
+  attachment_unreadable: "an attachment could not be read",
+};
+
 function safeReason(record: Record<string, unknown>): string | undefined {
   switch (record._tag) {
     case "ProviderAdapterProtocolError":
+      if (
+        typeof record.reason === "string" &&
+        Object.hasOwn(PROVIDER_FAILURE_REASONS, record.reason)
+      )
+        return PROVIDER_FAILURE_REASONS[record.reason as ProviderAdapterFailureReason];
+      return typeof record.detail === "string" ? record.detail : undefined;
     case "ProviderSetupError":
     case "OpenCodeRuntimeError":
     case "AcpTransportError":
@@ -169,7 +195,20 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
             retryable: false,
             detail: undefined,
           };
+        case "ContextHandoffBackgroundWorkError":
+          return {
+            message: new ContextHandoffBackgroundWorkError().message,
+            code: undefined,
+            retryable: true,
+            detail: undefined,
+          };
+        case "AcpModelSelectionError":
         case "ClaudeBackgroundWorkBlocksQueryReplacementError":
+        case "ClaudeAppendSystemPromptFileError":
+        case "ClaudeAppendSystemPromptMissingValueError":
+        case "ClaudeSettingsLaunchArgError":
+        case "ClaudeMcpRegistrationTimeoutError":
+        case "CursorModelUnavailableError":
           return {
             message: stringField(cause, "message") ?? "",
             code: undefined,
@@ -184,14 +223,20 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
             detail: undefined,
           };
         case "ProviderAdapterTurnStartError":
-          wrapper ??= "turn_start";
+          wrapper = "turn_start";
+          // The innermost wrapper names the failure; an outer reason does not carry into it.
+          reason = undefined;
           break;
         case "ProviderAdapterEventStreamError":
-          wrapper ??= "event_stream";
+          wrapper = "event_stream";
+          // The innermost wrapper names the failure; an outer reason does not carry into it.
+          reason = undefined;
           break;
         case "ProviderAdapterOpenSessionError":
         case "ProviderSessionOpenError":
-          wrapper ??= "open_session";
+          wrapper = "open_session";
+          // The innermost wrapper names the failure; an outer reason does not carry into it.
+          reason = undefined;
           break;
         case "ProviderWorkspaceMissingError":
           return {
@@ -210,7 +255,9 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
           };
         case "ProviderAdapterResumeThreadError":
         case "ProviderAdapterEnsureThreadError":
-          wrapper ??= "resume";
+          wrapper = "resume";
+          // The innermost wrapper names the failure; an outer reason does not carry into it.
+          reason = undefined;
           break;
         default: {
           const text = rawText(record);
@@ -259,7 +306,7 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
       };
     case "open_session":
       return {
-        message: `${provider} couldn't start${plain === undefined ? "" : `: ${plain}`}. Check ${provider} in Settings, then send the message again.`,
+        message: `${provider} couldn't start${plain === undefined ? "" : `: ${plain}`}. Check ${midSentence(provider)} in Settings, then send the message again.`,
         code: ProviderFailureCode.sessionOpen,
         retryable: true,
         detail,
@@ -275,7 +322,7 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
       if (plain === undefined)
         return detail === undefined ? undefined : unexplained(provider, detail);
       return {
-        message: `${provider} stopped before finishing: ${plain}. Send the message again; if it keeps happening, check ${provider} in Settings.`,
+        message: `${provider} stopped before finishing: ${plain}. Send the message again; if it keeps happening, check ${midSentence(provider)} in Settings.`,
         code: undefined,
         retryable: undefined,
         detail,
@@ -285,7 +332,7 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
 
 function unexplained(provider: string, detail: string | undefined): DescribedCause {
   return {
-    message: `${provider} stopped with an error it didn't explain. Send the message again; if it repeats, check ${provider} in Settings.`,
+    message: `${provider} stopped with an error it didn't explain. Send the message again; if it repeats, check ${midSentence(provider)} in Settings.`,
     code: undefined,
     retryable: undefined,
     detail,

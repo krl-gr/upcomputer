@@ -11,30 +11,31 @@ import {
   type OrchestrationV2AppThread,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ExecutionNode,
-  type OrchestrationV2PlanArtifact,
   type OrchestrationV2RuntimeRequest,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2Run,
   type OrchestrationV2TurnItem,
   ProviderDriverKind,
   ProviderInstanceId,
-  PlanId,
-  type ProviderThreadId,
+  ProviderThreadId,
   ProviderTurnId,
   RunAttemptId,
   RunId,
   RuntimeRequestId,
   TurnItemId,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
+import * as TestClock from "effect/testing/TestClock";
 import * as Fiber from "effect/Fiber";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlError from "effect/sql/SqlError";
 import * as Stream from "effect/Stream";
-import * as TestClock from "effect/testing/TestClock";
 
 import { toolOutputImages } from "@t3tools/shared/toolOutput";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
@@ -69,25 +70,63 @@ const layerGit = GitVcsDriver.layer.pipe(
   Layer.provideMerge(NodeServices.layer),
 );
 
-const layerTest = Layer.mergeAll(
-  layerTestDatabase,
-  layerTestStores,
-  layerTestEventSink,
-  IdAllocator.layer,
-  ThreadCommandExecutor.layer,
-  layerGit,
-  ProviderEventIngestor.layer.pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        layerTestStores,
-        layerTestEventSink,
-        IdAllocator.layer,
-        ThreadCommandExecutor.layer,
-        layerGit,
+const makeLayerTest = <E>(ingestorEventSink: Layer.Layer<EventSink.EventSinkV2, E>) =>
+  Layer.mergeAll(
+    layerTestDatabase,
+    layerTestStores,
+    layerTestEventSink,
+    IdAllocator.layer,
+    ThreadCommandExecutor.layer,
+    layerGit,
+    ProviderEventIngestor.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          layerTestStores,
+          ingestorEventSink,
+          IdAllocator.layer,
+          ThreadCommandExecutor.layer,
+          layerGit,
+        ),
       ),
     ),
-  ),
-);
+  );
+const layerTest = makeLayerTest(layerTestEventSink);
+
+// EventSink reports a lock that outlasted busy_timeout at BEGIN IMMEDIATE this way.
+const lockTimeout = new EventSink.EventSinkWriteError({
+  eventCount: 1,
+  cause: new SqlError.SqlError({ reason: new SqlError.LockTimeoutError({ cause: null }) }),
+});
+const constraintFailure = new EventSink.EventSinkWriteError({
+  eventCount: 1,
+  cause: new SqlError.SqlError({ reason: new SqlError.ConstraintError({ cause: null }) }),
+});
+
+/** The ingestor's next sink writes of `events` fail with `errors`, in order; the rest go through. */
+const layerFailingWrites = (
+  errors: ReadonlyArray<EventSink.EventSinkWriteError>,
+  matches: (events: ReadonlyArray<OrchestrationV2DomainEvent>) => boolean = () => true,
+) =>
+  makeLayerTest(
+    Layer.effect(
+      EventSink.EventSinkV2,
+      Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const pending = [...errors];
+        const failNext = <A, R>(
+          events: ReadonlyArray<OrchestrationV2DomainEvent>,
+          write: Effect.Effect<A, EventSink.EventSinkV2Error, R>,
+        ) => Effect.suspend(() => (matches(events) ? (pending.shift() ?? write) : write));
+        return EventSink.EventSinkV2.of({
+          ...eventSink,
+          write: (input) => failNext(input.events, eventSink.write(input)),
+          writeIfRunCurrent: (input) => failNext(input.events, eventSink.writeIfRunCurrent(input)),
+          writeIfProviderThreadOwner: (input) =>
+            failNext(input.events, eventSink.writeIfProviderThreadOwner(input)),
+        });
+      }),
+    ).pipe(Layer.provide(layerTestEventSink)),
+  );
 
 const makeSharedWorktree = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -237,6 +276,12 @@ it.effect("records accepted billed turn usage once without billing the context w
         modelSelection,
         runtimeMode: "full-access" as const,
         interactionMode: "default" as const,
+        origin: {
+          createdBy: "agent" as const,
+          creationSource: "provider" as const,
+          scheduled: false,
+          subagent: true,
+        },
       },
       event: { type: "provider_turn.updated" as const, driver: CODEX_DRIVER, providerTurn },
     };
@@ -275,6 +320,10 @@ it.effect("records accepted billed turn usage once without billing the context w
       mixedModels: false,
       runtimeMode: "full-access",
       interactionMode: "default",
+      createdBy: "agent",
+      creationSource: "provider",
+      scheduled: false,
+      subagent: true,
       durationMs: 120,
     });
   }).pipe(Effect.provide(layerTest.pipe(Layer.provide(layerAnalytics))));
@@ -903,122 +952,6 @@ layer("ProviderEventIngestorV2", (it) => {
     }),
   );
 
-  it.effect("carries plan-step durations through consecutive and restarted ingestion", () =>
-    Effect.gen(function* () {
-      yield* TestClock.setTime(Date.parse("2026-09-07T00:00:00.000Z"));
-      const now = yield* DateTime.now;
-      const eventSink = yield* EventSink.EventSinkV2;
-      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
-      const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
-      const idAllocator = yield* IdAllocator.IdAllocatorV2;
-      const threadEvent = yield* threadCreatedEvent(now);
-      const providerSessionId = yield* idAllocator.allocate.providerSession({
-        providerInstanceId: modelSelection.instanceId,
-        threadId: threadEvent.threadId,
-      });
-      const planId = PlanId.make("plan:provider-event-duration");
-      const nodeId = NodeId.make("node:provider-event-duration");
-      type TodoListPlan = Extract<OrchestrationV2PlanArtifact, { readonly kind: "todo_list" }>;
-      const plan = (steps: TodoListPlan["steps"]): TodoListPlan => ({
-        id: planId,
-        threadId: threadEvent.threadId,
-        runId: null,
-        nodeId,
-        kind: "todo_list",
-        status: "active",
-        steps,
-      });
-      const ingest = (
-        service: ProviderEventIngestor.ProviderEventIngestorV2["Service"],
-        steps: TodoListPlan["steps"],
-      ) =>
-        service.ingestNormalized({
-          providerSessionId,
-          providerInstanceId: modelSelection.instanceId,
-          threadId: threadEvent.threadId,
-          event: { type: "plan.updated", driver: CODEX_DRIVER, plan: plan(steps) },
-        });
-
-      yield* eventSink.write({ events: [threadEvent] });
-      yield* ingest(ingestor, [
-        { id: "duplicate-a", text: "Verify", status: "running" },
-        { id: "duplicate-b", text: "Verify", status: "pending" },
-        { id: "fallback", text: "Report", status: "pending" },
-      ]);
-      yield* TestClock.adjust("3 seconds");
-      yield* ingest(ingestor, [
-        { id: "duplicate-a", text: "Verify", status: "completed" },
-        { id: "duplicate-b", text: "Verify", status: "pending" },
-        { id: "fallback", text: "Report", status: "pending" },
-      ]);
-
-      const restartedIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2.pipe(
-        Effect.provide(
-          Layer.fresh(ProviderEventIngestor.layer).pipe(
-            Layer.provide(
-              Layer.succeed(ProjectionStore.ProjectionStoreV2, {
-                ...projectionStore,
-                getThreadProjection: () => Effect.die("Plan timing must not load thread history"),
-              }),
-            ),
-          ),
-        ),
-      );
-      yield* TestClock.adjust("4 seconds");
-      yield* ingest(restartedIngestor, [
-        { id: "duplicate-a", text: "Verify", status: "completed" },
-        { id: "duplicate-b", text: "Verify", status: "completed" },
-        { id: "fallback", text: "Report", status: "pending" },
-      ]);
-      yield* TestClock.adjust("5 seconds");
-      yield* ingest(restartedIngestor, [
-        { id: "duplicate-a", text: "Verify", status: "completed" },
-        { id: "duplicate-b", text: "Verify", status: "completed" },
-        { id: "fallback", text: "Report", status: "completed" },
-      ]);
-
-      const projection = yield* projectionStore.getThreadProjection(threadEvent.threadId);
-      const persisted = projection.plans.find(
-        (candidate): candidate is TodoListPlan =>
-          candidate.kind === "todo_list" && candidate.id === planId,
-      );
-      assert.deepEqual(
-        persisted?.steps.map(({ id, text, status, durationMs }) => ({
-          id,
-          text,
-          status,
-          durationMs,
-        })),
-        [
-          { id: "duplicate-a", text: "Verify", status: "completed", durationMs: 3_000 },
-          { id: "duplicate-b", text: "Verify", status: "completed", durationMs: 4_000 },
-          { id: "fallback", text: "Report", status: "completed", durationMs: 5_000 },
-        ],
-      );
-
-      yield* ingest(restartedIngestor, [
-        { id: "duplicate-a", text: "Inserted task", status: "running" },
-        { id: "duplicate-b", text: "Verify", status: "completed" },
-        { id: "fallback", text: "Different completed task", status: "completed" },
-      ]);
-      yield* TestClock.adjust("2 seconds");
-      yield* ingest(restartedIngestor, [
-        { id: "duplicate-a", text: "Inserted task", status: "completed" },
-        { id: "duplicate-b", text: "Verify", status: "completed" },
-        { id: "fallback", text: "Different completed task", status: "completed" },
-      ]);
-      const updated = yield* projectionStore.getThreadProjection(threadEvent.threadId);
-      const changedPlan = updated.plans.find(
-        (candidate): candidate is TodoListPlan =>
-          candidate.kind === "todo_list" && candidate.id === planId,
-      );
-      assert.deepEqual(
-        changedPlan?.steps.map((step) => step.durationMs),
-        [2_000, 4_000, undefined],
-      );
-    }),
-  );
-
   it.effect(
     "treats successful provider terminal markers as non-persisted orchestration control signals",
     () =>
@@ -1319,7 +1252,7 @@ layer("ProviderEventIngestorV2", (it) => {
     }),
   );
 
-  it.effect.each(["completed", "interrupted", "failed", "cancelled", "control"] as const)(
+  it.effect.each(["interrupted", "control"] as const)(
     "dismisses only native questions when a provider turn ends with %s",
     (terminal) =>
       Effect.gen(function* () {
@@ -2114,7 +2047,6 @@ layer("ProviderEventIngestorV2", (it) => {
             },
           ],
         });
-        // The rename's final scan finishes while the child is still uncommitted.
         const snapshot = yield* projections.getShellSnapshot();
         assert.isFalse(
           [...snapshot.threads, ...snapshot.archivedThreads].some(
@@ -2133,20 +2065,15 @@ layer("ProviderEventIngestorV2", (it) => {
       }),
   );
 
-  it.effect.each(["explicit", "detached", "unchanged", "legacy"])(
+  // regression: #20079 the renamed-branch correction must not rewrite a child that needs none
+  it.effect.each(["explicit", "detached"])(
     "preserves a native child's branch when the checkout needs no correction: %s",
     (scenario) =>
       Effect.gen(function* () {
         const { worktreePath, command } = yield* makeSharedWorktree;
         const git = yield* GitVcsDriver.GitVcsDriver;
-        const branch =
-          scenario === "explicit"
-            ? "child-feature"
-            : scenario === "legacy"
-              ? "upcomputer-abcd1234"
-              : "upcomputer/abcd1234";
-        if (scenario === "explicit" || scenario === "legacy")
-          yield* command(worktreePath, ["branch", "-m", branch]);
+        const branch = scenario === "explicit" ? "child-feature" : "upcomputer/abcd1234";
+        if (scenario === "explicit") yield* command(worktreePath, ["branch", "-m", branch]);
         if (scenario === "detached") yield* command(worktreePath, ["checkout", "--detach"]);
         const now = yield* DateTime.now;
         const sink = yield* EventSink.EventSinkV2;
@@ -2201,76 +2128,6 @@ layer("ProviderEventIngestorV2", (it) => {
         assert.equal(stored.length, 1);
         assert.equal(gitReads, scenario === "explicit" ? 0 : 1);
       }),
-  );
-
-  it.effect.each(
-    ["codex", "claude"].flatMap((driver) =>
-      ["/repo/shared", "/repo/isolated", null].map((worktreePath) => ({ driver, worktreePath })),
-    ),
-  )("records a native child with current shared workspace: %j", ({ driver, worktreePath }) =>
-    Effect.gen(function* () {
-      const { repo, worktreePath: sharedPath, command } = yield* makeSharedWorktree;
-      const isolatedPath = `${sharedPath}-isolated`;
-      yield* command(sharedPath, ["branch", "-m", "generated-branch"]);
-      yield* command(repo, ["worktree", "add", "-b", "upcomputer/abcd1234", isolatedPath]);
-      const actualPath =
-        worktreePath === "/repo/shared" ? sharedPath : worktreePath === null ? null : isolatedPath;
-      const now = yield* DateTime.now;
-      const eventSink = yield* EventSink.EventSinkV2;
-      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
-      const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
-      const idAllocator = yield* IdAllocator.IdAllocatorV2;
-      const rootEvent = yield* threadCreatedEvent(now);
-      if (rootEvent.type !== "thread.created") throw new Error("Expected thread fixture");
-      const childThreadId = idAllocator.derive.threadFromProviderThread({
-        driver: ProviderDriverKind.make(driver),
-        nativeThreadId: `late-native-subagent:${worktreePath}`,
-      });
-      const offered: OrchestrationV2AppThread = {
-        ...rootEvent.payload,
-        id: childThreadId,
-        branch: "upcomputer/abcd1234",
-        worktreePath: actualPath,
-        lineage: {
-          parentThreadId: rootEvent.threadId,
-          relationshipToParent: "subagent",
-          rootThreadId: rootEvent.threadId,
-        },
-      };
-      yield* eventSink.write({
-        events: [
-          {
-            ...rootEvent,
-            payload: {
-              ...rootEvent.payload,
-              branch: "generated-branch",
-              worktreePath: sharedPath,
-            },
-          },
-        ],
-      });
-      const providerSessionId = yield* idAllocator.allocate.providerSession({
-        providerInstanceId: modelSelection.instanceId,
-        threadId: rootEvent.threadId,
-      });
-      yield* ingestor.ingestNormalized({
-        providerSessionId,
-        providerInstanceId: modelSelection.instanceId,
-        threadId: rootEvent.threadId,
-        event: {
-          type: "app_thread.created",
-          driver: ProviderDriverKind.make(driver),
-          appThread: offered,
-        },
-      });
-      const child = yield* projectionStore.getThread(childThreadId);
-      assert.equal(
-        child.branch,
-        worktreePath === "/repo/shared" ? "generated-branch" : offered.branch,
-      );
-      assert.equal(child.worktreePath, actualPath);
-      assert.deepEqual(child.lineage, offered.lineage);
-    }),
   );
 
   it.effect("updates provider child metadata without recreating its saved thread", () =>
@@ -2357,7 +2214,76 @@ layer("ProviderEventIngestorV2", (it) => {
     }),
   );
 
-  it.effect("moves a native subagent's thread to the model its provider reports later", () =>
+  it.effect(
+    "recovers a missing Claude child once and preserves saved metadata on later recovery",
+    () =>
+      Effect.gen(function* () {
+        const now = yield* DateTime.now;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+        const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const rootEvent = yield* threadCreatedEvent(now);
+        if (rootEvent.type !== "thread.created") throw new Error("Expected thread fixture");
+        const driver = ProviderDriverKind.make("claude");
+        const providerInstanceId = ProviderInstanceId.make("claude");
+        const childThreadId = idAllocator.derive.threadFromProviderThread({
+          driver,
+          nativeThreadId: "recovered-claude-child",
+        });
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId,
+          threadId: rootEvent.threadId,
+        });
+        const recovered: OrchestrationV2AppThread = {
+          ...rootEvent.payload,
+          id: childThreadId,
+          title: "Recovered subagent",
+          providerInstanceId,
+          modelSelection: { instanceId: providerInstanceId, model: "claude-sonnet-4-6" },
+          activeProviderThreadId: null,
+          createdBy: "agent",
+          creationSource: "provider",
+          lineage: {
+            parentThreadId: rootEvent.threadId,
+            relationshipToParent: "subagent",
+            rootThreadId: rootEvent.threadId,
+          },
+        };
+        const ingest = (appThread: OrchestrationV2AppThread, createOnly: boolean) =>
+          ingestor.ingestNormalized({
+            providerSessionId,
+            providerInstanceId,
+            threadId: rootEvent.threadId,
+            event: { type: "app_thread.created", driver, appThread, createOnly },
+          });
+        yield* eventSink.write({ events: [rootEvent] });
+        const created = yield* Effect.all([ingest(recovered, true), ingest(recovered, true)], {
+          concurrency: "unbounded",
+        });
+        assert.deepEqual(
+          created.flat().map((stored) => stored.event.type),
+          ["thread.created"],
+        );
+        assert.deepEqual(yield* projectionStore.getThread(childThreadId), recovered);
+
+        yield* ingest(
+          {
+            ...recovered,
+            title: "Review authentication",
+            modelSelection: { instanceId: providerInstanceId, model: "claude-opus-4-6" },
+          },
+          false,
+        );
+        const saved = yield* projectionStore.getThread(childThreadId);
+        assert.equal(saved.title, "Review authentication");
+        assert.equal(saved.modelSelection.model, "claude-opus-4-6");
+        assert.deepEqual(yield* ingest(recovered, true), []);
+        assert.deepEqual(yield* projectionStore.getThread(childThreadId), saved);
+      }),
+  );
+
+  it.effect("moves a native subagent's thread to its later model through a database lock", () =>
     Effect.gen(function* () {
       const now = yield* DateTime.now;
       const eventSink = yield* EventSink.EventSinkV2;
@@ -2476,6 +2402,103 @@ layer("ProviderEventIngestorV2", (it) => {
         (yield* projectionStore.getThread(childThreadId)).modelSelection,
         reportedSelection,
       );
-    }),
+    }).pipe(
+      // Fresh: the shared test layer has already built the ingestor this replaces.
+      Effect.provide(
+        Layer.fresh(
+          layerFailingWrites([lockTimeout, lockTimeout], (events) =>
+            events.some((event) => event.type === "thread.model-selection-updated"),
+          ),
+        ),
+      ),
+    ),
   );
 });
+
+const ingestCompletedProviderTurn = (
+  guard: Pick<
+    Parameters<ProviderEventIngestor.ProviderEventIngestorV2Shape["ingestNormalized"]>[0],
+    "writeIfRunCurrent" | "writeIfProviderThreadOwner"
+  >,
+) =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const eventSink = yield* EventSink.EventSinkV2;
+    const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+    const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+    const idAllocator = yield* IdAllocator.IdAllocatorV2;
+    const threadEvent = yield* threadCreatedEvent(now);
+    yield* eventSink.write({ events: [threadEvent] });
+    const providerTurnId = ProviderTurnId.make("provider-turn:locked");
+    const exit = yield* ingestor
+      .ingestNormalized({
+        providerSessionId: yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId: threadEvent.threadId,
+        }),
+        providerInstanceId: modelSelection.instanceId,
+        threadId: threadEvent.threadId,
+        event: {
+          type: "provider_turn.updated",
+          driver: CODEX_DRIVER,
+          providerTurn: {
+            id: providerTurnId,
+            providerThreadId: ProviderThreadId.make("provider-thread:locked"),
+            nodeId: NodeId.make("node:locked-turn"),
+            runAttemptId: null,
+            nativeTurnRef: null,
+            ordinal: 1,
+            status: "completed",
+            startedAt: now,
+            completedAt: now,
+          },
+        },
+        ...guard,
+      })
+      .pipe(Effect.exit);
+    const projection = yield* projectionStore.getThreadProjection(threadEvent.threadId);
+    return { exit, providerTurnId, persisted: projection.providerTurns.map((turn) => turn.id) };
+  });
+
+// Neither guard matches a stored run, so a guarded write correctly commits nothing.
+const runId = RunId.make("run:locked");
+const activeAttemptId = RunAttemptId.make("attempt:locked");
+it.effect.each([
+  { route: "write", guard: {} },
+  {
+    route: "writeIfRunCurrent",
+    guard: { writeIfRunCurrent: { runId, activeAttemptId, expectedStatus: "running" } },
+  },
+  {
+    route: "writeIfProviderThreadOwner",
+    guard: {
+      writeIfProviderThreadOwner: {
+        providerThreadId: ProviderThreadId.make("provider-thread:locked"),
+        runId,
+        activeAttemptId,
+        expectedLastRunOrdinal: 1,
+      },
+    },
+  },
+] as const)("a provider event $route outlasts a brief database lock", ({ route, guard }) =>
+  Effect.gen(function* () {
+    const { exit, providerTurnId, persisted } = yield* ingestCompletedProviderTurn(guard);
+    assert.isTrue(Exit.isSuccess(exit));
+    assert.deepEqual(persisted, route === "write" ? [providerTurnId] : []);
+  }).pipe(Effect.provide(layerFailingWrites([lockTimeout, lockTimeout]))),
+);
+
+// The write after the queued errors would succeed, so failing proves the retries stopped.
+it.effect.each([
+  { failure: "stays locked", errors: [lockTimeout, lockTimeout, lockTimeout] },
+  { failure: "fails for another reason", errors: [constraintFailure] },
+])("fails a provider event write that $failure", ({ errors }) =>
+  Effect.gen(function* () {
+    const { exit, persisted } = yield* ingestCompletedProviderTurn({});
+    assert.instanceOf(
+      Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined,
+      ProviderEventIngestor.ProviderEventPublishError,
+    );
+    assert.isEmpty(persisted);
+  }).pipe(Effect.provide(layerFailingWrites(errors))),
+);

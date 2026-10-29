@@ -223,8 +223,7 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
         ),
       ).pipe(Effect.flatMap(decodeTokenResponse));
       accessToken = refreshed.access_token;
-      // Each machine's sign-in has its own refresh token, so the Google
-      // account id is what lets clients merge one account across environments.
+      // Use Google account IDs to merge accounts across environments; refresh tokens differ per machine.
       account = yield* request(
         HttpClientRequest.get("https://www.googleapis.com/oauth2/v2/userinfo").pipe(
           HttpClientRequest.setHeaders({ Authorization: `Bearer ${accessToken}` }),
@@ -246,26 +245,36 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
       accessToken = cached.accessToken;
       account = cached.account;
     }
+    // Merge endpoints because quota groups differ; keep each bucket's most-used reading.
     const fetchWindows = Effect.fn("AntigravityUsageProbe.fetchWindows")(function* <E>(
       operation: string,
       parse: (response: unknown) => Effect.Effect<ServerProviderUsageWindow[], E>,
     ) {
-      for (const endpoint of ENDPOINTS) {
-        const windows = yield* request(
-          HttpClientRequest.post(`${endpoint}/v1internal:${operation}`).pipe(
-            HttpClientRequest.setHeaders({
-              Authorization: `Bearer ${accessToken}`,
-              "User-Agent": `antigravity/hub/1.0.0 (aidev_client; os_type=${platform}; arch=${architecture}; cl=963137146)`,
-            }),
-            HttpClientRequest.bodyJsonUnsafe(token.project_id ? { project: token.project_id } : {}),
+      const responses = yield* Effect.forEach(
+        ENDPOINTS,
+        (endpoint) =>
+          request(
+            HttpClientRequest.post(`${endpoint}/v1internal:${operation}`).pipe(
+              HttpClientRequest.setHeaders({
+                Authorization: `Bearer ${accessToken}`,
+                "User-Agent": `antigravity/hub/1.0.0 (aidev_client; os_type=${platform}; arch=${architecture}; cl=963137146)`,
+              }),
+              HttpClientRequest.bodyJsonUnsafe(
+                token.project_id ? { project: token.project_id } : {},
+              ),
+            ),
+          ).pipe(
+            Effect.flatMap(parse),
+            Effect.orElseSucceed(() => []),
           ),
-        ).pipe(
-          Effect.flatMap(parse),
-          Effect.orElseSucceed(() => []),
-        );
-        if (windows.length > 0) return windows;
+        { concurrency: "unbounded" },
+      );
+      const windows = new Map<string, ServerProviderUsageWindow>();
+      for (const window of responses.flat()) {
+        const previous = windows.get(window.id);
+        if (!previous || window.usedPercent > previous.usedPercent) windows.set(window.id, window);
       }
-      return [];
+      return [...windows.values()];
     });
     const summary = yield* fetchWindows("retrieveUserQuotaSummary", (response) =>
       decodeSummary(response).pipe(Effect.map(summaryWindows)),

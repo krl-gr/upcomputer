@@ -1,6 +1,7 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import * as Clock from "effect/Clock";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -10,6 +11,7 @@ import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as HttpServer from "effect/http/HttpServer";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
@@ -17,7 +19,7 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as ServerConfig from "../config.ts";
-import { getTelemetryIdentifier } from "./Identify.ts";
+import { getTelemetryIdentity } from "./Identify.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 
 interface RecordedBatchRequest {
@@ -55,31 +57,128 @@ interface RecordedBatchBody {
 
 const SentBatch = Schema.fromJsonString(
   Schema.Struct({
-    batch: Schema.Array(Schema.Struct({ uuid: Schema.String, event: Schema.String })),
-  }),
-);
-
-type SentBatchEvent = (typeof SentBatch.Type)["batch"][number];
-
-const layerAcceptThenFailClient = (batches: Array<ReadonlyArray<SentBatchEvent>>) =>
-  Layer.succeed(
-    HttpClient.HttpClient,
-    HttpClient.make((request) =>
-      Effect.gen(function* () {
-        if (request.body._tag === "Uint8Array") {
-          const body = yield* Schema.decodeEffect(SentBatch)(
-            new TextDecoder().decode(request.body.body),
-          ).pipe(Effect.orDie);
-          batches.push(body.batch);
-        }
-        return yield* new HttpClientError.HttpClientError({
-          reason: new HttpClientError.TransportError({ request, cause: "connection reset" }),
-        });
+    batch: Schema.Array(
+      Schema.Struct({
+        uuid: Schema.String,
+        event: Schema.String,
+        distinct_id: Schema.String,
+        properties: Schema.Struct({
+          telemetryChannel: Schema.String,
+          installId: Schema.optionalKey(Schema.String),
+          ownerSource: Schema.optionalKey(Schema.String),
+          observedBy: Schema.optionalKey(Schema.String),
+          buildKind: Schema.optionalKey(Schema.String),
+          sessionId: Schema.optionalKey(Schema.String),
+          isInternal: Schema.optionalKey(Schema.Boolean),
+          previousSessionId: Schema.optionalKey(Schema.String),
+          previousVersion: Schema.optionalKey(Schema.String),
+          uncleanStarts: Schema.optionalKey(Schema.Number),
+        }),
       }),
     ),
-  );
+  }),
+);
+const decodeSentBatch = Schema.decodeEffect(SentBatch);
+type SentEvent = (typeof SentBatch.Type)["batch"][number];
+type Respond = (
+  request: HttpClientRequest.HttpClientRequest,
+) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>;
 
-const SentEvents = Schema.fromJsonString(
+const respondWithStatus =
+  (status: number): Respond =>
+  (request) =>
+    Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status })));
+
+/**
+ * Answers 503 for `minutes` after the first send, then 204. `answers` holds each
+ * answer with its time in ms after the first send (the test clock runs on across tests).
+ */
+const failingFor = (minutes: number) => {
+  const answers: Array<{ readonly at: number; readonly status: number }> = [];
+  let firstSend: number | undefined;
+  const respond: Respond = (request) =>
+    Effect.flatMap(Clock.currentTimeMillis, (now) => {
+      firstSend ??= now;
+      const at = now - firstSend;
+      const status = at < minutes * 60_000 ? 503 : 204;
+      answers.push({ at, status });
+      return respondWithStatus(status)(request);
+    });
+  return { respond, answers };
+};
+
+// With server.started these fill exactly one batch of 20.
+const recordTwentyEvents = Effect.gen(function* () {
+  const analytics = yield* AnalyticsService.AnalyticsService;
+  for (let index = 0; index < 19; index += 1) {
+    yield* analytics.record("test.retry", { index });
+  }
+});
+
+const LIFECYCLE_EVENTS = new Set(["server.started", "server.stopped"]);
+// The server reports its own start and stop around every run.
+const withoutLifecycle = (batches: ReadonlyArray<ReadonlyArray<SentEvent>>) =>
+  batches.flat().filter((event) => !LIFECYCLE_EVENTS.has(event.event));
+
+/**
+ * Runs `record` (20 events by default, with server.started), then lets `minutes` of background
+ * flushes run against a client that answers every send with `respond`.
+ * Returns the sent batches.
+ */
+const sendFor = (
+  minutes: number,
+  respond: Respond,
+  record: Effect.Effect<
+    void,
+    never,
+    AnalyticsService.AnalyticsService | Effect.Services<typeof getTelemetryIdentity>
+  > = recordTwentyEvents,
+) =>
+  Effect.gen(function* () {
+    const batches: Array<ReadonlyArray<SentEvent>> = [];
+    const client = HttpClient.make((request) =>
+      Effect.gen(function* () {
+        if (request.body._tag === "Uint8Array") {
+          const body = yield* decodeSentBatch(new TextDecoder().decode(request.body.body)).pipe(
+            Effect.orDie,
+          );
+          batches.push(body.batch);
+        }
+        return yield* respond(request);
+      }),
+    );
+    const runtimeLayer = AnalyticsService.layer.pipe(
+      Layer.provideMerge(
+        ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "t3-telemetry-retry-" }),
+      ),
+      Layer.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromUnknown({
+            T3CODE_TELEMETRY_ENABLED: true,
+            T3CODE_POSTHOG_KEY: "phc_test_key",
+            T3CODE_POSTHOG_HOST: "http://localhost",
+          }),
+        ),
+      ),
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.succeed(HostProcess.Platform, "win32"),
+          Layer.succeed(HostProcess.Architecture, "x64"),
+          Layer.succeed(HttpClient.HttpClient, client),
+        ),
+      ),
+    );
+
+    yield* Effect.gen(function* () {
+      yield* record;
+      for (let second = 0; second < minutes * 60; second += 1) {
+        yield* TestClock.adjust("1 second");
+      }
+    }).pipe(Effect.provide(runtimeLayer));
+    return batches;
+  });
+
+const DesktopEvents = Schema.fromJsonString(
   Schema.Struct({
     batch: Schema.Array(
       Schema.Struct({
@@ -90,16 +189,16 @@ const SentEvents = Schema.fromJsonString(
     ),
   }),
 );
-type SentEvent = (typeof SentEvents.Type)["batch"][number];
-const decodeSentEvents = Schema.decodeEffect(SentEvents);
+type DesktopEvent = (typeof DesktopEvents.Type)["batch"][number];
+const decodeDesktopEvents = Schema.decodeEffect(DesktopEvents);
 
-const layerAcceptClient = (events: Array<SentEvent>) =>
+const layerAcceptClient = (events: Array<DesktopEvent>) =>
   Layer.succeed(
     HttpClient.HttpClient,
     HttpClient.make((request) =>
       Effect.gen(function* () {
         if (request.body._tag === "Uint8Array") {
-          const body = yield* decodeSentEvents(new TextDecoder().decode(request.body.body)).pipe(
+          const body = yield* decodeDesktopEvents(new TextDecoder().decode(request.body.body)).pipe(
             Effect.orDie,
           );
           events.push(...body.batch);
@@ -112,7 +211,7 @@ const layerAcceptClient = (events: Array<SentEvent>) =>
 /** One server run in desktop mode on a fixed state directory, until its scope closes. */
 const runDesktopServer = (
   baseDir: string,
-  events: Array<SentEvent>,
+  events: Array<DesktopEvent>,
   use: (analytics: AnalyticsService.AnalyticsService["Service"]) => Effect.Effect<void>,
   desktopEnv: Readonly<Record<string, string>> = {},
 ) =>
@@ -148,56 +247,67 @@ const runDesktopServer = (
     ),
   );
 
-it("retryDelayMs doubles from 2s and stays under the 5 minute cap", () => {
-  assert.equal(AnalyticsService.retryDelayMs(1, 0), 1_000);
-  assert.equal(AnalyticsService.retryDelayMs(2, 0.999_999), 4_000);
-  assert.equal(AnalyticsService.retryDelayMs(30, 0), 150_000);
-  assert.equal(AnalyticsService.retryDelayMs(30, 0.999_999), 300_000);
-});
-
 it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
-  it.effect("a batch that keeps failing is retried with backoff, then dropped", () =>
+  it.effect("client owner reports cannot use up the server's owner cap", () =>
     Effect.gen(function* () {
-      const sent: Array<ReadonlyArray<SentBatchEvent>> = [];
-      const layerRuntime = AnalyticsService.layer.pipe(
-        Layer.provideMerge(
-          ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "t3-telemetry-retry-" }),
-        ),
-        Layer.provide(
-          ConfigProvider.layer(
-            ConfigProvider.fromUnknown({
-              T3CODE_TELEMETRY_ENABLED: true,
-              T3CODE_POSTHOG_KEY: "phc_test_key",
-              T3CODE_POSTHOG_HOST: "http://localhost",
-            }),
-          ),
-        ),
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(HostProcess.Platform, "win32"),
-            Layer.succeed(HostProcess.Architecture, "x64"),
-            layerAcceptThenFailClient(sent),
-          ),
-        ),
+      const batches = yield* sendFor(
+        10,
+        respondWithStatus(204),
+        Effect.gen(function* () {
+          const analytics = yield* AnalyticsService.AnalyticsService;
+          yield* analytics.recordOwners(
+            Array.from({ length: 1_001 }, (_, index) => ({
+              source: "device" as const,
+              ownerId: index.toString(16).padStart(64, "0"),
+            })),
+            "client",
+          );
+          // The event buffer also holds 1,000, so send the client events first.
+          yield* analytics.flush;
+          yield* analytics.recordOwners([{ source: "connect", ownerId: "a".repeat(64) }], "server");
+        }),
       );
+      const owners = withoutLifecycle(batches).map((event) => event.properties.observedBy);
 
-      yield* Effect.gen(function* () {
-        const analytics = yield* AnalyticsService.AnalyticsService;
-        // With server.started these fill exactly one batch.
-        for (let index = 0; index < 19; index += 1) {
-          yield* analytics.record("test.retry", { index });
-        }
-        for (let second = 0; second < 600; second += 1) {
-          yield* TestClock.adjust("1 second");
-        }
-      }).pipe(Effect.provide(layerRuntime));
+      assert.equal(owners.filter((observedBy) => observedBy === "client").length, 1_000);
+      assert.equal(owners.filter((observedBy) => observedBy === "server").length, 1);
+    }),
+  );
 
-      // The shutdown flush tries server.stopped once more on its own.
-      const batches = sent.filter((batch) => batch.some((event) => event.event === "test.retry"));
-      assert.equal(batches.length, 5);
-      const uuids = batches.map((batch) => batch.map((event) => event.uuid).join(","));
-      assert.equal(new Set(uuids).size, 1, "every retry carries the same uuids");
-      assert.equal(new Set(batches[0]?.map((event) => event.uuid)).size, 20);
+  it.effect("keeps a failed batch through a 20-minute outage and sends it once after", () =>
+    Effect.gen(function* () {
+      const ingest = failingFor(20);
+      const batches = (yield* sendFor(40, ingest.respond)).filter((batch) =>
+        batch.some(({ event }) => event === "test.retry"),
+      );
+      // The last answer is the shutdown flush sending server.stopped.
+      const statuses = ingest.answers.slice(0, -1).map(({ status }) => status);
+      assert.equal(statuses.at(-1), 204);
+      assert.equal(statuses.filter((status) => status === 204).length, 1);
+      const sentUuids = new Set(batches.map((batch) => batch.map(({ uuid }) => uuid).join()));
+      assert.equal(sentUuids.size, 1);
+      assert.equal(batches[0]?.length, 20);
+    }),
+  );
+
+  it.effect("drops a batch that keeps failing for 30 minutes", () =>
+    Effect.gen(function* () {
+      const ingest = failingFor(Infinity);
+      yield* sendFor(60, ingest.respond);
+      // The last send is the shutdown flush with server.stopped.
+      const lastSend = ingest.answers.at(-2)?.at ?? 0;
+      assert.isAtLeast(lastSend, 30 * 60_000);
+      assert.isBelow(lastSend, 36 * 60_000);
+    }),
+  );
+
+  it.effect("drops a batch the endpoint rejects without sending it again", () =>
+    Effect.gen(function* () {
+      const batches = yield* sendFor(10, respondWithStatus(400));
+      assert.equal(
+        batches.filter((batch) => batch.some(({ event }) => event === "test.retry")).length,
+        1,
+      );
     }),
   );
 
@@ -247,8 +357,8 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
 
       yield* Effect.gen(function* () {
         yield* Layer.launch(layerBatchServer).pipe(Effect.forkScoped);
-        const telemetryIdentifier = yield* getTelemetryIdentifier;
-        assert.equal(telemetryIdentifier !== null, true);
+        const { distinctId } = yield* getTelemetryIdentity;
+        assert.equal(distinctId !== null, true);
         const analytics = yield* AnalyticsService.AnalyticsService;
 
         for (let index = 0; index < 45; index += 1) {
@@ -311,7 +421,7 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
         prefix: "t3-telemetry-first-launch-",
       });
-      const events: Array<SentEvent> = [];
+      const events: Array<DesktopEvent> = [];
 
       yield* runDesktopServer(baseDir, events, (analytics) =>
         Effect.gen(function* () {
@@ -354,7 +464,7 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
         prefix: "t3-telemetry-launch-",
       });
-      const events: Array<SentEvent> = [];
+      const events: Array<DesktopEvent> = [];
       const desktop = {
         T3CODE_DESKTOP_VERSION: "0.0.35",
         T3CODE_DESKTOP_RELEASE_CHANNEL: "latest",
@@ -547,8 +657,11 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-telemetry-loop-" });
       const marker = path.join(baseDir, "userdata", "telemetry-session");
       const events: Array<SentEvent> = [];
+      // The test clock runs on across tests, so the window starts now.
       const crash = (uncleanStarts: number) =>
-        fileSystem.writeFileString(marker, JSON.stringify({ uncleanStarts, windowStartedAtMs: 0 }));
+        Effect.flatMap(Clock.currentTimeMillis, (windowStartedAtMs) =>
+          fileSystem.writeFileString(marker, JSON.stringify({ uncleanStarts, windowStartedAtMs })),
+        );
 
       yield* fileSystem.makeDirectory(path.dirname(marker), { recursive: true });
       // The tenth unclean start within the hour still reports.
@@ -600,7 +713,7 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
         path.join(baseDir, "userdata", "telemetry-first-launch-v1"),
         "1\n",
       );
-      const events: Array<SentEvent> = [];
+      const events: Array<DesktopEvent> = [];
 
       yield* runDesktopServer(baseDir, events, (analytics) =>
         analytics.recordMilestone("app.first_message_sent"),

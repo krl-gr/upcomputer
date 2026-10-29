@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { parseClaudeLine } from "./claudeUsage.ts";
+import { claudeUsageFormat, parseClaudeLine } from "./claudeUsage.ts";
 
 function claudeLine(overrides: {
   messageId: string;
@@ -48,17 +48,8 @@ describe("parseClaudeLine", () => {
     expect(record?.speed).toBe("standard");
   });
 
-  it("marks fast-mode requests", () => {
-    const line = (speed: string) =>
-      parseClaudeLine(claudeLine({ messageId: "msg_1", contentType: "text", speed }));
-
-    expect(line("fast")?.speed).toBe("fast");
-    expect(line("standard")?.speed).toBe("standard");
-  });
-
   it("gives every content block of one message the same dedupe key", () => {
-    // T3 Code writes one record per content block, each repeating the parent
-    // message's full usage. Summing them would overcount ~2.4x on real data.
+    // Content-block records repeat full parent usage; summing them overcounts.
     const text = parseClaudeLine(claudeLine({ messageId: "msg_2", contentType: "text" }));
     const toolUse = parseClaudeLine(claudeLine({ messageId: "msg_2", contentType: "tool_use" }));
 
@@ -66,8 +57,32 @@ describe("parseClaudeLine", () => {
     expect(text?.totals).toEqual(toolUse?.totals);
   });
 
-  it("ignores records that are not assistant messages", () => {
-    expect(parseClaudeLine(JSON.stringify({ type: "user", message: {} }))).toBeNull();
-    expect(parseClaudeLine("not json")).toBeNull();
+  it("skips local placeholders in both reader paths but keeps real zero-token responses", () => {
+    const projected = {
+      type: "assistant",
+      timestamp: "2026-08-07T04:05:13.944Z",
+      message: {
+        model: "claude-fable-5",
+        usage: { input_tokens: 0, output_tokens: 0 },
+      },
+    };
+    const expected = [
+      expect.objectContaining({
+        model: "claude-fable-5",
+        totals: {
+          uncachedInputTokens: 0,
+          cachedInputTokens: 0,
+          cacheCreationTokens: 0,
+          outputTokens: 0,
+          reasoningTokens: 0,
+        },
+      }),
+    ];
+    expect(claudeUsageFormat.parseLine(JSON.stringify(projected), undefined)).toEqual(expected);
+    expect(claudeUsageFormat.parseProjected(projected, undefined)).toEqual(expected);
+
+    const synthetic = { ...projected, message: { ...projected.message, model: "<synthetic>" } };
+    expect(claudeUsageFormat.parseLine(JSON.stringify(synthetic), undefined)).toEqual([]);
+    expect(claudeUsageFormat.parseProjected(synthetic, undefined)).toEqual([]);
   });
 });

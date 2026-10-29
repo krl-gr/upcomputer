@@ -2,7 +2,7 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { useRouter } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { CopyIcon, EllipsisIcon, PlusIcon, SettingsIcon } from "lucide-react";
-import { useCallback, useMemo, useReducer } from "react";
+import { useReducer } from "react";
 
 import { ProjectFavicon } from "../components/ProjectFavicon";
 import {
@@ -74,33 +74,27 @@ export function SidebarProjectsSection(props: {
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const handleNewThread = useNewThreadHandler();
-  const scopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
-  const setScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);
+  // Our Projects section scopes to one project; upstream's scope can hold several.
+  const scopeKey = useUiStateStore((store) => store.sidebarProjectScopeKeys[0] ?? null);
+  const setScopeKeys = useUiStateStore((store) => store.setSidebarProjectScopeKeys);
+  const setScopeKey = (projectKey: string | null) =>
+    setScopeKeys(projectKey === null ? [] : [projectKey]);
   const [open, setOpen] = useLocalStorage(SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, true, Schema.Boolean);
 
   const rows = useSidebarProjectsRows(projectGroups, scopeKey);
-  const selectedProject = useMemo(
-    () => projectGroups.find((group) => group.projectKey === scopeKey) ?? null,
-    [projectGroups, scopeKey],
-  );
+  const selectedProject = projectGroups.find((group) => group.projectKey === scopeKey) ?? null;
 
-  const openProjectSettings = useCallback(
-    (project: SidebarProjectSnapshot) => {
-      if (isMobile) setOpenMobile(false);
-      void router.navigate({
-        to: "/projects/$projectKey",
-        params: { projectKey: project.projectKey },
-      });
-    },
-    [isMobile, router, setOpenMobile],
-  );
-  const startNewThread = useCallback(
-    (project: SidebarProjectSnapshot) => {
-      if (isMobile) setOpenMobile(false);
-      void handleNewThread(scopeProjectRef(project.environmentId, project.id));
-    },
-    [handleNewThread, isMobile, setOpenMobile],
-  );
+  const openProjectSettings = (project: SidebarProjectSnapshot) => {
+    if (isMobile) setOpenMobile(false);
+    void router.navigate({
+      to: "/projects/$projectKey",
+      params: { projectKey: project.projectKey },
+    });
+  };
+  const startNewThread = (project: SidebarProjectSnapshot) => {
+    if (isMobile) setOpenMobile(false);
+    void handleNewThread(scopeProjectRef(project.environmentId, project.id));
+  };
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: ({ path }) => {
       toastManager.add({ type: "success", title: "Path copied", description: path });
@@ -236,24 +230,16 @@ export function SidebarProjectsMore(props: {
     query: "",
   });
   const filter = useComboboxFilter();
-  const items = useMemo(
-    (): ProjectItem[] =>
-      projects.map((project) => ({ value: project.projectKey, label: project.displayName })),
-    [projects],
-  );
-  const projectByKey = useMemo(
-    () => new Map(projects.map((project) => [project.projectKey, project] as const)),
-    [projects],
-  );
-  const filteredItems = useMemo(
-    () =>
-      filterSidebarProjectScopeItems({
-        items,
-        query: menuState.query,
-        matches: (item, query) => filter.contains(item, query, (candidate) => candidate.label),
-      }),
-    [filter, items, menuState.query],
-  );
+  const items = projects.map((project) => ({
+    value: project.projectKey,
+    label: project.displayName,
+  }));
+  const projectByKey = new Map(projects.map((project) => [project.projectKey, project] as const));
+  const filteredItems = filterSidebarProjectScopeItems({
+    items,
+    query: menuState.query,
+    matches: (item, query) => filter.contains(item, query, (candidate) => candidate.label),
+  });
   return (
     <Combobox<ProjectItem>
       items={items}

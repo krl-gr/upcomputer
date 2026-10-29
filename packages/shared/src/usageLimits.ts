@@ -18,6 +18,13 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 export const CHATGPT_USAGE_URL = "https://chatgpt.com/#settings/Usage";
+export const CHATGPT_USAGE_LIMIT_CODE = "subscription_sharing_usage_limit_exceeded";
+/** A ChatGPT Business admin caps plan use in other apps; only the admin can raise it. */
+export const CHATGPT_WORKSPACE_USAGE_LIMIT_CODE =
+  "subscription_sharing_workplace_individual_usage_limit_exceeded";
+/** OpenAI's partner guidelines fix this wording; the user sends it to their admin themselves. */
+export const CHATGPT_WORKSPACE_ADMIN_REQUEST =
+  "I've reached the limit for using my ChatGPT plan in Up.computer. Could you increase our workspace's usage limits so I can continue?\n\nGo to admin.openai.com → Workspace → Usage limits. Thank you!";
 
 export function usesChatGptSharing(provider: ServerProvider | null | undefined): boolean {
   return provider?.auth.status === "authenticated" && provider.auth.subscriptionSharing === true;
@@ -50,9 +57,7 @@ function cursorUsageWindowRank(id: string): number {
   return rank < 0 ? CURSOR_USAGE_WINDOWS.length : rank;
 }
 
-export function providersWithLimits(
-  providers: readonly ServerProvider[],
-): readonly ServerProvider[] {
+function providersWithLimits(providers: readonly ServerProvider[]): readonly ServerProvider[] {
   return providers.filter(
     (provider) =>
       provider.enabled &&
@@ -67,7 +72,7 @@ export type LimitPresentations = ReadonlyMap<
   {
     readonly entry: { readonly target: { readonly label: string } };
     readonly serverConfig: {
-      readonly providers?: readonly ServerProvider[] | undefined;
+      readonly providers: readonly ServerProvider[];
       readonly usageLimitSources?: UsageLimitSourceSnapshots | undefined;
     } | null;
   }
@@ -125,10 +130,7 @@ const nativeReport = (provider: ServerProvider): AccountReport => ({
   usageLimits: provider.usageLimits,
 });
 
-/**
- * Pass every enabled login, read or not, so an unreadable workspace still
- * counts as one.
- */
+// Include every enabled login, even unreadable workspaces.
 function accountKeyResolver(reports: Iterable<AccountReport>) {
   const workspaces = new Map<string, Set<string>>();
   for (const report of reports) {
@@ -171,11 +173,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
   const creditSources = new Map<string, LimitAccount>();
   const hubRedeems = new Map<string, LimitAccount>();
   const merge = (key: string, next: LimitAccount) => {
-    // Redeeming through a hub also clears the routing cooldown that hub holds
-    // for the account. Redeeming natively against the same subscription resets
-    // it upstream but leaves the hub refusing to route to the account until
-    // its own cooldown expires, so a hub target wins the redemption outright
-    // while the displayed balance still follows the freshest read.
+    // Prefer hub redemption to clear its routing cooldown too; displayed balance still follows the freshest read.
     const previousHub = hubRedeems.get(key);
     if (
       next.redeem &&
@@ -313,6 +311,7 @@ export function collectLimitNotices(presentations: LimitPresentations): readonly
 export interface LimitPoolMember {
   readonly account: LimitAccount;
   readonly window: ServerProviderUsageWindow;
+  readonly refillPercent: number;
 }
 
 export interface LimitPoolWindow {
@@ -320,10 +319,9 @@ export interface LimitPoolWindow {
   readonly kind: ServerProviderUsageWindow["kind"];
   readonly label: string;
   readonly members: readonly LimitPoolMember[];
-  readonly columns: ReadonlyArray<{
-    readonly account: LimitAccount;
-    readonly window: ServerProviderUsageWindow | null;
-  }>;
+  readonly columns: ReadonlyArray<
+    LimitPoolMember | { readonly account: LimitAccount; readonly window: null }
+  >;
   readonly remainingPercent: number;
   readonly usedPercent: number;
   readonly pace: LimitPace | null;
@@ -385,7 +383,10 @@ export function collectLimitPools(
       const window = account.limits.windows.find(
         (window) => orderWindow && poolKey(driver, window) === poolKey(driver, orderWindow),
       );
-      return (window ? resetMillis(window) : null) ?? Number.POSITIVE_INFINITY;
+      return (
+        (window ? resetMillis(poolMember(account, window, now).window) : null) ??
+        Number.POSITIVE_INFINITY
+      );
     };
     const sorted = [...members].sort(
       (left, right) =>
@@ -401,26 +402,68 @@ function accountSortName(account: LimitAccount): string {
   return (account.displayName ?? account.email ?? account.key).toLowerCase();
 }
 
-/**
- * Codex ids are slots, not allowances: a weekly-only plan reports its weekly
- * window as `primary`, other plans as `secondary`. Its windows pool by kind;
- * other drivers' ids name distinct allowances.
- */
+// Codex ids name slots, so pool by kind; other drivers' ids identify distinct allowances.
 function poolKey(driver: ServerProvider["driver"], window: ServerProviderUsageWindow): string {
   return driver === "codex" ? window.kind : `${window.kind}:${window.id}`;
+}
+
+function poolMember(account: LimitAccount, reported: ServerProviderUsageWindow, now: number) {
+  const spentWeekly =
+    reported.kind === "session"
+      ? account.limits.windows.find(
+          (window) =>
+            window.usedPercent >= 100 &&
+            (account.driver === "claudeAgent"
+              ? window.id === "seven_day"
+              : account.driver === "codex" && window.kind === "weekly"),
+        )
+      : undefined;
+  if (!spentWeekly) return { account, window: reported, refillPercent: reported.usedPercent };
+
+  const weeklyReset = resetMillis(spentWeekly);
+  const sessionReset = resetMillis(reported);
+  const cutoff = Math.max(now, Date.parse(account.limits.checkedAt));
+  let resetsAt: string | undefined;
+  let refillPercent = 0;
+  // A stale or missing clock cannot tell us when blocked quota becomes usable.
+  if (
+    weeklyReset !== null &&
+    sessionReset !== null &&
+    weeklyReset > cutoff &&
+    sessionReset > cutoff
+  ) {
+    if (sessionReset <= weeklyReset) {
+      resetsAt = spentWeekly.resetsAt;
+      refillPercent = 100;
+    } else if (reported.usedPercent >= 100) {
+      resetsAt = reported.resetsAt;
+      refillPercent = 100;
+    } else {
+      resetsAt = spentWeekly.resetsAt;
+      refillPercent = 100 - Math.max(0, Math.min(100, reported.usedPercent));
+    }
+  }
+  return {
+    account,
+    // Suppression is not session spending, so it has no session pace clock.
+    window: { ...reported, usedPercent: 100, resetsAt, windowDurationMins: undefined },
+    refillPercent,
+  };
 }
 
 function poolWindows(accounts: readonly LimitAccount[], now: number): readonly LimitPoolWindow[] {
   const byKey = new Map<string, LimitPoolMember[]>();
   for (const account of accounts) {
-    for (const window of account.limits.windows) {
+    for (const reported of account.limits.windows) {
+      const member = poolMember(account, reported, now);
+      const { window } = member;
       const pooled = poolKey(account.driver, window);
       const key = byKey.get(pooled)?.some((member) => member.account === account)
         ? `${window.kind}:${window.id}`
         : pooled;
       const list = byKey.get(key);
-      if (list) list.push({ account, window });
-      else byKey.set(key, [{ account, window }]);
+      if (list) list.push(member);
+      else byKey.set(key, [member]);
     }
   }
   const pools = [...byKey].map(([key, members]): LimitPoolWindow => {
@@ -428,9 +471,7 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
     const first = members[0]!.window;
     const id = members[0]!.account.driver === "codex" ? key : first.id;
     const usedPercent = members.reduce((sum, m) => sum + m.window.usedPercent, 0) / members.length;
-    // Pace compares spend against the clock, so it is judged only over the
-    // members that have a clock; a window with no reset would otherwise
-    // count as spend with no time elapsed and skew the verdict.
+    // Judge pace only for windows with reset clocks; others add spend without elapsed time.
     const timed = members.flatMap((m) => {
       const share = elapsedShare(m.window, now);
       return share === null ? [] : [{ used: m.window.usedPercent, elapsed: share }];
@@ -447,7 +488,7 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
               {
                 member,
                 at,
-                restoresPercent: Math.round(member.window.usedPercent / members.length),
+                restoresPercent: Math.round(member.refillPercent / members.length),
               },
             ];
       })
@@ -495,6 +536,15 @@ export function elapsedShare(window: ServerProviderUsageWindow, now: number): nu
   const length = window.windowDurationMins * MINUTE;
   if (length <= 0) return null;
   return Math.max(0, Math.min(1, (length - (resetsAt - now)) / length));
+}
+
+// Bars show quota remaining, so even pace tracks time remaining.
+export function paceRemainingPercent(
+  window: ServerProviderUsageWindow,
+  now: number,
+): number | null {
+  const elapsed = elapsedShare(window, now);
+  return elapsed === null ? null : Math.round((1 - elapsed) * 100);
 }
 
 export type LimitPace = "ahead" | "on" | "under";
@@ -604,25 +654,52 @@ export function collectProviderUsageLimits(
 ): UsageLimitsReport | null {
   const selected = providers.find((provider) => provider.instanceId === instanceId);
   if (!selected || !hasProviderUsageLimits(selected.driver, providers, sources)) return null;
-  const native = providersWithLimits(providers).filter(
-    (provider) => provider.driver === selected.driver,
-  );
   const resolveKey = accountKeyResolver([
     ...providers.filter((provider) => provider.enabled).map(nativeReport),
     ...sources.flatMap((source) => source.accounts),
   ]);
-  const nativeAccounts = new Set(
-    native.flatMap((provider) => {
+  type NativeSnapshot = { provider: ServerProvider; limits: ServerProviderUsageLimits };
+  const nativeByAccount = new Map<
+    string,
+    { usage: NativeSnapshot; credits: NativeSnapshot | null }
+  >();
+  for (const provider of providersWithLimits(providers)) {
+    if (provider.driver !== selected.driver || !provider.usageLimits) continue;
+    const snapshot = { provider, limits: provider.usageLimits };
+    const key = resolveKey(nativeReport(provider)) ?? `instance:${provider.instanceId}`;
+    const previous = nativeByAccount.get(key);
+    const previousUsable = previous ? limitsNotice(previous.usage.limits) === null : false;
+    const usable = limitsNotice(snapshot.limits) === null;
+    const providerWins =
+      !previous ||
+      (usable && !previousUsable) ||
+      (usable === previousUsable &&
+        Date.parse(snapshot.limits.checkedAt) > Date.parse(previous.usage.limits.checkedAt));
+    const previousCredit = previous?.credits;
+    const credits =
+      snapshot.limits.resetCredits &&
+      (!previousCredit ||
+        Date.parse(snapshot.limits.checkedAt) > Date.parse(previousCredit.limits.checkedAt))
+        ? snapshot
+        : (previousCredit ?? null);
+    nativeByAccount.set(key, {
+      usage: providerWins ? snapshot : previous.usage,
+      credits,
+    });
+  }
+  const native = [...nativeByAccount.values()];
+  const nativeAccountKeys = new Set(
+    native.flatMap(({ usage: { provider, limits } }) => {
       const key = resolveKey(nativeReport(provider));
-      return key && provider.usageLimits?.windows.length && !provider.usageLimits.unavailable
-        ? [key]
-        : [];
+      return key && limits.windows.length && !limits.unavailable ? [key] : [];
     }),
   );
   const accounts: Array<UsageLimitsReport["accounts"][number]> = [];
   const notices: string[] = [];
-  for (const provider of native) {
-    if (!provider.usageLimits) continue;
+  for (const {
+    usage: { provider, limits },
+    credits,
+  } of native) {
     const key = resolveKey(nativeReport(provider));
     const hubCredits = sources
       .flatMap((source) => source.accounts.map((account) => ({ source, account })))
@@ -640,9 +717,12 @@ export function collectProviderUsageLimits(
     const hubCreditId = hubCredits?.account.usageLimits.resetCredits?.nextCreditId;
     const showHubCredits =
       hubCredits &&
-      (!provider.usageLimits.resetCredits ||
+      (!credits ||
         Date.parse(hubCredits.account.usageLimits.checkedAt) >
-          Date.parse(provider.usageLimits.checkedAt));
+          Date.parse(credits.limits.checkedAt));
+    const shownCredits = showHubCredits
+      ? hubCredits.account.usageLimits.resetCredits
+      : credits?.limits.resetCredits;
     accounts.push({
       id: provider.instanceId,
       driver: provider.driver,
@@ -656,20 +736,18 @@ export function collectProviderUsageLimits(
               accountId: hubCredits.account.id,
               creditId: hubCreditId,
             }
-          : { instanceId: provider.instanceId },
+          : { instanceId: credits?.provider.instanceId ?? provider.instanceId },
       ...(provider.displayName ? { displayName: provider.displayName } : {}),
       ...(provider.accentColor ? { accentColor: provider.accentColor } : {}),
       ...(provider.auth.email ? { email: provider.auth.email } : {}),
-      limits: showHubCredits
-        ? { ...provider.usageLimits, resetCredits: hubCredits.account.usageLimits.resetCredits }
-        : provider.usageLimits,
+      limits: shownCredits ? { ...limits, resetCredits: shownCredits } : limits,
     });
   }
   for (const source of sources) {
     const matching = source.accounts.filter((account) => account.driver === selected.driver);
     for (const account of matching) {
       const key = resolveKey(account);
-      if (key && nativeAccounts.has(key)) continue;
+      if (key && nativeAccountKeys.has(key)) continue;
       accounts.push({
         id: `${source.id}:${account.id}`,
         driver: account.driver,

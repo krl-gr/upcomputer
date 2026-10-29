@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { deriveProviderInstanceEntries } from "../../../../apps/web/src/providerInstances.ts";
-import { useServerConfigs } from "../../../../apps/web/src/state/entities.ts";
+import { useEnvironmentProviders } from "../../../../apps/web/src/state/environments.ts";
 
 import {
   useStoredPlannerEnvironment,
@@ -129,7 +129,7 @@ function TablePanel(props: {
 }) {
   const navigate = useNavigate();
   const data = useTasksWorkspaceData(false);
-  const serverConfigs = useServerConfigs();
+  const providersByEnvironment = useEnvironmentProviders();
   const { projectFilter, projectGroups, setProjectKey } = usePagesProjectFilter();
   const [filters, setFilters] = useTasksPageFilters();
   const pages = useTaskPages(
@@ -142,12 +142,12 @@ function TablePanel(props: {
   const providerEntriesByEnvironment = useMemo(
     () =>
       new Map(
-        [...serverConfigs].map(([environmentId, config]) => [
+        [...providersByEnvironment].map(([environmentId, providers]) => [
           environmentId,
-          deriveProviderInstanceEntries(config.providers),
+          deriveProviderInstanceEntries(providers),
         ]),
       ),
-    [serverConfigs],
+    [providersByEnvironment],
   );
 
   return (

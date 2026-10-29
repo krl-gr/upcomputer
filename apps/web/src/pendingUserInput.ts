@@ -2,6 +2,8 @@ import type { ThreadContextRecord, UserInputQuestion } from "@t3tools/contracts"
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 
+import { collectInlineContextIds } from "./lib/composerContextReferences";
+
 export function projectPendingUserInputAnswer(
   answer: unknown,
   threadContexts: ReadonlyArray<ThreadContextRecord>,
@@ -10,8 +12,17 @@ export function projectPendingUserInputAnswer(
   const recordsById = new Map(threadContexts.map((record) => [record.contextId, record]));
   return replaceComposerContextReferences(answer, (reference) => {
     const record = reference.kind === "thread" ? recordsById.get(reference.contextId) : undefined;
-    return record ? formatThreadLink(record.threadId, reference.label) : reference.source;
+    return record ? formatThreadLink(record, reference.label) : reference.source;
   });
+}
+
+// Question drafts retain deleted chip records for undo; only transfer referenced records.
+export function threadContextsReferencedByAnswer(
+  answer: string,
+  threadContexts: ReadonlyArray<ThreadContextRecord>,
+) {
+  const referencedIds = new Set(collectInlineContextIds(answer));
+  return threadContexts.filter((record) => referencedIds.has(record.contextId));
 }
 
 export interface PendingUserInputDraftAnswer {
@@ -159,7 +170,7 @@ export function buildPendingUserInputAnswers(
   return answers;
 }
 
-export function countAnsweredPendingUserInputQuestions(
+function countAnsweredPendingUserInputQuestions(
   questions: ReadonlyArray<UserInputQuestion>,
   draftAnswers: Record<string, PendingUserInputDraftAnswer>,
 ): number {
@@ -168,17 +179,6 @@ export function countAnsweredPendingUserInputQuestions(
       ? count + 1
       : count;
   }, 0);
-}
-
-export function findFirstUnansweredPendingUserInputQuestionIndex(
-  questions: ReadonlyArray<UserInputQuestion>,
-  draftAnswers: Record<string, PendingUserInputDraftAnswer>,
-): number {
-  const unansweredIndex = questions.findIndex(
-    (question) => resolvePendingUserInputAnswer(question, draftAnswers[question.id]) === null,
-  );
-
-  return unansweredIndex === -1 ? Math.max(questions.length - 1, 0) : unansweredIndex;
 }
 
 export function derivePendingUserInputProgress(

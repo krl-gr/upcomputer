@@ -112,6 +112,7 @@ const environmentId = "env-local";
 vi.mock("../state/entities", () => ({
   useServerConfigs: () => new Map([["env-local", { scratchWorkspaceRoot: "/home/scratch" }]]),
   useProjects: () => [],
+  useQuietThreadShells: () => [],
 }));
 vi.mock("../hooks/useThreadVisitedMigration", () => ({
   useThreadVisitedMigration: () => undefined,

@@ -96,13 +96,14 @@ function visible(notices: ReadonlyArray<BackgroundNotice>): ReadonlyArray<Backgr
 
 const make = Effect.gen(function* () {
   const notices = yield* SubscriptionRef.make<ReadonlyArray<BackgroundNotice>>([]);
-  const report: BackgroundNotices["Service"]["report"] = (notice) =>
-    Effect.gen(function* () {
+  const report: BackgroundNotices["Service"]["report"] = Effect.fn("BackgroundNotices.report")(
+    function* (notice) {
       const occurredAt = DateTime.formatIso(yield* DateTime.now);
       yield* SubscriptionRef.update(notices, (current) =>
         prune([{ ...notice, occurredAt }, ...current.filter((entry) => entry.id !== notice.id)]),
       );
-    });
+    },
+  );
   const resolve: BackgroundNotices["Service"]["resolve"] = (id) =>
     SubscriptionRef.get(notices).pipe(
       Effect.flatMap((current) =>

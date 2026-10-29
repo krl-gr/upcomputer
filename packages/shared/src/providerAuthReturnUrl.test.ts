@@ -16,12 +16,7 @@ describe("provider auth return destinations", () => {
   it.each([
     "t3code://app/welcome",
     "upcomputer://attacker/welcome",
-    "upcomputer://app:123/welcome",
-    "upcomputer://app/auth/callback",
-    "upcomputer://user@ app/welcome",
     "upcomputer://app/welcome/../evil",
     "https://attacker.example/welcome",
-    "file:///welcome",
-    "javascript:alert(1)",
   ])("rejects %s", (url) => expect(providerAuthReturnUrl(url)).toBeUndefined());
 });

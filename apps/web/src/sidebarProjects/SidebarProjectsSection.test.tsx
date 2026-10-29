@@ -115,12 +115,12 @@ const THREADS = [
 
 /** The threads upstream's sidebar shows under the persisted scope, derived as the sidebar does. */
 function visibleThreadIds() {
-  const scopeKey = useUiStateStore.getState().sidebarProjectScopeKey;
+  const scopeKey = useUiStateStore.getState().sidebarProjectScopeKeys[0] ?? null;
   const scoped = PROJECTS.find((project) => project.projectKey === scopeKey);
   const keys = scoped
     ? new Set(scoped.memberProjectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`))
     : null;
-  return filterSidebarV2VisibleThreads(THREADS as never[], keys).map(
+  return filterSidebarV2VisibleThreads(THREADS as never[], keys, new Set()).map(
     (entry: { id: string }) => entry.id,
   );
 }
@@ -190,7 +190,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   window.localStorage.clear();
-  useUiStateStore.setState({ sidebarProjectScopeKey: null });
+  useUiStateStore.setState({ sidebarProjectScopeKeys: [] });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -218,19 +218,19 @@ describe("SidebarProjectsSection", () => {
   it("filters the thread list through upstream's project scope", async () => {
     await render();
     await click(rowButton("UpComputer"));
-    expect(useUiStateStore.getState().sidebarProjectScopeKey).toBe("key-upcomputer");
+    expect(useUiStateStore.getState().sidebarProjectScopeKeys[0] ?? null).toBe("key-upcomputer");
     expect(visibleThreadIds()).toEqual(["in-upcomputer", "scratch-linked-to-upcomputer"]);
     expect(rowButton("UpComputer").dataset.active).toBe("true");
 
     await click(rowButton("All projects"));
-    expect(useUiStateStore.getState().sidebarProjectScopeKey).toBeNull();
+    expect(useUiStateStore.getState().sidebarProjectScopeKeys[0] ?? null).toBeNull();
     expect(visibleThreadIds()).toHaveLength(THREADS.length);
   });
 
   it("filters No project to the Scratch project's threads", async () => {
     await render();
     await click(rowButton("No project"));
-    expect(useUiStateStore.getState().sidebarProjectScopeKey).toBe("key-scratch");
+    expect(useUiStateStore.getState().sidebarProjectScopeKeys[0] ?? null).toBe("key-scratch");
     expect(visibleThreadIds()).toEqual(["scratch-linked-to-upcomputer", "in-scratch"]);
   });
 
@@ -241,7 +241,7 @@ describe("SidebarProjectsSection", () => {
     expect(options.map((option) => option.textContent)).toEqual(["Infra", "Design"]);
 
     await click(options[1]!);
-    expect(useUiStateStore.getState().sidebarProjectScopeKey).toBe("key-design");
+    expect(useUiStateStore.getState().sidebarProjectScopeKeys[0] ?? null).toBe("key-design");
     expect(rowLabels()).toEqual([
       "All projects",
       "UpComputer",
@@ -294,7 +294,7 @@ describe("SidebarProjectsSection", () => {
     const pencil = rowButton("Site").querySelector<HTMLElement>("[aria-label='New chat in Site']")!;
     await click(pencil);
     expect(spies.newThread).toHaveBeenCalledExactlyOnceWith({ environmentId, projectId: "site" });
-    expect(useUiStateStore.getState().sidebarProjectScopeKey).toBeNull();
+    expect(useUiStateStore.getState().sidebarProjectScopeKeys[0] ?? null).toBeNull();
 
     await click(
       rowButton("No project").querySelector<HTMLElement>(
@@ -302,7 +302,7 @@ describe("SidebarProjectsSection", () => {
       )!,
     );
     expect(spies.newThread).toHaveBeenLastCalledWith({ environmentId, projectId: "scratch" });
-    expect(useUiStateStore.getState().sidebarProjectScopeKey).toBeNull();
+    expect(useUiStateStore.getState().sidebarProjectScopeKeys[0] ?? null).toBeNull();
   });
 
   it("opens project settings from the row's menu", async () => {
@@ -325,7 +325,7 @@ describe("SidebarProjectsSection", () => {
       to: "/projects/$projectKey",
       params: { projectKey: "key-upcomputer" },
     });
-    expect(useUiStateStore.getState().sidebarProjectScopeKey).toBeNull();
+    expect(useUiStateStore.getState().sidebarProjectScopeKeys[0] ?? null).toBeNull();
   });
 
   it("opens the same menu on right-click instead of a native one", async () => {

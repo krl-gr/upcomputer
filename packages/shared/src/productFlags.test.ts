@@ -20,7 +20,7 @@ describe("product flags", () => {
     expect(isProductRightPanelSurfaceShown(UPSTREAM_PRODUCT_FLAGS, "Device")).toBe(true);
   });
 
-  it("turns off the pull request and settlement capabilities, keeping snooze", () => {
+  it("turns off the pull request, settlement and triage capabilities, keeping snooze", () => {
     expect(hiddenProductCapabilities(UPCOMPUTER_PRODUCT_FLAGS)).toEqual({
       pullRequests: false,
       pullRequestChecks: false,
@@ -33,6 +33,7 @@ describe("product flags", () => {
       threadAutoSettleOptOut: false,
       threadAutoSettlementScope: false,
       settledWorktreeCleanup: false,
+      triage: false,
     });
     expect(
       hiddenProductCapabilities({ ...UPSTREAM_PRODUCT_FLAGS, threadSettlement: false }),

@@ -1,5 +1,6 @@
 import {
   isAtomCommandInterrupted,
+  settlePromise,
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
@@ -48,7 +49,7 @@ export function ProviderSetupSection(props: ProviderSetupSectionProps) {
   return (
     <section
       aria-label="Antigravity setup"
-      className="@container/setup divide-y divide-border/50 text-xs"
+      className="@container/setup divide-y divide-border/50 text-xs [&_[data-slot=settings-row]]:rounded-none"
     >
       <SettingsRow
         className="@max-lg/setup:[&>div:first-child]:flex @max-lg/setup:[&>div:first-child]:items-stretch @max-lg/setup:[&>div:first-child]:gap-3"
@@ -155,23 +156,22 @@ function ProviderSetupActions({
     pendingRef.current = true;
     setPendingLabel(label);
     setError(null);
-    try {
-      const result = await request();
-      if (result._tag === "Failure") {
-        if (!isAtomCommandInterrupted(result)) {
-          const failure = squashAtomCommandFailure(result);
-          setError(failure instanceof Error ? failure.message : "Provider setup failed.");
-        }
-        return false;
-      }
-      return true;
-    } catch {
+    const settled = await settlePromise(request);
+    pendingRef.current = false;
+    setPendingLabel(null);
+    if (settled._tag === "Failure") {
       setError("Provider setup failed. Try again.");
       return false;
-    } finally {
-      pendingRef.current = false;
-      setPendingLabel(null);
     }
+    const result = settled.value;
+    if (result._tag === "Failure") {
+      if (!isAtomCommandInterrupted(result)) {
+        const failure = squashAtomCommandFailure(result);
+        setError(failure instanceof Error ? failure.message : "Provider setup failed.");
+      }
+      return false;
+    }
+    return true;
   }
 
   async function removeRuntime() {
@@ -185,6 +185,11 @@ function ProviderSetupActions({
 
   return (
     <div className="divide-y divide-border/50">
+      {/* Keep the live region first so sibling divider rules do not add a divider after the last visible
+       * row. */}
+      <p className="sr-only" role="status">
+        {pendingLabel ? `${pendingLabel}.` : null}
+      </p>
       <SettingsRow
         title="Runtime"
         className="@max-lg/setup:[&>div:first-child]:flex @max-lg/setup:[&>div:first-child]:items-stretch @max-lg/setup:[&>div:first-child]:gap-3"
@@ -214,7 +219,11 @@ function ProviderSetupActions({
               installation.totalBytes > 0 ? (
                 <progress
                   aria-label="Antigravity download"
-                  className="block h-1 w-full accent-foreground"
+                  // Forced-colors mode repaints the track and fill as Canvas, and
+                  // appearance:auto cannot bring the native widget back: the
+                  // preflight border reset marks every <progress> as author-styled,
+                  // so Chromium keeps its fallback paint. Use system colors instead.
+                  className="block h-1 w-full appearance-none overflow-hidden rounded-full bg-muted forced-colors:border [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-primary forced-colors:[&::-moz-progress-bar]:bg-[Highlight] [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary forced-colors:[&::-webkit-progress-value]:bg-[Highlight]"
                   value={installation.downloadedBytes}
                   max={installation.totalBytes}
                 />
@@ -298,9 +307,6 @@ function ProviderSetupActions({
         readOnly={false}
       />
 
-      <p className="sr-only" role="status">
-        {pendingLabel ? `${pendingLabel}.` : null}
-      </p>
       {error || queryError ? (
         <div className="grid gap-2 px-3 py-3 sm:px-4">
           <p role="alert" className="text-destructive [overflow-wrap:anywhere]">

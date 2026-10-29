@@ -9,6 +9,7 @@ vi.mock("../product/productFlags", async (importOriginal) => ({
 }));
 vi.mock("~/hooks/useSettings", () => ({
   useEnvironmentIdentificationMode: () => "none",
+  useClientSettings: (select: (settings: Record<string, unknown>) => unknown) => select({}),
 }));
 
 import { ComposerPrimaryActions } from "../components/chat/ComposerPrimaryActions";
@@ -16,7 +17,6 @@ import { cn } from "../lib/utils";
 import { ComposerBackdropFade } from "./ComposerBackdropFade";
 import {
   composerBottomSpaceClass,
-  composerCollapsesOnScroll,
   isComposerCollapsedOnMobile,
   composerLookClass,
   composerWidthStyle,
@@ -43,7 +43,6 @@ function primaryActions(overrides: Partial<PrimaryActionsProps> = {}) {
     promptHasText: false,
     isSendBusy: false,
     sendDisabledReason: null,
-    isConnecting: false,
     isEnvironmentUnavailable: false,
     isPreparingWorktree: false,
     hasSendableContent: false,
@@ -154,12 +153,6 @@ describe("V1's composer card, fade and full form", () => {
 
     surface.composerFooter = "upstream";
     expect(composerLookClass("placeholder")).toBeUndefined();
-  });
-
-  it("never lets a timeline scroll collapse the composer with its surface", () => {
-    expect(composerCollapsesOnScroll()).toBe(false);
-    surface.composerFooter = "upstream";
-    expect(composerCollapsesOnScroll()).toBe(true);
   });
 
   it("shows the whole composer on a phone with its surface, upstream's one-line row without", () => {

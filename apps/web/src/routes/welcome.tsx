@@ -7,7 +7,7 @@ import * as Option from "effect/Option";
 import { BlankWorkspacePage } from "../components/BlankWorkspacePage";
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { useLegacySidebarEnabled } from "../hooks/useSettings";
+import { useBoringSidebarEnabled } from "../hooks/useSettings";
 import { newThreadStartsWithoutProject } from "../sidebarProjects/SidebarThreadsSection";
 import { FirstRunSetup } from "../onboardingSurface/FirstRunSetup";
 
@@ -30,15 +30,14 @@ function WelcomeRouteView() {
   const resumeEnvironmentId = hash.startsWith("agents:")
     ? Option.getOrUndefined(decodeEnvironmentId(hash.slice("agents:".length)))
     : undefined;
-  // The root shell can remount this pending outlet after the location changes.
-  // Never reopen setup while the destination route is still loading.
+  // The root can remount this pending outlet after navigation; do not reopen setup.
   const isWelcomeRoute = useLocation({ select: (location) => location.pathname === "/welcome" });
   const [dismissed, setDismissed] = useState(false);
   const openNewThread = useNewThreadHandler();
   const localAvailable = authGateState.status === "authenticated";
   // Home opens a chat without a project here (see the index route), so the
   // hero behind setup would only flash before it.
-  const startsWithoutProject = newThreadStartsWithoutProject(useLegacySidebarEnabled());
+  const startsWithoutProject = newThreadStartsWithoutProject(useBoringSidebarEnabled());
   return (
     <>
       {startsWithoutProject ? <BlankWorkspacePage /> : <NoProjectsHero />}

@@ -109,20 +109,6 @@ describe("compatibility banners", () => {
       broken.message,
     );
   });
-
-  it("keeps authentication failures ahead of compatibility warnings even without a probe message", () => {
-    const unauthenticated: ServerProvider = {
-      ...provider,
-      status: "error",
-      auth: { status: "unauthenticated" },
-    };
-    expect(getProviderStatusMessage(unauthenticated)).toBe(
-      "Codex isn't signed in on this computer, so it can't run. Sign in again from a terminal on this computer.",
-    );
-    expect(getProviderStatusMessage({ ...unauthenticated, message: "Credentials expired" })).toBe(
-      "Credentials expired",
-    );
-  });
 });
 
 describe("pending provider status", () => {

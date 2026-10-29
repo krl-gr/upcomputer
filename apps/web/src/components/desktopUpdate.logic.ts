@@ -3,14 +3,26 @@ import { UPCOMPUTER_UPDATE_REPOSITORY } from "@t3tools/shared/upcomputerIdentity
 
 export type DesktopUpdateButtonAction = "download" | "install" | "none";
 
-const DESKTOP_RELEASE_HISTORY_URL = `https://github.com/${UPCOMPUTER_UPDATE_REPOSITORY}/releases`;
-const DESKTOP_RELEASE_TAG_URL = `${DESKTOP_RELEASE_HISTORY_URL}/tag`;
+const DEFAULT_DESKTOP_RELEASE_REPOSITORY = UPCOMPUTER_UPDATE_REPOSITORY;
+const GITHUB_REPOSITORY_SEGMENT = /^[A-Za-z0-9._-]+$/u;
 
-/**
- * The main process fills `downloadedVersion` from the updater's `update-downloaded`
- * event, which is dispatched on its own fiber. A download RPC can therefore resolve
- * before that write lands, so fall back to the version the download was started for.
- */
+function isValidRepositorySegment(value: string | undefined): value is string {
+  return (
+    value !== undefined && value !== "." && value !== ".." && GITHUB_REPOSITORY_SEGMENT.test(value)
+  );
+}
+
+function desktopReleaseRepositoryUrl(repository: string | undefined): string {
+  const configuredRepository = repository?.trim() ?? "";
+  const [owner, name, ...extra] = configuredRepository.split("/");
+  const releaseRepository =
+    isValidRepositorySegment(owner) && isValidRepositorySegment(name) && extra.length === 0
+      ? configuredRepository
+      : DEFAULT_DESKTOP_RELEASE_REPOSITORY;
+  return `https://github.com/${releaseRepository}/releases`;
+}
+
+/** The download RPC can beat the updater's downloadedVersion event; fall back to the requested version. */
 export function getDesktopUpdateDownloadedVersion(state: DesktopUpdateState): string | null {
   return state.downloadedVersion ?? state.availableVersion;
 }
@@ -19,15 +31,20 @@ export function getDesktopUpdateDownloadedVersion(state: DesktopUpdateState): st
  * Release notes for an exact downloaded build; nightly suffixes are part of the tag.
  * Up.computer tags stable releases `core-vX.Y.Z` and nightlies `vX.Y.Z-nightly.*`.
  */
-export function getDesktopUpdateReleaseUrl(version: string | null): string | null {
+export function getDesktopUpdateReleaseUrl(
+  version: string | null,
+  repository: string | undefined = import.meta.env.T3CODE_DESKTOP_UPDATE_REPOSITORY,
+): string | null {
   const normalizedVersion = version?.trim();
   if (!normalizedVersion) return null;
   const tagPrefix = /^\d+\.\d+\.\d+$/.test(normalizedVersion) ? "core-v" : "v";
-  return `${DESKTOP_RELEASE_TAG_URL}/${tagPrefix}${encodeURIComponent(normalizedVersion)}`;
+  return `${desktopReleaseRepositoryUrl(repository)}/tag/${tagPrefix}${encodeURIComponent(normalizedVersion)}`;
 }
 
-export function getDesktopUpdateReleaseHistoryUrl(): string {
-  return DESKTOP_RELEASE_HISTORY_URL;
+export function getDesktopUpdateReleaseHistoryUrl(
+  repository: string | undefined = import.meta.env.T3CODE_DESKTOP_UPDATE_REPOSITORY,
+): string {
+  return desktopReleaseRepositoryUrl(repository);
 }
 
 export function resolveDesktopUpdateButtonAction(
@@ -132,4 +149,20 @@ export function canCheckForUpdate(state: DesktopUpdateState | null): boolean {
   return (
     state.status !== "checking" && state.status !== "downloading" && state.status !== "disabled"
   );
+}
+
+export function getDesktopUpdateDisabledReason(
+  state: Pick<DesktopUpdateState, "enabled" | "status" | "message"> | null,
+): string | null {
+  if (!state || (state.enabled && state.status !== "disabled")) return null;
+  return state.message?.trim() || "Automatic updates are not available in this build.";
+}
+
+export function getDesktopUpdateIdleTooltip(
+  state: Pick<DesktopUpdateState, "enabled" | "status" | "message"> | null,
+) {
+  const disabledReason = getDesktopUpdateDisabledReason(state);
+  return disabledReason
+    ? { title: "Updates unavailable", detail: disabledReason }
+    : { title: "Check for updates", detail: null };
 }

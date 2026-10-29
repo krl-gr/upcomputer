@@ -546,26 +546,28 @@ const make = Effect.gen(function* () {
    * security boundary, since a run with shell access can edit the settings
    * files directly.
    */
-  const instructionsWriteAccess = (name: string, context: TaskToolInvocationContext) =>
-    Effect.gen(function* () {
-      const run = context.threadId
-        ? yield* repository.findLatestAgentRunByThreadId({ threadId: context.threadId })
-        : Option.none<TaskAgentRun>();
-      const origin: TaskPromptChangeOrigin = {
-        source: context.threadId ? "thread" : context.source === "mcp" ? "mcp" : "unknown",
-        threadId: context.threadId ?? null,
-        runId: Option.isSome(run) ? run.value.id : null,
-      };
-      if (Option.isNone(run)) return { origin, refusal: null };
-      const agent = yield* repository.getAgentById({ id: run.value.agentId });
-      const allowed = Option.isSome(agent) && (agent.value.config.tools ?? []).includes(name);
-      return {
-        origin,
-        refusal: allowed
-          ? null
-          : `Task-agent run '${run.value.id}' cannot change the shared task instructions: they apply to every agent, and a run may be acting on untrusted content. This also applies after the run ended. Put the suggested change in your task output instead. A person can allow this agent by adding '${name}' to its tools. This guards against accidental or injected writes; it is not a security boundary.`,
-      };
-    });
+  const instructionsWriteAccess = Effect.fn("TaskToolService.instructionsWriteAccess")(function* (
+    name: string,
+    context: TaskToolInvocationContext,
+  ) {
+    const run = context.threadId
+      ? yield* repository.findLatestAgentRunByThreadId({ threadId: context.threadId })
+      : Option.none<TaskAgentRun>();
+    const origin: TaskPromptChangeOrigin = {
+      source: context.threadId ? "thread" : context.source === "mcp" ? "mcp" : "unknown",
+      threadId: context.threadId ?? null,
+      runId: Option.isSome(run) ? run.value.id : null,
+    };
+    if (Option.isNone(run)) return { origin, refusal: null };
+    const agent = yield* repository.getAgentById({ id: run.value.agentId });
+    const allowed = Option.isSome(agent) && (agent.value.config.tools ?? []).includes(name);
+    return {
+      origin,
+      refusal: allowed
+        ? null
+        : `Task-agent run '${run.value.id}' cannot change the shared task instructions: they apply to every agent, and a run may be acting on untrusted content. This also applies after the run ended. Put the suggested change in your task output instead. A person can allow this agent by adding '${name}' to its tools. This guards against accidental or injected writes; it is not a security boundary.`,
+    };
+  });
 
   /**
    * The project an instructions tool targets: null for the global texts. A
@@ -593,30 +595,32 @@ const make = Effect.gen(function* () {
    * task starts its agents later without asking again. Outside a dry run it
    * runs inside the unarchive's transaction (see `setTasksArchived`).
    */
-  const unarchiveRefusals = (ids: ReadonlyArray<TaskId>, context: TaskToolInvocationContext) =>
-    Effect.gen(function* () {
-      const refusals = new Map<TaskId, string>();
-      const agents = (yield* repository.listAllAgents()).filter((agent) => agent.enabled);
-      if (agents.length === 0) return refusals;
-      for (const id of new Set(ids)) {
-        const task = Option.getOrNull(yield* repository.getById({ id }));
-        if (task === null || task.archivedAt === null) continue;
-        for (const agent of agents) {
-          if (!startsForTask(agent, { ...task, archivedAt: null }, Number.POSITIVE_INFINITY))
-            continue;
-          const refusal = runStartRefusal(
-            context,
-            agentRunModes(agent.config),
-            `Unarchiving it starts agent '${agent.name}' (${agent.id}), which`,
-          );
-          if (refusal !== null) {
-            refusals.set(id, refusal);
-            break;
-          }
+  const unarchiveRefusals = Effect.fn("TaskToolService.unarchiveRefusals")(function* (
+    ids: ReadonlyArray<TaskId>,
+    context: TaskToolInvocationContext,
+  ) {
+    const refusals = new Map<TaskId, string>();
+    const agents = (yield* repository.listAllAgents()).filter((agent) => agent.enabled);
+    if (agents.length === 0) return refusals;
+    for (const id of new Set(ids)) {
+      const task = Option.getOrNull(yield* repository.getById({ id }));
+      if (task === null || task.archivedAt === null) continue;
+      for (const agent of agents) {
+        if (!startsForTask(agent, { ...task, archivedAt: null }, Number.POSITIVE_INFINITY))
+          continue;
+        const refusal = runStartRefusal(
+          context,
+          agentRunModes(agent.config),
+          `Unarchiving it starts agent '${agent.name}' (${agent.id}), which`,
+        );
+        if (refusal !== null) {
+          refusals.set(id, refusal);
+          break;
         }
       }
-      return refusals;
-    });
+    }
+    return refusals;
+  });
 
   /**
    * task_create with a tasks list. Every item is checked before anything is
@@ -625,123 +629,125 @@ const make = Effect.gen(function* () {
    * a queue, which runs from the bottom, takes them in list order. Agents
    * are scheduled per task after the commit, as for single creates.
    */
-  const createTasks = (args: Record<string, unknown>, context: TaskToolInvocationContext) =>
-    Effect.gen(function* () {
-      const input = yield* decoders.task_create_batch(args);
-      const misplaced = Object.keys(args).filter((key) => !TASK_CREATE_BATCH_KEYS.has(key));
-      if (misplaced.length > 0)
-        return {
-          isError: true,
-          text: `With tasks, every task's fields go inside its item. Move ${misplaced.join(", ")} into the items. No task was created.`,
-        };
-      if (input.tasks.length === 0 || input.tasks.length > TASK_CREATE_BATCH_LIMIT)
-        return {
-          isError: true,
-          text: `tasks takes 1 to ${TASK_CREATE_BATCH_LIMIT} tasks; got ${input.tasks.length}. No task was created.`,
-        };
-      const items: TaskToolCreateItem[] = [];
-      for (const [index, raw] of input.tasks.entries()) {
-        const title =
-          typeof raw === "object" && raw !== null && "title" in raw ? raw.title : undefined;
-        const named = `tasks[${index}]${typeof title === "string" ? ` (${JSON.stringify(title)})` : ""}`;
-        if (lacksAudience(raw))
-          return {
-            isError: true,
-            text: `${named} is invalid: ${AUDIENCE_REQUIRED}\nNo task was created.`,
-          };
-        const item = yield* Effect.result(decoders.task_create_item(raw));
-        if (Result.isFailure(item))
-          return {
-            isError: true,
-            text: `${named} is invalid: ${item.failure.message}\nNo task was created.`,
-          };
-        const invalid =
-          taskKindAudienceError(item.success.kind ?? "task", item.success.audience) ??
-          personTaskStatusError(item.success.audience, item.success.status);
-        if (invalid !== null)
-          return {
-            isError: true,
-            text: `${named} is invalid: ${invalid}\nNo task was created.`,
-          };
-        items.push(item.success);
-      }
-      const ids = items.flatMap((item) => (item.id === undefined ? [] : [item.id]));
-      const repeated = ids.find((id, index) => ids.indexOf(id) !== index);
-      if (repeated !== undefined)
-        return {
-          isError: true,
-          text: `Task id '${repeated}' appears more than once in tasks. No task was created.`,
-        };
-      const resolution = yield* resolver.resolve({
-        args: {
-          ...(input.projectId ? { projectId: input.projectId } : {}),
-          ...(input.workspaceRoot ? { workspaceRoot: input.workspaceRoot } : {}),
-        },
-        invocationContext: context,
-      });
-      // Person tasks without a project go to the Inbox, as in the planner.
-      if (!resolution.resolvedProject && items.some((item) => item.audience !== "person"))
-        return {
-          isError: true,
-          text: json({
-            error:
-              "Couldn't tell which project this belongs to, so no task was created. Name the project, or start from a chat inside it.",
-            resolution,
-          }),
-        };
-      if (!resolution.resolvedProject && dryRun(context))
-        return { isError: false, text: json({ dryRun: true, project: "Inbox", tasks: items }) };
-      const projectId = resolution.resolvedProject
-        ? resolution.resolvedProject.project.id
-        : yield* inbox.ensure;
-      const timestamp = yield* now;
-      const tasks: PersistTaskInput[] = [];
-      for (const item of items)
-        tasks.push(
-          newTask(item, {
-            id: item.id ?? TaskId.make(yield* randomId("task")),
-            projectId,
-            timestamp,
-            context,
-          }),
-        );
-      if (dryRun(context))
-        return {
-          isError: false,
-          text: json({ dryRun: true, tasks, resolution: compactTaskToolContext(resolution) }),
-        };
-      const callerRun = context.threadId
-        ? Option.getOrNull(
-            yield* repository.findActiveAgentRunByThreadId({ threadId: context.threadId }),
-          )
-        : null;
-      const actor = toolActor(context, callerRun);
-      const saved = yield* repository.withChangeTransaction(
-        Effect.forEach(tasks, (task) => repository.upsert({ ...task, actor })),
-      );
-      for (const task of saved) yield* taskAgents.scheduleTaskChanged({ task, reason: "created" });
-      yield* recordFirstUse("app.first_task_created", { via: "agent" });
-      // The caller wrote the descriptions; echoing them back would only cost tokens.
-      const audiences = [...new Set(saved.map(({ audience }) => audience))];
+  const createTasks = Effect.fn("TaskToolService.createTasks")(function* (
+    args: Record<string, unknown>,
+    context: TaskToolInvocationContext,
+  ) {
+    const input = yield* decoders.task_create_batch(args);
+    const misplaced = Object.keys(args).filter((key) => !TASK_CREATE_BATCH_KEYS.has(key));
+    if (misplaced.length > 0)
       return {
-        isError: false,
+        isError: true,
+        text: `With tasks, every task's fields go inside its item. Move ${misplaced.join(", ")} into the items. No task was created.`,
+      };
+    if (input.tasks.length === 0 || input.tasks.length > TASK_CREATE_BATCH_LIMIT)
+      return {
+        isError: true,
+        text: `tasks takes 1 to ${TASK_CREATE_BATCH_LIMIT} tasks; got ${input.tasks.length}. No task was created.`,
+      };
+    const items: TaskToolCreateItem[] = [];
+    for (const [index, raw] of input.tasks.entries()) {
+      const title =
+        typeof raw === "object" && raw !== null && "title" in raw ? raw.title : undefined;
+      const named = `tasks[${index}]${typeof title === "string" ? ` (${JSON.stringify(title)})` : ""}`;
+      if (lacksAudience(raw))
+        return {
+          isError: true,
+          text: `${named} is invalid: ${AUDIENCE_REQUIRED}\nNo task was created.`,
+        };
+      const item = yield* Effect.result(decoders.task_create_item(raw));
+      if (Result.isFailure(item))
+        return {
+          isError: true,
+          text: `${named} is invalid: ${item.failure.message}\nNo task was created.`,
+        };
+      const invalid =
+        taskKindAudienceError(item.success.kind ?? "task", item.success.audience) ??
+        personTaskStatusError(item.success.audience, item.success.status);
+      if (invalid !== null)
+        return {
+          isError: true,
+          text: `${named} is invalid: ${invalid}\nNo task was created.`,
+        };
+      items.push(item.success);
+    }
+    const ids = items.flatMap((item) => (item.id === undefined ? [] : [item.id]));
+    const repeated = ids.find((id, index) => ids.indexOf(id) !== index);
+    if (repeated !== undefined)
+      return {
+        isError: true,
+        text: `Task id '${repeated}' appears more than once in tasks. No task was created.`,
+      };
+    const resolution = yield* resolver.resolve({
+      args: {
+        ...(input.projectId ? { projectId: input.projectId } : {}),
+        ...(input.workspaceRoot ? { workspaceRoot: input.workspaceRoot } : {}),
+      },
+      invocationContext: context,
+    });
+    // Person tasks without a project go to the Inbox, as in the planner.
+    if (!resolution.resolvedProject && items.some((item) => item.audience !== "person"))
+      return {
+        isError: true,
         text: json({
-          shownIn: Object.fromEntries(audiences.map((audience) => [audience, SHOWN_IN[audience]])),
-          tasks: saved.map(({ id, rank, title, status, audience, tags, notBefore }) => ({
-            id,
-            rank,
-            title,
-            status,
-            audience,
-            tags,
-            notBefore,
-          })),
+          error:
+            "Couldn't tell which project this belongs to, so no task was created. Name the project, or start from a chat inside it.",
+          resolution,
         }),
       };
-    });
+    if (!resolution.resolvedProject && dryRun(context))
+      return { isError: false, text: json({ dryRun: true, project: "Inbox", tasks: items }) };
+    const projectId = resolution.resolvedProject
+      ? resolution.resolvedProject.project.id
+      : yield* inbox.ensure;
+    const timestamp = yield* now;
+    const tasks: PersistTaskInput[] = [];
+    for (const item of items)
+      tasks.push(
+        newTask(item, {
+          id: item.id ?? TaskId.make(yield* randomId("task")),
+          projectId,
+          timestamp,
+          context,
+        }),
+      );
+    if (dryRun(context))
+      return {
+        isError: false,
+        text: json({ dryRun: true, tasks, resolution: compactTaskToolContext(resolution) }),
+      };
+    const callerRun = context.threadId
+      ? Option.getOrNull(
+          yield* repository.findActiveAgentRunByThreadId({ threadId: context.threadId }),
+        )
+      : null;
+    const actor = toolActor(context, callerRun);
+    const saved = yield* repository.withChangeTransaction(
+      Effect.forEach(tasks, (task) => repository.upsert({ ...task, actor })),
+    );
+    for (const task of saved) yield* taskAgents.scheduleTaskChanged({ task, reason: "created" });
+    yield* recordFirstUse("app.first_task_created", { via: "agent" });
+    // The caller wrote the descriptions; echoing them back would only cost tokens.
+    const audiences = [...new Set(saved.map(({ audience }) => audience))];
+    return {
+      isError: false,
+      text: json({
+        shownIn: Object.fromEntries(audiences.map((audience) => [audience, SHOWN_IN[audience]])),
+        tasks: saved.map(({ id, rank, title, status, audience, tags, notBefore }) => ({
+          id,
+          rank,
+          title,
+          status,
+          audience,
+          tags,
+          notBefore,
+        })),
+      }),
+    };
+  });
 
-  const call: TaskToolServiceShape["call"] = ({ name, args, context }) =>
-    Effect.gen(function* () {
+  const call: TaskToolServiceShape["call"] = Effect.fn("TaskToolService.call")(
+    function* ({ name, args, context }) {
       const isDryRun = dryRun(context);
       switch (name) {
         case "task_context": {
@@ -1720,20 +1726,23 @@ const make = Effect.gen(function* () {
         default:
           return { isError: true, text: `Unknown task tool: ${name}` };
       }
-    }).pipe(
-      Effect.map((result) => (dryRun(context) ? withDryRunNotice(result, context) : result)),
-      Effect.catch((cause) =>
-        Effect.succeed({
-          isError: true,
-          // The person reads the first line; the agent also gets the exact reason.
-          text: `Couldn't run ${name}, so nothing was changed.${
-            cause instanceof Error && cause.message.trim().length > 0
-              ? `\n\nDetails: ${cause.message}`
-              : ""
-          }`,
-        }),
+    },
+    (effect, { name, context }) =>
+      effect.pipe(
+        Effect.map((result) => (dryRun(context) ? withDryRunNotice(result, context) : result)),
+        Effect.catch((cause) =>
+          Effect.succeed({
+            isError: true,
+            // The person reads the first line; the agent also gets the exact reason.
+            text: `Couldn't run ${name}, so nothing was changed.${
+              cause instanceof Error && cause.message.trim().length > 0
+                ? `\n\nDetails: ${cause.message}`
+                : ""
+            }`,
+          }),
+        ),
       ),
-    );
+  );
 
   return { call } satisfies TaskToolServiceShape;
 });

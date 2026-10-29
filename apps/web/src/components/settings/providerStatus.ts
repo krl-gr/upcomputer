@@ -15,6 +15,9 @@ export const PROVIDER_STATUS_STYLES = {
   error: {
     dot: "bg-destructive",
   },
+  neutral: {
+    dot: "bg-muted-foreground",
+  },
   ready: {
     dot: "bg-success",
   },
@@ -25,14 +28,29 @@ export const PROVIDER_STATUS_STYLES = {
 
 export type ProviderStatusKey = keyof typeof PROVIDER_STATUS_STYLES;
 
+// Antigravity's local health check verifies installation, not Google sign-in.
+// API-key and Agent Platform warnings still need attention.
+function isAntigravitySignInUnchecked(provider: ServerProvider): boolean {
+  return (
+    provider.driver === "antigravity" &&
+    provider.installed &&
+    provider.status === "warning" &&
+    provider.auth.status === "unknown" &&
+    (provider.auth.type === undefined ||
+      provider.auth.type === "oauth-personal" ||
+      provider.auth.type === "oauth-business")
+  );
+}
+
 /** Until a check reports, a provider is neither missing nor in need of attention. */
 export function getProviderStatusKey(
   provider: ServerProvider | undefined,
-  enabled: boolean,
+  enabled: boolean = provider?.enabled ?? true,
 ): ProviderStatusKey {
-  if (!enabled) return "disabled";
+  if (!enabled || provider?.enabled === false) return "disabled";
   // UpComputer: `statusPending` marks the placeholder published before the first check.
   if (provider === undefined || provider.statusPending === true) return "checking";
+  if (isAntigravitySignInUnchecked(provider)) return "neutral";
   return provider.status;
 }
 
@@ -68,6 +86,12 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
       detail: provider.message ?? null,
     };
   }
+  if (isAntigravitySignInUnchecked(provider)) {
+    return {
+      headline: "Installed · Sign-in not checked",
+      detail: provider.message ?? null,
+    };
+  }
   if (provider.status === "warning") {
     return {
       headline: "Needs attention",
@@ -96,7 +120,6 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
 
 export function getProviderVersionLabel(version: string | null | undefined) {
   if (!version) return null;
-  // Antigravity reports a release tag such as `agy_acp_server_20260818_01_RC01`.
   const antigravity = /^agy_acp_server_(\d{4})(\d{2})(\d{2})_\d+(?:_(\w+))?$/.exec(version);
   if (antigravity) {
     const [, year, month, day, candidate] = antigravity;
@@ -134,13 +157,17 @@ export function getProviderVersionAdvisoryPresentation(
   ) {
     const targetVersion = compatibility.recommendedVersion;
     const recommendation = getProviderVersionLabel(targetVersion) ?? compatibility.recommendedRange;
+    // Latest package versions cannot be updated into recommendations requiring another package.
+    const isAlreadyLatest = advisory?.status === "current";
     return {
       title: COMPATIBILITY_TITLES[compatibility.status],
       detail:
         compatibility.message ??
         (recommendation ? `Use ${recommendation} for full support.` : "Update for full support."),
       updateCommand:
-        targetVersion || latestIsIncompatible ? null : (advisory?.updateCommand ?? null),
+        targetVersion || latestIsIncompatible || isAlreadyLatest
+          ? null
+          : (advisory?.updateCommand ?? null),
       emphasis: compatibility.status === "graceful" ? "normal" : "strong",
       targetVersion,
     };

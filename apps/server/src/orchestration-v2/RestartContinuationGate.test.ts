@@ -8,6 +8,7 @@ import {
   ThreadId,
   type OrchestrationV2ThreadProjection,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -41,6 +42,8 @@ const projection = {
       providerThreadId: ProviderThreadId.make("provider-thread:gate"),
       activeAttemptId: RunAttemptId.make("attempt:gate"),
       status: "cancelled",
+      requestedAt: DateTime.makeUnsafe("2026-10-20T10:00:00Z"),
+      completedAt: DateTime.makeUnsafe("2026-10-20T10:05:00Z"),
     },
   ],
   providerThreads: [],

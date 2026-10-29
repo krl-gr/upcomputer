@@ -119,6 +119,7 @@ export function thirdPartyLicenseEntryKey(entry: ThirdPartyLicenseEntry): string
   return encodeURIComponent(JSON.stringify([entry.kind, entry.name, entry.version]));
 }
 
+/** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export function findThirdPartyLicenseEntry(
   entries: ReadonlyArray<ThirdPartyLicenseEntry>,
   key: string,

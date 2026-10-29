@@ -193,11 +193,9 @@ const memoryRank = (entry: BotMemory) =>
   entry.owner === "user" ? 0 : entry.projectId !== null ? 1 : 2;
 
 /**
- * The memories a bot turn in `projectId` can see, in selection order (the user's entries,
- * then the project's, then global ones, each newest first), and the ones that fit the
- * budget. The server sends exactly `selected`, and the bot page marks entries from the same
- * function, so the two cannot disagree. A large entry that does not fit is skipped, not the
- * end of the selection.
+ * The memories a bot turn in `projectId` can see: the user's, then the project's, then global
+ * ones, each newest first, and the ones that fit the budget. Server and bot page both use it;
+ * an entry too large to fit is skipped, not the end of the selection.
  */
 export function botMemoryContext(memories: ReadonlyArray<BotMemory>, projectId: string) {
   const entries = memories

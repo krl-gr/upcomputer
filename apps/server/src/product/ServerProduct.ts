@@ -333,10 +333,11 @@ export const productHttpRoutesLayer = Layer.unwrap(
 );
 
 /** Whether the running product shows an upstream feature; see `@t3tools/shared/productFlags`. */
-export const isProductFeatureShown = (flag: ProductFlag) =>
-  Effect.gen(function* () {
-    return (yield* ServerProduct).flags[flag];
-  });
+export const isProductFeatureShown = Effect.fn("ServerProduct.isProductFeatureShown")(function* (
+  flag: ProductFlag,
+) {
+  return (yield* ServerProduct).flags[flag];
+});
 
 /**
  * Hook for upstream background work and tools behind a product flag: the

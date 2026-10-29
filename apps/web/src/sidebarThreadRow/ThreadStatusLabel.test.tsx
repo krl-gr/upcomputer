@@ -38,19 +38,17 @@ vi.mock("../product/productFlags", async (importOriginal) => ({
   productSurface: () => surface.sidebarThreadRow,
 }));
 
-import {
-  resolveSidebarV2TopStatus,
-  type SidebarThreadStatus,
-  type SidebarV2TopStatusKind,
-} from "../components/Sidebar.logic";
+import type { SidebarThreadStatus, SidebarV2TopStatusKind } from "../components/Sidebar.logic";
+import { resolveSidebarV2TopStatus } from "./topStatus";
 import { resolveThreadStatusLabel, THREAD_STATUS_LABELS } from "./ThreadStatusLabel";
 
-const { SidebarThreadRow } = await import("../components/Sidebar");
+const { SidebarThreadRow } = await import("../components/sidebar/SidebarThreadRow");
 
 // Typecheck fails here when upstream adds a status this test does not walk.
 const EVERY_STATUS: Record<SidebarThreadStatus, true> = {
   approval: true,
   input: true,
+  request: true,
   working: true,
   waiting: true,
   failed: true,
@@ -63,6 +61,7 @@ const EXPECTED_LABELS: Record<SidebarV2TopStatusKind, string | null> = {
   working: "Working",
   approval: "Pending Approval",
   input: "Awaiting Input",
+  request: "Guest Request",
   done: "Completed",
   failed: "Failed",
   limited: "Limited",
@@ -223,6 +222,15 @@ const cardRows = () => [
 // The card's status slot: the element upstream's status indicator renders into.
 const statusSlot = (row: HTMLElement) =>
   row.querySelector("[role='status']")?.closest(".tabular-nums") ?? null;
+// Upstream's indicator is no live region (7f7daad985), so it is found by its own classes.
+const upstreamStatus = (row: HTMLElement) =>
+  row.querySelector(".tabular-nums .inline-flex.font-medium");
+const ownText = (element: Element | null) =>
+  Array.from(element?.childNodes ?? [])
+    .filter((node) => node.nodeType === Node.TEXT_NODE)
+    .map((node) => node.textContent)
+    .join("")
+    .trim();
 
 describe("detailed rows", () => {
   it("show the text label in place of upstream's status indicator, without an icon", async () => {
@@ -249,14 +257,14 @@ describe("detailed rows", () => {
     await renderDetailed(DETAILED_THREADS());
     const rows = cardRows();
     expect(container.querySelector("[data-testid='sidebar-row-status']")).toBeNull();
-    expect(rows.map((row) => row.querySelector("[role='status']")?.textContent)).toEqual([
+    expect(rows.map((row) => ownText(upstreamStatus(row)))).toEqual([
       "Working",
       "Waiting",
       "Approval",
       "Limited",
     ]);
     // Upstream's icons: every status has one, waiting a dot-dashed one (e536bfd33b).
-    expect(rows.map((row) => statusSlot(row)?.querySelector("svg") !== null)).toEqual([
+    expect(rows.map((row) => upstreamStatus(row)?.querySelector("svg") != null)).toEqual([
       true,
       true,
       true,

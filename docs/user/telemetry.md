@@ -1,18 +1,20 @@
 # Product usage data
 
-The T3 Code server sends product usage events to PostHog, associated with a hashed account or
-installation identifier. Events include the provider, model, reasoning effort, permission mode,
-turn result and, for a failed turn, a category of why (such as a usage limit), duration, and
-main-agent token totals when available. They also say whether the agent could connect to
-Up.computer's tools and how many of your own MCP servers failed, without their names or
-addresses. During setup they also include
-which welcome steps you reached, which agent you tried to install or sign in to, and whether each
-agent CLI is installed (with its version) and signed in. In the app they include which sections
-you open (such as Tasks, Agents, or Settings), how long a window stays connected, which buttons
-you click, when you first create a task, agent, automation, or scheduled task, and when an
-agent first answers. Turn events also say how long the agent took to start answering. A button
-is reported by a fixed name from the app's code, never by its text. Every event also says what
-kind of build sent it (such as a release or a test build) and carries a random ID that is
+The Up.computer server sends product usage events to PostHog, associated with a hashed account or
+installation identifier. To count how many installations one person uses, the server also sends
+hashed account identifiers: your UpComputer Connect account, your OpenAI and Claude accounts when
+you are signed in, and a random identifier for each device that connects. Events include the
+provider, model, reasoning effort, permission mode, turn result and, for a failed turn, a
+category of why (such as a usage limit), duration, release channel, and main-agent token totals
+when available. They also say whether the agent could connect to Up.computer's tools and how
+many of your own MCP servers failed, without their names or addresses. During setup they also
+include which welcome steps you reached, which agent you tried to install or sign in to, and
+whether each agent CLI is installed (with its version) and signed in. In the app they include
+which sections you open (such as Tasks, Agents, or Settings), how long a window stays connected,
+which buttons you click, when you first create a task, agent, automation, or scheduled task, and
+when an agent first answers. Turn events also say how long the agent took to start answering. A
+button is reported by a fixed name from the app's code, never by its text. Every event also says
+what kind of build sent it (such as a release or a test build) and carries a random ID that is
 new each time the app or server starts, so events from one session can be grouped.
 
 For tasks and agents, events say how each agent run ended (such as completed, blocked, or
@@ -32,10 +34,14 @@ Events do not include prompts, responses, file contents, authentication tokens, 
 names or titles of your threads, tasks, projects, or agents, raw provider events, or child-agent
 output. Child-agent token use is excluded from the totals.
 
-To disable collection, set `T3CODE_TELEMETRY_ENABLED=false` in the server's environment before
-starting it. This stops product events from being recorded or sent.
+Up.computer also sends relay connection traces to Axiom to diagnose UpComputer Connect connectivity.
 
-The desktop app reads the variable from your shell profile (for example `~/.zshrc`) on macOS and
+To disable product events and relay tracing, set `T3CODE_TELEMETRY_ENABLED=false` in the server's
+environment before starting it. Relay tracing also stops when `T3CODE_OTEL_SDK_DISABLED` or
+`OTEL_SDK_DISABLED` turns OpenTelemetry export off. The web app in a browser, including one the
+`up` CLI opens, does not read these variables.
+
+The desktop app reads `T3CODE_TELEMETRY_ENABLED` from your shell profile (for example `~/.zshrc`) on macOS and
 Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
 
 ## Mark a team or test device
@@ -48,7 +54,7 @@ updates. Turn it off the same way.
 ## Export diagnostics to your own receiver
 
 To send traces, metrics, or logs to an OpenTelemetry receiver, open
-**Settings > General > Diagnostics**, select an environment, and enter each signal's OTLP HTTP
+**Settings > Maintenance > Diagnostics**, select an environment, and enter each signal's OTLP HTTP
 endpoint under **OpenTelemetry export** (for example `http://localhost:4318/v1/traces`). Save, then
 restart that environment's server. The receiver must be reachable from the server's machine.
 **Test** sends an empty export from the server to check an endpoint before or after you save it;
@@ -57,7 +63,8 @@ the signal's currently running endpoint and do not follow redirects. To check a 
 that requires authentication, save it and restart the server first.
 
 `T3CODE_OTLP_*_URL` and standard `OTEL_EXPORTER_OTLP_*` environment variables override the saved
-settings. For endpoints saved here or set with `T3CODE_OTLP_*_URL`, set `T3CODE_OTLP_HEADERS` for
+settings. An overridden signal shows **Set by environment** and names the variable that set it, and its
+**Test** checks the running endpoint instead of the field. For endpoints saved here or set with `T3CODE_OTLP_*_URL`, set `T3CODE_OTLP_HEADERS` for
 receivers that need authentication and `T3CODE_OTLP_PROTOCOL=http/protobuf` for receivers that do
 not accept JSON. An endpoint set with `OTEL_EXPORTER_OTLP_*` takes its headers and protocol from
 `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_EXPORTER_OTLP_PROTOCOL` instead.

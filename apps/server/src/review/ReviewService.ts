@@ -16,12 +16,9 @@ import {
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
-import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
-import * as ServerSettings from "../serverSettings.ts";
-import { isFilesystemRoot, managedWorktreesDirectories } from "../worktreesDirectory.ts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as KnownWorkspaces from "../workspace/KnownWorkspaces.ts";
 
 export class ReviewService extends Context.Service<
   ReviewService,
@@ -35,15 +32,14 @@ export class ReviewService extends Context.Service<
   }
 >()("t3/review/ReviewService") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
-  const settings = yield* ServerSettings.ServerSettingsService;
-  const projectStore = yield* ProjectStore.ProjectStoreV2;
+  const knownWorkspaces = yield* KnownWorkspaces.KnownWorkspaces;
 
   const canonicalizePath = (value: string) => {
     const resolvedPath = path.resolve(value);
@@ -64,50 +60,19 @@ export const make = Effect.gen(function* () {
     );
   };
 
-  const isWithinRoot = (candidate: string, root: string) => {
-    const relative = path.relative(root, candidate);
-    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-  };
-
   const assertWorkspaceBoundCwd = Effect.fn("ReviewService.assertWorkspaceBoundCwd")(function* (
     operation: "ReviewService.getDiffPreview" | "ReviewService.getDiffFileContents",
     cwd: string,
   ) {
-    const worktreesDirectories = yield* settings.getSettings.pipe(
-      Effect.orElseSucceed(() => ({ worktreesDirectory: "", previousWorktreesDirectories: [] })),
-    );
-    const home = yield* HostProcess.HomeDirectory;
-    const [candidate, workspaceRoot, worktreesRoots] = yield* Effect.all([
+    const [candidate, workspaceRoot] = yield* Effect.all([
       canonicalizePath(cwd),
       canonicalizePath(config.cwd),
-      Effect.forEach(
-        managedWorktreesDirectories(worktreesDirectories, config.worktreesDir, path, home),
-        (directory) => canonicalizePath(directory).pipe(Effect.orElseSucceed(() => null)),
-      ).pipe(
-        Effect.map((roots) =>
-          roots.filter((root): root is string => root !== null && !isFilesystemRoot(root, path)),
-        ),
-      ),
     ]);
-
     if (
-      isWithinRoot(candidate, workspaceRoot) ||
-      worktreesRoots.some((root) => isWithinRoot(candidate, root))
+      KnownWorkspaces.isWithinRoot(path, candidate, workspaceRoot) ||
+      (yield* knownWorkspaces.contains(candidate))
     ) {
       return;
-    }
-
-    // Registered projects can live outside the server cwd, which is the home
-    // directory in packaged desktop builds, e.g. a repository on another
-    // Windows drive. Unreadable or unresolvable project roots grant nothing.
-    const projects = yield* projectStore.listShells().pipe(Effect.orElseSucceed(() => []));
-    for (const project of projects) {
-      const root = yield* canonicalizePath(project.workspaceRoot).pipe(
-        Effect.orElseSucceed(() => null),
-      );
-      if (root !== null && isWithinRoot(candidate, root)) {
-        return;
-      }
     }
 
     return yield* new VcsRepositoryDetectionError({
@@ -134,19 +99,7 @@ export const make = Effect.gen(function* () {
       };
     }
 
-    const getDriverDiffPreview = handle.driver.getDiffPreview;
-    if (!getDriverDiffPreview) {
-      if (handle.kind === "git") {
-        return yield* git.getReviewDiffPreview(input);
-      }
-      return yield* new VcsUnsupportedOperationError({
-        operation: "ReviewService.getDiffPreview",
-        kind: handle.kind,
-        detail: `The ${handle.kind} VCS driver does not support review diff previews.`,
-      });
-    }
-
-    return yield* getDriverDiffPreview(input);
+    return yield* git.getReviewDiffPreview(input);
   });
 
   const getDiffFileContents: ReviewService["Service"]["getDiffFileContents"] = Effect.fn(

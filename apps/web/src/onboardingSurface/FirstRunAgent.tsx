@@ -1,11 +1,11 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useClientSettings } from "../hooks/useSettings";
 import { useRecordClientEvent } from "../hooks/useRecordClientEvent";
-import { useCompleteOnboarding } from "../onboarding/firstRun";
+import { completeOnboarding } from "../onboarding/firstRun";
 import { useEnvironmentQuery } from "../state/query";
 import { serverEnvironment } from "../state/server";
 import { environmentThreadShells } from "../state/threads";
@@ -61,7 +61,7 @@ function useStartFirstRunAgent(environmentId: EnvironmentId) {
     reportFailure: false,
     reportDefect: false,
   });
-  return useCallback(async () => {
+  return async () => {
     setSetup((setup) => ({ ...setup, startError: null }));
     const result = await startInstall({
       environmentId,
@@ -77,7 +77,7 @@ function useStartFirstRunAgent(environmentId: EnvironmentId) {
     if (reportedOperations.has(`started:${operationId}`)) return;
     reportedOperations.add(`started:${operationId}`);
     recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "started" });
-  }, [environmentId, recordClientEvent, setSetup, startInstall]);
+  };
 }
 
 /** A user message in any thread means a turn was requested. */
@@ -105,7 +105,6 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
     (settings) => settings.onboardingCompletedAt !== null,
   );
   const recordClientEvent = useRecordClientEvent();
-  const completeOnboarding = useCompleteOnboarding();
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
   const install = useEnvironmentQuery(
     serverEnvironment.providerInstallState({
@@ -190,7 +189,7 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
       .catch(() => {
         completed.current = false;
       });
-  }, [completeOnboarding, environmentId, ready, recordClientEvent, setSetup]);
+  }, [environmentId, ready, recordClientEvent, setSetup]);
 
   // Only a window that onboarded a new user starts this, so installs onboarded
   // before never report it, and an app closed sooner reports nothing.
@@ -250,7 +249,7 @@ export function useFirstRunAgentStatus(
   const recordClientEvent = useRecordClientEvent();
   const [retrying, setRetrying] = useState(false);
   const installSucceeded = install?.phase === "succeeded";
-  const retry = useCallback(() => {
+  const retry = () => {
     recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "retried" });
     setRetrying(true);
     // Once installed, a failure is OpenCode's own check; installing again would not rerun it.
@@ -261,7 +260,7 @@ export function useFirstRunAgentStatus(
       attempt,
       new Promise((resolve) => window.setTimeout(resolve, RETRY_FEEDBACK_MS)),
     ]).finally(() => setRetrying(false));
-  }, [environmentId, installSucceeded, recordClientEvent, refreshProviders, start]);
+  };
   const status = active
     ? resolveFirstRunAgentStatus({
         requested: setup.start === "wait" || setup.start === "install",

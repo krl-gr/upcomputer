@@ -36,7 +36,6 @@ import {
   SelectValue,
 } from "../../../../apps/web/src/components/ui/select.tsx";
 import { Switch } from "../../../../apps/web/src/components/ui/switch.tsx";
-import { usePrimaryEnvironmentId } from "../../../../apps/web/src/state/environments.ts";
 
 import { TaskThreadLink } from "./TaskThreadLink.tsx";
 import {
@@ -298,7 +297,6 @@ export function AgentTableRow(props: AgentTableRowProps) {
 }
 
 export function AgentsView(props: AgentsViewProps) {
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const [viewMode, setViewMode] = useState<AgentViewMode | null>(null);
   const [detailRuns, setDetailRuns] = useState<readonly ScopedTaskAgentRun[]>([]);
   const [detailRunsStatus, setDetailRunsStatus] = useState<"idle" | "loading" | "ready" | "error">(
@@ -380,9 +378,6 @@ export function AgentsView(props: AgentsViewProps) {
   const selectedProviderCatalog = selectedEnvironmentId
     ? props.providerCatalogByEnvironment.get(selectedEnvironmentId)
     : undefined;
-  const selectedProvider = selectedProviderCatalog?.entries.find(
-    (entry) => entry.instanceId === (form.modelInstanceId || baseModelSelection?.instanceId),
-  )?.driverKind;
 
   useEffect(() => {
     if (!isCreateMode || !selectedProject) return;
@@ -900,8 +895,9 @@ export function AgentsView(props: AgentsViewProps) {
                         instanceId={detailModelProvider.instanceId}
                         models={detailModelProvider.models}
                         model={detailModelSlug}
-                        prompt={form.instructions}
-                        onPromptChange={(instructions) => commitForm({ ...form, instructions })}
+                        onPromptEdit={(edit) =>
+                          commitForm({ ...form, instructions: edit(form.instructions) })
+                        }
                         modelOptions={form.modelOptions}
                         allowPromptInjectedEffort={false}
                         onModelOptionsChange={(modelOptions) =>
@@ -1238,9 +1234,11 @@ export function AgentsView(props: AgentsViewProps) {
                         instanceId={detailModelProvider.instanceId}
                         models={detailModelProvider.models}
                         model={detailModelSlug}
-                        prompt={form.instructions}
-                        onPromptChange={(instructions) =>
-                          setForm((current) => ({ ...current, instructions }))
+                        onPromptEdit={(edit) =>
+                          setForm((current) => ({
+                            ...current,
+                            instructions: edit(current.instructions),
+                          }))
                         }
                         modelOptions={form.modelOptions}
                         allowPromptInjectedEffort={false}

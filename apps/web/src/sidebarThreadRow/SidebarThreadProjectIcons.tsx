@@ -1,6 +1,6 @@
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { memo, useMemo } from "react";
+import { memo } from "react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { NoProjectIcon, ProjectRowIcon } from "../sidebarProjects/sidebarProjectIcons";
@@ -39,8 +39,8 @@ export const SidebarThreadProjectIcons = memo(function SidebarThreadProjectIcons
   const ownProject = props.project;
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
-  const isProjectScoped = useUiStateStore((state) => state.sidebarProjectScopeKey != null);
-  const stack = useMemo(() => {
+  const isProjectScoped = useUiStateStore((state) => state.sidebarProjectScopeKeys.length > 0);
+  const stack = (() => {
     const index = projectIndex(projects);
     const scratchRoot = serverConfigs.get(environmentId)?.scratchWorkspaceRoot;
     return resolveThreadProjectIconStack({
@@ -49,7 +49,7 @@ export const SidebarThreadProjectIcons = memo(function SidebarThreadProjectIcons
       projectById: (projectId) => index.get(`${environmentId}:${projectId}`),
       isScratchProject: (project) => isScratchProject(project, scratchRoot),
     });
-  }, [environmentId, linkedProjectIds, ownProject, projects, serverConfigs]);
+  })();
 
   if (isProjectScoped) return null;
   if (stack.showScratchIcon) {

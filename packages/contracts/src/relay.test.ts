@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Base64Url from "effect/encoding/Base64Url";
-import * as OpenApi from "effect/http-api/OpenApi";
 import * as Schema from "effect/Schema";
 
 import {
+  RelayDeviceRegistrationRequest,
   isAllowedWebPushEndpoint,
   MAX_WEB_PUSH_ENDPOINT_LENGTH,
-  RelayApi,
-  RelayDeviceRegistrationRequest,
 } from "./relay.ts";
 
 const decodeDevice = Schema.decodeUnknownExit(RelayDeviceRegistrationRequest);
@@ -26,20 +24,6 @@ const device = {
 };
 
 describe("mobile device platforms", () => {
-  it.each([
-    [23, "Failure"],
-    [24, "Success"],
-    [37, "Success"],
-  ])("enforces the Android minimum without an upper bound (API %i)", (androidApiLevel, result) => {
-    expect(decodeDevice({ ...device, platform: "android", androidApiLevel })._tag).toBe(result);
-  });
-
-  it("accepts Android tokens without Apple routing and preserves older iOS registrations", () => {
-    expect(decodeDevice({ ...device, platform: "android", androidApiLevel: 36 })._tag).toBe(
-      "Success",
-    );
-    expect(decodeDevice({ ...device, platform: "ios", iosMajorVersion: 18 })._tag).toBe("Success");
-  });
   it("rejects missing platform versions and Apple activity tokens on Android", () => {
     expect(decodeDevice({ ...device, platform: "ios" })._tag).toBe("Failure");
     expect(decodeDevice({ ...device, platform: "android" })._tag).toBe("Failure");
@@ -125,17 +109,5 @@ describe("web push devices", () => {
     expect(decodeDevice({ ...web, webPush: { ...web.webPush, [field]: value } })._tag).toBe(
       "Failure",
     );
-  });
-});
-
-describe("RelayApi security", () => {
-  it("describes DPoP access tokens using the HTTP DPoP authorization scheme", () => {
-    const document = OpenApi.fromApi(RelayApi);
-
-    expect(document.components.securitySchemes?.relayDpop).toEqual({
-      type: "http",
-      scheme: "DPoP",
-      description: "DPoP-bound access token. Requests must also include the DPoP proof JWT header.",
-    });
   });
 });

@@ -43,7 +43,7 @@ export function computeNextRunAt(
   if (Result.isFailure(cron)) return Result.fail(cron.failure);
   try {
     return Result.succeed(Cron.next(cron.success, from).toISOString());
-  } catch (cause) {
+  } catch {
     return Result.fail(
       `The schedule "${schedule.cron}" never comes up again. Edit the schedule, then turn the automation back on.`,
     );

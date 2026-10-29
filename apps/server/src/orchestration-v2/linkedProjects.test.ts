@@ -282,7 +282,7 @@ describe("linked project helpers", () => {
 const runtimePolicyLayer = RuntimePolicy.layerFromProjectStore.pipe(
   Layer.provide(
     Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
-      getInstance: () => Effect.succeed(undefined),
+      getInstance: () => Effect.undefined,
       listInstances: Effect.succeed([]),
       listUnavailable: Effect.succeed([]),
       streamChanges: Stream.empty,

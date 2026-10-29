@@ -81,8 +81,8 @@ function canonicalPath(path: string): string {
  * data folder and runs this app's own binary. A server started from the CLI,
  * the background service, another app or a reused PID is never returned.
  */
-export const findOrphanedBackend = (stateDir: string, executablePath: string) =>
-  Effect.gen(function* () {
+export const findOrphanedBackend = Effect.fn("DesktopOrphanedBackend.findOrphanedBackend")(
+  function* (stateDir: string, executablePath: string) {
     const platform = yield* HostProcess.Platform;
     const record = readRuntimeRecord(stateDir);
     if (record === null || record.serviceManaged) return null;
@@ -94,11 +94,12 @@ export const findOrphanedBackend = (stateDir: string, executablePath: string) =>
     if (executable === null) return null;
     // Only the exact binary of this app: other Electron apps share a basename.
     return canonicalPath(executable) === canonicalPath(executablePath) ? record.pid : null;
-  });
+  },
+);
 
 /** Asks the leftover server to stop, then forces it; true once it is gone. */
-export const stopOrphanedBackend = (pid: number) =>
-  Effect.gen(function* () {
+export const stopOrphanedBackend = Effect.fn("DesktopOrphanedBackend.stopOrphanedBackend")(
+  function* (pid: number) {
     yield* Effect.sync(() => {
       try {
         process.kill(pid, "SIGTERM");
@@ -119,4 +120,5 @@ export const stopOrphanedBackend = (pid: number) =>
     });
     yield* Effect.sleep(POLL_MS * 5);
     return !isAlive(pid);
-  });
+  },
+);

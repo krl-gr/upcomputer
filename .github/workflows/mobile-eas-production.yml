@@ -160,7 +160,20 @@ jobs:
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas env:pull production --non-interactive
+        run: |
+          eas env:pull production --non-interactive
+          # EAS commands skip dotenv, and the Android fingerprint hashes this
+          # file. Without it every merge misses the build's hash and rebuilds.
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from "node:fs";
+          import { parseEnv } from "node:util";
+          const env = parseEnv(readFileSync(".env.local", "utf8"));
+          const googleServicesFile = env.T3CODE_ANDROID_GOOGLE_SERVICES_FILE;
+          if (!googleServicesFile) {
+            throw new Error("T3CODE_ANDROID_GOOGLE_SERVICES_FILE is missing from the production environment");
+          }
+          appendFileSync(process.env.GITHUB_ENV, `T3CODE_ANDROID_GOOGLE_SERVICES_FILE=${googleServicesFile}\n`);
+          NODE
 
       - name: Apply manual version override
         if: steps.version_app_token.outcome == 'success'
@@ -235,6 +248,29 @@ jobs:
           MOBILE_BUILD_PROFILE: ${{ inputs.profile || 'production' }}
         run: eas build --platform ${{ inputs.platform }} --profile "$MOBILE_BUILD_PROFILE" --auto-submit --non-interactive --no-wait
 
+      # @expo/fingerprint swallows autolinking errors and returns no Expo module
+      # sources, so native changes stop moving the hash and OTAs reach binaries
+      # that lack them. Refuse to publish any OTA from such a fingerprint.
+      - name: Verify fingerprints hash Expo native modules
+        if: steps.expo-token.outputs.present == 'true' && (github.event_name == 'push' || inputs.mode == 'update')
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PLATFORM: ${{ inputs.platform || 'all' }}
+        run: |
+          if [ "$PLATFORM" = "all" ]; then platforms="ios android"; else platforms="$PLATFORM"; fi
+          failed=0
+          for platform in $platforms; do
+            # eas-cli prints an environment-loaded notice to stdout before the
+            # JSON even with --json, so discard everything before the document.
+            expo_modules="$(eas fingerprint:generate --platform "$platform" --environment production --json --non-interactive | sed -n '/^{/,$p' | jq --arg reason "expoAutolinking${platform^}" '[.sources[] | select((.reasons // []) | index($reason))] | length')"
+            if [ "${expo_modules:-0}" -eq 0 ]; then
+              failed=1
+              echo ":x: $platform: the native fingerprint hashes no Expo native modules — OTAs and builds skipped" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          exit "$failed"
+
       - name: Publish OTA update (manual)
         if: steps.expo-token.outputs.present == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'update'
         working-directory: apps/mobile
@@ -252,6 +288,7 @@ jobs:
             --environment production \
             --platform ${{ inputs.platform }} \
             --message "$OTA_MESSAGE" \
+            --emit-metadata \
             --non-interactive
 
       # Reconcile each version separately because the major is in the fingerprint.
@@ -290,8 +327,11 @@ jobs:
                 --environment production \
                 --platform "$platform" \
                 --message "$message" \
+                --emit-metadata \
                 --non-interactive; then
                 echo ":white_check_mark: $platform/$profile: OTA published to production (fingerprint \`$hash\`)" >> "$GITHUB_STEP_SUMMARY"
+                # The next target's export replaces dist; keep this one for the map upload.
+                rm -rf "dist-$platform-$profile" && mv dist "dist-$platform-$profile"
               else
                 failed=1
                 echo ":x: $platform/$profile: OTA publish failed (fingerprint \`$hash\`)" >> "$GITHUB_STEP_SUMMARY"
@@ -331,3 +371,18 @@ jobs:
             fi
           done
           exit "$failed"
+
+      # Lets the relay symbolicate crash stacks from the updates published
+      # above. A step of its own so the R2 credentials reach only this script,
+      # not `eas update` and the dependencies it runs. Never fails the job.
+      - name: Upload OTA source maps
+        if: ${{ !cancelled() && steps.expo-token.outputs.present == 'true' }}
+        working-directory: apps/mobile
+        env:
+          MOBILE_SOURCEMAPS_R2: ${{ secrets.MOBILE_SOURCEMAPS_R2 }}
+        run: |
+          for dir in dist dist-*; do
+            if [ -f "$dir/eas-update-metadata.json" ]; then
+              node scripts/upload-sourcemaps.mts ota "$dir"
+            fi
+          done

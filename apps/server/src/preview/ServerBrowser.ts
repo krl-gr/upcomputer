@@ -4,6 +4,7 @@
 import {
   BUILT_IN_BROWSER_PROFILES,
   DEFAULT_BROWSER_PROFILE_ID,
+  DEFAULT_BROWSER_RECORDING_FRAME_RATE,
   FILL_PREVIEW_VIEWPORT,
   findBrowserProfile,
   INCOGNITO_BROWSER_PROFILE_ID,
@@ -76,12 +77,14 @@ import { resolveRootCliCommand } from "../cli/invocation.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as PreviewAutomationBroker from "../mcp/PreviewAutomationBroker.ts";
 import * as DesktopBrowserChannel from "./DesktopBrowserChannel.ts";
+import * as PreviewAgentActivity from "./PreviewAgentActivity.ts";
 import * as PreviewManager from "./Manager.ts";
 import * as ServerBrowserPage from "./ServerBrowserPage.ts";
 import * as PreviewBrowser from "./PreviewBrowser.ts";
 import * as PreviewBrowserHost from "./PreviewBrowserHost.ts";
 import { presentAsChrome, ServerBrowserContexts } from "./ServerBrowserContexts.ts";
 import { BrowserControlInterrupted, SessionControl } from "./SessionControl.ts";
+import { installPdfDocumentNavigation, isPdfAssetUrl } from "./PdfDocumentNavigation.ts";
 
 const SERVER_HOST_CLIENT_ID = SERVER_BROWSER_AUTOMATION_CLIENT_ID;
 const RENDER_SCALE = 2;
@@ -137,6 +140,7 @@ const isHostSetupError = Schema.is(
   Schema.Union([
     PreviewBrowserHost.PreviewBrowserSandboxError,
     PreviewBrowserHost.PreviewBrowserLibrariesError,
+    PreviewBrowserHost.PreviewBrowserRootError,
   ]),
 );
 
@@ -283,6 +287,9 @@ interface ServerTab {
   readonly networkEntries: Array<PreviewAutomationNetworkEntry>;
   readonly actionTimeline: Array<PreviewAutomationActionEvent>;
   readonly control: SessionControl;
+  agentOperating: boolean;
+  fileChooserIntercepted: boolean;
+  readonly onFileChooser: (chooser: FileChooser) => void;
 
   readonly isolatedContext: boolean;
 
@@ -327,11 +334,7 @@ interface ServerDownload {
   readonly completedAt: string;
 }
 
-/**
- * Operations an agent may run on any tab in its thread, even while a human
- * drives it. Evaluate is not one: page script can change anything, so it needs
- * the same control as clicking.
- */
+/** Read-only operations remain available during human control; evaluate requires control because scripts can mutate the page. */
 const READ_OPERATIONS: ReadonlySet<PreviewAutomationRequest["operation"]> = new Set([
   "status",
   "snapshot",
@@ -377,9 +380,7 @@ const modifiersOf = (message: Record<string, unknown>) => {
   return Number.isInteger(value) && value >= 0 && value < 16 ? value : 0;
 };
 
-// Cmd shortcuts from Apple viewers are no editing shortcut for Linux or headless
-// Chromium, so they carry the command. Ctrl already works natively on Linux,
-// except copy and cut, which headless Chromium only runs as commands.
+// Linux/headless Chromium needs commands for Cmd editing shortcuts and Ctrl copy/cut.
 const editingCommand = (key: string, modifiers: number) => {
   const modifier = modifiers & 0b0111;
   if (modifier !== 2 && modifier !== 4) return null;
@@ -403,10 +404,7 @@ const editingCommand = (key: string, modifiers: number) => {
 
 const CLIPBOARD_TEXT_LIMIT = 1024 * 1024;
 const CLIPBOARD_WORLD = "t3-preview-clipboard";
-// Headless Chromium shares one clipboard between every context, so the copy
-// a viewer's copy or cut key makes is read from this world instead of the
-// clipboard. Page scripts cannot see the world, and only a copy made while a
-// real key is handled counts.
+// Chromium shares its clipboard across contexts; capture real copy/cut keys in a page-inaccessible world instead.
 const CLIPBOARD_SCRIPT = `(() => {
   let keying = false;
   let copied = "";
@@ -457,7 +455,9 @@ const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const previewBrowser = yield* PreviewBrowser.PreviewBrowser;
   const desktopChannel = yield* DesktopBrowserChannel.DesktopBrowserChannel;
+  const agentTurns = yield* (yield* PreviewAgentActivity.PreviewAgentActivity).changes;
   const runFork = Effect.runForkWith(yield* Effect.context<never>());
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const launchServices = yield* Effect.context<ChildProcessSpawner.ChildProcessSpawner>();
   const setupCommand = yield* resolveRootCliCommand(PreviewBrowserHost.SETUP_SUBCOMMAND);
 
@@ -472,7 +472,7 @@ const make = Effect.gen(function* () {
 
   const contexts = new ServerBrowserContexts({
     profilesDir: NodePath.join(config.stateDir, "server-browser", "profiles"),
-    executable: () => Effect.runPromise(previewBrowser.executable),
+    executable: () => runPromise(previewBrowser.executable),
     // Playwright's launch error drops Chrome's own output; its sandbox note survives.
     diagnose: (executable, cause) =>
       Effect.runPromiseWith(launchServices)(
@@ -500,7 +500,17 @@ const make = Effect.gen(function* () {
         }
       : null;
 
+  const updateFileChooserInterception = (tab: ServerTab) => {
+    // Only agents and streamed controllers can answer intercepted uploads; native desktop views use the OS picker.
+    const intercept = !tab.desktop || tab.agentOperating || tab.control.controller !== null;
+    if (intercept === tab.fileChooserIntercepted) return;
+    tab.fileChooserIntercepted = intercept;
+    if (intercept) tab.page.on("filechooser", tab.onFileChooser);
+    else tab.page.off("filechooser", tab.onFileChooser);
+  };
+
   const broadcastControl = (tab: ServerTab) => {
+    updateFileChooserInterception(tab);
     for (const viewer of tab.viewers)
       viewer.push({
         _tag: "control",
@@ -667,8 +677,8 @@ const make = Effect.gen(function* () {
   };
 
   const desktopRenders = (snapshot: PreviewSessionSnapshot) =>
-    desktopChannel.available
-      ? Effect.runPromise(
+    desktopChannel.available && !snapshot.headless
+      ? runPromise(
           desktopChannel.awaitAttached(
             { threadId: snapshot.threadId, tabId: snapshot.tabId },
             DESKTOP_ATTACH_TIMEOUT,
@@ -677,9 +687,9 @@ const make = Effect.gen(function* () {
       : Promise.resolve(false);
 
   const connectDesktop = async (snapshot: PreviewSessionSnapshot) => {
-    const scope = await Effect.runPromise(Scope.make());
+    const scope = await runPromise(Scope.make());
     try {
-      const endpoint = await Effect.runPromise(
+      const endpoint = await runPromise(
         desktopChannel
           .endpoint({ threadId: snapshot.threadId, tabId: snapshot.tabId })
           .pipe(Scope.provide(scope)),
@@ -689,11 +699,11 @@ const make = Effect.gen(function* () {
         page: connected.page,
         close: async () => {
           await connected.browser.close().catch(constVoid);
-          await Effect.runPromise(Scope.close(scope, Exit.void));
+          await runPromise(Scope.close(scope, Exit.void));
         },
       };
     } catch (cause) {
-      await Effect.runPromise(Scope.close(scope, Exit.void));
+      await runPromise(Scope.close(scope, Exit.void));
       throw cause;
     }
   };
@@ -705,6 +715,14 @@ const make = Effect.gen(function* () {
       adopted === undefined && (await desktopRenders(snapshot))
         ? await connectDesktop(snapshot)
         : null;
+    // Otherwise a desktop that attaches late shows its own page, and the agent drives another.
+    if (!desktop && desktopChannel.available) {
+      await runPromise(
+        manager
+          .markHeadless({ threadId: ThreadId.make(snapshot.threadId), tabId: snapshot.tabId })
+          .pipe(Effect.ignore),
+      );
+    }
     const isolatedContext =
       adopted === undefined &&
       desktop === null &&
@@ -721,6 +739,7 @@ const make = Effect.gen(function* () {
     if (!desktop) await prepareContext(context);
     const page = adopted?.page ?? desktop?.page ?? (await context.newPage());
     const cdp = await context.newCDPSession(page);
+    await installPdfDocumentNavigation(cdp);
     // The desktop's page is already a normal browser. A popup's first request
     // went out before it became a tab; everything after presents as Chrome.
     if (!desktop) await presentAsChrome(cdp, host);
@@ -743,6 +762,9 @@ const make = Effect.gen(function* () {
       networkEntries: [],
       actionTimeline: [],
       control,
+      agentOperating: false,
+      fileChooserIntercepted: false,
+      onFileChooser: (chooser) => void offerFileChooser(tab, chooser),
       isolatedContext,
       desktop: desktop === null ? null : { close: desktop.close },
       profileId: snapshot.profileId,
@@ -775,7 +797,11 @@ const make = Effect.gen(function* () {
       navigationGenerations.set(request, ++tab.navigationGeneration);
       clearAbortedNavigation(tab);
       tab.loading = true;
-      report(tab, { _tag: "Loading", url: request.url().slice(0, 2048), title: "" });
+      report(tab, {
+        _tag: "Loading",
+        url: ServerBrowserPage.withoutDataPayload(request.url()).slice(0, 2048),
+        title: "",
+      });
     });
     page.on("load", () => {
       tab.loading = false;
@@ -791,7 +817,7 @@ const make = Effect.gen(function* () {
     page.on("requestfailed", (request) => {
       const errorText = request.failure()?.errorText ?? "";
       pushBounded(tab.networkEntries, {
-        url: request.url(),
+        url: ServerBrowserPage.withoutDataPayload(request.url()),
         method: request.method(),
         status: null,
         failed: true,
@@ -799,9 +825,7 @@ const make = Effect.gen(function* () {
         timestamp: new Date().toISOString(),
       });
       if (!isMainNavigation(request)) return;
-      // A navigation a newer one replaced leaves the status to the newer one. A
-      // popup's first request can predate the listener, so it is untracked and
-      // superseded by any tracked one.
+      // Newer navigations own status; untracked initial popup requests yield to any tracked navigation.
       const generation = navigationGenerations.get(request) ?? 0;
       if (generation !== tab.navigationGeneration) return;
       // An aborted navigation is usually a download; its `download` event settles the status.
@@ -824,7 +848,7 @@ const make = Effect.gen(function* () {
       const { code, description } = ServerBrowserPage.parseNetError(errorText);
       report(tab, {
         _tag: "LoadFailed",
-        url: request.url().slice(0, 2048),
+        url: ServerBrowserPage.withoutDataPayload(request.url()).slice(0, 2048),
         title: "",
         code,
         description,
@@ -832,7 +856,7 @@ const make = Effect.gen(function* () {
     });
     page.on("response", (response) => {
       pushBounded(tab.networkEntries, {
-        url: response.url(),
+        url: ServerBrowserPage.withoutDataPayload(response.url()),
         method: response.request().method(),
         status: response.status(),
         failed: false,
@@ -842,7 +866,7 @@ const make = Effect.gen(function* () {
     page.on("console", (message) => {
       pushBounded(tab.consoleEntries, {
         level: message.type(),
-        text: message.text().slice(0, 2_000),
+        text: ServerBrowserPage.consoleText(message).slice(0, 2_000),
         timestamp: new Date().toISOString(),
       });
     });
@@ -851,7 +875,7 @@ const make = Effect.gen(function* () {
       broadcastControl(tab);
     });
     page.on("download", (download) => void saveDownload(tab, download));
-    page.on("filechooser", (chooser) => void offerFileChooser(tab, chooser));
+    updateFileChooserInterception(tab);
     // Popups become tabs and keep `window.opener`, so sign-in popups can report back.
     page.on("popup", (popup) => void adoptPopup(tab, popup));
     // Playwright cannot reload a crashed page, so it must leave the tab list.
@@ -867,13 +891,22 @@ const make = Effect.gen(function* () {
     page.on("crash", () => dropTab(tab, true));
     tabs.set(key, tab);
     reportLiveTabs();
-    // A popup is already loading its own URL, and the desktop loads its tab's.
-    if (!adopted && !desktop && snapshot.navStatus._tag === "Loading") {
-      tab.initialNavigation = page
-        .goto(snapshot.navStatus.url, { waitUntil: "commit", timeout: NAVIGATION_TIMEOUT_MS })
-        .then(constVoid);
+    // Existing desktop and popup PDFs can start loading before interception attaches.
+    if (
+      snapshot.navStatus._tag === "Loading" &&
+      ((!adopted && !desktop) || isPdfAssetUrl(snapshot.navStatus.url))
+    ) {
+      const options = { waitUntil: "commit", timeout: NAVIGATION_TIMEOUT_MS } as const;
+      tab.initialNavigation = (
+        (desktop || adopted) && page.url() === snapshot.navStatus.url
+          ? page.reload(options)
+          : page.goto(snapshot.navStatus.url, options)
+      ).then(constVoid, (cause: unknown) => {
+        throw ServerBrowserPage.toOperationError(cause, NAVIGATION_TIMEOUT_MS);
+      });
 
-      void tab.initialNavigation.catch(constVoid);
+      if (tab.control.agentId !== null) tab.control.track(tab.initialNavigation);
+      else void tab.initialNavigation.catch(constVoid);
     }
     return tab;
   };
@@ -905,7 +938,7 @@ const make = Effect.gen(function* () {
     }
     report(tab, {
       _tag: "LoadFailed",
-      url: url.slice(0, 2048),
+      url: ServerBrowserPage.withoutDataPayload(url).slice(0, 2048),
       title: "",
       code: -3,
       description: "ERR_ABORTED",
@@ -922,8 +955,12 @@ const make = Effect.gen(function* () {
     let offered: { readonly id: string; readonly fileName: string } | undefined;
     try {
       if (await download.failure()) return;
-      await NodeFSP.mkdir(downloadDir(tab), { recursive: true });
+      await NodeFSP.mkdir(downloadDir(tab), { recursive: true, mode: 0o700 });
+      // mkdir leaves the mode of a folder that already exists, such as one an older build made.
+      await NodeFSP.chmod(downloadDir(tab), 0o700);
       await download.saveAs(path);
+      // saveAs copies with the process umask; a download should stay readable by its owner only.
+      await NodeFSP.chmod(path, 0o600);
       const { size } = await NodeFSP.stat(path);
       if (tab.closing || size > DOWNLOAD_MAX_BYTES) {
         await NodeFSP.rm(path, { force: true });
@@ -934,7 +971,7 @@ const make = Effect.gen(function* () {
         fileName: download.suggestedFilename().slice(0, 255) || "download",
         path,
         sizeBytes: size,
-        url: download.url().slice(0, 2048),
+        url: ServerBrowserPage.withoutDataPayload(download.url()).slice(0, 2048),
         completedAt: new Date().toISOString(),
       };
       tab.downloads.push(saved);
@@ -959,6 +996,8 @@ const make = Effect.gen(function* () {
       if (navigation !== null && !tab.closing) {
         settleAbortedNavigation(tab, navigation, download.url(), offered);
       }
+      // saveAs copies the artifact; cached profile contexts otherwise retain the original.
+      await download.delete().catch(constVoid);
     }
   };
 
@@ -994,7 +1033,6 @@ const make = Effect.gen(function* () {
     const controller = [...tab.viewers].find((viewer) => viewer.id === tab.control.controller);
     if (!open || !controller) return;
     if (open.offeredTo !== controller.id) {
-      // A new controller gets a fresh id; the previous one can no longer answer.
       tab.fileChooser = { ...open, id: NodeCrypto.randomUUID(), offeredTo: controller.id };
       if (open.offeredTo !== null)
         for (const viewer of tab.viewers) viewer.push({ _tag: "fileChooserClosed", id: open.id });
@@ -1088,11 +1126,7 @@ const make = Effect.gen(function* () {
     });
   };
 
-  /**
-   * A frame in its own process, such as one with an `Origin-Agent-Cluster`
-   * header, is out of the page session's reach, so it records copies through
-   * its own session until that target closes.
-   */
+  /** Out-of-process frames need their own copy-recording session until target closure. */
   const recordFrameCopies = async (tab: ServerTab, frame: Frame) => {
     if (frame === tab.page.mainFrame() || tab.frameSessions.has(frame)) return;
 
@@ -1159,7 +1193,7 @@ const make = Effect.gen(function* () {
     const controller = [...opener.viewers].find(
       (viewer) => viewer.id === opener.control.controller,
     );
-    await Effect.runPromise(
+    await runPromise(
       manager.open({
         threadId: opener.threadId,
         ...(/^https?:/i.test(url) ? { url } : {}),
@@ -1209,20 +1243,19 @@ const make = Effect.gen(function* () {
     return opening;
   };
 
-  const findTab = (threadId: string, tabId: string) =>
-    Effect.gen(function* () {
-      const existing = tabs.get(tabKey(threadId, tabId));
-      if (existing) return existing;
-      const { sessions } = yield* manager.list({ threadId: ThreadId.make(threadId) });
-      const snapshot = sessions.find(
-        (session) => session.tabId === tabId && session.runtime === "server",
-      );
-      if (!snapshot) return yield* new ServerBrowserTabNotFoundError({ threadId, tabId });
-      return yield* Effect.tryPromise({
-        try: () => ensureTab(snapshot),
-        catch: (cause) => (isTabNotFound(cause) ? cause : new ServerBrowserLaunchError({ cause })),
-      });
+  const findTab = Effect.fn("ServerBrowser.findTab")(function* (threadId: string, tabId: string) {
+    const existing = tabs.get(tabKey(threadId, tabId));
+    if (existing) return existing;
+    const { sessions } = yield* manager.list({ threadId: ThreadId.make(threadId) });
+    const snapshot = sessions.find(
+      (session) => session.tabId === tabId && session.runtime === "server",
+    );
+    if (!snapshot) return yield* new ServerBrowserTabNotFoundError({ threadId, tabId });
+    return yield* Effect.tryPromise({
+      try: () => ensureTab(snapshot),
+      catch: (cause) => (isTabNotFound(cause) ? cause : new ServerBrowserLaunchError({ cause })),
     });
+  });
 
   const atTabLimit = (agentSessionId: string) =>
     tabs.size + pendingTabs.size >= SERVER_TAB_LIMIT ||
@@ -1237,10 +1270,17 @@ const make = Effect.gen(function* () {
       );
   };
 
+  // Desktop browsing bypasses streamed viewers and server input tracking,
+  // so these idle signals only apply to headless tabs.
   const closeIdleAgentTabs = () => {
     const cutoff = Date.now() - AGENT_TAB_IDLE_MS;
     for (const tab of tabs.values()) {
-      if (tab.control.agentId !== null && tab.viewers.size === 0 && tab.usedAt < cutoff)
+      if (
+        tab.control.agentId !== null &&
+        tab.desktop === null &&
+        tab.viewers.size === 0 &&
+        tab.usedAt < cutoff
+      )
         dropTab(tab, true);
     }
   };
@@ -1270,9 +1310,13 @@ const make = Effect.gen(function* () {
     readonly profiles: ReadonlyArray<BrowserProfile>;
     readonly defaultProfileId: string;
   } | null = null;
+  // Agent recordings encode here, so they need the client's Browser recording frame rate. The
+  // last report outlives the client, which lets agents record while no client is connected.
+  let recordingFrameRate = DEFAULT_BROWSER_RECORDING_FRAME_RATE;
 
   const reportProfiles: ServerBrowser["Service"]["reportProfiles"] = (input) =>
     Effect.sync(() => {
+      if (input.recordingFrameRate !== undefined) recordingFrameRate = input.recordingFrameRate;
       const profiles = resolveBrowserProfiles(input.profiles);
       reportedProfiles = {
         profiles,
@@ -1410,7 +1454,7 @@ const make = Effect.gen(function* () {
           `Navigation to ${url} failed: ${ServerBrowserPage.parseNetError(message).description}`,
         );
       }
-      throw cause;
+      throw ServerBrowserPage.toOperationError(cause, timeout);
     });
   };
 
@@ -1429,12 +1473,11 @@ const make = Effect.gen(function* () {
       const encoder = await contexts.scratchPage();
       let session: CDPSession | null = null;
       try {
-        await encoder.evaluate(ServerBrowserPage.RECORDING_ENCODER_SCRIPT);
+        await encoder.evaluate(ServerBrowserPage.recordingEncoderScript(recordingFrameRate));
         // Seed idle pages before returning so an immediate stop has a frame to encode.
-        const firstFrame = await ServerBrowserPage.captureViewport(tab.page, tab.cdp, {
+        const firstFrame = await ServerBrowserPage.captureViewport(tab.cdp, {
           format: "jpeg",
           quality: RECORDING_SCREENCAST.quality,
-          scale: 1,
         });
         await encoder.evaluate(
           ([data, width]) =>
@@ -1486,7 +1529,6 @@ const make = Effect.gen(function* () {
     return started;
   };
 
-  // Scaled captures repaint every screencast; pause them to avoid leaking that frame.
   const withScreencastsPaused = <A>(tab: ServerTab, capture: () => Promise<A>): Promise<A> =>
     withCaptureLock(tab, async () => {
       tab.capturing += 1;
@@ -1642,7 +1684,7 @@ const make = Effect.gen(function* () {
     const tab =
       request.tabId === undefined
         ? latestThreadTab(request.threadId, request.agentSessionId)
-        : await Effect.runPromise(
+        : await runPromise(
             findTab(request.threadId, request.tabId).pipe(Effect.orElseSucceed(constVoid)),
           );
     if (!tab) {
@@ -1670,7 +1712,10 @@ const make = Effect.gen(function* () {
     }
   };
 
-  const runOperation = async (request: PreviewAutomationRequest): Promise<unknown> => {
+  const runOperation = async (
+    request: PreviewAutomationRequest,
+    deadlineMs: number,
+  ): Promise<unknown> => {
     const input = request.input;
     switch (request.operation) {
       case "status":
@@ -1703,16 +1748,29 @@ const make = Effect.gen(function* () {
 
         const found =
           reuse && request.tabId !== undefined
-            ? await Effect.runPromise(
+            ? await runPromise(
                 findTab(request.threadId, request.tabId).pipe(
                   Effect.catchTags({
-                    ServerBrowserTabNotFoundError: () => Effect.succeed(undefined),
+                    ServerBrowserTabNotFoundError: () => Effect.void,
                   }),
                 ),
               )
             : undefined;
-        // Only an explicit tabId reuses a tab this session did not open; a tab
-        // it last read (such as the user's) is not taken over implicitly.
+        if (reuse && request.tabIdExplicit && !found) {
+          const { sessions } = await runPromise(
+            manager.list({ threadId: ThreadId.make(request.threadId) }),
+          );
+          const desktop = sessions.some(
+            (session) => session.tabId === request.tabId && session.runtime !== "server",
+          );
+          throw new ServerBrowserPage.ServerBrowserOperationError(
+            desktop ? "PreviewAutomationExecutionError" : "PreviewAutomationTabNotFoundError",
+            desktop
+              ? "This tab belongs to the desktop runtime. This environment's server browser cannot control desktop tabs. Omit tabId to open a server tab instead."
+              : "The requested server preview tab does not exist.",
+          );
+        }
+        // Reusing another session's tab requires explicit tabId; reading it grants no implicit takeover.
         const existing =
           found && (request.tabIdExplicit || found.control.agentId === request.agentSessionId)
             ? found
@@ -1726,7 +1784,7 @@ const make = Effect.gen(function* () {
         const tab =
           existing ??
           (await ensureTab(
-            await Effect.runPromise(
+            await runPromise(
               manager.open({
                 threadId: request.threadId,
                 ...(url ? { url } : {}),
@@ -1742,34 +1800,38 @@ const make = Effect.gen(function* () {
             "A browser dialog is pending. Read preview_status and use preview_dialog first.",
             "dialogPending",
           );
-        return tab.control.agent(request.agentSessionId, async () => {
-          if (tab.dialog)
-            throw new BrowserControlInterrupted(
-              "A browser dialog is pending. Read preview_status and use preview_dialog first.",
-              "dialogPending",
-            );
-          if (existing) {
-            if (url) await navigate(tab, url, "load", navigationTimeout);
-          } else {
-            await tab.initialNavigation;
-          }
-          const reveal = open.open ?? open.show;
-          if (reveal !== false) {
-            await Effect.runPromise(
-              manager.requestReveal({
-                threadId: tab.threadId,
-                tabId: tab.tabId,
-                force: reveal === true,
-              }),
-            );
-          }
-          if (!existing && url) {
-            await tab.page
-              .waitForLoadState("load", { timeout: navigationTimeout })
-              .catch(constVoid);
-          }
-          return statusWithTitle(tab, request.agentSessionId);
-        });
+        return tab.control.agent(
+          request.agentSessionId,
+          async () => {
+            if (tab.dialog)
+              throw new BrowserControlInterrupted(
+                "A browser dialog is pending. Read preview_status and use preview_dialog first.",
+                "dialogPending",
+              );
+            if (existing) {
+              if (url) await navigate(tab, url, "load", navigationTimeout);
+            } else {
+              await tab.initialNavigation;
+            }
+            const reveal = open.open ?? open.show;
+            if (reveal !== false) {
+              await runPromise(
+                manager.requestReveal({
+                  threadId: tab.threadId,
+                  tabId: tab.tabId,
+                  force: reveal === true,
+                }),
+              );
+            }
+            if (!existing && url) {
+              await tab.page
+                .waitForLoadState("load", { timeout: navigationTimeout })
+                .catch(constVoid);
+            }
+            return statusWithTitle(tab, request.agentSessionId);
+          },
+          deadlineMs,
+        );
       }
       case "recordingStop": {
         if (
@@ -1801,6 +1863,8 @@ const make = Effect.gen(function* () {
             "No recording is active for this thread.",
           );
         }
+        // A stop cannot act twice (a retry finds no recording);
+        // dropping a late one would leave capture running.
         return tab.control.agent(request.agentSessionId ?? "", () => stopRecording(tab));
       }
     }
@@ -1815,12 +1879,11 @@ const make = Effect.gen(function* () {
       if (tab.control.controller !== null)
         throw new BrowserControlInterrupted("A human controls this tab.", "humanControl");
       void tab.control.close().catch(constVoid);
-      await Effect.runPromise(manager.close({ threadId: tab.threadId, tabId: tab.tabId }));
+      await runPromise(manager.close({ threadId: tab.threadId, tabId: tab.tabId }));
       dropTab(tab, false);
       return {};
     }
-    // A click can be waiting for its dialog. Resolve it outside the serial queue,
-    // with the same owner check, so the operation can finish and control can drain.
+    // Resolve dialogs outside the queue, with ownership checked, to unblock waiting clicks.
     if (request.operation === "dialog") {
       if (tab.control.controller !== null)
         throw new BrowserControlInterrupted("A human controls this tab.", "humanControl");
@@ -1843,19 +1906,27 @@ const make = Effect.gen(function* () {
         return executeTabOperation(tab, request);
       });
     }
-    return tab.control.agent(agentSessionId, async () => {
-      if (tab.dialog)
-        throw new BrowserControlInterrupted(
-          "A browser dialog is pending. Read preview_status and use preview_dialog first.",
-          "dialogPending",
-        );
-      const generation = tab.control.generation;
-      try {
-        return await executeTabOperation(tab, request);
-      } finally {
-        if (generation !== tab.control.generation) ServerBrowserPage.invalidateRefs(tab.page);
-      }
-    });
+    return tab.control.agent(
+      agentSessionId,
+      async () => {
+        if (tab.dialog)
+          throw new BrowserControlInterrupted(
+            "A browser dialog is pending. Read preview_status and use preview_dialog first.",
+            "dialogPending",
+          );
+        const generation = tab.control.generation;
+        tab.agentOperating = !READ_OPERATIONS.has(request.operation);
+        updateFileChooserInterception(tab);
+        try {
+          return await executeTabOperation(tab, request);
+        } finally {
+          tab.agentOperating = false;
+          updateFileChooserInterception(tab);
+          if (generation !== tab.control.generation) ServerBrowserPage.invalidateRefs(tab.page);
+        }
+      },
+      deadlineMs,
+    );
   };
 
   const executeTabOperation = async (tab: ServerTab, request: PreviewAutomationRequest) => {
@@ -1875,7 +1946,7 @@ const make = Effect.gen(function* () {
       }
       case "resize": {
         const setting = resolvePreviewViewport(input as PreviewAutomationResizeInput);
-        await Effect.runPromise(
+        await runPromise(
           manager.resize({ threadId: tab.threadId, tabId: tab.tabId, viewport: setting }),
         );
         await applySetting(tab, setting);
@@ -1887,7 +1958,7 @@ const make = Effect.gen(function* () {
       }
       case "setColorScheme": {
         const { colorScheme } = input as PreviewAutomationSetColorSchemeInput;
-        const snapshot = await Effect.runPromise(
+        const snapshot = await runPromise(
           manager.adjust({ threadId: tab.threadId, tabId: tab.tabId, colorScheme }),
         );
         await applyRendering(tab, snapshot);
@@ -1895,7 +1966,10 @@ const make = Effect.gen(function* () {
       }
       case "snapshot": {
         return withScreencastsPaused(tab, () =>
-          ServerBrowserPage.snapshot({ ...tab, renderScale: RENDER_SCALE }),
+          ServerBrowserPage.snapshot({
+            ...tab,
+            renderScale: tab.desktop ? "display" : RENDER_SCALE,
+          }),
         );
       }
       case "click": {
@@ -1950,7 +2024,10 @@ const make = Effect.gen(function* () {
 
   const handleRequest = (connectionId: string, request: PreviewAutomationRequest) =>
     Effect.tryPromise({
-      try: () => runOperation(request).finally(() => markUsed(request)),
+      try: () =>
+        runOperation(request, performance.now() + request.timeoutMs).finally(() =>
+          markUsed(request),
+        ),
       catch: ServerBrowserPage.toOperationError,
     }).pipe(
       Effect.match({
@@ -2127,29 +2204,32 @@ const make = Effect.gen(function* () {
       }
       case "viewport": {
         const setting = decodeViewportSetting(message.setting);
-        await Effect.runPromise(
+        await runPromise(
           manager.resize({ threadId: tab.threadId, tabId: tab.tabId, viewport: setting }),
         );
         await applySetting(tab, setting);
         return;
       }
+      // A stalled navigation must not block a corrected URL or further viewer input.
       case "navigate":
         if (typeof message.url === "string") {
           const url = normalizePreviewUrl(message.url);
-          await tab.page.goto(url, VIEWER_NAVIGATION_OPTIONS);
+          tab.control.trackUntilHandoff(tab.page.goto(url, VIEWER_NAVIGATION_OPTIONS));
         }
         return;
       case "history":
-        await (num(message.delta) < 0
-          ? tab.page.goBack(VIEWER_NAVIGATION_OPTIONS)
-          : tab.page.goForward(VIEWER_NAVIGATION_OPTIONS));
+        tab.control.trackUntilHandoff(
+          num(message.delta) < 0
+            ? tab.page.goBack(VIEWER_NAVIGATION_OPTIONS)
+            : tab.page.goForward(VIEWER_NAVIGATION_OPTIONS),
+        );
         return;
       case "reload":
         if (message.ignoreCache === true) {
           await session.send("Page.reload", { ignoreCache: true });
           return;
         }
-        await tab.page.reload(VIEWER_NAVIGATION_OPTIONS);
+        tab.control.trackUntilHandoff(tab.page.reload(VIEWER_NAVIGATION_OPTIONS));
         return;
       case "probe": {
         const x = num(message.x);
@@ -2164,209 +2244,204 @@ const make = Effect.gen(function* () {
     }
   };
 
-  const attachViewer: ServerBrowser["Service"]["attachViewer"] = (input) =>
-    Effect.gen(function* () {
-      const tab = yield* findTab(input.threadId, input.tabId);
-      const output = yield* Queue.make<ServerBrowserViewerOutput>({
-        capacity: VIEWER_OUTPUT_LIMIT,
-        strategy: "dropping",
+  const attachViewer: ServerBrowser["Service"]["attachViewer"] = Effect.fn(
+    "ServerBrowser.attachViewer",
+  )(function* (input) {
+    const tab = yield* findTab(input.threadId, input.tabId);
+    const output = yield* Queue.make<ServerBrowserViewerOutput>({
+      capacity: VIEWER_OUTPUT_LIMIT,
+      strategy: "dropping",
+    });
+    const session = yield* Effect.acquireRelease(
+      Effect.tryPromise({
+        try: () => tab.page.context().newCDPSession(tab.page),
+        catch: (cause) => new ServerBrowserLaunchError({ cause }),
+      }),
+      (session) =>
+        Effect.promise(() =>
+          session
+            .send("Page.stopScreencast")
+            .catch(constVoid)
+            .then(() => session.detach())
+            .catch(constVoid),
+        ),
+    );
+    const quality = Math.min(100, Math.max(1, Math.round(input.quality)));
+    // Chromium may drop the final frame during a burst; send a still when it settles.
+    let framesInFlight = 0;
+    let mayHaveDropped = false;
+    let motion = false;
+    const recentFrames: Array<number> = [];
+    let screencastParams = Promise.resolve();
+    let screencastScale = 1;
+    const startScreencast = (scale: number) => {
+      screencastScale = scale;
+      screencastParams = screencastParams.then(async () => {
+        if (tab.capturing > 0) return;
+        await session.send("Page.stopScreencast").catch(constVoid);
+        await session
+          .send("Page.startScreencast", {
+            format: "jpeg",
+            quality: screencastScale < 1 ? Math.min(quality, SCREENCAST_MOTION_QUALITY) : quality,
+            maxWidth: Math.max(1, Math.round(input.maxWidth * screencastScale)),
+            maxHeight: Math.max(1, Math.round(input.maxHeight * screencastScale)),
+          })
+          .catch(constVoid);
       });
-      const session = yield* Effect.acquireRelease(
-        Effect.tryPromise({
-          try: () => tab.page.context().newCDPSession(tab.page),
-          catch: (cause) => new ServerBrowserLaunchError({ cause }),
-        }),
-        (session) =>
-          Effect.promise(() =>
-            session
-              .send("Page.stopScreencast")
-              .catch(constVoid)
-              .then(() => session.detach())
-              .catch(constVoid),
-          ),
-      );
-      const quality = Math.min(100, Math.max(1, Math.round(input.quality)));
-      // Chromium may drop the final frame during a burst; send a still when it settles.
-      let framesInFlight = 0;
-      let mayHaveDropped = false;
-      let motion = false;
-      const recentFrames: Array<number> = [];
-      let screencastParams = Promise.resolve();
-      let screencastScale = 1;
-      const startScreencast = (scale: number) => {
-        screencastScale = scale;
-        screencastParams = screencastParams.then(async () => {
-          if (tab.capturing > 0) return;
-          await session.send("Page.stopScreencast").catch(constVoid);
-          await session
-            .send("Page.startScreencast", {
-              format: "jpeg",
-              quality: screencastScale < 1 ? Math.min(quality, SCREENCAST_MOTION_QUALITY) : quality,
-              maxWidth: Math.max(1, Math.round(input.maxWidth * screencastScale)),
-              maxHeight: Math.max(1, Math.round(input.maxHeight * screencastScale)),
-            })
-            .catch(constVoid);
-        });
-        return screencastParams;
-      };
-      const viewer: ViewerState = {
-        id: NodeCrypto.randomUUID(),
-        canOperate: input.canOperate,
-        pressedKeys: new Map(),
-        pressedButtons: new Map(),
-        push: (next) => {
-          // Dropped frames must still release Chromium.
-          if (Queue.offerUnsafe(output, next)) return;
-          if (next._tag === "frame") runFork(next.ack);
-          // State a stalled viewer cannot miss replaces its backlog. It runs
-          // synchronously so an older replacement can never land after a newer one.
-          else if (next._tag === "gone" || next._tag === "control" || next._tag === "fileChooser") {
-            const dropped = Effect.runSyncExit(Queue.clear(output));
-            if (dropped._tag === "Failure") return;
-            Queue.offerUnsafe(output, next);
+      return screencastParams;
+    };
+    const viewer: ViewerState = {
+      id: NodeCrypto.randomUUID(),
+      canOperate: input.canOperate,
+      pressedKeys: new Map(),
+      pressedButtons: new Map(),
+      push: (next) => {
+        // Dropped frames must still release Chromium.
+        if (Queue.offerUnsafe(output, next)) return;
+        if (next._tag === "frame") runFork(next.ack);
+        // State a stalled viewer cannot miss replaces its backlog. It runs
+        // synchronously so an older replacement can never land after a newer one.
+        else if (next._tag === "gone" || next._tag === "control" || next._tag === "fileChooser") {
+          const dropped = Effect.runSyncExit(Queue.clear(output));
+          if (dropped._tag === "Failure") return;
+          Queue.offerUnsafe(output, next);
 
-            const chooser = next._tag === "control" ? fileChooserMessage(tab) : null;
-            if (chooser && tab.control.controller === viewer.id) Queue.offerUnsafe(output, chooser);
-            for (const item of dropped.value) if (item._tag === "frame") runFork(item.ack);
-          }
-        },
-        pause: () => {
-          screencastParams = screencastParams.then(() =>
-            session.send("Page.stopScreencast").then(constVoid, constVoid),
-          );
-          return screencastParams;
-        },
-        resume: () => startScreencast(screencastScale),
-        scrolledAt: 0,
-        requestedSize: null,
-      };
-      yield* Effect.acquireRelease(
-        Effect.sync(() => {
-          tab.viewers.add(viewer);
+          const chooser = next._tag === "control" ? fileChooserMessage(tab) : null;
+          if (chooser && tab.control.controller === viewer.id) Queue.offerUnsafe(output, chooser);
+          for (const item of dropped.value) if (item._tag === "frame") runFork(item.ack);
+        }
+      },
+      pause: () => {
+        screencastParams = screencastParams.then(() =>
+          session.send("Page.stopScreencast").then(constVoid, constVoid),
+        );
+        return screencastParams;
+      },
+      resume: () => startScreencast(screencastScale),
+      scrolledAt: 0,
+      requestedSize: null,
+    };
+    yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        tab.viewers.add(viewer);
+        reportLiveTabs();
+      }),
+      () =>
+        Effect.promise(async () => {
+          await tab.control.disconnect(viewer.id, () => releaseViewerInput(viewer, session));
+          tab.viewers.delete(viewer);
+          broadcastControl(tab);
           reportLiveTabs();
         }),
-        () =>
-          Effect.promise(async () => {
-            await tab.control.disconnect(viewer.id, () => releaseViewerInput(viewer, session));
-            tab.viewers.delete(viewer);
-            broadcastControl(tab);
-            reportLiveTabs();
-          }),
-      );
-      if (input.canOperate && tab.control.agentId === null && tab.control.controller === null) {
-        yield* Effect.promise(() => tab.control.take(viewer.id));
+    );
+    if (input.canOperate && tab.control.agentId === null && tab.control.controller === null) {
+      yield* Effect.promise(() => tab.control.take(viewer.id));
+    }
+    broadcastControl(tab);
+    pushFileChooser(tab);
+    const pushStill = async () => {
+      const data = await withCaptureLock(tab, () =>
+        ServerBrowserPage.captureViewport(session, { format: "jpeg", quality }),
+      ).catch(() => null);
+      if (data) viewer.push({ _tag: "frame", data: Buffer.from(data, "base64"), ack: Effect.void });
+    };
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        if (settleTimer !== null) clearTimeout(settleTimer);
+      }),
+    );
+    let screencastStarted = false;
+    session.on("Page.screencastFrame", (frame) => {
+      screencastStarted = true;
+      if (framesInFlight > 0) mayHaveDropped = true;
+      framesInFlight += 1;
+      const arrivedAt = Date.now();
+      recentFrames.push(arrivedAt);
+      while (recentFrames[0]! < arrivedAt - SCREENCAST_MOTION_WINDOW_MS) recentFrames.shift();
+      if (
+        !motion &&
+        recentFrames.length >= SCREENCAST_MOTION_FRAMES &&
+        arrivedAt - viewer.scrolledAt < SCREENCAST_MOTION_WINDOW_MS
+      ) {
+        motion = true;
+        void startScreencast(0.5);
+      } else if (motion && arrivedAt - viewer.scrolledAt > SCREENCAST_SETTLE_MS) {
+        motion = false;
+        recentFrames.length = 0;
+        void startScreencast(1);
       }
-      broadcastControl(tab);
-      pushFileChooser(tab);
-      // Full scale: a scaled capture would flash in every other viewer.
-      const pushStill = async () => {
-        const data = await withCaptureLock(tab, () =>
-          ServerBrowserPage.captureViewport(tab.page, session, {
-            format: "jpeg",
-            quality,
-            scale: 1,
-          }),
-        ).catch(() => null);
-        if (data)
-          viewer.push({ _tag: "frame", data: Buffer.from(data, "base64"), ack: Effect.void });
-      };
-      let settleTimer: ReturnType<typeof setTimeout> | null = null;
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          if (settleTimer !== null) clearTimeout(settleTimer);
-        }),
-      );
-      let screencastStarted = false;
-      session.on("Page.screencastFrame", (frame) => {
-        screencastStarted = true;
-        if (framesInFlight > 0) mayHaveDropped = true;
-        framesInFlight += 1;
-        const arrivedAt = Date.now();
-        recentFrames.push(arrivedAt);
-        while (recentFrames[0]! < arrivedAt - SCREENCAST_MOTION_WINDOW_MS) recentFrames.shift();
-        if (
-          !motion &&
-          recentFrames.length >= SCREENCAST_MOTION_FRAMES &&
-          arrivedAt - viewer.scrolledAt < SCREENCAST_MOTION_WINDOW_MS
-        ) {
-          motion = true;
-          void startScreencast(0.5);
-        } else if (motion && arrivedAt - viewer.scrolledAt > SCREENCAST_SETTLE_MS) {
+      if (settleTimer !== null) clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        settleTimer = null;
+        if (!motion && !mayHaveDropped) return;
+        mayHaveDropped = false;
+        if (motion) {
           motion = false;
           recentFrames.length = 0;
           void startScreencast(1);
         }
-        if (settleTimer !== null) clearTimeout(settleTimer);
-        settleTimer = setTimeout(() => {
-          settleTimer = null;
-          if (!motion && !mayHaveDropped) return;
-          mayHaveDropped = false;
-          if (motion) {
-            motion = false;
-            recentFrames.length = 0;
-            void startScreencast(1);
-          }
-          void pushStill();
-        }, SCREENCAST_SETTLE_MS);
-        viewer.push({
-          _tag: "frame",
-          data: Buffer.from(frame.data, "base64"),
-          ack: Effect.promise(() =>
-            sleepUntil(arrivedAt + SCREENCAST_ACK_PACE_MS).then(() => {
-              framesInFlight -= 1;
-              return session
-                .send("Page.screencastFrameAck", { sessionId: frame.sessionId })
-                .catch(constVoid);
-            }),
-          ),
-        });
-      });
-      broadcastViewport(tab);
-      yield* Effect.promise(() => startScreencast(1));
-      // An idle page does not repaint for a new screencast, so the viewer
-      // starts from a still unless a live frame beat it.
-      if (!screencastStarted) yield* Effect.promise(pushStill);
-      return {
-        output,
-        input: (raw: unknown) =>
-          Effect.promise(async () => {
-            if (!viewer.canOperate) return;
-            const message = asRecord(raw);
-            if (!message) return;
-            try {
-              if (message.type === "takeControl") {
-                const taking = tab.control.take(viewer.id);
-                broadcastControl(tab);
-                await taking;
-                pushFileChooser(tab);
-              } else if (message.type === "releaseControl") {
-                const releasing = tab.control.release(viewer.id, () =>
-                  releaseViewerInput(viewer, session),
-                );
-                broadcastControl(tab);
-                await releasing;
-              } else if (
-                message.type === "dialog" &&
-                tab.control.controller === viewer.id &&
-                typeof message.accept === "boolean"
-              ) {
-                await resolveDialog(tab, {
-                  accept: message.accept,
-                  ...(typeof message.promptText === "string"
-                    ? { promptText: message.promptText }
-                    : {}),
-                });
-              } else {
-                await tab.control.human(viewer.id, () =>
-                  dispatchViewerInput(tab, session, viewer, message),
-                );
-              }
-            } catch {
-              broadcastControl(tab);
-            }
+        void pushStill();
+      }, SCREENCAST_SETTLE_MS);
+      viewer.push({
+        _tag: "frame",
+        data: Buffer.from(frame.data, "base64"),
+        ack: Effect.promise(() =>
+          sleepUntil(arrivedAt + SCREENCAST_ACK_PACE_MS).then(() => {
+            framesInFlight -= 1;
+            return session
+              .send("Page.screencastFrameAck", { sessionId: frame.sessionId })
+              .catch(constVoid);
           }),
-      } satisfies ServerBrowserViewer;
+        ),
+      });
     });
+    broadcastViewport(tab);
+    yield* Effect.promise(() => startScreencast(1));
+    // An idle page does not repaint for a new screencast, so the viewer
+    // starts from a still unless a live frame beat it.
+    if (!screencastStarted) yield* Effect.promise(pushStill);
+    return {
+      output,
+      input: (raw: unknown) =>
+        Effect.promise(async () => {
+          if (!viewer.canOperate) return;
+          const message = asRecord(raw);
+          if (!message) return;
+          try {
+            if (message.type === "takeControl") {
+              const taking = tab.control.take(viewer.id);
+              broadcastControl(tab);
+              await taking;
+              pushFileChooser(tab);
+            } else if (message.type === "releaseControl") {
+              const releasing = tab.control.release(viewer.id, () =>
+                releaseViewerInput(viewer, session),
+              );
+              broadcastControl(tab);
+              await releasing;
+            } else if (
+              message.type === "dialog" &&
+              tab.control.controller === viewer.id &&
+              typeof message.accept === "boolean"
+            ) {
+              await resolveDialog(tab, {
+                accept: message.accept,
+                ...(typeof message.promptText === "string"
+                  ? { promptText: message.promptText }
+                  : {}),
+              });
+            } else {
+              await tab.control.human(viewer.id, () =>
+                dispatchViewerInput(tab, session, viewer, message),
+              );
+            }
+          } catch {
+            broadcastControl(tab);
+          }
+        }),
+    } satisfies ServerBrowserViewer;
+  });
 
   yield* manager.events.pipe(Stream.runForEach(mirrorManagerEvent), Effect.forkScoped);
   if (
@@ -2387,9 +2462,12 @@ const make = Effect.gen(function* () {
     ),
     Effect.forkScoped,
   );
-  // The page came back, for example after its DevTools closed. Reconnect now
-  // rather than on the next viewer or agent, or the tab's URL and title stop
-  // reaching every client in the meantime.
+  // The desktop keeps the tabs an agent uses focused until its turn ends, not just per command.
+  yield* Stream.fromSubscription(agentTurns).pipe(
+    Stream.runForEach((change) => desktopChannel.turn(change.threadId, change.active)),
+    Effect.forkScoped,
+  );
+  // Reconnect returned pages immediately so all clients keep receiving URL and title changes.
   yield* desktopChannel.attached.pipe(
     Stream.runForEach((key) =>
       Effect.gen(function* () {

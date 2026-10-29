@@ -30,7 +30,10 @@ type ReactElement = import("react").ReactElement;
 const state = vi.hoisted(() => ({
   surface: "upcomputer" as "upstream" | "upcomputer",
   projects: [] as Array<Record<string, unknown>>,
+  openCommandPalette: vi.fn(),
 }));
+
+vi.mock("../commandPaletteBus", () => ({ openCommandPalette: state.openCommandPalette }));
 
 vi.mock("../product/productFlags", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../product/productFlags")>()),
@@ -154,18 +157,18 @@ describe("the empty draft's hero", () => {
 
   it('offers "or add a project" in a draft without one when there are no projects', async () => {
     state.projects = [SCRATCH];
-    const opened = vi.fn();
-    window.addEventListener("t3code:open-command-palette", opened);
+    state.openCommandPalette.mockClear();
     await renderHero(SCRATCH);
     expect(container.textContent).not.toContain("or pick a project");
     await act(async () => buttonByText("or add a project").click());
-    expect(opened).toHaveBeenCalledOnce();
-    window.removeEventListener("t3code:open-command-palette", opened);
+    expect(state.openCommandPalette).toHaveBeenCalledExactlyOnceWith({ open: "add-project" });
   });
 
   it("keeps upstream's heading picker in a draft with a project", async () => {
     await renderHero(UPCOMPUTER);
-    expect(container.querySelector("h1")?.textContent).toBe("What should we build in UpComputer?");
+    // Upstream's heading puts the project under the question when it does not fit inline.
+    expect(container.querySelector("h1")?.textContent).toContain("What should we build");
+    expect(container.querySelector("h1")?.textContent).toContain("UpComputer");
     expect(projectPicker()?.textContent).toBe("UpComputer");
     expect(container.textContent).toContain("or start without a project");
   });

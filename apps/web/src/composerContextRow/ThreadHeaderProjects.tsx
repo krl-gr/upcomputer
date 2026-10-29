@@ -3,7 +3,7 @@ import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { CheckIcon } from "lucide-react";
-import { memo, useMemo, useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { ProjectFavicon } from "../components/ProjectFavicon";
@@ -61,10 +61,7 @@ export const ThreadHeaderProjects = memo(function ThreadHeaderProjects(props: {
   readonly threadId: ThreadId;
 }) {
   const { environmentId, threadId } = props;
-  const threadRef = useMemo(
-    () => scopeThreadRef(environmentId, threadId),
-    [environmentId, threadId],
-  );
+  const threadRef = scopeThreadRef(environmentId, threadId);
   const serverThread = useThreadShell(threadRef);
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
   const draftId = useComposerDraftStore((store) => store.getDraftIdByRef(threadRef));
@@ -87,16 +84,12 @@ export const ThreadHeaderProjects = memo(function ThreadHeaderProjects(props: {
   const isScratch = threadProject !== null && isScratchProject(threadProject, scratchRoot);
   const ownProject = threadProject && !isScratch ? threadProject : null;
   const linkedProjectIds = serverThread?.linkedProjectIds ?? EMPTY_PROJECT_IDS;
-  const linkedProjects = useMemo(
-    () =>
-      resolveLinkedProjects({
-        projects,
-        environmentId,
-        ownProjectId: threadProject?.id ?? "",
-        linkedProjectIds,
-      }),
-    [environmentId, linkedProjectIds, projects, threadProject],
-  );
+  const linkedProjects = resolveLinkedProjects({
+    projects,
+    environmentId,
+    ownProjectId: threadProject?.id ?? "",
+    linkedProjectIds,
+  });
   // The chat's own project first, then the others, most recently active first.
   const otherProjects = projects.filter(
     (project) =>

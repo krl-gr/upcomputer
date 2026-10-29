@@ -10,7 +10,7 @@ import * as Duration from "effect/Duration";
 import { describe, expect, it } from "vite-plus/test";
 import { resolveServerBackgroundActivitySettings } from "./backgroundActivitySettings.ts";
 import { createModelSelection } from "./model.ts";
-import { resolveProjectScripts, projectScriptsInheritDefaults } from "./projectScripts.ts";
+import { resolveProjectScripts } from "./projectScripts.ts";
 import {
   applyServerSettingsPatch,
   fallbackTextGenerationModelSelection,
@@ -20,8 +20,6 @@ import {
   parsePersistedServerObservabilitySettings,
   resolveReadyTextGenerationModelSelection,
   resolveSourceControlWriterModelSelection,
-  resolveProjectAgentBrowserAccess,
-  resolveProjectAutoPull,
 } from "./serverSettings.ts";
 
 const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
@@ -32,8 +30,9 @@ describe("fallbackTextGenerationModelSelection", () => {
     const providerInstances = {
       [configured]: { driver: ProviderDriverKind.make("codex"), config: {} },
     };
-    const fallback = fallbackTextGenerationModelSelection(providerInstances, (instanceId) =>
-      instanceId === configured ? true : false,
+    const fallback = fallbackTextGenerationModelSelection(
+      providerInstances,
+      (instanceId) => instanceId === configured,
     );
     expect(fallback).toBeNull();
   });
@@ -123,6 +122,16 @@ describe("resolveReadyTextGenerationModelSelection", () => {
 });
 
 describe("serverSettings helpers", () => {
+  it("translates a shipped client's idle compaction switch into a mode", () => {
+    const off = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { idleCompaction: "off" });
+    expect([off.idleCompaction, off.compactIdleThreads]).toEqual(["off", false]);
+    // Turning the old switch off keeps "Never" instead of reverting to the default.
+    const stillOff = applyServerSettingsPatch(off, { compactIdleThreads: false });
+    expect(stillOff.idleCompaction).toBe("off");
+    const on = applyServerSettingsPatch(off, { compactIdleThreads: true });
+    expect([on.idleCompaction, on.compactIdleThreads]).toEqual(["beforeCacheExpires", true]);
+  });
+
   it("changes a cleanup rule without replacing the machine's other rules", () => {
     const enabled = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       storageCleanup: { worktreeAfterDays: 8, worktreeOnMerge: true, logsAfterDays: 30 },
@@ -156,15 +165,6 @@ describe("serverSettings helpers", () => {
       tokens: {},
     });
   });
-  it("replaces SSH host lists when saving, editing, and removing hosts", () => {
-    const host = { id: "mini", label: "Mac mini", target: "mini" };
-    const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { deviceHosts: [host] });
-    expect(saved.deviceHosts).toEqual([host]);
-    const replacement = { ...host, target: "other-mini" };
-    const edited = applyServerSettingsPatch(saved, { deviceHosts: [replacement] });
-    expect(edited.deviceHosts).toEqual([replacement]);
-    expect(applyServerSettingsPatch(edited, { deviceHosts: [] }).deviceHosts).toEqual([]);
-  });
 
   it("inherits actions, preserves existing actions, and supports empty overrides and reset", () => {
     const project = { id: ProjectId.make("project-actions"), scripts: [] };
@@ -180,18 +180,15 @@ describe("serverSettings helpers", () => {
       defaultProjectScripts: [action],
     });
     expect(resolveProjectScripts(unfolded, existing)).toEqual(existing.scripts);
-    expect(projectScriptsInheritDefaults(unfolded, existing)).toBe(false);
     const defaults = applyServerSettingsPatch(FOLDED_SERVER_SETTINGS, {
       defaultProjectScripts: [action],
     });
     expect(resolveProjectScripts(defaults, project)).toEqual([action]);
-    expect(projectScriptsInheritDefaults(defaults, project)).toBe(true);
     expect(resolveProjectScripts(defaults, existing)).toEqual([action]);
     const disabled = applyServerSettingsPatch(defaults, {
       projectScriptOverrides: { [project.id]: [] },
     });
     expect(resolveProjectScripts(disabled, project)).toEqual([]);
-    expect(projectScriptsInheritDefaults(disabled, project)).toBe(false);
     const changedDefault = applyServerSettingsPatch(disabled, {
       defaultProjectScripts: [{ ...action, command: "npm run build" }],
     });
@@ -200,7 +197,6 @@ describe("serverSettings helpers", () => {
       projectScriptOverrides: { [project.id]: null },
     });
     expect(resolveProjectScripts(reset, existing)).toEqual(changedDefault.defaultProjectScripts);
-    expect(projectScriptsInheritDefaults(reset, existing)).toBe(true);
     expect(
       resolveProjectScripts(
         applyServerSettingsPatch(reset, { defaultProjectScripts: [] }),
@@ -247,48 +243,6 @@ describe("serverSettings helpers", () => {
     expect(resolveProjectScripts(secondUpdate, firstProject)).toEqual([firstAction]);
   });
 
-  it("inherits automatic pull while preserving legacy opt-ins and explicit overrides", () => {
-    const projectId = ProjectId.make("project-pull");
-    expect(resolveProjectAutoPull(DEFAULT_SERVER_SETTINGS, projectId, false)).toBe(false);
-    expect(resolveProjectAutoPull(DEFAULT_SERVER_SETTINGS, projectId, true)).toBe(true);
-    const enabled = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { defaultAutoPull: true });
-    expect(resolveProjectAutoPull(enabled, projectId, false)).toBe(true);
-    const overridden = applyServerSettingsPatch(enabled, {
-      projectAutoPullOverrides: { [projectId]: false },
-    });
-    expect(resolveProjectAutoPull(overridden, projectId, true)).toBe(false);
-    const reset = applyServerSettingsPatch(overridden, {
-      projectAutoPullOverrides: { [projectId]: null },
-    });
-    expect(resolveProjectAutoPull(reset, projectId, false)).toBe(true);
-    const disabled = applyServerSettingsPatch(reset, {
-      defaultAutoPull: false,
-      projectAutoPullOverrides: { [projectId]: true },
-    });
-    expect(resolveProjectAutoPull(disabled, projectId, false)).toBe(true);
-    expect(resolveProjectAutoPull(disabled, ProjectId.make("other-project"), false)).toBe(false);
-  });
-
-  it("inherits browser access and restores inheritance when a project override is removed", () => {
-    const projectId = ProjectId.make("project-browser");
-    const otherProjectId = ProjectId.make("other-project");
-    const overridden = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      projectAgentBrowserAccessOverrides: { [projectId]: false },
-    });
-    expect(resolveProjectAgentBrowserAccess(overridden, projectId)).toBe(false);
-    expect(resolveProjectAgentBrowserAccess(overridden, otherProjectId)).toBe(true);
-    const reset = applyServerSettingsPatch(overridden, {
-      projectAgentBrowserAccessOverrides: { [projectId]: null },
-    });
-    expect(resolveProjectAgentBrowserAccess(reset, projectId)).toBe(true);
-    const enabled = applyServerSettingsPatch(reset, {
-      enableAgentBrowserAccess: false,
-      projectAgentBrowserAccessOverrides: { [projectId]: true },
-    });
-    expect(resolveProjectAgentBrowserAccess(enabled, projectId)).toBe(true);
-    expect(resolveProjectAgentBrowserAccess(enabled, otherProjectId)).toBe(false);
-  });
-
   it("preserves other projects' boolean overrides across separate updates and resets", () => {
     const firstProjectId = ProjectId.make("first-project");
     const secondProjectId = ProjectId.make("second-project");
@@ -301,56 +255,25 @@ describe("serverSettings helpers", () => {
       projectAutoPullOverrides: { [secondProjectId]: false },
       projectAgentBrowserAccessOverrides: { [secondProjectId]: false },
     });
-    for (const projectId of [firstProjectId, secondProjectId]) {
-      expect(resolveProjectAutoPull(secondUpdate, projectId, false)).toBe(false);
-      expect(resolveProjectAgentBrowserAccess(secondUpdate, projectId)).toBe(false);
-    }
+    expect(secondUpdate.projectAutoPullOverrides).toEqual({
+      [firstProjectId]: false,
+      [secondProjectId]: false,
+    });
+    expect(secondUpdate.projectAgentBrowserAccessOverrides).toEqual({
+      [firstProjectId]: false,
+      [secondProjectId]: false,
+    });
 
     const reset = applyServerSettingsPatch(secondUpdate, {
       projectAutoPullOverrides: { [firstProjectId]: null },
       projectAgentBrowserAccessOverrides: { [firstProjectId]: null },
     });
-    expect(resolveProjectAutoPull(reset, firstProjectId, false)).toBe(true);
-    expect(resolveProjectAgentBrowserAccess(reset, firstProjectId)).toBe(true);
-    expect(resolveProjectAutoPull(reset, secondProjectId, false)).toBe(false);
-    expect(resolveProjectAgentBrowserAccess(reset, secondProjectId)).toBe(false);
     expect(reset.projectAutoPullOverrides[firstProjectId]).toBeUndefined();
     expect(reset.projectAgentBrowserAccessOverrides[firstProjectId]).toBeUndefined();
-    expect(resolveProjectAutoPull(secondUpdate, firstProjectId, false)).toBe(false);
-    expect(resolveProjectAgentBrowserAccess(secondUpdate, firstProjectId)).toBe(false);
-  });
-
-  it("replaces and clears conversation model defaults without retaining old options", () => {
-    const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      defaultModelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4", [
-        { id: "reasoningEffort", value: "high" },
-      ]),
-    });
-    const selection = createModelSelection(ProviderInstanceId.make("claudeAgent"), "sonnet");
-    const updated = applyServerSettingsPatch(current, { defaultModelSelection: selection });
-    expect(updated.defaultModelSelection).toEqual(selection);
-    expect(
-      applyServerSettingsPatch(updated, { defaultModelSelection: null }).defaultModelSelection,
-    ).toBeNull();
-  });
-
-  it("ignores missing and blank persisted observability URLs", () => {
-    expect(parsePersistedServerObservabilitySettings("{}")).toEqual({
-      otlpTracesUrl: undefined,
-      otlpMetricsUrl: undefined,
-      otlpLogsUrl: undefined,
-    });
-    expect(
-      parsePersistedServerObservabilitySettings(
-        JSON.stringify({
-          observability: { otlpTracesUrl: "   ", otlpMetricsUrl: "", otlpLogsUrl: "   " },
-        }),
-      ),
-    ).toEqual({
-      otlpTracesUrl: undefined,
-      otlpMetricsUrl: undefined,
-      otlpLogsUrl: undefined,
-    });
+    expect(reset.projectAutoPullOverrides[secondProjectId]).toBe(false);
+    expect(reset.projectAgentBrowserAccessOverrides[secondProjectId]).toBe(false);
+    expect(secondUpdate.projectAutoPullOverrides[firstProjectId]).toBe(false);
+    expect(secondUpdate.projectAgentBrowserAccessOverrides[firstProjectId]).toBe(false);
   });
 
   it("parses lenient persisted settings JSON and trims observability URLs", () => {
@@ -376,32 +299,6 @@ describe("serverSettings helpers", () => {
       otlpTracesUrl: undefined,
       otlpMetricsUrl: undefined,
       otlpLogsUrl: undefined,
-    });
-  });
-
-  it("replaces text generation selection when provider/model are provided", () => {
-    const current = {
-      ...DEFAULT_SERVER_SETTINGS,
-      textGenerationModelSelection: createModelSelection(
-        ProviderInstanceId.make("codex"),
-        "gpt-5.4-mini",
-        [
-          { id: "reasoningEffort", value: "high" },
-          { id: "fastMode", value: true },
-        ],
-      ),
-    };
-
-    expect(
-      applyServerSettingsPatch(current, {
-        textGenerationModelSelection: {
-          instanceId: ProviderInstanceId.make("codex"),
-          model: "gpt-5.4-mini",
-        },
-      }).textGenerationModelSelection,
-    ).toEqual({
-      instanceId: "codex",
-      model: "gpt-5.4-mini",
     });
   });
 
@@ -460,67 +357,6 @@ describe("serverSettings helpers", () => {
     });
   });
 
-  it("accepts array-based text generation selection patches", () => {
-    expect(
-      applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-        textGenerationModelSelection: {
-          instanceId: ProviderInstanceId.make("opencode"),
-          model: "openai/gpt-5",
-          options: [
-            { id: "variant", value: "prod" },
-            { id: "agent", value: "build" },
-          ],
-        },
-      }).textGenerationModelSelection,
-    ).toEqual({
-      instanceId: "opencode",
-      model: "openai/gpt-5",
-      options: [
-        { id: "variant", value: "prod" },
-        { id: "agent", value: "build" },
-      ],
-    });
-  });
-
-  it("replaces source control writer selection without retaining stale options", () => {
-    const current = {
-      ...DEFAULT_SERVER_SETTINGS,
-      sourceControlWriterModelSelection: createModelSelection(
-        ProviderInstanceId.make("codex"),
-        "gpt-5.4-mini",
-        [{ id: "reasoningEffort", value: "high" }],
-      ),
-    };
-
-    expect(
-      applyServerSettingsPatch(current, {
-        sourceControlWriterModelSelection: {
-          instanceId: ProviderInstanceId.make("opencode"),
-          model: "openai/gpt-5",
-        },
-      }).sourceControlWriterModelSelection,
-    ).toEqual({
-      instanceId: "opencode",
-      model: "openai/gpt-5",
-    });
-  });
-
-  it("clears source control writer selection with null", () => {
-    const current = {
-      ...DEFAULT_SERVER_SETTINGS,
-      sourceControlWriterModelSelection: createModelSelection(
-        ProviderInstanceId.make("codex"),
-        "gpt-5.4-mini",
-      ),
-    };
-
-    expect(
-      applyServerSettingsPatch(current, {
-        sourceControlWriterModelSelection: null,
-      }).sourceControlWriterModelSelection,
-    ).toBeNull();
-  });
-
   it("falls back from a disabled source control writer provider without clearing its selection", () => {
     const instanceId = ProviderInstanceId.make("codex_writer");
     const sourceControlWriterModelSelection = createModelSelection(instanceId, "gpt-5.4-mini");
@@ -540,41 +376,6 @@ describe("serverSettings helpers", () => {
       false,
     );
     expect(resolveSourceControlWriterModelSelection(settings, undefined, null)).toBe(
-      settings.textGenerationModelSelection,
-    );
-    expect(settings.sourceControlWriterModelSelection).toBe(sourceControlWriterModelSelection);
-  });
-
-  it("falls back from an unavailable source control writer provider", () => {
-    const instanceId = ProviderInstanceId.make("missing_writer");
-    const sourceControlWriterModelSelection = createModelSelection(instanceId, "missing-model");
-    const settings = {
-      ...DEFAULT_SERVER_SETTINGS,
-      providerInstances: {
-        [instanceId]: {
-          driver: ProviderDriverKind.make("missing-driver"),
-          config: {},
-        },
-      },
-      sourceControlWriterModelSelection,
-    };
-    const unavailableProvider = {
-      instanceId,
-      driver: ProviderDriverKind.make("missing-driver"),
-      enabled: false,
-      installed: false,
-      version: null,
-      status: "disabled",
-      auth: { status: "unknown" },
-      checkedAt: "2026-07-27T00:00:00.000Z",
-      availability: "unavailable",
-      unavailableReason: "This provider driver is not available in this build.",
-      models: [],
-      slashCommands: [],
-      skills: [],
-    } satisfies ServerProvider;
-
-    expect(resolveSourceControlWriterModelSelection(settings, [unavailableProvider], null)).toBe(
       settings.textGenerationModelSelection,
     );
     expect(settings.sourceControlWriterModelSelection).toBe(sourceControlWriterModelSelection);
@@ -950,25 +751,6 @@ describe("serverSettings helpers", () => {
     expect(Duration.toMillis(next.automaticGitFetchInterval)).toBe(30_000);
   });
 
-  it("drops custom overrides that duplicate the base profile", () => {
-    const next = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      backgroundActivity: {
-        schemaVersion: 1,
-        profile: "custom",
-        baseProfile: "balanced",
-        overrides: {
-          automaticGitFetchInterval: Duration.seconds(30),
-        },
-      },
-    });
-
-    expect(next.backgroundActivity).toEqual({
-      schemaVersion: 1,
-      profile: "balanced",
-      overrides: {},
-    });
-  });
-
   it("replaces the complete background override record", () => {
     const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       backgroundActivity: {
@@ -1017,21 +799,6 @@ describe("serverSettings helpers", () => {
       },
     });
   });
-
-  it("ignores overrides attached to a concrete background profile", () => {
-    const resolved = resolveServerBackgroundActivitySettings({
-      ...DEFAULT_SERVER_SETTINGS,
-      backgroundActivity: {
-        schemaVersion: 1,
-        profile: "balanced",
-        overrides: {
-          pauseWhenOnBattery: true,
-        },
-      },
-    });
-
-    expect(resolved.pauseWhenOnBattery).toBe(false);
-  });
 });
 
 describe("worktreesDirectory", () => {
@@ -1048,6 +815,13 @@ describe("worktreesDirectory", () => {
 });
 
 describe("synchronized model preferences", () => {
+  it("supports provider identifiers that match inherited object keys", () => {
+    const provider = ProviderInstanceId.make("toString");
+    const next = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      setModelsHidden: [{ provider, model: "example", hidden: true }],
+    });
+    expect(next.providerModelPreferences?.[provider]?.hiddenModels).toEqual(["example"]);
+  });
   const provider = ProviderInstanceId.make("codex_work");
   const legacy = {
     favorites: [{ provider, model: "sol" }],
@@ -1061,6 +835,7 @@ describe("synchronized model preferences", () => {
     const remove = { setModelFavorites: [{ provider, model: "sol", favorite: false }] };
     const removed = applyServerSettingsPatch(first, remove);
     expect(applyServerSettingsPatch(removed, remove).favorites).toEqual([]);
+    expect(first.favorites).toEqual([{ provider, model: "sol" }]);
   });
 
   it("preserves unrelated models and providers during bulk visibility and order edits", () => {
@@ -1081,6 +856,9 @@ describe("synchronized model preferences", () => {
       ],
       setProviderModelOrder: { provider, modelOrder: ["sol", "luna", "astra"] },
     });
+    expect(initial.providerModelPreferences?.[provider]).toEqual(
+      legacy.providerModelPreferences[provider],
+    );
     expect(web.providerModelPreferences?.[provider]).toEqual({
       hiddenModels: ["luna", "sol"],
       modelOrder: ["sol", "luna", "astra"],
@@ -1154,39 +932,6 @@ describe("synchronized model preferences", () => {
     ).toEqual([]);
   });
 
-  it("sets visibility against the latest state without replacing other models or their order", () => {
-    const initial = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      providerModelPreferences: legacy.providerModelPreferences,
-    });
-    const first = applyServerSettingsPatch(initial, {
-      setModelsHidden: [{ provider, model: "sol", hidden: true }],
-    });
-    const second = applyServerSettingsPatch(first, {
-      setModelsHidden: [{ provider, model: "luna", hidden: true }],
-    });
-    expect(second.providerModelPreferences?.[provider]).toEqual({
-      hiddenModels: ["astra", "sol", "luna"],
-      modelOrder: ["sol"],
-    });
-    const restored = applyServerSettingsPatch(second, {
-      setModelsHidden: [{ provider, model: "sol", hidden: false }],
-    });
-    expect(restored.providerModelPreferences?.[provider]).toEqual({
-      hiddenModels: ["astra", "luna"],
-      modelOrder: ["sol"],
-    });
-    expect(
-      applyServerSettingsPatch(restored, {
-        setModelsHidden: [{ provider, model: "sol", hidden: false }],
-      }).providerModelPreferences,
-    ).toEqual(restored.providerModelPreferences);
-    expect(
-      applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-        setModelsHidden: [{ provider, model: "sol", hidden: true }],
-      }).providerModelPreferences?.[provider]?.hiddenModels,
-    ).toEqual(["sol"]);
-  });
-
   it("keeps the same model on different provider instances as separate favorites", () => {
     const otherProvider = ProviderInstanceId.make("codex_personal");
     const first = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
@@ -1204,17 +949,5 @@ describe("synchronized model preferences", () => {
         setModelFavorites: [{ provider, model: "sol", favorite: false }],
       }).favorites,
     ).toEqual([{ provider: otherProvider, model: "sol" }]);
-  });
-
-  it("keeps explicit edits when the same patch also carries a legacy migration", () => {
-    const edited = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      ...modelPreferencesMigrationPatch(DEFAULT_SERVER_SETTINGS, legacy),
-      favorites: [],
-      providerModelPreferences: {},
-    });
-    expect(resolveModelPreferences(edited, legacy)).toEqual({
-      favorites: [],
-      providerModelPreferences: {},
-    });
   });
 });

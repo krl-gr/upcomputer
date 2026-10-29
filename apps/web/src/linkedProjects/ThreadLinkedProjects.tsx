@@ -1,7 +1,6 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { LinkIcon } from "lucide-react";
-import { useMemo } from "react";
 
 import { showsUpComputerComposerContextRow } from "../composerContextRow/composerContextRowSurface";
 import { ProjectFavicon } from "../components/ProjectFavicon";
@@ -36,9 +35,7 @@ export default function ThreadLinkedProjects(props: ExperimentalWebThreadAccesso
  * sidebar and give its agent their folders from its next turn.
  */
 function ThreadLinkedProjectsMenu(props: ExperimentalWebThreadAccessoryProps) {
-  const thread = useThreadShell(
-    useMemo(() => scopeThreadRef(props.environmentId, props.threadId), [props]),
-  );
+  const thread = useThreadShell(scopeThreadRef(props.environmentId, props.threadId));
   const projects = useProjects();
   const scratchRoot = useServerConfigs().get(props.environmentId)?.scratchWorkspaceRoot;
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata);

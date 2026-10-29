@@ -115,7 +115,7 @@ export function relayProtectedErrorMessage(error: RelayProtectedError): string {
         return "That computer's UpComputer Connect access is still being set up. Try again in a minute.";
       }
       if (error.reason === "endpoint_provider_not_managed") {
-        return "This environment is linked only to publish agent activity, so it cannot accept connections. On that computer, open Settings > Connections and turn UpComputer Connect on.";
+        return "This environment is linked only to publish agent activity, so it cannot accept connections. On that computer, open Settings > Sharing & access and turn UpComputer Connect on.";
       }
       return "UpComputer Connect didn't allow a connection to that computer. Check that you're signed in to the same account on both devices.";
     case "RelayEnvironmentEndpointUnavailableError":
@@ -125,7 +125,9 @@ export function relayProtectedErrorMessage(error: RelayProtectedError): string {
     case "RelayEnvironmentLinkFailedError":
       return "UpComputer Connect couldn't link this computer. Try again in a few minutes.";
     case "RelayEnvironmentLinkUnavailableError":
-      return "UpComputer Connect couldn't set up access for this computer right now. Try again in a few minutes.";
+      return `UpComputer Connect couldn't set up access for this computer right now${
+        error.provisioningStage ? ` (failed at ${error.provisioningStage})` : ""
+      }. Try again in a few minutes.`;
     case "RelayEnvironmentLinkLimitExceededError":
       return `Your account already has its maximum of ${error.maxTunnels} computers on UpComputer Connect. Remove one you don't use, then try again.`;
     case "RelayAgentActivityPublishProofExpiredError":
@@ -155,7 +157,7 @@ export function relayRequestFailureDetail(error: {
   return null;
 }
 
-export const RELAY_TUNNEL_RELEASED_MESSAGE =
+const RELAY_TUNNEL_RELEASED_MESSAGE =
   "Offline for a while, so its UpComputer Connect tunnel was removed. Start Up.computer on that computer and update it to the latest version to reconnect.";
 
 export function relayOfflineReasonMessage(

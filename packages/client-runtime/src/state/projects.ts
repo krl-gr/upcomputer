@@ -7,7 +7,7 @@ import {
   normalizeProjectPathForDispatch,
 } from "@t3tools/shared/path";
 
-export { normalizeProjectPathForComparison, normalizeProjectPathForDispatch };
+export { normalizeProjectPathForComparison };
 
 /** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
 export const isWindowsPlatform = (platform: string): boolean => {
@@ -206,3 +206,4 @@ export function canNavigateUp(currentPath: string): boolean {
 
 export * from "./projectCommands.ts";
 export * from "./projectEntities.ts";
+export * from "./projectRemoval.ts";

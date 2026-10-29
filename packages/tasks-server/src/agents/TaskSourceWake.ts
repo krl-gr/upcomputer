@@ -453,89 +453,88 @@ export const makeTaskSourceWake = Effect.gen(function* () {
       }),
     );
 
-  const deliver = (batch: typeof WakeBatchRow.Type) =>
-    Effect.gen(function* () {
-      // Read at delivery, so a task archived since the batch formed is left out,
-      // and a batch with nothing left is handled without a report.
-      const runs = (yield* batchRuns(batch.id)).filter(wakesSourceChat);
-      const [first, ...rest] = runs;
-      if (first === undefined) return yield* acknowledge(batch.id);
-      const commandId = CommandId.make(`task-source-wake:${batch.id}`);
-      const threadId = ThreadId.make(batch.sourceThreadId);
-      // Read per batch, so a change applies to the next report without a restart.
-      const wakeOnCompletion = yield* settings.getSettings.pipe(
-        Effect.map((current) => current.wakeChatOnTaskCompletion),
-        Effect.orElseSucceed(() => DEFAULT_SERVER_SETTINGS.wakeChatOnTaskCompletion),
-      );
-      const send = reportsWithoutWake(runs, wakeOnCompletion)
-        ? threads.dispatch({
-            type: "thread.notification.record",
+  const deliver = Effect.fn("TaskSourceWake.deliver")(function* (batch: typeof WakeBatchRow.Type) {
+    // Read at delivery, so a task archived since the batch formed is left out,
+    // and a batch with nothing left is handled without a report.
+    const runs = (yield* batchRuns(batch.id)).filter(wakesSourceChat);
+    const [first, ...rest] = runs;
+    if (first === undefined) return yield* acknowledge(batch.id);
+    const commandId = CommandId.make(`task-source-wake:${batch.id}`);
+    const threadId = ThreadId.make(batch.sourceThreadId);
+    // Read per batch, so a change applies to the next report without a restart.
+    const wakeOnCompletion = yield* settings.getSettings.pipe(
+      Effect.map((current) => current.wakeChatOnTaskCompletion),
+      Effect.orElseSucceed(() => DEFAULT_SERVER_SETTINGS.wakeChatOnTaskCompletion),
+    );
+    const send = reportsWithoutWake(runs, wakeOnCompletion)
+      ? threads.dispatch({
+          type: "thread.notification.record",
+          commandId,
+          threadId,
+          notification: sourceRunsCard([first, ...rest]),
+        })
+      : Effect.gen(function* () {
+          // Decided now, not from the batch: a batch may go out while other work runs.
+          const [state] = yield* sourceBusy(batch.sourceThreadId);
+          const { text, notification } = sourceWakeMessage([first, ...rest], state?.busy === 0);
+          return yield* threads.dispatch({
+            type: "message.dispatch",
+            createdBy: "agent",
+            creationSource: "server",
             commandId,
             threadId,
-            notification: sourceRunsCard([first, ...rest]),
-          })
-        : Effect.gen(function* () {
-            // Decided now, not from the batch: a batch may go out while other work runs.
-            const [state] = yield* sourceBusy(batch.sourceThreadId);
-            const { text, notification } = sourceWakeMessage([first, ...rest], state?.busy === 0);
-            return yield* threads.dispatch({
-              type: "message.dispatch",
-              createdBy: "agent",
-              creationSource: "server",
-              commandId,
-              threadId,
-              messageId: MessageId.make(`message:task-source-wake:${batch.id}`),
-              senderThreadId: ThreadId.make(first.runThreadId),
-              text,
-              attachments: [],
-              notification,
-              dispatchMode: { type: "queue_after_active" },
-            });
+            messageId: MessageId.make(`message:task-source-wake:${batch.id}`),
+            senderThreadId: ThreadId.make(first.runThreadId),
+            text,
+            attachments: [],
+            notification,
+            dispatchMode: { type: "queue_after_active" },
           });
-      const sent = yield* Effect.exit(send);
-      if (sent._tag === "Success") return yield* acknowledge(batch.id);
-      const attempts = batch.attempts + 1;
-      if (isPermanentWakeFailure(sent.cause) || attempts >= SOURCE_WAKE_MAX_ATTEMPTS) {
-        yield* Effect.logWarning("Gave up waking a task's source chat", {
-          sourceThreadId: batch.sourceThreadId,
-          batchId: batch.id,
-          attempts,
-          cause: sent.cause,
         });
-        // The person waiting in that chat would otherwise never hear the result.
-        const notices = yield* Effect.serviceOption(BackgroundNotices);
-        if (Option.isSome(notices)) {
-          const title = first.taskTitle ?? first.taskId;
-          yield* notices.value.report({
-            id: `task-source-wake:${batch.id}`,
-            area: "tasks",
-            severity: "warning",
-            title: "Couldn't report the task result",
-            message: `Couldn't tell the chat that started "${title}" that it ${
-              first.status === "failed" ? "failed" : "finished"
-            }. Open the task in Tasks to see its result.`,
-            detail: Cause.pretty(sent.cause),
-          });
-        }
-        return yield* acknowledge(batch.id);
-      }
-      const retryAt = DateTime.formatIso(
-        DateTime.add(yield* DateTime.now, {
-          milliseconds: SOURCE_WAKE_RETRY_BASE_MS * 3 ** (attempts - 1),
-        }),
-      );
-      yield* Effect.logInfo("Will retry waking a task's source chat", {
+    const sent = yield* Effect.exit(send);
+    if (sent._tag === "Success") return yield* acknowledge(batch.id);
+    const attempts = batch.attempts + 1;
+    if (isPermanentWakeFailure(sent.cause) || attempts >= SOURCE_WAKE_MAX_ATTEMPTS) {
+      yield* Effect.logWarning("Gave up waking a task's source chat", {
         sourceThreadId: batch.sourceThreadId,
         batchId: batch.id,
         attempts,
-        retryAt,
         cause: sent.cause,
       });
-      yield* sql`
+      // The person waiting in that chat would otherwise never hear the result.
+      const notices = yield* Effect.serviceOption(BackgroundNotices);
+      if (Option.isSome(notices)) {
+        const title = first.taskTitle ?? first.taskId;
+        yield* notices.value.report({
+          id: `task-source-wake:${batch.id}`,
+          area: "tasks",
+          severity: "warning",
+          title: "Couldn't report the task result",
+          message: `Couldn't tell the chat that started "${title}" that it ${
+            first.status === "failed" ? "failed" : "finished"
+          }. Open the task in Tasks to see its result.`,
+          detail: Cause.pretty(sent.cause),
+        });
+      }
+      return yield* acknowledge(batch.id);
+    }
+    const retryAt = DateTime.formatIso(
+      DateTime.add(yield* DateTime.now, {
+        milliseconds: SOURCE_WAKE_RETRY_BASE_MS * 3 ** (attempts - 1),
+      }),
+    );
+    yield* Effect.logInfo("Will retry waking a task's source chat", {
+      sourceThreadId: batch.sourceThreadId,
+      batchId: batch.id,
+      attempts,
+      retryAt,
+      cause: sent.cause,
+    });
+    yield* sql`
         UPDATE task_source_wake_batches SET attempts = ${attempts}, retry_at = ${retryAt}
         WHERE id = ${batch.id}
       `;
-    });
+  });
 
   const sweep = Effect.gen(function* () {
     yield* formBatches;

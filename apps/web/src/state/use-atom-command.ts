@@ -8,7 +8,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
-import { useCallback, useContext } from "react";
+import { useContext } from "react";
 
 import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import { toastManager } from "~/components/ui/toast";
@@ -31,24 +31,21 @@ export function useAtomCommand<A, E, W>(
   const reportDefect = typeof options === "string" ? true : (options?.reportDefect ?? true);
   const failureToast = typeof options === "string" ? undefined : options?.failureToast;
 
-  return useCallback(
-    (value: W) =>
-      runAtomCommand(registry, command, value, { label, reportFailure, reportDefect }).then(
-        (result) => {
-          if (
-            failureToast !== undefined &&
-            AsyncResult.isFailure(result) &&
-            !isAtomCommandInterrupted(result)
-          ) {
-            toastManager.add({
-              type: "error",
-              title: failureToast,
-              description: errorToastDescription(squashAtomCommandFailure(result)),
-            });
-          }
-          return result;
-        },
-      ),
-    [command, failureToast, label, registry, reportDefect, reportFailure],
-  );
+  return (value: W) =>
+    runAtomCommand(registry, command, value, { label, reportFailure, reportDefect }).then(
+      (result) => {
+        if (
+          failureToast !== undefined &&
+          AsyncResult.isFailure(result) &&
+          !isAtomCommandInterrupted(result)
+        ) {
+          toastManager.add({
+            type: "error",
+            title: failureToast,
+            description: errorToastDescription(squashAtomCommandFailure(result)),
+          });
+        }
+        return result;
+      },
+    );
 }
