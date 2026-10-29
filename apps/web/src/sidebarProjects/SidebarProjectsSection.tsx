@@ -85,7 +85,6 @@ export function SidebarProjectsSection(props: {
   const [open, setOpen] = useLocalStorage(SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, true, Schema.Boolean);
 
   const rows = useSidebarProjectsRows(projectGroups, scopeKey);
-  const selectedProject = projectGroups.find((group) => group.projectKey === scopeKey) ?? null;
 
   const openProjectSettings = (project: SidebarProjectSnapshot) => {
     if (isMobile) setOpenMobile(false);
@@ -121,19 +120,6 @@ export function SidebarProjectsSection(props: {
           open={open}
           onToggle={() => setOpen(!open)}
           testId="sidebar-projects-toggle"
-          accessory={
-            // Collapsed, the header still names an active filter.
-            !open && selectedProject ? (
-              <>
-                {selectedProject === rows.scratch ? null : (
-                  <ProjectFavicon project={selectedProject} className="size-3.5 shrink-0" />
-                )}
-                <span className="truncate">
-                  {selectedProject === rows.scratch ? "No project" : selectedProject.displayName}
-                </span>
-              </>
-            ) : null
-          }
           action={
             <SidebarSectionHeaderAction
               label="Add project"

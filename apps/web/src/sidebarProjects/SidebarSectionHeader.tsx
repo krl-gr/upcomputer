@@ -14,19 +14,17 @@ import {
 /**
  * Header of a collapsible sidebar section (Projects, Threads): the title with
  * its chevron right after it, turned down while open, and an optional action
- * at the right. Everything but the action toggles the section; `accessory`
- * sits at the right of the toggle, for state the collapsed section still shows.
+ * at the right. Everything but the action toggles the section.
  */
 export function SidebarSectionHeader(props: {
   readonly title: string;
   readonly open: boolean;
   readonly onToggle: () => void;
-  readonly accessory?: ReactNode;
   /** A `SidebarSectionHeaderAction`. */
   readonly action?: ReactNode;
   readonly testId?: string;
 }) {
-  const { title, open, onToggle, accessory, action, testId } = props;
+  const { title, open, onToggle, action, testId } = props;
   return (
     // The title starts where a row's icon does, and the action ends where a row's actions do.
     <div
@@ -53,11 +51,6 @@ export function SidebarSectionHeader(props: {
           data-testid="sidebar-section-chevron"
           className={cn("size-3.5 shrink-0", open && "rotate-90")}
         />
-        {accessory ? (
-          <span className="ml-auto flex min-w-0 max-w-[50%] items-center gap-1.5 pl-2 text-xs">
-            {accessory}
-          </span>
-        ) : null}
       </button>
       {action}
     </div>
