@@ -339,7 +339,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={openMenu}
                 >
-                  <EllipsisIcon className="size-4" />
+                  <EllipsisIcon />
                 </button>
               }
             >

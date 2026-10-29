@@ -87,7 +87,7 @@ export function SidebarThreadsSectionHeader(props: {
               }
               onClick={handleNewThread}
             >
-              <SquarePenIcon className="size-3.5" />
+              <SquarePenIcon />
             </SidebarSectionHeaderAction>
           )
         }

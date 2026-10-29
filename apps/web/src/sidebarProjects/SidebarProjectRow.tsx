@@ -94,7 +94,7 @@ export function SidebarProjectRow(props: {
                   />
                 }
               >
-                <EllipsisIcon className="size-3.5" />
+                <EllipsisIcon />
               </TooltipTrigger>
               <TooltipPopup side="top">Project actions</TooltipPopup>
             </Tooltip>
@@ -114,7 +114,7 @@ export function SidebarProjectRow(props: {
               />
             }
           >
-            <SquarePenIcon className="size-3.5" />
+            <SquarePenIcon />
           </TooltipTrigger>
           <TooltipPopup side="top">{newChatLabel}</TooltipPopup>
         </Tooltip>

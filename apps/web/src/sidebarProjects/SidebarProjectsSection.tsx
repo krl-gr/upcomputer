@@ -137,7 +137,7 @@ export function SidebarProjectsSection(props: {
               track="sidebar.add_project"
               onClick={onAddProject}
             >
-              <PlusIcon className="size-3.5" />
+              <PlusIcon />
             </SidebarSectionHeaderAction>
           }
         />

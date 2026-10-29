@@ -236,7 +236,7 @@ function EnvironmentBots({
           onToggle={() => setOpen(!open)}
           action={
             <SidebarSectionHeaderAction label="Create bot" track="bots.create" onClick={create}>
-              <PlusIcon className="size-3.5" />
+              <PlusIcon />
             </SidebarSectionHeaderAction>
           }
         />
@@ -405,7 +405,7 @@ function BotRow({
             className={sidebarListRowActionClassName(false)}
             onClick={onSettings}
           >
-            <SettingsIcon className="size-4" />
+            <SettingsIcon />
           </button>
         }
       >
