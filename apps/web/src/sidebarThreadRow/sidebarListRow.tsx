@@ -56,6 +56,18 @@ export function sidebarListRowActionClassName(pinned: boolean) {
 }
 
 /**
+ * A second action button, among the row's end labels right before the action button: laid
+ * out only while the action button shows, so the row's labels keep their room otherwise.
+ */
+export function sidebarListRowExtraActionClassName(pinned: boolean) {
+  return cn(
+    SIDEBAR_ACTION_BUTTON,
+    !pinned &&
+      "hidden group-any-hover/sidebar-row:inline-flex group-focus-visible/sidebar-row:inline-flex group-has-[:focus-visible]/sidebar-row:inline-flex",
+  );
+}
+
+/**
  * The row's end: its labels (time, task runs) and the action button hover or
  * keyboard focus reveals over them. A fading label hides under the button; any
  * other label (task runs) stays, and the block moves left to make room.

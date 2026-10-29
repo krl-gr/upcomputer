@@ -5,9 +5,11 @@ import {
   useState,
   useSyncExternalStore,
   type KeyboardEvent,
+  type ReactElement,
   type SyntheticEvent,
 } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { ListTodoIcon } from "lucide-react";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { TaskThreadTasksResult } from "@t3tools/tasks-contracts/v1";
 import type {
@@ -20,6 +22,11 @@ import {
   MenuPopup,
   MenuTrigger,
 } from "../../../../apps/web/src/components/ui/menu.tsx";
+import {
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
+} from "../../../../apps/web/src/components/ui/tooltip.tsx";
 import {
   readTasksWebAccess,
   readTasksWebClient,
@@ -87,6 +94,37 @@ function ThreadTasksMenuItems({
   ));
 }
 
+/** The thread's tasks menu, opened by `trigger`, a `MenuTrigger`. */
+function ThreadTasksMenu({
+  client,
+  environmentId,
+  threadId,
+  trigger,
+  onOpenChange,
+}: {
+  client: TasksWebRpcClient;
+  environmentId: EnvironmentId;
+  threadId: ThreadId;
+  trigger: ReactElement;
+  onOpenChange?: ((open: boolean) => void) | undefined;
+}) {
+  return (
+    <Menu {...(onOpenChange ? { onOpenChange } : {})}>
+      {trigger}
+      <MenuPopup
+        align="end"
+        className="w-72"
+        onClick={stopRowEvent}
+        onDoubleClick={stopRowEvent}
+        onContextMenu={stopRowEvent}
+        onKeyDown={stopRowKeyActivation}
+      >
+        <ThreadTasksMenuItems client={client} environmentId={environmentId} threadId={threadId} />
+      </MenuPopup>
+    </Menu>
+  );
+}
+
 function Counts({
   client,
   store,
@@ -108,34 +146,29 @@ function Counts({
   if (groups.length === 0) return fallback;
   const summary = `Task runs · ${groups.map((group) => `${group.label}: ${group.count}`).join(" · ")}`;
   return (
-    <Menu>
-      {/* Its own slot: the themed chat header fills every `menu-trigger` as a
-          toolbar control, while these counts stay bare numbers as in the sidebar. */}
-      <MenuTrigger
-        data-slot="task-run-counts"
-        className="pointer-events-auto inline-flex cursor-pointer items-center gap-1 rounded-sm tabular-nums opacity-80 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring data-popup-open:opacity-100"
-        data-task-run-counts={threadId}
-        aria-label={summary}
-        title={[summary, "Active runs, and finished runs since the thread was last opened"].join(
-          "\n",
-        )}
-        onPointerDown={stopRowEvent}
-        onClick={stopRowEvent}
-        onKeyDown={stopRowKeyActivation}
-      >
-        <RunCountNumbers groups={groups} />
-      </MenuTrigger>
-      <MenuPopup
-        align="end"
-        className="w-72"
-        onClick={stopRowEvent}
-        onDoubleClick={stopRowEvent}
-        onContextMenu={stopRowEvent}
-        onKeyDown={stopRowKeyActivation}
-      >
-        <ThreadTasksMenuItems client={client} environmentId={environmentId} threadId={threadId} />
-      </MenuPopup>
-    </Menu>
+    <ThreadTasksMenu
+      client={client}
+      environmentId={environmentId}
+      threadId={threadId}
+      trigger={
+        // Its own slot: the themed chat header fills every `menu-trigger` as a
+        // toolbar control, while these counts stay bare numbers as in the sidebar.
+        <MenuTrigger
+          data-slot="task-run-counts"
+          className="pointer-events-auto inline-flex cursor-pointer items-center gap-1 rounded-sm tabular-nums opacity-80 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring data-popup-open:opacity-100"
+          data-task-run-counts={threadId}
+          aria-label={summary}
+          title={[summary, "Active runs, and finished runs since the thread was last opened"].join(
+            "\n",
+          )}
+          onPointerDown={stopRowEvent}
+          onClick={stopRowEvent}
+          onKeyDown={stopRowKeyActivation}
+        >
+          <RunCountNumbers groups={groups} />
+        </MenuTrigger>
+      }
+    />
   );
 }
 
@@ -194,4 +227,50 @@ export function TaskThreadRunCounts(props: ExperimentalWebThreadRowAccessoryProp
   if (!readTasksWebAccess(props.environmentId).canReadTasks) return props.fallback;
   const client = readTasksWebClient(props.environmentId);
   return <Counts {...props} client={client} store={threadRunCountsStore(client)} />;
+}
+
+/**
+ * The run counts' tasks menu from an icon button, for a row whose thread has tasks but no
+ * counts to show. `className` gives the button its row's look.
+ */
+export function TaskThreadTasksButton(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly label: string;
+  readonly className: string;
+  readonly onOpenChange?: (open: boolean) => void;
+}) {
+  useTasksWebAccessRevision();
+  if (!readTasksWebAccess(props.environmentId).canReadTasks) return null;
+  return (
+    <ThreadTasksMenu
+      client={readTasksWebClient(props.environmentId)}
+      environmentId={props.environmentId}
+      threadId={props.threadId}
+      onOpenChange={props.onOpenChange}
+      trigger={
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <MenuTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={props.label}
+                    className={props.className}
+                    onPointerDown={stopRowEvent}
+                    onClick={stopRowEvent}
+                    onKeyDown={stopRowKeyActivation}
+                  />
+                }
+              />
+            }
+          >
+            <ListTodoIcon />
+          </TooltipTrigger>
+          <TooltipPopup side="top">Tasks</TooltipPopup>
+        </Tooltip>
+      }
+    />
+  );
 }

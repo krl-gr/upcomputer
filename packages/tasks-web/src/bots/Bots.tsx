@@ -29,11 +29,9 @@ import {
   Collapsible,
   CollapsiblePanel,
 } from "../../../../apps/web/src/components/ui/collapsible.tsx";
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "../../../../apps/web/src/components/ui/sidebar.tsx";
+import { SidebarMenu, SidebarMenuItem } from "../../../../apps/web/src/components/ui/sidebar.tsx";
+import { SidebarEmptyRow } from "../../../../apps/web/src/sidebarProjects/SidebarEmptyRow.tsx";
+import { useSidebarProjectScope } from "../../../../apps/web/src/sidebarProjects/sidebarProjectScope.ts";
 import {
   Tooltip,
   TooltipPopup,
@@ -52,13 +50,13 @@ import {
   SIDEBAR_SECTION_GAP,
   SIDEBAR_SECTION_HEADER_GAP,
 } from "../../../../apps/web/src/sidebarMetrics/sidebarMetrics.ts";
-import { ThreadStatusLabel } from "../../../../apps/web/src/sidebarThreadRow/ThreadStatusLabel.tsx";
 import {
   SIDEBAR_LIST_ROW,
   SIDEBAR_LIST_ROW_ACTIVE,
   SIDEBAR_LIST_ROW_REST,
   SidebarListRowEnd,
   sidebarListRowActionClassName,
+  sidebarListRowExtraActionClassName,
   sidebarListRowTitleClassName,
 } from "../../../../apps/web/src/sidebarThreadRow/sidebarListRow.tsx";
 import { cn } from "../../../../apps/web/src/lib/utils.ts";
@@ -69,7 +67,8 @@ import { threadEnvironment } from "../../../../apps/web/src/state/threads.ts";
 import { useOrchestrationCommand } from "../../../../apps/web/src/state/use-orchestration-command.ts";
 import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/extensionApi.ts";
 import { claimSidebarThreads } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
-import { TaskThreadRunCounts } from "../ui/TaskThreadRunCounts.tsx";
+import { TaskThreadRunCounts, TaskThreadTasksButton } from "../ui/TaskThreadRunCounts.tsx";
+import { botsInProjectScope } from "./botProjectScope.ts";
 import {
   BotAvatar,
   botPage,
@@ -142,14 +141,16 @@ function CompactEnvironmentBots({
   readonly several: boolean;
 }) {
   const { bots, enabled } = useBots(environmentId);
+  const scope = useSidebarProjectScope();
   const title = useBotSectionTitle(environmentId, several);
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
   const navigate = useNavigate();
   const isActive = useIsBotActive(environmentId);
-  if (!enabled) return null;
+  const shown = botsInProjectScope(environmentId, bots, scope);
+  if (!enabled || (scope !== null && shown.length === 0)) return null;
   return (
     <CompactSidebarPill label={title}>
-      {bots.map((bot) => (
+      {shown.map((bot) => (
         <CompactBotButton
           key={bot.agent.id}
           environmentId={environmentId}
@@ -205,6 +206,7 @@ function EnvironmentBots({
   readonly several: boolean;
 }) {
   const { bots, error, enabled } = useBots(environmentId);
+  const scope = useSidebarProjectScope();
   const title = useBotSectionTitle(environmentId, several);
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
   const navigate = useNavigate();
@@ -214,8 +216,8 @@ function EnvironmentBots({
     true,
     Schema.Boolean,
   );
-  // Each bot's chat is listed here, so Threads leaves it out; a removed bot's
-  // chat returns there with the next list.
+  // Each bot's chat belongs here, so Threads leaves it out, even while the
+  // Projects filter hides its bot; a removed bot's chat returns there with the next list.
   const chatKeys = (enabled ? bots : [])
     .map((bot) => scopedThreadKey(scopeThreadRef(environmentId, bot.threadId)))
     .join("\n");
@@ -223,7 +225,9 @@ function EnvironmentBots({
     () => claimSidebarThreads(`bots:${environmentId}`, chatKeys ? chatKeys.split("\n") : []),
     [environmentId, chatKeys],
   );
-  if (!enabled) return null;
+  const shown = botsInProjectScope(environmentId, bots, scope);
+  // A filter no bot matches hides the section; a bot chat it hides stays open.
+  if (!enabled || (scope !== null && shown.length === 0 && !error)) return null;
   const create = () => {
     if (canWrite) void navigate(botPage(environmentId));
   };
@@ -244,7 +248,7 @@ function EnvironmentBots({
       <CollapsiblePanel>
         <div className={`${SIDEBAR_SECTION_HEADER_GAP} ${SIDEBAR_MENU_SCOPE}`}>
           <SidebarMenu>
-            {bots.map((bot) => (
+            {shown.map((bot) => (
               <SidebarMenuItem key={bot.agent.id}>
                 <BotRow
                   environmentId={environmentId}
@@ -258,12 +262,11 @@ function EnvironmentBots({
               </SidebarMenuItem>
             ))}
             {bots.length === 0 ? (
-              <SidebarMenuItem>
-                <SidebarMenuButton disabled={!canWrite} onClick={create}>
-                  <PlusIcon />
-                  <span>Create your first bot</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              <SidebarEmptyRow
+                label="Create your first bot"
+                disabled={!canWrite}
+                onClick={create}
+              />
             ) : null}
           </SidebarMenu>
           {error ? (
@@ -278,9 +281,10 @@ function EnvironmentBots({
 }
 
 /**
- * A bot's sidebar row from the compact thread row's parts: face, status while not idle, name,
- * its tasks' run counts, and settings where a thread row has "…". A double-click renames the
- * chat, and the server renames the bot with it.
+ * A bot's sidebar row from the compact thread row's parts: face, name, its tasks' run counts,
+ * and settings where a thread row has "…". The face shows the bot's state, and the name's
+ * tooltip says it. A chat with tasks but no counts to show offers its tasks menu from an icon
+ * next to settings. A double-click renames the chat, and the server renames the bot with it.
  */
 function BotRow({
   environmentId,
@@ -301,6 +305,7 @@ function BotRow({
     reportFailure: false,
   });
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [tasksMenuOpen, setTasksMenuOpen] = useState(false);
   const renameDone = useRef(false);
   const commitRename = (title: string) => {
     renameDone.current = true;
@@ -361,7 +366,6 @@ function BotRow({
       <span className="flex size-4 shrink-0 items-center justify-center">
         <BotAvatar id={bot.agent.id} appearance={bot.appearance} state={status.state} size={20} />
       </span>
-      <ThreadStatusLabel status={status.label} />
       {renaming !== null ? (
         <input
           autoFocus
@@ -397,12 +401,12 @@ function BotRow({
         <span className={nameClassName}>{bot.agent.name}</span>
       )}
       <SidebarListRowEnd
-        pinned={false}
+        pinned={tasksMenuOpen}
         action={
           <button
             type="button"
             aria-label={`Settings for ${bot.agent.name}`}
-            className={sidebarListRowActionClassName(false)}
+            className={sidebarListRowActionClassName(tasksMenuOpen)}
             onClick={onSettings}
           >
             <SettingsIcon />
@@ -412,7 +416,17 @@ function BotRow({
         <TaskThreadRunCounts
           environmentId={environmentId}
           threadId={bot.threadId}
-          fallback={null}
+          fallback={
+            bot.chatHasTasks ? (
+              <TaskThreadTasksButton
+                environmentId={environmentId}
+                threadId={bot.threadId}
+                label={`Tasks for ${bot.agent.name}`}
+                className={sidebarListRowExtraActionClassName(tasksMenuOpen)}
+                onOpenChange={setTasksMenuOpen}
+              />
+            ) : null
+          }
         />
       </SidebarListRowEnd>
     </div>
