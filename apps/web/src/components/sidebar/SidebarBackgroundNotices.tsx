@@ -69,15 +69,18 @@ export const SidebarBackgroundNotices = memo(function SidebarBackgroundNotices()
               aria-label={label}
               data-track="sidebar.background_notices"
               size="icon"
-              className="relative"
             >
               <BellIcon />
-              <span className="absolute -top-0.5 -right-0.5 min-w-3.5 rounded-full bg-warning px-1 text-3xs leading-3.5 font-medium text-warning-foreground">
-                {notices.length}
-              </span>
             </SidebarMenuButton>
           }
         />
+        {/* Outside the button, which clips its content. */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-0.5 -right-0.5 min-w-3.5 rounded-full bg-warning px-1 text-center text-3xs leading-3.5 font-medium text-warning-foreground"
+        >
+          {notices.length}
+        </span>
         <PopoverPopup side="top" align="start" className="w-80">
           <div className="flex items-center justify-between gap-2 pb-2">
             <PopoverTitle>Notifications</PopoverTitle>
