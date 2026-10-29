@@ -117,3 +117,8 @@ export function groupTaskRunCounts(
   }
   return [...result.values()];
 }
+
+/** The groups a bot's compact sidebar pill shows: what is running or needs attention. */
+export function attentionRunCountGroups(groups: readonly TaskRunCountGroup[]): TaskRunCountGroup[] {
+  return groups.filter((group) => group.label !== "Completed");
+}

@@ -72,7 +72,11 @@ import {
   SidebarCompactTooltip,
   useSidebarCompact,
 } from "../../../../apps/web/src/adaptiveSidebar/adaptiveSidebar.tsx";
-import { TaskThreadRunCounts, TaskThreadTasksButton } from "../ui/TaskThreadRunCounts.tsx";
+import {
+  TaskThreadRunCounts,
+  TaskThreadRunPill,
+  TaskThreadTasksButton,
+} from "../ui/TaskThreadRunCounts.tsx";
 import { botsInProjectScope } from "./botProjectScope.ts";
 import {
   BotAvatar,
@@ -250,7 +254,8 @@ function EnvironmentBots({
           }
         />
       </div>
-      <CollapsiblePanel>
+      {/* Each bot's run pill rises above its compact target, over the panel's top edge. */}
+      <CollapsiblePanel className="[[data-sidebar-compact=true]_&]:overflow-visible">
         <div className={`${SIDEBAR_SECTION_HEADER_GAP} ${SIDEBAR_MENU_SCOPE}`}>
           <SidebarMenu>
             {shown.map((bot) => (
@@ -344,102 +349,114 @@ function BotRow({
     (event.target as Element).closest("button, input") === null;
   const nameClassName = sidebarListRowTitleClassName(active);
   return (
-    <SidebarCompactTooltip
-      label={status.detail ? `${bot.agent.name}: ${status.detail}` : bot.agent.name}
-    >
-      <div
-        role="button"
-        tabIndex={0}
-        aria-current={active ? "page" : undefined}
-        data-sidebar-list-row=""
-        className={cn(SIDEBAR_LIST_ROW, active ? SIDEBAR_LIST_ROW_ACTIVE : SIDEBAR_LIST_ROW_REST)}
-        onClick={(event) => {
-          if (isRowEvent(event)) onOpen();
-        }}
-        onDoubleClick={(event) => {
-          if (!canRename || renaming !== null || !isRowEvent(event)) return;
-          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-          event.preventDefault();
-          renameDone.current = false;
-          setRenaming(bot.agent.name);
-        }}
-        onKeyDown={(event) => {
-          if (event.target !== event.currentTarget) return;
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          onOpen();
-        }}
+    <>
+      <SidebarCompactTooltip
+        label={status.detail ? `${bot.agent.name}: ${status.detail}` : bot.agent.name}
       >
-        {/* The face overflows the 16px icon slot, so the name lines up with the
-          other rows' labels and switching styles moves nothing. */}
-        <span className="flex size-4 shrink-0 items-center justify-center">
-          <BotAvatar id={bot.agent.id} appearance={bot.appearance} state={status.state} size={20} />
-        </span>
-        {renaming !== null ? (
-          <input
-            autoFocus
-            value={renaming}
-            aria-label="Bot name"
-            onChange={(event) => setRenaming(event.target.value)}
-            onFocus={(event) => event.currentTarget.select()}
-            onKeyDown={(event) => {
-              event.stopPropagation();
-              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-              if (event.key === "Enter") {
-                event.preventDefault();
-                commitRename(renaming);
-              } else if (event.key === "Escape") {
-                event.preventDefault();
-                renameDone.current = true;
-                setRenaming(null);
-              }
-            }}
-            onBlur={() => {
-              if (!renameDone.current) commitRename(renaming);
-            }}
-            className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm text-card-foreground outline-none focus:border-foreground"
-          />
-        ) : status.detail ? (
-          <Tooltip>
-            <TooltipTrigger render={<span className={nameClassName} />}>
-              {bot.agent.name}
-            </TooltipTrigger>
-            <TooltipPopup side="top">{status.detail}</TooltipPopup>
-          </Tooltip>
-        ) : (
-          <span className={nameClassName}>{bot.agent.name}</span>
-        )}
-        <SidebarListRowEnd
-          pinned={tasksMenuOpen}
-          action={
-            <button
-              type="button"
-              aria-label={`Settings for ${bot.agent.name}`}
-              className={sidebarListRowActionClassName(tasksMenuOpen)}
-              onClick={onSettings}
-            >
-              <SettingsIcon />
-            </button>
-          }
+        <div
+          role="button"
+          tabIndex={0}
+          aria-current={active ? "page" : undefined}
+          data-sidebar-list-row=""
+          className={cn(SIDEBAR_LIST_ROW, active ? SIDEBAR_LIST_ROW_ACTIVE : SIDEBAR_LIST_ROW_REST)}
+          onClick={(event) => {
+            if (isRowEvent(event)) onOpen();
+          }}
+          onDoubleClick={(event) => {
+            if (!canRename || renaming !== null || !isRowEvent(event)) return;
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            renameDone.current = false;
+            setRenaming(bot.agent.name);
+          }}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            onOpen();
+          }}
         >
-          <TaskThreadRunCounts
-            environmentId={environmentId}
-            threadId={bot.threadId}
-            fallback={
-              bot.chatHasTasks ? (
-                <TaskThreadTasksButton
-                  environmentId={environmentId}
-                  threadId={bot.threadId}
-                  label={`Tasks for ${bot.agent.name}`}
-                  className={sidebarListRowExtraActionClassName(tasksMenuOpen)}
-                  onOpenChange={setTasksMenuOpen}
-                />
-              ) : null
+          {/* The face overflows the 16px icon slot, so the name lines up with the
+          other rows' labels and switching styles moves nothing. */}
+          <span className="flex size-4 shrink-0 items-center justify-center">
+            <BotAvatar
+              id={bot.agent.id}
+              appearance={bot.appearance}
+              state={status.state}
+              size={20}
+            />
+          </span>
+          {renaming !== null ? (
+            <input
+              autoFocus
+              value={renaming}
+              aria-label="Bot name"
+              onChange={(event) => setRenaming(event.target.value)}
+              onFocus={(event) => event.currentTarget.select()}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  commitRename(renaming);
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  renameDone.current = true;
+                  setRenaming(null);
+                }
+              }}
+              onBlur={() => {
+                if (!renameDone.current) commitRename(renaming);
+              }}
+              className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm text-card-foreground outline-none focus:border-foreground"
+            />
+          ) : status.detail ? (
+            <Tooltip>
+              <TooltipTrigger render={<span className={nameClassName} />}>
+                {bot.agent.name}
+              </TooltipTrigger>
+              <TooltipPopup side="top">{status.detail}</TooltipPopup>
+            </Tooltip>
+          ) : (
+            <span className={nameClassName}>{bot.agent.name}</span>
+          )}
+          <SidebarListRowEnd
+            pinned={tasksMenuOpen}
+            action={
+              <button
+                type="button"
+                aria-label={`Settings for ${bot.agent.name}`}
+                className={sidebarListRowActionClassName(tasksMenuOpen)}
+                onClick={onSettings}
+              >
+                <SettingsIcon />
+              </button>
             }
-          />
-        </SidebarListRowEnd>
-      </div>
-    </SidebarCompactTooltip>
+          >
+            <TaskThreadRunCounts
+              environmentId={environmentId}
+              threadId={bot.threadId}
+              fallback={
+                bot.chatHasTasks ? (
+                  <TaskThreadTasksButton
+                    environmentId={environmentId}
+                    threadId={bot.threadId}
+                    label={`Tasks for ${bot.agent.name}`}
+                    className={sidebarListRowExtraActionClassName(tasksMenuOpen)}
+                    onOpenChange={setTasksMenuOpen}
+                  />
+                ) : null
+              }
+            />
+          </SidebarListRowEnd>
+        </div>
+      </SidebarCompactTooltip>
+      <TaskThreadRunPill
+        environmentId={environmentId}
+        threadId={bot.threadId}
+        name={bot.agent.name}
+      />
+    </>
   );
 }
 

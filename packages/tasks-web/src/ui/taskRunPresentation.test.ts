@@ -2,6 +2,7 @@ import * as NodeAssert from "node:assert/strict";
 import { test } from "vite-plus/test";
 
 import {
+  attentionRunCountGroups,
   taskRunPresentation,
   compareTaskRunStatuses,
   groupTaskRunCounts,
@@ -66,6 +67,28 @@ test("row and task-menu counts merge statuses by label in badge order and drop e
     "text-orange-600 dark:text-orange-300",
   );
   NodeAssert.deepEqual(groupTaskRunCounts([]), []);
+});
+
+test("a bot's compact pill leaves Completed out and keeps the rest in badge order", () => {
+  const groups = groupTaskRunCounts([
+    { status: "completed", count: 4 },
+    { status: "failed", count: 1 },
+    { status: "blocked", count: 2 },
+    { status: "running", count: 12 },
+  ]);
+  NodeAssert.deepEqual(
+    attentionRunCountGroups(groups).map(({ label, count }) => [label, count]),
+    [
+      ["Working", 12],
+      ["Awaiting Input", 2],
+      ["Failed", 1],
+    ],
+  );
+  NodeAssert.deepEqual(
+    attentionRunCountGroups(groupTaskRunCounts([{ status: "completed", count: 3 }])),
+    [],
+    "only finished successes: no pill",
+  );
 });
 
 test("thread rows treat working, finalizing and awaiting-input runs as active", () => {

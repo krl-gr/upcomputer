@@ -35,8 +35,8 @@ import {
 import type { TasksWebRpcClient } from "../rpc/index.ts";
 import { threadRunCountsStore, type ThreadRunCountsStore } from "../state/threadRunCounts.ts";
 import { taskKey } from "./shared.ts";
-import { RunCountNumbers } from "./RunCountNumbers.tsx";
-import { groupTaskRunCounts } from "./taskRunPresentation.ts";
+import { RunCountNumbers, runCountSummary } from "./RunCountNumbers.tsx";
+import { attentionRunCountGroups, groupTaskRunCounts } from "./taskRunPresentation.ts";
 
 const THREAD_TASKS_LIMIT = 50;
 const MENU_NOTE_CLASS = "px-2 py-1.5 text-muted-foreground text-sm";
@@ -125,6 +125,17 @@ function ThreadTasksMenu({
   );
 }
 
+function useThreadRunCountGroups(store: ThreadRunCountsStore, threadId: ThreadId) {
+  const subscribe = useCallback(
+    (listener: () => void) => store.subscribe(threadId, listener),
+    [store, threadId],
+  );
+  const snapshot = useCallback(() => store.get(threadId), [store, threadId]);
+  const counts = useSyncExternalStore(subscribe, snapshot, snapshot);
+  // One foreground handler per mounted row is unnecessary; the shared stream reconciles reconnects.
+  return useMemo(() => groupTaskRunCounts(counts), [counts]);
+}
+
 function Counts({
   client,
   store,
@@ -135,14 +146,7 @@ function Counts({
   client: TasksWebRpcClient;
   store: ThreadRunCountsStore;
 }) {
-  const subscribe = useCallback(
-    (listener: () => void) => store.subscribe(threadId, listener),
-    [store, threadId],
-  );
-  const snapshot = useCallback(() => store.get(threadId), [store, threadId]);
-  const counts = useSyncExternalStore(subscribe, snapshot, snapshot);
-  // One foreground handler per mounted row is unnecessary; the shared stream reconciles reconnects.
-  const groups = useMemo(() => groupTaskRunCounts(counts), [counts]);
+  const groups = useThreadRunCountGroups(store, threadId);
   if (groups.length === 0) return fallback;
   const summary = `Task runs · ${groups.map((group) => `${group.label}: ${group.count}`).join(" · ")}`;
   return (
@@ -273,4 +277,97 @@ export function TaskThreadTasksButton(props: {
       }
     />
   );
+}
+
+/** A status colour as the light theme draws it: the pill stays light in either theme. */
+function onLightPillClassName(className: string) {
+  return className
+    .split(" ")
+    .filter((name) => !name.startsWith("dark:"))
+    .map((name) => (name === "text-muted-foreground" ? "text-neutral-500" : name))
+    .join(" ");
+}
+
+const PILL_SURFACE = "bg-neutral-200 dark:bg-neutral-100";
+
+/**
+ * Over the bot's top right in its 40px compact target, with a dot towards its head. The pill
+ * starts 28px in and moves left rather than past the 92px column when its counts are wide.
+ */
+function RunPill({
+  client,
+  store,
+  environmentId,
+  threadId,
+  name,
+}: {
+  client: TasksWebRpcClient;
+  store: ThreadRunCountsStore;
+  environmentId: EnvironmentId;
+  threadId: ThreadId;
+  name: string;
+}) {
+  const groups = attentionRunCountGroups(useThreadRunCountGroups(store, threadId));
+  if (groups.length === 0) return null;
+  const summary = runCountSummary(groups);
+  return (
+    <span className="hidden [[data-sidebar-compact=true]_&]:contents">
+      <span
+        aria-hidden
+        className={`pointer-events-none absolute top-1 left-[calc(50%+6px)] size-1 rounded-full ${PILL_SURFACE}`}
+      />
+      <span className="pointer-events-none absolute -top-2.5 left-[calc(50%-20px)] flex w-16">
+        <span className="basis-7" />
+        <ThreadTasksMenu
+          client={client}
+          environmentId={environmentId}
+          threadId={threadId}
+          trigger={
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <MenuTrigger
+                    render={
+                      <button
+                        type="button"
+                        data-bot-run-pill={threadId}
+                        aria-label={`Tasks for ${name}: ${summary}`}
+                        className={`pointer-events-auto flex h-[15px] flex-none cursor-pointer items-center gap-[3.5px] rounded-full px-[4.5px] text-[10px] leading-[15px] font-semibold tabular-nums outline-none hover:bg-neutral-300 focus-visible:ring-1 focus-visible:ring-ring dark:hover:bg-white ${PILL_SURFACE}`}
+                        onPointerDown={stopRowEvent}
+                        onClick={stopRowEvent}
+                        onKeyDown={stopRowKeyActivation}
+                      />
+                    }
+                  />
+                }
+              >
+                <RunCountNumbers
+                  groups={groups.map((group) => ({
+                    ...group,
+                    className: onLightPillClassName(group.className),
+                  }))}
+                />
+              </TooltipTrigger>
+              <TooltipPopup side="right">{summary}</TooltipPopup>
+            </Tooltip>
+          }
+        />
+      </span>
+    </span>
+  );
+}
+
+/**
+ * A bot's run counts as a pill for the compact sidebar, where its row shows only the face.
+ * It opens the same tasks menu as the counts in the full row. Completed runs are left out.
+ */
+export function TaskThreadRunPill(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly name: string;
+}) {
+  useTasksWebAccessRevision();
+  if (!readTasksWebAccess(props.environmentId).canReadTasks) return null;
+  const client = readTasksWebClient(props.environmentId);
+  return <RunPill {...props} client={client} store={threadRunCountsStore(client)} />;
 }
