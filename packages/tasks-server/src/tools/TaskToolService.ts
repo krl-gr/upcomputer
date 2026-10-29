@@ -427,7 +427,7 @@ const SHOWN_IN: Record<TaskAudience, string> = {
   person:
     "Person task: shown in the user's planner (Me), not in the agents' table. No agent starts on it by status.",
   agent:
-    "Agent task: shown in the agents' table (Agents), not in the user's planner. Agents start on it by their triggers.",
+    "Agent task: shown in the agents' table (Workers), not in the user's planner. Agents start on it by their triggers.",
 };
 
 /** The top-level task_create arguments that go with a tasks list. */
