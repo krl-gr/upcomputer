@@ -1,11 +1,8 @@
 ---
 /**
- * The horizon behind the top of a page. It fills its positioned parent. The
- * <picture> is the whole backdrop without JS, with reduced motion or without
- * WebGL. Otherwise the page starts dark with the photo hidden, and
- * horizon-backdrop.ts plays the scene in on a canvas like an old TV switching
- * on (curved planet, atmosphere, stars, faint noise). If no live frame comes
- * in time, the photo fades in instead (`is-fallback`).
+ * The <picture> is the whole backdrop without JS, WebGL or with reduced motion.
+ * Otherwise horizon-backdrop.ts plays the scene in on a canvas, and the photo
+ * fades in (`is-fallback`) if no live frame comes in time.
  */
 ---
 
