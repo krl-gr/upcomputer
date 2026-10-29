@@ -248,7 +248,7 @@ function ThreadSidebarUnderTest() {
               onClearSearch={noop}
             />
             <ProductSidebarNavigation />
-            <SidebarProjectsSection projectGroups={PROJECTS} onAddProject={noop} />
+            <SidebarProjectsSection projectGroups={PROJECTS} onAddProject={noop} loaded />
             <SidebarThreadsSectionHeader
               onNewThread={noop}
               currentEnvironmentId={null}

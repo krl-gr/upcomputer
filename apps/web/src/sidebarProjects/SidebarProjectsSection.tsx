@@ -40,6 +40,7 @@ import {
   SIDEBAR_SECTION_GAP,
   SIDEBAR_SECTION_HEADER_GAP,
 } from "../sidebarMetrics/sidebarMetrics";
+import { SidebarEmptyRow } from "./SidebarEmptyRow";
 import { SidebarProjectRow } from "./SidebarProjectRow";
 import { SidebarSectionHeader, SidebarSectionHeaderAction } from "./SidebarSectionHeader";
 import {
@@ -69,8 +70,10 @@ export function SidebarProjectsSection(props: {
   readonly projectGroups: ReadonlyArray<SidebarProjectSnapshot>;
   /** Upstream's add project action, which the search row runs without this surface. */
   readonly onAddProject: () => void;
+  /** False while the sidebar waits for its data, so no projects is not yet known. */
+  readonly loaded: boolean;
 }) {
-  const { projectGroups, onAddProject } = props;
+  const { projectGroups, onAddProject, loaded } = props;
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const handleNewThread = useNewThreadHandler();
@@ -142,17 +145,18 @@ export function SidebarProjectsSection(props: {
           }
         />
       </div>
-      {/* With no projects the header stays, so Add project is always one click away. */}
-      {projectGroups.length === 0 ? null : (
+      {!loaded ? null : (
         <CollapsiblePanel>
           <div className={cn(SIDEBAR_SECTION_HEADER_GAP, SIDEBAR_MENU_SCOPE)}>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton isActive={scopeKey === null} onClick={() => setScopeKey(null)}>
-                  <AllProjectsIcon />
-                  <span className="flex-1 truncate">All projects</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              {projectGroups.length === 0 ? null : (
+                <SidebarMenuItem>
+                  <SidebarMenuButton isActive={scopeKey === null} onClick={() => setScopeKey(null)}>
+                    <AllProjectsIcon />
+                    <span className="flex-1 truncate">All projects</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
               {rows.preview.map((project) => (
                 <SidebarMenuItem key={project.projectKey}>
                   <SidebarProjectRow
@@ -204,6 +208,9 @@ export function SidebarProjectsSection(props: {
                     onOpenProjectSettings={openProjectSettings}
                   />
                 </SidebarMenuItem>
+              ) : null}
+              {rows.preview.length + rows.overflow.length === 0 ? (
+                <SidebarEmptyRow label="Add project" onClick={onAddProject} />
               ) : null}
             </SidebarMenu>
           </div>

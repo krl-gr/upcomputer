@@ -74,21 +74,27 @@ export function ProjectRowIcon(props: { readonly project: ProjectFaviconProject 
   );
 }
 
+/** Whether a project group is a Scratch project, the one "No project" stands for. */
+export function useIsScratchProjectGroup() {
+  const serverConfigs = useServerConfigs();
+  return (group: Pick<SidebarProjectSnapshot, "memberProjects">) =>
+    group.memberProjects.some((member) =>
+      isScratchProject(member, serverConfigs.get(member.environmentId)?.scratchWorkspaceRoot),
+    );
+}
+
 /** The Projects section's rows for the sidebar's ordered project groups. */
 export function useSidebarProjectsRows(
   projectGroups: ReadonlyArray<SidebarProjectSnapshot>,
   selectedProjectKey: string | null,
   limit?: number,
 ) {
-  const serverConfigs = useServerConfigs();
+  const isScratch = useIsScratchProjectGroup();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   return buildSidebarProjectsRows({
     projects: projectGroups,
     selectedProjectKey,
-    isScratch: (group) =>
-      group.memberProjects.some((member) =>
-        isScratchProject(member, serverConfigs.get(member.environmentId)?.scratchWorkspaceRoot),
-      ),
+    isScratch,
     isPrimary: (group) =>
       group.memberProjects.some((member) => member.environmentId === primaryEnvironmentId),
     ...(limit === undefined ? {} : { limit }),
