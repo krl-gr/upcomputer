@@ -55,10 +55,11 @@ export const COMPOSER_MODEL_PICKER_TRIGGER_CLASS = `${COMPOSER_CONTROL_TEXT_TRIG
 export const COMPOSER_FOOTER_PADDING_CLASS = "px-2 pb-2 dark:px-2.25 dark:pb-2.25";
 
 /**
- * V1's prompt padding inside the card; it overrides upstream's on the prompt
- * body. The text starts where the paperclip's icon does.
+ * The prompt's padding inside the card; it overrides upstream's on the prompt
+ * body. The text starts where the paperclip's icon does, and its first line
+ * sits as far below the card's top edge as the paperclip sits from the sides.
  */
-export const COMPOSER_BODY_PADDING_CLASS = "px-4 sm:px-4 sm:pt-6";
+export const COMPOSER_BODY_PADDING_CLASS = "px-4 pt-3 sm:px-4 sm:pt-3";
 
 /** V1's one-line prompt minimum: the card grows with the text from there. */
 export const COMPOSER_EDITOR_CLASS = "min-h-8";
@@ -82,9 +83,11 @@ export const COMPOSER_CARD_CLASS =
 /**
  * On upstream's composer shell: its translucent glass backdrop and the host's
  * outline and shadow give way to the card, and the frame follows its corners.
+ * With a banner attached, upstream moves the outline, shadow and glass to the
+ * main surface, a pixel outside the card; the card's own edge stays the only one.
  */
 export const COMPOSER_SHELL_CLASS =
-  "before:hidden [&_[data-slot=composer-host]]:shadow-none [&_[data-slot=composer-host]]:after:hidden [&_[data-chat-composer-main-surface]]:rounded-[calc(1.5rem+1px)]";
+  "before:hidden [&_[data-slot=composer-host]]:shadow-none [&_[data-slot=composer-host]]:after:hidden [&_[data-chat-composer-main-surface]]:rounded-[calc(1.5rem+1px)] [&_[data-chat-composer-main-surface]]:bg-transparent! [&_[data-chat-composer-main-surface]]:shadow-none! [&_[data-chat-composer-main-surface]]:backdrop-filter-none! [&_[data-chat-composer-main-surface]]:after:hidden!";
 
 /** V1's send button; `canSend` is whether a click would act. */
 export function composerSendButtonClass(canSend: boolean): string {
