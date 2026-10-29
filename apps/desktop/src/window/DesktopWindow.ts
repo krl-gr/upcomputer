@@ -39,7 +39,6 @@ import {
   upcomputerWindowBackgroundColor,
   upcomputerWindowVibrancyOptions,
 } from "./UpcomputerWindowVibrancy.ts";
-import { UPCOMPUTER_MAIN_WINDOW_MIN_WIDTH } from "./UpcomputerWindowSize.ts";
 import { copyContextMenuImage } from "./ContextMenuImage.ts";
 
 const TITLEBAR_HEIGHT = 40;
@@ -413,7 +412,7 @@ export const make = Effect.gen(function* () {
     if (yield* Ref.get(desktopState.quitting)) return Option.none();
     const window = yield* electronWindow.create({
       ...initialBounds,
-      minWidth: UPCOMPUTER_MAIN_WINDOW_MIN_WIDTH,
+      minWidth: 840,
       minHeight: 620,
       show: false,
       autoHideMenuBar: true,
