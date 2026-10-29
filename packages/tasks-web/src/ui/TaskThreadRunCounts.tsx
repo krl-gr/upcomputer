@@ -20,6 +20,9 @@ import {
   Menu,
   MenuItem,
   MenuPopup,
+  MenuSub,
+  MenuSubPopup,
+  MenuSubTrigger,
   MenuTrigger,
 } from "../../../../apps/web/src/components/ui/menu.tsx";
 import {
@@ -370,4 +373,26 @@ export function TaskThreadRunPill(props: {
   if (!readTasksWebAccess(props.environmentId).canReadTasks) return null;
   const client = readTasksWebClient(props.environmentId);
   return <RunPill {...props} client={client} store={threadRunCountsStore(client)} />;
+}
+
+/** The thread's tasks menu as a submenu, for a context menu. Its caller checks task access. */
+export function TaskThreadTasksSubmenu(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+}) {
+  return (
+    <MenuSub>
+      <MenuSubTrigger>
+        <ListTodoIcon />
+        Tasks
+      </MenuSubTrigger>
+      <MenuSubPopup className="w-72">
+        <ThreadTasksMenuItems
+          client={readTasksWebClient(props.environmentId)}
+          environmentId={props.environmentId}
+          threadId={props.threadId}
+        />
+      </MenuSubPopup>
+    </MenuSub>
+  );
 }

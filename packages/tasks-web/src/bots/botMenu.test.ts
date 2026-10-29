@@ -1,6 +1,6 @@
 import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { canBecomeBotChat } from "./botMenu.ts";
+import { botRowMenuEntries, canBecomeBotChat } from "./botMenu.ts";
 
 const id = ThreadId.make("thread-chat");
 const chat: Parameters<typeof canBecomeBotChat>[0] = {
@@ -37,5 +37,12 @@ describe("turning a chat into a bot", () => {
         },
       ]),
     ).toBe(false);
+  });
+});
+
+describe("a bot row's context menu", () => {
+  it("offers settings, and the chat's tasks only to a person who may read tasks", () => {
+    expect(botRowMenuEntries(true)).toEqual(["settings", "tasks"]);
+    expect(botRowMenuEntries(false)).toEqual(["settings"]);
   });
 });
