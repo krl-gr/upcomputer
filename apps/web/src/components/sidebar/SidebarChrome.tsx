@@ -28,7 +28,7 @@ import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPr
 import { useShownPathname } from "../../hooks/useShownPathname";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
-import { SidebarBackgroundNotices } from "./SidebarBackgroundNotices";
+import { SidebarNotifications } from "~/sidebarNotifications/SidebarNotifications";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -234,8 +234,11 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           />
         </>
       )}
-      <SidebarBackgroundNotices />
-      <SidebarUpdatePill />
+      {productSurface("sidebarNotifications") === "upcomputer" ? (
+        <SidebarNotifications />
+      ) : (
+        <SidebarUpdatePill />
+      )}
     </SidebarMenu>
   );
 });

@@ -126,6 +126,11 @@ export interface ProductSurfaces {
    */
   readonly sidebarVibrancy: ProductSurfaceVariant;
   /**
+   * The sidebar footer's update control. With `upcomputer` one bell holds app,
+   * server and provider updates and the background notices.
+   */
+  readonly sidebarNotifications: ProductSurfaceVariant;
+  /**
    * First-run setup on a local or paired server. With `upcomputer` it is V1's
    * agent table: one screen to make an agent work, then project import only
    * when there is something to import. Hosted web keeps upstream's wizard,
@@ -143,6 +148,7 @@ export const UPSTREAM_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   composerFooter: "upstream",
   composerContextRow: "upstream",
   sidebarVibrancy: "upstream",
+  sidebarNotifications: "upstream",
   onboarding: "upstream",
 });
 
@@ -153,6 +159,7 @@ export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   composerFooter: "upcomputer",
   composerContextRow: "upcomputer",
   sidebarVibrancy: "upcomputer",
+  sidebarNotifications: "upcomputer",
   onboarding: "upcomputer",
 });
 

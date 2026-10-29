@@ -466,7 +466,7 @@ available.
 - Update UX:
   - Background checks run on startup delay + interval.
   - No automatic download or install.
-  - The desktop UI shows a rocket update button when an update is available; click once to download, click again after download to restart/install.
+  - The sidebar's bell shows a dot when an update is available; its Updates section downloads it, then offers Restart to update.
 - Provider: GitHub Releases (`provider: github`) configured at build time.
 - Repository slug source:
   - `T3CODE_DESKTOP_UPDATE_REPOSITORY` (format `owner/repo`), if set.
