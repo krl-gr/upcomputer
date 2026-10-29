@@ -599,6 +599,60 @@ it.effect("the bot list names the active runs of every task its chat started", (
   ),
 );
 
+it.effect("the bot list says whether its chat has tasks, and clients hear when that changes", () =>
+  run(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const bots = yield* BotService;
+        const repository = yield* TaskRepository;
+        yield* seedBot;
+        const hasTasks = Effect.map(bots.list, ([listed]) => listed?.chatHasTasks);
+        assert.strictEqual(yield* hasTasks, false);
+        // Clients refetch the bot list on a runs change, as `botData.tsx` does.
+        const changes = yield* Queue.unbounded<TaskChange>();
+        const subscribed = yield* Deferred.make<void>();
+        yield* repository.changes.pipe(
+          Stream.runForEach((change) =>
+            change.kind === "sync"
+              ? Deferred.succeed(subscribed, undefined)
+              : Queue.offer(changes, change),
+          ),
+          Effect.forkScoped,
+        );
+        yield* Deferred.await(subscribed);
+        const taskId = TaskId.make("task-from-chat");
+        yield* repository.upsert({
+          id: taskId,
+          projectId: project,
+          title: "From the chat",
+          description: "",
+          output: null,
+          status: "Backlog",
+          priority: null,
+          createdBy: "agent",
+          assigneeAgentRunId: null,
+          sourceThreadId: botThread,
+          sourceRunId: null,
+          metadata: null,
+          tags: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          archivedAt: null,
+        });
+        const created = yield* Queue.take(changes);
+        assert.isTrue(created.runsChanged);
+        assert.deepStrictEqual(created.rootThreadIds, [botThread]);
+        assert.strictEqual(yield* hasTasks, true);
+        yield* repository.deleteTask({ id: taskId });
+        const deleted = yield* Queue.take(changes);
+        assert.isTrue(deleted.runsChanged);
+        assert.deepStrictEqual(deleted.rootThreadIds, [botThread]);
+        assert.strictEqual(yield* hasTasks, false);
+      }),
+    ),
+  ),
+);
+
 /** A memory saved before the test clock's now, `minute` ordering it by recency. */
 const seedMemory = (
   id: string,
