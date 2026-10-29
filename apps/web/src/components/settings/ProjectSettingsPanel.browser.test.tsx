@@ -319,7 +319,14 @@ async function expectProjectAccessDeniedToast(title: string) {
       expect.objectContaining({
         type: "error",
         title,
-        description: "This connection cannot change projects in remote.",
+        // The description renders the error, so match the error it carries.
+        description: expect.objectContaining({
+          props: expect.objectContaining({
+            error: expect.objectContaining({
+              message: "This connection cannot change projects in remote.",
+            }),
+          }),
+        }),
       }),
     ),
   );

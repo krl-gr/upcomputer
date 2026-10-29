@@ -147,23 +147,21 @@ describe("hidden upstream features in the web app", () => {
         "auto-settle-inactive-threads",
         "auto-settle-merged-threads",
         "days-before-auto-settle",
-        "device-hosts",
+        "device-sources",
         "agent-device-access",
         "device-hub",
         "device-platform-support",
         "keybinding-terminal.toggle",
         "keybinding-pullRequest.copyNumber",
         "keybinding-thread.settle",
-        "composer-collapse",
         "remove-agent-credits-on-merge",
         "review-guides",
         "review-guide-model",
         "review-guide-instructions",
         "pull-request-links-open-in-app",
-        "new-design",
       ]),
     );
-    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(16);
+    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(14);
     expect(all.find((item) => item.id === "code-font")).toBeDefined();
     expect(isProductSettingsSearchItemVisible({ id: "code-font" })).toBe(true);
   });
@@ -172,12 +170,6 @@ describe("hidden upstream features in the web app", () => {
     expect(isProductSettingsSearchItemVisible({ id: "thread-list" })).toBe(false);
     product.hidden = true;
     expect(isProductSettingsSearchItemVisible({ id: "thread-list" })).toBe(true);
-  });
-
-  it("leaves Collapse composer on scroll to upstream's composer, which can collapse", () => {
-    expect(isProductSettingsSearchItemVisible({ id: "composer-collapse" })).toBe(true);
-    product.hidden = true;
-    expect(isProductSettingsSearchItemVisible({ id: "composer-collapse" })).toBe(false);
   });
 
   it("offers Compact composer only with the UpComputer composer", () => {
