@@ -41,8 +41,8 @@ describe("turning a chat into a bot", () => {
 });
 
 describe("a bot row's context menu", () => {
-  it("offers settings, and the chat's tasks only to a person who may read tasks", () => {
-    expect(botRowMenuEntries(true)).toEqual(["settings", "tasks"]);
+  it("offers the chat's tasks first, only to a person who may read tasks, then settings", () => {
+    expect(botRowMenuEntries(true)).toEqual(["tasks", "settings"]);
     expect(botRowMenuEntries(false)).toEqual(["settings"]);
   });
 });
