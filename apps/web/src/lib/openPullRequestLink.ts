@@ -11,6 +11,7 @@ import {
 import { useOpenLink } from "../browser/useOpenLink";
 import { useClientSettings } from "../hooks/useSettings";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import { isProductFeatureShown } from "../product/productFlags";
 import { useRightPanelStore } from "../rightPanelStore";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -53,6 +54,7 @@ export function useOpenChangeRequestLink(
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const openInApp = useClientSettings((settings) => settings.pullRequestLinksOpenInApp);
   return (event, targetUrl, targetThreadRef, targetEnvironmentId) => {
+    if (!isProductFeatureShown("pullRequests")) return false;
     if (!openInApp || shouldOpenPullRequestExternally(event)) return false;
     // Read at click time: every provider status push replaces the config map, and
     // subscribing would hand every rendered link a new handler. Projects likewise, so a

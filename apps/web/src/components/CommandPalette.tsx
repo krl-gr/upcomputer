@@ -146,6 +146,7 @@ import {
   useCommandPaletteStore,
 } from "../commandPaletteStore";
 import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
+import { isProductFeatureShown } from "../product/productFlags";
 import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
   cn,
@@ -1475,7 +1476,10 @@ function OpenCommandPaletteDialog(props: {
 
   actionItems.push(themeEditorItem);
 
-  if (environments.some((environment) => environment.serverConfig !== null)) {
+  if (
+    isProductFeatureShown("pullRequests") &&
+    environments.some((environment) => environment.serverConfig !== null)
+  ) {
     actionItems.push({
       kind: "action",
       value: "action:pull-requests",
