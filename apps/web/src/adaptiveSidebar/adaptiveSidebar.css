@@ -112,22 +112,39 @@
 }
 
 /*
- * A switch between full and compact: the width eases (upstream's panel
- * transition, or the rail's snap) while the new layout fades in, so neither
- * mode's content is seen at the other's width. `data-panel-animations` is off
- * with reduced motion. Two names, so each switch restarts the fade.
+ * A switch between full and compact (`data-sidebar-switching`, set for its
+ * duration): the width eases while the new layout fades in, so neither mode's
+ * content is seen at the other's width. Unlike upstream's panel transitions it
+ * runs by default, as it only follows a user's switch; the panel duration
+ * setting lengthens it, and reduced motion turns it off. Two names, so each
+ * switch restarts the fade.
  */
-[data-panel-animations="true"][data-sidebar-switching][data-sidebar-compact="true"]
-  [data-app-sidebar]
-  [data-sidebar="sidebar"]
-  > * {
-  animation: sidebar-mode-fade-compact var(--panel-animation-duration) ease-in;
+[data-sidebar-switching] {
+  --sidebar-switch-duration: 160ms;
 }
-[data-panel-animations="true"][data-sidebar-switching][data-sidebar-compact="false"]
-  [data-app-sidebar]
-  [data-sidebar="sidebar"]
-  > * {
-  animation: sidebar-mode-fade-full var(--panel-animation-duration) ease-in;
+[data-panel-animations="true"][data-sidebar-switching] {
+  --sidebar-switch-duration: var(--panel-animation-duration);
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-sidebar-switching]
+    > [data-slot="sidebar"]
+    > :is([data-slot="sidebar-gap"], [data-slot="sidebar-container"]) {
+    transition-property: width;
+    transition-duration: var(--sidebar-switch-duration);
+    transition-timing-function: ease-out;
+  }
+  [data-sidebar-switching][data-sidebar-compact="true"]
+    [data-app-sidebar]
+    [data-sidebar="sidebar"]
+    > * {
+    animation: sidebar-mode-fade-compact var(--sidebar-switch-duration) ease-in;
+  }
+  [data-sidebar-switching][data-sidebar-compact="false"]
+    [data-app-sidebar]
+    [data-sidebar="sidebar"]
+    > * {
+    animation: sidebar-mode-fade-full var(--sidebar-switch-duration) ease-in;
+  }
 }
 @keyframes sidebar-mode-fade-compact {
   from {

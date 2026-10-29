@@ -137,10 +137,10 @@ const switchTimers = new WeakMap<HTMLElement, number>();
 
 /** Marks a switch between full and compact for as long as `adaptiveSidebar.css` fades it in. */
 function markSidebarSwitching(wrapper: HTMLElement) {
-  const duration = Number.parseFloat(
-    getComputedStyle(wrapper).getPropertyValue("--panel-animation-duration"),
-  );
   wrapper.setAttribute("data-sidebar-switching", "");
+  const duration = Number.parseFloat(
+    getComputedStyle(wrapper).getPropertyValue("--sidebar-switch-duration"),
+  );
   window.clearTimeout(switchTimers.get(wrapper));
   switchTimers.set(
     wrapper,
@@ -150,17 +150,16 @@ function markSidebarSwitching(wrapper: HTMLElement) {
 
 /**
  * The rail moves the sidebar without a transition. A snap across the threshold
- * eases like upstream's panel transition instead, then the edge follows the
- * pointer again.
+ * eases like a switch by mod+b instead, then the edge follows the pointer again.
  */
 function setSnapTransition(wrapper: HTMLElement, eased: boolean) {
-  if (wrapper.getAttribute("data-panel-animations") !== "true") return;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const container = wrapper.querySelector<HTMLElement>("[data-app-sidebar]");
   const gap = container?.parentElement?.querySelector<HTMLElement>("[data-slot='sidebar-gap']");
   for (const element of [container, gap]) {
     element?.style.setProperty(
       "transition-duration",
-      eased ? "var(--panel-animation-duration)" : "0ms",
+      eased ? "var(--sidebar-switch-duration)" : "0ms",
     );
   }
 }
