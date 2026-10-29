@@ -25,7 +25,7 @@ import type { PlannerTask } from "../data/pendingOps.ts";
 import type { PlannerKind } from "../data/preferences.ts";
 import { BulkActions } from "./BulkActions.tsx";
 import { IconAction } from "./IconAction.tsx";
-import { KindSelect, KindSwitch } from "./KindSwitch.tsx";
+import { KindSwitch } from "./KindSwitch.tsx";
 import { usePlanner } from "./plannerContext.ts";
 
 export interface PlannerEnvironmentOption {
@@ -82,18 +82,10 @@ export function ListHeader(props: {
           onDelete={props.onDelete}
         />
       ) : (
-        // Tasks / Routines turns into a select below the width the switch needs
-        // (`LIST_HEADER_WIDTH` in `PlannerLayout`). The select wrappers also hold
-        // their hidden form inputs, and shrink, truncating, on a phone.
-        <div className="@container min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
             {props.viewSwitch}
-            <div className="hidden @min-[26.5rem]:flex">
-              <KindSwitch value={kind} onChange={props.onKindChange} />
-            </div>
-            <div className="flex min-w-0 @min-[26.5rem]:hidden">
-              <KindSelect value={kind} onChange={props.onKindChange} />
-            </div>
+            <KindSwitch value={kind} onChange={props.onKindChange} />
             <div className="ml-auto flex items-center gap-1">
               <IconAction
                 label={kind === "routine" ? "New routine" : "New task"}
