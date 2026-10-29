@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
-import { MoreVerticalIcon, Trash2Icon, XIcon } from "lucide-react";
+import { MoreHorizontalIcon, Trash2Icon, XIcon } from "lucide-react";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
@@ -102,7 +102,7 @@ const QueueDayColumn = memo(function QueueDayColumn(props: {
               props.onDayMenu(date, pointBelow(event.currentTarget));
             }}
           >
-            <MoreVerticalIcon />
+            <MoreHorizontalIcon />
           </IconAction>
         </span>
       </div>
