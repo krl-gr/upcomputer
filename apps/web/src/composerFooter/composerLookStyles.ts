@@ -57,9 +57,9 @@ export const COMPOSER_FOOTER_PADDING_CLASS = "px-2 pb-2 dark:px-2.25 dark:pb-2.2
 /**
  * The prompt's padding inside the card; it overrides upstream's on the prompt
  * body. The text starts where the paperclip's icon does, and its first line
- * sits as far below the card's top edge as the paperclip sits from the sides.
+ * sits 4px further below the card's top edge than the paperclip sits from the sides.
  */
-export const COMPOSER_BODY_PADDING_CLASS = "px-4 pt-3 sm:px-4 sm:pt-3";
+export const COMPOSER_BODY_PADDING_CLASS = "px-4 pt-4 sm:px-4 sm:pt-4";
 
 /** V1's one-line prompt minimum: the card grows with the text from there. */
 export const COMPOSER_EDITOR_CLASS = "min-h-8";
