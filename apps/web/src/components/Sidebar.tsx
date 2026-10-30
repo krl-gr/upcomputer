@@ -209,6 +209,7 @@ import {
   resolveSidebarRowThreadId,
 } from "./Sidebar.logic";
 import { projectLinksByKey } from "../linkedProjects/projectScope";
+import { SidebarCompactScroll } from "../adaptiveSidebar/adaptiveSidebar";
 import { SidebarProjectsSection } from "../sidebarProjects/SidebarProjectsSection";
 import {
   SidebarThreadListEmpty,
@@ -3150,12 +3151,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             <ProductSidebarNavigation />
             {productSurface("sidebarProjects") === "upcomputer" ? (
               <>
-                <SidebarProjectsSection
-                  projectGroups={sidebarProjectRowsShown ? projectGroups : EMPTY_PROJECT_GROUPS}
-                  onAddProject={openAddProjectCommandPalette}
-                  loaded={sidebarProjectRowsShown}
-                />
-                <ProductSidebarSections />
+                <SidebarCompactScroll>
+                  <SidebarProjectsSection
+                    projectGroups={sidebarProjectRowsShown ? projectGroups : EMPTY_PROJECT_GROUPS}
+                    onAddProject={openAddProjectCommandPalette}
+                    loaded={sidebarProjectRowsShown}
+                  />
+                  <ProductSidebarSections />
+                </SidebarCompactScroll>
                 {/* Below the Projects rows, so it appears with them rather than moving down. */}
                 {sidebarProjectRowsShown ? (
                   <SidebarThreadsSectionHeader
