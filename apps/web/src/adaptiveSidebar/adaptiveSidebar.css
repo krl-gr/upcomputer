@@ -117,8 +117,14 @@
   justify-content: center;
   padding-inline: 0;
 }
+/* Clipped rather than removed: its text is the button's name. */
 [data-sidebar-compact="true"] [data-app-sidebar] [data-track="sidebar.back"] > span {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /*

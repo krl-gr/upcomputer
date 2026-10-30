@@ -1,9 +1,15 @@
 import "./adaptiveSidebar.css";
 
+import { ArrowLeftIcon } from "lucide-react";
 import { describe, expect, it } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
+import { SidebarMenu, SidebarMenuButton, SidebarProvider } from "../components/ui/sidebar";
+import { SidebarEmptyRow } from "../sidebarProjects/SidebarEmptyRow";
+import { SidebarProjectRow } from "../sidebarProjects/SidebarProjectRow";
 import { SidebarSectionHeader } from "../sidebarProjects/SidebarSectionHeader";
+import { SidebarCompactNewThread, SidebarCompactTooltip } from "./adaptiveSidebar";
 import { SIDEBAR_COMPACT_WIDTH } from "./sidebarWidthMode";
 
 const SECTIONS = [
@@ -84,5 +90,64 @@ describe("compact sidebar sections", () => {
     await expect.element(screen.getByText("Projects row")).toBeVisible();
     await expect.element(screen.getByText("Thread list")).toBeVisible();
     expect(shown(screen.container.querySelector("[data-sidebar-compact-new-thread]"))).toBe(false);
+  });
+
+  it("names every compact row, which shows only its icon", async () => {
+    await page.viewport(1280, 800);
+    localStorage.setItem("upcomputer:sidebar-compact", "true");
+    using _stored = {
+      [Symbol.dispose]: () => localStorage.removeItem("upcomputer:sidebar-compact"),
+    };
+    await using screen = await render(
+      <SidebarProvider>
+        <div data-sidebar-compact="true">
+          <div data-app-sidebar="">
+            <SidebarMenu>
+              <SidebarCompactTooltip label="Tasks">
+                <SidebarMenuButton>
+                  <span>I</span>
+                  <span>Tasks</span>
+                  <span>3</span>
+                </SidebarMenuButton>
+              </SidebarCompactTooltip>
+              <SidebarProjectRow
+                label="Alpha"
+                icon={<span>A</span>}
+                isActive={false}
+                newChatLabel="New chat in Alpha"
+                onSelect={() => {}}
+                onNewChat={() => {}}
+              />
+              <SidebarEmptyRow label="Add a project" onClick={() => {}} />
+            </SidebarMenu>
+            <SidebarCompactTooltip label="Ada: Waiting for your answer">
+              <div role="button" tabIndex={0} data-sidebar-list-row="">
+                <span>F</span>
+                <span>Ada</span>
+              </div>
+            </SidebarCompactTooltip>
+            <SidebarCompactNewThread tooltip="New thread (mod+N)" onClick={() => {}} />
+            <div data-sidebar="footer">
+              <SidebarMenu>
+                <SidebarMenuButton data-track="sidebar.back">
+                  <ArrowLeftIcon />
+                  <span>Back</span>
+                </SidebarMenuButton>
+              </SidebarMenu>
+            </div>
+          </div>
+        </div>
+      </SidebarProvider>,
+    );
+    for (const name of [
+      "Tasks",
+      "Alpha",
+      "Add a project",
+      "Ada: Waiting for your answer",
+      "New thread",
+      "Back",
+    ]) {
+      await expect.element(screen.getByRole("button", { name, exact: true })).toBeVisible();
+    }
   });
 });

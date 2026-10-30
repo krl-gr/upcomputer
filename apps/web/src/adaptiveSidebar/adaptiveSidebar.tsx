@@ -6,7 +6,6 @@ import {
   useSyncExternalStore,
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
-  type ReactNode,
 } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
@@ -260,13 +259,14 @@ export function useSidebarFooterTooltipSide(): "top" | "right" {
  * where the row shows only its icon. `children` is the row element.
  */
 export function SidebarCompactTooltip(props: {
-  readonly label: ReactNode;
+  readonly label: string;
   readonly children: ReactElement<Record<string, unknown>>;
 }) {
   const compact = useSidebarCompact();
   return (
     <Tooltip disabled={!compact}>
-      <TooltipTrigger render={props.children} />
+      {/* The tooltip names nothing, and compact rows hide their text. A row's own aria-label wins. */}
+      <TooltipTrigger render={props.children} aria-label={compact ? props.label : undefined} />
       <TooltipPopup side="right">{props.label}</TooltipPopup>
     </Tooltip>
   );
