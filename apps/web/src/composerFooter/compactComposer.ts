@@ -110,7 +110,7 @@ export interface CompactPromptMeasurement {
   readonly textWidth: number;
   /** The full composer's prompt line. */
   readonly fullLineWidth: number;
-  /** The compact row's prompt line up to its fade. */
+  /** The compact row's prompt line, ending a couple of characters before its fade. */
   readonly compactLineWidth: number;
 }
 
@@ -154,13 +154,22 @@ export function useCompactPromptReachesFade(): readonly [
   const [reachesFade, setReachesFade] = useState(false);
   const [fit] = useState(createCompactPromptFit);
   const observeBody = (body: HTMLElement | null) => {
-    const editor = body?.querySelector<HTMLElement>('[data-testid="composer-editor"]');
-    if (!body || !editor) return;
+    if (!body) return;
+    // The body outlives the editor, which remounts for each draft, so look it up on every measure.
+    let editor: HTMLElement | null = null;
+    let stopObservingEditor: (() => void) | undefined;
     const measure = () => {
-      if (editor.clientWidth === 0) return;
+      const current = body.querySelector<HTMLElement>('[data-testid="composer-editor"]');
+      if (current !== editor) {
+        stopObservingEditor?.();
+        editor = current;
+        stopObservingEditor = current ? observeResize(current, measure) : undefined;
+      }
+      if (!editor || editor.clientWidth === 0) return;
       const bodyStyle = getComputedStyle(body);
       const editorStyle = getComputedStyle(editor);
-      const fade = COMPACT_FADE_REM * px(getComputedStyle(document.documentElement).fontSize);
+      const lineEnd =
+        COMPACT_LINE_END_REM * px(getComputedStyle(document.documentElement).fontSize);
       setReachesFade(
         fit({
           compact:
@@ -170,24 +179,28 @@ export function useCompactPromptReachesFade(): readonly [
           textWidth: textWidth(editor),
           fullLineWidth: body.clientWidth - px(bodyStyle.paddingLeft) - px(bodyStyle.paddingRight),
           compactLineWidth:
-            editor.clientWidth - px(editorStyle.paddingLeft) - px(editorStyle.paddingRight) - fade,
+            editor.clientWidth -
+            px(editorStyle.paddingLeft) -
+            px(editorStyle.paddingRight) -
+            lineEnd,
         }),
       );
     };
     measure();
-    const stopObserving = observeResize([body, editor], measure);
+    const stopObservingBody = observeResize(body, measure);
     const mutationObserver = new MutationObserver(measure);
     mutationObserver.observe(body, { childList: true, characterData: true, subtree: true });
     return () => {
-      stopObserving();
+      stopObservingBody();
+      stopObservingEditor?.();
       mutationObserver.disconnect();
     };
   };
   return [reachesFade, observeBody] as const;
 }
 
-/** The width of the editor's fade in the compact row: the `1.5rem` of its mask. */
-const COMPACT_FADE_REM = 1.5;
+/** The compact line ends about two characters before the editor's `1.5rem` fade, so the text and caret stay clear of it. */
+const COMPACT_LINE_END_REM = 1.5 + 1;
 
 /*
  * The compact row's geometry: the footer overlays the card with only the paperclip and the

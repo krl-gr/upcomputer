@@ -27,12 +27,13 @@ vi.mock("../product/productFlags", async (importOriginal) => ({
   productSurface: () => surface.composerFooter,
 }));
 
-const { act, useEffect } = await import("react");
+const { act, useEffect, useState } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const {
   createCompactPromptFit,
   isComposerCompact,
   useCompactComposerChat,
+  useCompactPromptReachesFade,
   useIsCompactComposerChat,
 } = await import("./compactComposer");
 const { scopedThreadKey, scopeThreadRef } = await import("@t3tools/client-runtime/environment");
@@ -98,6 +99,75 @@ describe("createCompactPromptFit", () => {
 
   it("leaves the full form alone until it has been compact", () => {
     expect(createCompactPromptFit()({ ...full, textWidth: 750 })).toBe(false);
+  });
+});
+
+describe("useCompactPromptReachesFade", () => {
+  let container: HTMLDivElement;
+  let root: import("react-dom/client").Root;
+  let reachesFade: boolean | null = null;
+  let restore: () => void = () => {};
+
+  // A 900px body around an 800px editor; each character is 10px wide.
+  function Composer(props: { readonly draftKey: string; readonly text: string }) {
+    const [long, observeBody] = useCompactPromptReachesFade();
+    // React Compiler keeps the composer body's ref callback, so it runs once per mount.
+    const [bodyRef] = useState(() => observeBody);
+    useEffect(() => {
+      reachesFade = long;
+    }, [long]);
+    return (
+      <div data-chat-composer-surface="true">
+        <div ref={bodyRef} data-width="900">
+          <div key={props.draftKey} data-testid="composer-editor" data-width="800">
+            {props.text}
+          </div>
+        </div>
+        <div data-composer-footer-compact="true" />
+      </div>
+    );
+  }
+
+  beforeEach(() => {
+    document.documentElement.style.fontSize = "16px";
+    const clientWidth = vi
+      .spyOn(Element.prototype, "clientWidth", "get")
+      .mockImplementation(function (this: Element) {
+        return this.isConnected ? Number(this.getAttribute("data-width") ?? 0) : 0;
+      });
+    const rangeRect = Range.prototype.getBoundingClientRect;
+    Range.prototype.getBoundingClientRect = function (this: Range) {
+      return { width: this.toString().length * 10 } as DOMRect;
+    };
+    restore = () => {
+      clientWidth.mockRestore();
+      Range.prototype.getBoundingClientRect = rangeRect;
+      document.documentElement.style.fontSize = "";
+    };
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    restore();
+  });
+
+  it("goes full a couple of characters before the fade", async () => {
+    // The fade starts 24px before the editor's end, the switch 16px before that: at 760px.
+    await act(async () => root.render(<Composer draftKey="a" text={"x".repeat(75)} />));
+    expect(reachesFade).toBe(false);
+    await act(async () => root.render(<Composer draftKey="a" text={"x".repeat(77)} />));
+    expect(reachesFade).toBe(true);
+  });
+
+  it("measures the editor a new draft mounts", async () => {
+    await act(async () => root.render(<Composer draftKey="a" text="hi" />));
+    expect(reachesFade).toBe(false);
+    await act(async () => root.render(<Composer draftKey="b" text={"x".repeat(85)} />));
+    expect(reachesFade).toBe(true);
   });
 });
 
