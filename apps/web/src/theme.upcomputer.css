@@ -137,3 +137,28 @@ html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
   *:not([style*="transition"]) {
   transition: none;
 }
+
+/*
+ * Upstream's outline buttons and select triggers draw a plain 1px border like the light
+ * composer card, with no drop shadow or inset highlight. Focus keeps its ring.
+ */
+:is(.border-input.bg-popover, [data-slot="select-trigger"].border-input) {
+  border-color: var(--border);
+}
+:is(.border-input.bg-popover, [data-slot="select-trigger"].border-input):not(:focus-visible) {
+  box-shadow: none;
+}
+:is(.border-input.bg-popover, [data-slot="select-trigger"].border-input)::before {
+  box-shadow: none;
+}
+/* Small select triggers round like the buttons beside them. */
+[data-slot="select-trigger"].rounded-md {
+  border-radius: var(--control-radius);
+}
+/* Segmented controls: the same plain frame, and the picked segment has no shadow. */
+[data-slot="toggle-group"][data-variant="segmented-outline"] {
+  border-color: var(--border);
+}
+[data-slot="toggle-group"][data-variant^="segmented"] > [data-pressed]:not(:focus-visible) {
+  box-shadow: none;
+}
