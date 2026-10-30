@@ -5,10 +5,13 @@ import { cn } from "../../../../../apps/web/src/lib/utils.ts";
 import { LIST_HEADER_WIDTH, MIN_LIST_WIDTH, MIN_WEEK_WIDTH } from "../logic/plannerWidth.ts";
 import { snapStackedWeek, type StackedWeek } from "../logic/stackedWeek.ts";
 
-/** The week's height under the week header; the list header keeps its row. */
+/**
+ * The height of the week with its header, which fold away together; the list
+ * header keeps its row (about the title bar's height).
+ */
 const STACKED_HEIGHTS: Record<StackedWeek, string> = {
   hidden: "0px",
-  split: "calc((100% - var(--workspace-topbar-height)) * 0.4)",
+  split: "calc(var(--workspace-topbar-height) + (100% - var(--workspace-topbar-height)) * 0.4)",
   full: "calc(100% - var(--workspace-topbar-height))",
 };
 
@@ -106,19 +109,23 @@ export function PlannerLayout(props: {
       </div>
     );
 
+  const weekGone = stacked === "hidden" && dragHeight === null;
   return (
     <div className="absolute inset-0 flex min-h-0 flex-col overflow-hidden">
-      {props.weekHeader}
       <div ref={container} className="relative flex min-h-0 flex-1 flex-col">
         <div
-          className="relative min-h-0 shrink-0 overflow-hidden"
+          className="relative flex min-h-0 shrink-0 flex-col overflow-hidden"
           style={{ height: dragHeight ?? STACKED_HEIGHTS[stacked] }}
         >
-          {props.week}
+          <div className="shrink-0">{props.weekHeader}</div>
+          <div className="relative min-h-0 flex-1">{props.week}</div>
         </div>
         <div className="relative z-10 flex h-0 justify-center">
           <div
-            className="-mt-2.5 h-5 w-12 cursor-ns-resize touch-none rounded-full border bg-background shadow-sm"
+            className={cn(
+              "h-5 w-12 cursor-ns-resize touch-none rounded-full border bg-background shadow-sm",
+              weekGone ? "mt-1" : "-mt-2.5",
+            )}
             role="separator"
             aria-orientation="horizontal"
             aria-label="Resize the week"
@@ -147,13 +154,7 @@ export function PlannerLayout(props: {
             }}
           />
         </div>
-        <div
-          ref={listPane}
-          className={cn(
-            "relative flex min-h-0 flex-1 flex-col",
-            (stacked !== "hidden" || dragHeight !== null) && "border-t",
-          )}
-        >
+        <div ref={listPane} className="relative flex min-h-0 flex-1 flex-col border-t">
           {props.listHeader}
           <div
             className={cn(
