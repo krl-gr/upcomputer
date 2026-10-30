@@ -586,9 +586,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "composer-compact",
-    title: "Compact composer",
+    title: "Full composer in bot chats",
     to: "/settings/chat",
-    searchTerms: ["composer one line single line focus collapse shrink minimize footer model"],
+    searchTerms: ["composer bots compact one line single line expand footer model controls"],
   },
   {
     id: "send-shortcut",

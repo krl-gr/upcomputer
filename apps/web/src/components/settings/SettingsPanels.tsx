@@ -480,7 +480,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Show skills in slash menu"]
       : []),
     ...(settings.composerCompact !== DEFAULT_UNIFIED_SETTINGS.composerCompact
-      ? ["Compact composer"]
+      ? ["Full composer in bot chats"]
       : []),
     ...(settings.composerRichTextEnabled !== DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled
       ? ["Rich text composer"]
@@ -1056,11 +1056,11 @@ export function ChatSettingsPanel() {
       <SettingsSection id="composer" title="Composer">
         <SettingsRow
           {...searchableSetting("composer-compact")}
-          description="Show the composer as one line while you are not typing in it. Click it or start typing to see the model and other controls."
+          description="Show the model and other controls in bot chats too, instead of one line that grows as you write."
           resetAction={
             settings.composerCompact !== DEFAULT_UNIFIED_SETTINGS.composerCompact ? (
               <SettingResetButton
-                label="compact composer"
+                label="full composer in bot chats"
                 onClick={() =>
                   updateSettings({ composerCompact: DEFAULT_UNIFIED_SETTINGS.composerCompact })
                 }
@@ -1069,9 +1069,9 @@ export function ChatSettingsPanel() {
           }
           control={
             <Switch
-              checked={settings.composerCompact}
-              onCheckedChange={(checked) => updateSettings({ composerCompact: Boolean(checked) })}
-              aria-label="Compact composer"
+              checked={!settings.composerCompact}
+              onCheckedChange={(checked) => updateSettings({ composerCompact: !checked })}
+              aria-label="Full composer in bot chats"
             />
           }
         />
