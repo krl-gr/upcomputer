@@ -12,6 +12,7 @@ import { usePlanner } from "./plannerContext.ts";
 import { PointMenu, type MenuPoint } from "./PointMenu.tsx";
 import { ConfirmDeleteDialog, MoveBelowDialog } from "./TaskDialogs.tsx";
 import { TaskRow } from "./TaskRow.tsx";
+import { LIST_CLASS, LIST_SCROLL_CLASS } from "./rowShell.ts";
 
 export interface ListDropIndicator {
   readonly taskId: string;
@@ -89,8 +90,8 @@ export function TaskList(props: {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto scrollbar-gutter-both">
-        <div className={props.centered ? "mx-auto w-full max-w-3xl py-2" : "w-full py-2"}>
+      <div ref={scrollRef} className={LIST_SCROLL_CLASS}>
+        <div className={props.centered ? `mx-auto max-w-3xl ${LIST_CLASS}` : LIST_CLASS}>
           {firstPageLoading ? null : results.length === 0 &&
             !props.showArchived &&
             kind === "task" ? (

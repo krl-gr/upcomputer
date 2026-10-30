@@ -22,6 +22,13 @@ import { IconAction } from "./IconAction.tsx";
 import { ProjectChip } from "./ProjectChip.tsx";
 import { usePlanner } from "./plannerContext.ts";
 import { pointBelow, type MenuPoint } from "./PointMenu.tsx";
+import {
+  ROW_CHIPS_CLASS,
+  ROW_CLASS,
+  ROW_DRAGGING_CLASS,
+  ROW_HOVER_CLASS,
+  ROW_TITLE_CLASS,
+} from "./rowShell.ts";
 import { RunSummary } from "./RunSummary.tsx";
 
 export function isFinished(task: PlannerTask) {
@@ -96,7 +103,8 @@ function TitleArea(props: {
     <div
       ref={ref}
       className={cn(
-        "min-h-[1lh] w-full cursor-text whitespace-pre-wrap break-words text-sm font-medium text-foreground outline-none",
+        ROW_TITLE_CLASS,
+        "min-h-[1lh] cursor-text whitespace-pre-wrap outline-none",
         props.done && "text-muted-foreground line-through",
       )}
       {...(props.editing
@@ -185,9 +193,9 @@ export const TaskRow = memo(function TaskRow(props: TaskRowProps) {
         {...(editing ? {} : attributes)}
         {...(editing ? {} : listeners)}
         className={cn(
-          "mx-2 min-w-0 rounded-xl px-3 py-3 transition-colors",
+          ROW_CLASS,
           editing ? "cursor-text" : "cursor-grab",
-          isDragging ? "opacity-50" : "hover:bg-accent/60",
+          isDragging ? ROW_DRAGGING_CLASS : ROW_HOVER_CLASS,
         )}
         data-task-id={task.id}
         onContextMenu={openMenu}
@@ -199,7 +207,7 @@ export const TaskRow = memo(function TaskRow(props: TaskRowProps) {
           onEditingChange={setEditing}
           onSave={(title) => void store.updateTask(task.id, { title })}
         />
-        <div className="-ml-1 mt-2 flex min-w-0 flex-wrap items-center gap-1">
+        <div className={ROW_CHIPS_CLASS}>
           <ProjectChip
             projects={projects}
             value={task.projectId}
