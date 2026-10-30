@@ -121,6 +121,17 @@ html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
   }
 }
 
+/* The compact column scrolls under a titlebar row placed against the sidebar's
+ * container (`adaptiveSidebar.css`); a filter here would hold that row in the
+ * scroll, and it changes no pixel anyway. */
+html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
+  [data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-slot="sidebar-inner"] {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 /* Nothing in the translucent sidebar animates: no status pulses, spinners or
  * hover fades. Drag and drop keeps its motion (dnd-kit sets it inline while a
  * row moves) and the drag label keeps its one-step reveal. */

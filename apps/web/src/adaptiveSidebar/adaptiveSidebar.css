@@ -74,6 +74,32 @@
   display: flex;
 }
 
+/*
+ * Below the traffic lights the column scrolls as one, footer included, without
+ * a scrollbar. The transparent top border keeps the sidebar's background and
+ * clips the scrolled content under the titlebar row, which is positioned
+ * against the container so it stays in place. When everything fits, the empty
+ * thread list still pushes the footer to the bottom of the window.
+ */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar="sidebar"] {
+  border-top: var(--workspace-topbar-height) solid transparent;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar="sidebar"] > :first-child {
+  position: absolute;
+  inset: 0 0 auto;
+}
+/* At the end of the scroll the footer keeps the 28px gap below New thread. */
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-sidebar="sidebar"]
+  > :has(> [data-slot="scroll-area-viewport"] > [data-slot="sidebar-content"]) {
+  min-height: 1.25rem;
+}
+
 /* Search opens the command palette: the field needs the full width. */
 [data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-compact-search] {
   display: flex;
