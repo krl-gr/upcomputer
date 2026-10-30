@@ -407,13 +407,22 @@ export function createComputerUseService(
       try {
         status = "starting";
         const backendArgs = normalizeComputerUseBackendArgs(tool.backendName, input.args);
+        const resolvedSettings = executionSettings(settings);
         const result = await client.callTool({
-          settings: executionSettings(settings),
+          settings: resolvedSettings,
           backendName: tool.backendName,
           args: backendArgs,
         });
         status = "ready";
         lastError = undefined;
+        if (lastBackendToolNames.size === 0) {
+          // A call can be what starts the backend, so record its tools once here.
+          // A failed listing must not fail a call that already ran.
+          lastBackendToolNames = await client
+            .listTools(resolvedSettings)
+            .then((tools) => new Set(tools.map((backendTool) => backendTool.name)))
+            .catch(() => lastBackendToolNames);
+        }
         return resultFromMcp({
           toolName: input.toolName,
           backendName: tool.backendName,
