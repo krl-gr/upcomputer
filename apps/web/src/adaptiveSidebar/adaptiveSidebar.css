@@ -42,12 +42,7 @@
   border-radius: 0.875rem;
   overflow: visible;
 }
-/* Equal 28px between groups: bots space by the menu's gap, New thread gets the 4px the other sections' menus add. */
-[data-sidebar-compact="true"]
-  [data-app-sidebar]
-  [data-sidebar="menu"]:has([data-sidebar-list-row]) {
-  row-gap: 10px;
-}
+/* Equal 28px between groups: New thread gets the 4px the other sections' menus add. */
 [data-sidebar-compact="true"]
   [data-app-sidebar]
   [data-sidebar-threads-section]
