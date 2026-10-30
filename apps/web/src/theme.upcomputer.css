@@ -140,25 +140,35 @@ html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
 
 /*
  * Upstream's outline buttons and select triggers draw a plain 1px border like the light
- * composer card, with no drop shadow or inset highlight. Focus keeps its ring.
+ * composer card, with no drop shadow or inset highlight. Focus keeps its ring, and states
+ * that recolour the border keep it: a destructive button's hover and press, a select's
+ * focus and invalid value.
  */
-:is(.border-input.bg-popover, [data-slot="select-trigger"].border-input) {
+html[data-theme-id="upcomputer"]
+  :is(
+    .border-input.bg-popover:not(.text-destructive-foreground:is(:hover, [data-pressed])),
+    [data-slot="select-trigger"].border-input:not(:focus-visible, [aria-invalid="true"])
+  ) {
   border-color: var(--border);
 }
-:is(.border-input.bg-popover, [data-slot="select-trigger"].border-input):not(:focus-visible) {
+html[data-theme-id="upcomputer"]
+  :is(.border-input.bg-popover, [data-slot="select-trigger"].border-input):not(:focus-visible) {
   box-shadow: none;
 }
-:is(.border-input.bg-popover, [data-slot="select-trigger"].border-input)::before {
+html[data-theme-id="upcomputer"]
+  :is(.border-input.bg-popover, [data-slot="select-trigger"].border-input)::before {
   box-shadow: none;
 }
 /* Small select triggers round like the buttons beside them. */
-[data-slot="select-trigger"].rounded-md {
+html[data-theme-id="upcomputer"] [data-slot="select-trigger"].rounded-md {
   border-radius: var(--control-radius);
 }
 /* Segmented controls: the same plain frame, and the picked segment has no shadow. */
-[data-slot="toggle-group"][data-variant="segmented-outline"] {
+html[data-theme-id="upcomputer"] [data-slot="toggle-group"][data-variant="segmented-outline"] {
   border-color: var(--border);
 }
-[data-slot="toggle-group"][data-variant^="segmented"] > [data-pressed]:not(:focus-visible) {
+html[data-theme-id="upcomputer"]
+  [data-slot="toggle-group"][data-variant^="segmented"]
+  > [data-pressed]:not(:focus-visible) {
   box-shadow: none;
 }
