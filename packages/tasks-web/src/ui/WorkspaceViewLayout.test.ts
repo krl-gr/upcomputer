@@ -49,9 +49,12 @@ test("the Tasks header keeps its project, status, last-run and tag filters", () 
     tasksView.indexOf("onNavigateBack={"),
   );
   NodeAssert.match(toolbar, /\{props\.projectSelect\}/);
-  NodeAssert.match(toolbar, /aria-label="Filter by status"/);
-  NodeAssert.match(toolbar, /aria-label="Filter by last run"/);
-  NodeAssert.match(toolbar, /<TagFilterCombobox/);
+  NodeAssert.match(toolbar, /<TaskFilterRow/);
+  NodeAssert.match(toolbar, /<TaskFiltersButton/);
+  const filters = NodeFS.readFileSync(new URL("./TaskFilters.tsx", import.meta.url), "utf8");
+  NodeAssert.match(filters, /aria-label="Filter by status"/);
+  NodeAssert.match(filters, /aria-label="Filter by last run"/);
+  NodeAssert.match(filters, /<TagFilterCombobox/);
 });
 
 test("Tasks and Agents share one project select, apart from the sidebar's scope", () => {

@@ -1,5 +1,13 @@
 /* oxlint-disable t3code/no-native-title-tooltip -- ported V1 Tasks UI; moves to Tooltip with the product UI phase. */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ArrowLeftIcon, GripVerticalIcon } from "lucide-react";
 import {
   TASK_HISTORY_EVENT_KINDS,
@@ -46,13 +54,17 @@ import {
 import {
   agentTriggerTags,
   ALL_FILTER,
-  ARCHIVE_OPTIONS,
-  LAST_RUN_OPTIONS,
   matchesLastRunFilter,
   type TasksPageFilters,
 } from "./pageFilters.ts";
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
-import { TagFilterCombobox } from "./TagFilterCombobox.tsx";
+import { TaskCard } from "./TaskCard.tsx";
+import { TaskFilterRow, TaskFiltersButton } from "./TaskFilters.tsx";
+import { taskListLayout } from "./taskListLayout.ts";
+import { isInboxRoot, type PlannerProject } from "../planner/ui/ProjectChip.tsx";
+import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";
+import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
+import { observeResize } from "../../../../apps/web/src/lib/observeResize.ts";
 import { TableRunCounts } from "./RunCountNumbers.tsx";
 import { TaskHistory, taskHistoryEntries } from "./TaskHistory.tsx";
 import { TaskTagChips } from "./TaskTagChips.tsx";
@@ -74,7 +86,7 @@ const STATUS_ORDER = [
 ];
 
 type InlineTaskUpdate = Partial<
-  Pick<ScopedTask, "title" | "description" | "status" | "tags" | "audience">
+  Pick<ScopedTask, "title" | "description" | "status" | "tags" | "audience" | "projectId">
 >;
 
 interface TaskFormState {
@@ -97,8 +109,10 @@ export interface TasksViewProps {
   readonly statuses: readonly string[];
   /** The header's shared project choice; null is All projects. */
   readonly projectFilter: ViewProjectFilter | null;
-  /** The shared project select, shown at the right of the header. */
+  /** The shared project select: at the right of the wide header, in the narrow one's filters. */
   readonly projectSelect?: ReactNode;
+  /** Sets the shared project choice back to All projects, for the filters' Reset. */
+  readonly onProjectFilterReset?: () => void;
   /** The Me / Workers switch and the Tasks / Automations switch, at the left of the header. */
   readonly viewSwitch?: ReactNode;
   /** Task status (server), last run (client), tags (server, all required) and archive (server). */
@@ -125,7 +139,7 @@ export interface TasksViewProps {
   readonly onOpenThread: (environmentId: EnvironmentId, threadId: ThreadId) => void;
   /** Opens a task's window in the planner, where a task taken back from agents goes. */
   readonly onOpenInPlanner?: (environmentId: EnvironmentId, taskId: string) => void;
-  /** `panel` fits a right-panel surface: wrapped filters, a narrow list, stacked details. */
+  /** `panel` fits a right-panel surface: cards, filters behind a button, stacked details. */
   readonly layout?: "page" | "panel";
 }
 
@@ -262,8 +276,19 @@ export function TasksView(props: TasksViewProps) {
   const [updatingField, setUpdatingField] = useState<string | null>(null);
   const { projectFilter, filters, onFiltersChange } = props;
   const panel = props.layout === "panel";
-  // In the panel, filters grow to fill the rows they wrap into.
-  const filterWidth = (width: string) => `${width} shrink-0${panel ? " grow" : ""}`;
+  // The list's own width picks table or cards; the first measurement lands before paint.
+  const [listElement, setListElement] = useState<HTMLDivElement | null>(null);
+  const [listWidth, setListWidth] = useState<number | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- follows the list element's DOM width
+  useLayoutEffect(() => {
+    if (!listElement) return;
+    setListWidth(listElement.getBoundingClientRect().width);
+    return observeResize(listElement, (entries) => {
+      const entry = entries.at(-1);
+      if (entry) setListWidth(entry.contentRect.width);
+    });
+  }, [listElement]);
+  const cards = taskListLayout({ panel, width: listWidth }) === "cards";
   const statusFilter = filters.status;
   const archiveFilter: TaskArchiveFilter = filters.archive ?? "active";
   const [history, setHistory] = useState<{
@@ -306,6 +331,21 @@ export function TasksView(props: TasksViewProps) {
     () => new Map(props.projects.map((project) => [projectKey(project), project] as const)),
     [props.projects],
   );
+  // A card's project chip offers the projects of its task's environment.
+  const plannerProjectsByEnvironment = useMemo(() => {
+    const byEnvironment = new Map<EnvironmentId, PlannerProject[]>();
+    for (const project of props.projects) {
+      const list = byEnvironment.get(project.environmentId) ?? [];
+      list.push({
+        id: project.id,
+        name: project.name,
+        favicon: project.favicon,
+        inbox: isInboxRoot(project.workspaceRoot),
+      });
+      byEnvironment.set(project.environmentId, list);
+    }
+    return byEnvironment;
+  }, [props.projects]);
   const selectedTaskProject = selectedTask
     ? (projectsByKey.get(taskProjectKey(selectedTask)) ?? null)
     : null;
@@ -385,6 +425,23 @@ export function TasksView(props: TasksViewProps) {
       }
     },
     [filteredTasks, optimisticTasks, props],
+  );
+
+  const dropOn = (task: ScopedTaskListItem) => {
+    const dragged = optimisticTasks.find((candidate) => taskKey(candidate) === draggedTaskKey);
+    setDraggedTaskKey(null);
+    if (dragged && taskKey(dragged) !== taskKey(task)) void persistVisibleMove(dragged, task);
+  };
+  const reorderHandle = (task: ScopedTaskListItem) => (
+    <TaskReorderHandle
+      task={task}
+      enabled={props.canMutateEnvironment(task.environmentId)}
+      onDragStart={() => setDraggedTaskKey(taskKey(task))}
+      onDragEnd={() => setDraggedTaskKey(null)}
+      onMove={(direction) => {
+        void persistVisibleMove(task, direction);
+      }}
+    />
   );
 
   const openCreate = useCallback(() => {
@@ -821,90 +878,28 @@ export function TasksView(props: TasksViewProps) {
         ) : createModeOpen ? undefined : (
           <>
             {props.viewSwitch}
-            {panel ? null : <span className="min-w-0 flex-1" />}
-            {props.projectSelect}
-            <Select
-              value={statusFilter}
-              onValueChange={(value) => {
-                if (value) onFiltersChange({ ...filters, status: value });
-              }}
-            >
-              <SelectTrigger
-                className={filterWidth("w-40")}
-                size="sm"
-                aria-label="Filter by status"
-              >
-                <SelectValue>
-                  {statusFilter === ALL_FILTER ? "All statuses" : statusFilter}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                <SelectItem value={ALL_FILTER}>All statuses</SelectItem>
-                {statusOptions.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {status}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-            <Select
-              value={filters.lastRun}
-              onValueChange={(value) => {
-                if (value) onFiltersChange({ ...filters, lastRun: value });
-              }}
-            >
-              <SelectTrigger
-                className={filterWidth("w-36")}
-                size="sm"
-                aria-label="Filter by last run"
-                title="Status of each task's latest run"
-              >
-                <SelectValue>
-                  {filters.lastRun === ALL_FILTER
-                    ? "Any last run"
-                    : (LAST_RUN_OPTIONS.find((option) => option.value === filters.lastRun)?.label ??
-                      filters.lastRun)}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                <SelectItem value={ALL_FILTER}>Any last run</SelectItem>
-                {LAST_RUN_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-            <TagFilterCombobox
-              tags={tagOptions}
-              value={filters.tags}
-              onChange={(tags) => onFiltersChange({ ...filters, tags })}
-              className={filterWidth("w-40")}
-            />
-            <Select
-              value={archiveFilter}
-              onValueChange={(value) => {
-                const option = ARCHIVE_OPTIONS.find((candidate) => candidate.value === value);
-                if (option) onFiltersChange({ ...filters, archive: option.value });
-              }}
-            >
-              <SelectTrigger
-                className={filterWidth("w-44")}
-                size="sm"
-                aria-label="Filter by archive"
-              >
-                <SelectValue>
-                  {ARCHIVE_OPTIONS.find((option) => option.value === archiveFilter)?.label}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                {ARCHIVE_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
+            <span className="min-w-0 flex-1" />
+            {cards ? (
+              <TaskFiltersButton
+                filters={filters}
+                onFiltersChange={onFiltersChange}
+                statusOptions={statusOptions}
+                tagOptions={tagOptions}
+                projectSelect={props.projectSelect}
+                projectChosen={projectFilter !== null}
+                onProjectReset={() => props.onProjectFilterReset?.()}
+              />
+            ) : (
+              <>
+                {props.projectSelect}
+                <TaskFilterRow
+                  filters={filters}
+                  onFiltersChange={onFiltersChange}
+                  statusOptions={statusOptions}
+                  tagOptions={tagOptions}
+                />
+              </>
+            )}
           </>
         )
       }
@@ -1364,179 +1359,213 @@ export function TasksView(props: TasksViewProps) {
           </div>
         </div>
       ) : (
-        <div className={`flex w-full min-w-0 flex-col ${panel ? "gap-3 py-3" : "gap-5 py-6"}`}>
-          {environmentCount > 1 ? (
-            <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-              Task order is global within each connected environment. Environments are grouped
-              deterministically, and tasks cannot be dragged across that storage boundary.
-            </div>
-          ) : null}
-          {hasReadOnlyProjects ? (
-            <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-              Existing tasks from unavailable or expired extensions remain readable. Mutation
-              controls are hidden for those environments.
-            </div>
-          ) : null}
-          {selectedTaskKey ? (
-            <p className="text-sm text-muted-foreground">{detailError ?? "Loading task…"}</p>
-          ) : null}
-          {props.status === "error" ? (
-            <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-              Up.computer couldn't load your tasks. {props.errorMessage ?? "Try again."}
-              <button type="button" className="ml-3 underline" onClick={props.onReload}>
-                Retry
-              </button>
-            </div>
-          ) : props.status === "offline" && props.tasks.length > 0 ? (
-            <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-              {TASKS_OFFLINE_TEXT}
-            </div>
-          ) : null}
-
-          {props.tasks.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border px-4 py-16 text-center text-sm text-muted-foreground">
-              {props.status === "loading"
-                ? "Loading tasks..."
-                : props.status === "offline"
-                  ? TASKS_OFFLINE_TEXT
-                  : projectFilter !== null ||
-                      statusFilter !== ALL_FILTER ||
-                      filters.tags.length > 0 ||
-                      archiveFilter !== "active"
-                    ? "No tasks match the current filters."
-                    : "No tasks yet"}
-            </div>
-          ) : filteredTasks.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border px-4 py-16 text-center text-sm text-muted-foreground">
-              No tasks match the current filters.
-            </div>
-          ) : (
-            <div className="min-w-0 overflow-x-auto">
-              {/* Auto layout: Runs (w-px) is as narrow as its numbers, and Title (max-w-0) truncates
-                  and takes the width the other columns leave. */}
-              {/* The panel's narrow list has no minimum width: tags move under the title. */}
-              <table
-                className={`w-full border-collapse text-left text-sm ${panel ? "" : "min-w-[920px]"}`}
+        // Measured: as wide as the content in either layout. Cards run edge to edge in the
+        // planner list's own scroller and column, so both lists match.
+        <div
+          ref={setListElement}
+          className={cards ? "flex min-h-0 w-full min-w-0 flex-1 flex-col" : "w-full min-w-0"}
+        >
+          <div
+            className={
+              cards
+                ? `${LIST_SCROLL_CLASS} -mr-(--workspace-gutter-end) -ml-(--workspace-gutter-start)`
+                : `flex w-full min-w-0 flex-col ${panel ? "gap-3 py-3" : "gap-5 py-6"}`
+            }
+          >
+            <div className={cards ? `flex flex-col ${LIST_CLASS}` : "contents"}>
+              <div
+                className={
+                  cards
+                    ? "flex flex-col gap-3 pr-(--workspace-gutter-end) pb-2 pl-(--workspace-gutter-start) empty:hidden"
+                    : "contents"
+                }
               >
-                <thead className="border-b border-border text-muted-foreground">
-                  <tr>
-                    <th className={`${panel ? "w-8" : "w-12"} py-3 pr-2 font-medium`}>
-                      <span className="sr-only">Order</span>
-                    </th>
-                    {showProjectColumn ? <ProjectIconHeader /> : null}
-                    <th className={`max-w-0 py-3 ${panel ? "pr-2" : "pr-4"} font-medium`}>Title</th>
-                    <th
-                      className={`${panel ? "w-px px-2 whitespace-nowrap" : "w-40 px-4"} py-3 font-medium`}
-                    >
-                      Status
-                    </th>
-                    {panel ? null : <th className="w-56 px-4 py-3 font-medium">Tags</th>}
-                    <th
-                      className={`w-px py-3 ${panel ? "pl-2" : "pl-4"} text-right font-medium whitespace-nowrap`}
-                    >
-                      Runs
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredTasks.map((task) => {
-                    const taskProject = projectsByKey.get(taskProjectKey(task)) ?? null;
-                    return (
-                      <tr
-                        key={taskKey(task)}
-                        className={`cursor-pointer border-b border-border transition-colors hover:bg-muted/20 ${
-                          draggedTaskKey === taskKey(task) ? "opacity-50" : ""
-                        }`}
-                        onDragOver={(event) => event.preventDefault()}
-                        onDrop={(event) => {
-                          event.preventDefault();
-                          const dragged = optimisticTasks.find(
-                            (candidate) => taskKey(candidate) === draggedTaskKey,
-                          );
-                          setDraggedTaskKey(null);
-                          if (dragged && taskKey(dragged) !== taskKey(task)) {
-                            void persistVisibleMove(dragged, task);
-                          }
-                        }}
-                        onClick={() => openTask(task)}
-                      >
-                        <td className="py-3 pr-2 align-middle">
-                          <TaskReorderHandle
-                            task={task}
-                            enabled={props.canMutateEnvironment(task.environmentId)}
-                            onDragStart={() => setDraggedTaskKey(taskKey(task))}
-                            onDragEnd={() => setDraggedTaskKey(null)}
-                            onMove={(direction) => {
-                              void persistVisibleMove(task, direction);
-                            }}
-                          />
-                        </td>
-                        {showProjectColumn ? (
-                          <ProjectIconCell
-                            project={taskProject?.favicon ?? null}
-                            name={task.projectName}
-                          />
-                        ) : null}
-                        <td className={`max-w-0 py-4 ${panel ? "pr-2" : "pr-4"} align-middle`}>
-                          <button
-                            type="button"
-                            className="block max-w-full truncate text-left font-medium text-foreground hover:underline"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openTask(task);
-                            }}
-                          >
-                            {task.title}
-                          </button>
-                          {taskMetadataLabel(task) ? (
-                            <div className="truncate text-muted-foreground">
-                              {taskMetadataLabel(task)}
-                            </div>
-                          ) : null}
-                          {panel && task.tags.length > 0 ? (
-                            <div className="mt-1 flex min-w-0">
-                              <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
-                            </div>
-                          ) : null}
-                        </td>
-                        <td
-                          className={`${panel ? "px-2" : "px-4"} py-4 align-middle whitespace-nowrap`}
-                        >
-                          {task.status}
-                          {task.archivedAt ? (
-                            <span className="ml-2 text-muted-foreground">Archived</span>
-                          ) : null}
-                        </td>
-                        {panel ? null : (
-                          <td className="max-w-56 px-4 py-4 align-middle">
-                            <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
-                          </td>
-                        )}
-                        <td
-                          className={`py-4 ${panel ? "pl-2" : "pl-4"} text-right align-middle whitespace-nowrap`}
-                        >
-                          <TableRunCounts
-                            groups={groupTaskRunCounts(task.runCounts)}
-                            onSelect={(group) => openTask(task, group.status)}
-                          />
-                        </td>
+                {environmentCount > 1 ? (
+                  <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
+                    Task order is global within each connected environment. Environments are grouped
+                    deterministically, and tasks cannot be dragged across that storage boundary.
+                  </div>
+                ) : null}
+                {hasReadOnlyProjects ? (
+                  <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
+                    Existing tasks from unavailable or expired extensions remain readable. Mutation
+                    controls are hidden for those environments.
+                  </div>
+                ) : null}
+                {selectedTaskKey ? (
+                  <p className="text-sm text-muted-foreground">{detailError ?? "Loading task…"}</p>
+                ) : null}
+                {props.status === "error" ? (
+                  <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
+                    Up.computer couldn't load your tasks. {props.errorMessage ?? "Try again."}
+                    <button type="button" className="ml-3 underline" onClick={props.onReload}>
+                      Retry
+                    </button>
+                  </div>
+                ) : props.status === "offline" && props.tasks.length > 0 ? (
+                  <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
+                    {TASKS_OFFLINE_TEXT}
+                  </div>
+                ) : null}
+              </div>
+
+              {props.tasks.length === 0 ? (
+                <div
+                  className={`${cards ? "mr-(--workspace-gutter-end) ml-(--workspace-gutter-start) " : ""}rounded-lg border border-dashed border-border px-4 py-16 text-center text-sm text-muted-foreground`}
+                >
+                  {props.status === "loading"
+                    ? "Loading tasks..."
+                    : props.status === "offline"
+                      ? TASKS_OFFLINE_TEXT
+                      : projectFilter !== null ||
+                          statusFilter !== ALL_FILTER ||
+                          filters.tags.length > 0 ||
+                          archiveFilter !== "active"
+                        ? "No tasks match the current filters."
+                        : "No tasks yet"}
+                </div>
+              ) : filteredTasks.length === 0 ? (
+                <div
+                  className={`${cards ? "mr-(--workspace-gutter-end) ml-(--workspace-gutter-start) " : ""}rounded-lg border border-dashed border-border px-4 py-16 text-center text-sm text-muted-foreground`}
+                >
+                  No tasks match the current filters.
+                </div>
+              ) : cards ? (
+                <div className="flex min-w-0 flex-col">
+                  {filteredTasks.map((task) => (
+                    <TaskCard
+                      key={taskKey(task)}
+                      task={task}
+                      projects={plannerProjectsByEnvironment.get(task.environmentId) ?? []}
+                      statuses={
+                        statusOptions.includes(task.status)
+                          ? statusOptions
+                          : [...statusOptions, task.status].sort(compareStatuses)
+                      }
+                      canMutate={props.canMutateEnvironment(task.environmentId)}
+                      dragged={draggedTaskKey === taskKey(task)}
+                      reorderable={props.canMutateEnvironment(task.environmentId)}
+                      onDragStart={() => setDraggedTaskKey(taskKey(task))}
+                      onDragEnd={() => setDraggedTaskKey(null)}
+                      onMove={(direction) => void persistVisibleMove(task, direction)}
+                      onOpen={() => openTask(task)}
+                      onProjectChange={(projectId) =>
+                        void updateTaskInline(task, "project", {
+                          projectId: projectId as ProjectId,
+                        })
+                      }
+                      onStatusChange={(status) => void updateTaskInline(task, "status", { status })}
+                      onArchivedChange={(archived) => void setTaskArchived(task, archived)}
+                      onDrop={() => dropOn(task)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="min-w-0 overflow-x-auto">
+                  {/* Auto layout: Runs (w-px) is as narrow as its numbers, and Title (max-w-0) truncates
+                  and takes the width the other columns leave. */}
+                  <table className="w-full min-w-[920px] border-collapse text-left text-sm">
+                    <thead className="border-b border-border text-muted-foreground">
+                      <tr>
+                        <th className="w-12 py-3 pr-2 font-medium">
+                          <span className="sr-only">Order</span>
+                        </th>
+                        {showProjectColumn ? <ProjectIconHeader /> : null}
+                        <th className="max-w-0 py-3 pr-4 font-medium">Title</th>
+                        <th className="w-40 px-4 py-3 font-medium">Status</th>
+                        <th className="w-56 px-4 py-3 font-medium">Tags</th>
+                        <th className="w-px py-3 pl-4 text-right font-medium whitespace-nowrap">
+                          Runs
+                        </th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody>
+                      {filteredTasks.map((task) => {
+                        const taskProject = projectsByKey.get(taskProjectKey(task)) ?? null;
+                        return (
+                          <tr
+                            key={taskKey(task)}
+                            className={`cursor-pointer border-b border-border transition-colors hover:bg-muted/20 ${
+                              draggedTaskKey === taskKey(task) ? "opacity-50" : ""
+                            }`}
+                            onDragOver={(event) => event.preventDefault()}
+                            onDrop={(event) => {
+                              event.preventDefault();
+                              dropOn(task);
+                            }}
+                            onClick={() => openTask(task)}
+                          >
+                            <td className="py-3 pr-2 align-middle">{reorderHandle(task)}</td>
+                            {showProjectColumn ? (
+                              <ProjectIconCell
+                                project={taskProject?.favicon ?? null}
+                                name={task.projectName}
+                              />
+                            ) : null}
+                            <td className="max-w-0 py-4 pr-4 align-middle">
+                              <button
+                                type="button"
+                                className="block max-w-full truncate text-left font-medium text-foreground hover:underline"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openTask(task);
+                                }}
+                              >
+                                {task.title}
+                              </button>
+                              {taskMetadataLabel(task) ? (
+                                <div className="truncate text-muted-foreground">
+                                  {taskMetadataLabel(task)}
+                                </div>
+                              ) : null}
+                            </td>
+                            <td className="px-4 py-4 align-middle whitespace-nowrap">
+                              {task.status}
+                              {task.archivedAt ? (
+                                <span className="ml-2 text-muted-foreground">Archived</span>
+                              ) : null}
+                            </td>
+                            <td className="max-w-56 px-4 py-4 align-middle">
+                              <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
+                            </td>
+                            <td className="py-4 pl-4 text-right align-middle whitespace-nowrap">
+                              <TableRunCounts
+                                groups={groupTaskRunCounts(task.runCounts)}
+                                onSelect={(group) => openTask(task, group.status)}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {props.hasMore ? (
+                cards ? (
+                  <div className="flex justify-center py-4">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={props.loadingMore}
+                      onClick={props.onLoadMore}
+                    >
+                      {props.loadingMore ? "Loading…" : "Load more tasks"}
+                    </Button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={props.loadingMore}
+                    className="self-center rounded-md border border-border px-4 py-2 text-sm hover:bg-muted disabled:opacity-50"
+                    onClick={props.onLoadMore}
+                  >
+                    {props.loadingMore ? "Loading…" : "Load more tasks"}
+                  </button>
+                )
+              ) : null}
             </div>
-          )}
-          {props.hasMore ? (
-            <button
-              type="button"
-              disabled={props.loadingMore}
-              className="self-center rounded-md border border-border px-4 py-2 text-sm hover:bg-muted disabled:opacity-50"
-              onClick={props.onLoadMore}
-            >
-              {props.loadingMore ? "Loading…" : "Load more tasks"}
-            </button>
-          ) : null}
+          </div>
         </div>
       )}
     </WorkspaceViewLayout>

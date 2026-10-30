@@ -52,9 +52,9 @@ const WORKSPACE_CONTENT_GUTTER_CLASS = "pl-(--workspace-gutter-start) pr-(--work
  * page header (title or back control on the left, controls on the right) over
  * content inside the same gutters. The sidebar toggle is upstream's shared one.
  *
- * The `panel` variant fits a right-panel surface: the panel's tab bar is the
- * chrome, so the header is a plain row that wraps its controls at narrow widths,
- * appears only with something in it, and Escape only acts from inside the view.
+ * The `panel` variant fits a right-panel surface: the header is the planner
+ * list header's frame without title bar duties, appears only with something
+ * in it, and Escape only acts from inside the view.
  */
 export function WorkspaceViewLayout({
   title,
@@ -116,7 +116,7 @@ export function WorkspaceViewLayout({
         <div
           className={
             panel
-              ? "contents"
+              ? "flex min-w-0 flex-1 items-center gap-1.5"
               : "flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           }
         >
@@ -145,11 +145,14 @@ export function WorkspaceViewLayout({
         }}
       >
         {header && (leadingAction || title || toolbar || action) ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pt-2">
-            {headerContent}
-          </div>
+          // The planner list header's frame, so Me and Workers share one header.
+          <WorkspacePageHeader clearCollapsedSidebar={false} className="border-b border-border">
+            <div className="flex min-w-0 flex-1 items-center gap-1">{headerContent}</div>
+          </WorkspacePageHeader>
         ) : null}
-        <div className={`flex min-h-0 flex-1 flex-col overflow-y-auto ${inset ? "px-3" : ""}`}>
+        <div
+          className={`flex min-h-0 flex-1 flex-col overflow-y-auto ${inset ? WORKSPACE_CONTENT_GUTTER_CLASS : ""}`}
+        >
           {children}
         </div>
       </div>

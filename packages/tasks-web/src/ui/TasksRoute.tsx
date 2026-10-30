@@ -206,6 +206,7 @@ function TasksTableRoute(props: {
           onChange={setProjectKey}
         />
       }
+      onProjectFilterReset={() => setProjectKey(null)}
       filters={filters}
       onFiltersChange={setFilters}
       hasMore={pages.hasMore}
