@@ -52,7 +52,7 @@ function SidebarSections(props: { readonly compact: boolean; readonly threadsOpe
 const shown = (element: Element | null | undefined) => element?.checkVisibility() ?? false;
 
 describe("compact sidebar sections", () => {
-  it("turns an open section's header into a divider and leaves out a collapsed one", async () => {
+  it("turns an open section's header into a gap and leaves out a collapsed one", async () => {
     await using screen = await render(<SidebarSections compact threadsOpen />);
     const headers = [...screen.container.querySelectorAll("[data-sidebar-section-header]")];
     const [projects, bots] = headers;
@@ -60,7 +60,7 @@ describe("compact sidebar sections", () => {
     expect(shown(projects?.querySelector("button"))).toBe(false);
   });
 
-  it("shows a row as its icon in a centred square, with no dot for its end", async () => {
+  it("shows a list row as its icon in a centred 60px square, with no dot for its end", async () => {
     await using screen = await render(<SidebarSections compact threadsOpen />);
     const icon = screen.getByTestId("Projects icon").element();
     const row = icon.parentElement!;
@@ -68,7 +68,7 @@ describe("compact sidebar sections", () => {
     expect(getComputedStyle(icon, "::after").content).toBe("none");
     const box = row.getBoundingClientRect();
     const column = row.parentElement!.parentElement!.getBoundingClientRect();
-    expect([box.width, box.height]).toEqual([40, 40]);
+    expect([box.width, box.height]).toEqual([60, 60]);
     expect(box.left - column.left).toBe(column.right - box.right);
   });
 
