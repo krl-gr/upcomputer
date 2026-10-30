@@ -6,7 +6,6 @@ import {
   useSyncExternalStore,
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
-  type ReactNode,
 } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
@@ -270,20 +269,6 @@ export function SidebarCompactTooltip(props: {
       <TooltipTrigger render={props.children} aria-label={compact ? props.label : undefined} />
       <TooltipPopup side="right">{props.label}</TooltipPopup>
     </Tooltip>
-  );
-}
-
-/**
- * The sidebar's sections between Tasks and the Threads header. The full sidebar
- * lays them out as if this element were not there; the compact one scrolls
- * them as one column between the pinned top and footer (`adaptiveSidebar.css`).
- */
-export function SidebarCompactScroll(props: { readonly children: ReactNode }) {
-  if (!isAdaptive()) return props.children;
-  return (
-    <div data-sidebar-compact-scroll="" className="contents">
-      {props.children}
-    </div>
   );
 }
 

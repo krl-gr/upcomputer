@@ -75,80 +75,29 @@
 }
 
 /*
- * The column keeps the traffic lights, Search and Tasks at the top and New
- * thread with the footer at the bottom; the sections between them scroll as
- * one, without a scrollbar. The empty thread list gives up its space.
+ * Below the traffic lights the column scrolls as one, footer included, without
+ * a scrollbar. The transparent top border keeps the sidebar's background and
+ * clips the scrolled content under the titlebar row, which is positioned
+ * against the container so it stays in place. When everything fits, the empty
+ * thread list still pushes the footer to the bottom of the window.
  */
-[data-sidebar-compact="true"]
-  [data-app-sidebar]
-  [data-sidebar="sidebar"]
-  > :has(> [data-sidebar="group"] > [data-sidebar-compact-scroll]) {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 0;
-}
-[data-sidebar-compact="true"]
-  [data-app-sidebar]
-  [data-sidebar="group"]:has(> [data-sidebar-compact-scroll]) {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-[data-sidebar-compact="true"]
-  [data-app-sidebar]
-  [data-sidebar="sidebar"]
-  > :has(> [data-slot="scroll-area-viewport"] > [data-slot="sidebar-content"]) {
-  display: none;
-}
-/* As wide as the column, so the bots' badges and run pills are not cut at its sides. */
-[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-compact-scroll] {
-  display: flex;
-  flex-direction: column;
-  flex: 0 1 auto;
-  min-height: 0;
-  margin-inline: calc(-1 * var(--sidebar-content-inset));
-  padding-inline: var(--sidebar-content-inset);
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar="sidebar"] {
+  border-top: var(--workspace-topbar-height) solid transparent;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
-  scroll-padding-block: var(--sidebar-compact-fade-size);
-  /* The edge fades only toward more content: the scroll position drives it, so nothing runs at rest. */
-  --sidebar-compact-fade-size: 1.5rem;
-  mask-image: linear-gradient(
-    to bottom,
-    transparent,
-    #000 var(--sidebar-compact-fade-top),
-    #000 calc(100% - var(--sidebar-compact-fade-bottom)),
-    transparent
-  );
-  animation:
-    sidebar-compact-fade-top linear both,
-    sidebar-compact-fade-bottom linear both;
-  animation-timeline: scroll(self), scroll(self);
-  animation-range:
-    0 var(--sidebar-compact-fade-size),
-    calc(100% - var(--sidebar-compact-fade-size)) 100%;
 }
-@property --sidebar-compact-fade-top {
-  syntax: "<length>";
-  inherits: false;
-  initial-value: 0px;
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar="sidebar"] > :first-child {
+  position: absolute;
+  inset: 0 0 auto;
 }
-@property --sidebar-compact-fade-bottom {
-  syntax: "<length>";
-  inherits: false;
-  initial-value: 0px;
-}
-@keyframes sidebar-compact-fade-top {
-  to {
-    --sidebar-compact-fade-top: var(--sidebar-compact-fade-size);
-  }
-}
-@keyframes sidebar-compact-fade-bottom {
-  from {
-    --sidebar-compact-fade-bottom: var(--sidebar-compact-fade-size);
-  }
+/* At the end of the scroll the footer keeps the 28px gap below New thread. */
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-sidebar="sidebar"]
+  > :has(> [data-slot="scroll-area-viewport"] > [data-slot="sidebar-content"]) {
+  min-height: 1.25rem;
 }
 
 /* Search opens the command palette: the field needs the full width. */
