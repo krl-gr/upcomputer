@@ -1,8 +1,7 @@
-import { type RefObject, useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useSyncExternalStore } from "react";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
-import { isInsideRestingComposerControlScope } from "../components/chat/composerEventScope";
 import { observeResize } from "../lib/observeResize";
 import { productSurface } from "../product/productFlags";
 
@@ -77,62 +76,6 @@ export function useIsCompactComposerChat(
     () => threadKey !== null && compactChats.has(threadKey),
     () => false,
   );
-}
-
-function isFocusWithinComposer(form: HTMLElement | null, target: EventTarget | null): boolean {
-  if (!form || !(target instanceof Node)) return false;
-  return form.contains(target) || isInsideRestingComposerControlScope(target);
-}
-
-/**
- * Whether focus is in the composer form or a menu it portaled out of it.
- * Checked a frame after focus moves: closing a menu briefly leaves focus on
- * the body before the menu hands it back to the prompt.
- */
-function useComposerFocusWithin(formRef: RefObject<HTMLFormElement | null>): boolean {
-  const [focused, setFocused] = useState(false);
-  useEffect(() => {
-    let frame: number | null = null;
-    const check = () => {
-      frame = null;
-      setFocused(isFocusWithinComposer(formRef.current, document.activeElement));
-    };
-    const onFocusChange = (event: FocusEvent) => {
-      if (event.type === "focusin" && isFocusWithinComposer(formRef.current, event.target)) {
-        if (frame !== null) window.cancelAnimationFrame(frame);
-        frame = null;
-        setFocused(true);
-        return;
-      }
-      if (frame === null) frame = window.requestAnimationFrame(check);
-    };
-    check();
-    document.addEventListener("focusin", onFocusChange);
-    document.addEventListener("focusout", onFocusChange);
-    return () => {
-      if (frame !== null) window.cancelAnimationFrame(frame);
-      document.removeEventListener("focusin", onFocusChange);
-      document.removeEventListener("focusout", onFocusChange);
-    };
-  }, [formRef]);
-  return focused;
-}
-
-/**
- * The compact row's controls button: it shows the full composer, with the
- * model and its other controls, until focus leaves the composer and its menus.
- */
-export function useCompactComposerControls(
-  formRef: RefObject<HTMLFormElement | null>,
-): readonly [shown: boolean, show: () => void] {
-  const isFocusWithin = useComposerFocusWithin(formRef);
-  const [shown, setShown] = useState(false);
-  const [wasFocusWithin, setWasFocusWithin] = useState(isFocusWithin);
-  if (wasFocusWithin !== isFocusWithin) {
-    setWasFocusWithin(isFocusWithin);
-    if (!isFocusWithin) setShown(false);
-  }
-  return [shown, () => setShown(true)] as const;
 }
 
 /**

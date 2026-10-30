@@ -280,7 +280,6 @@ import { readEnvironmentScope } from "../../state/session";
 import {
   compactComposerClass,
   isComposerCompact,
-  useCompactComposerControls,
   useIsCompactComposerChat,
 } from "../../composerFooter/compactComposer";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
@@ -2324,8 +2323,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   });
   const hasBlockingComposerTopDrawer = pendingUserInputs.length > 0;
   const composerControlsCollapsed = isComposerCollapsedMobile;
-  const [compactComposerControlsShown, showCompactComposerControls] =
-    useCompactComposerControls(composerFormRef);
   const isBotChat = useIsCompactComposerChat(environmentId, activeThreadId);
   const isComposerCompactRow = isComposerCompact({
     isBotChat,
@@ -2334,7 +2331,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     hasAttachments: composerContextRecords.size > 0 || pendingSnapShotIds.length > 0,
     hasPendingRequest: showComposerTopDrawer || showPlanFollowUpPrompt,
     hasExpandedChrome:
-      compactComposerControlsShown ||
       isComposerModelPickerOpen ||
       isDragOverComposer ||
       composerSubmissionError !== null ||
@@ -3652,10 +3648,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     : null,
                   primaryActions: composerPrimaryActions,
                   compact: isComposerCompactRow,
-                  onShowControls: () => {
-                    showCompactComposerControls();
-                    scheduleComposerFocus();
-                  },
                   className: cn(
                     pendingUserInputs.length > 0 && "pt-2",
                     showMobilePendingAnswerActions && "hidden sm:flex",

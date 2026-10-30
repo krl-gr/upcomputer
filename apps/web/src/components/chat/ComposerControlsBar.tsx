@@ -100,7 +100,6 @@ export function ComposerControlsBar(props: {
     readonly attach: { input: ReactNode; open: () => void } | null;
     readonly primaryActions: ReactNode;
     readonly compact?: boolean;
-    readonly onShowControls?: () => void;
     readonly className?: string | undefined;
   };
 }) {
@@ -347,7 +346,6 @@ export function ComposerControlsBar(props: {
         onRuntimeModeChange={handleRuntimeModeChange}
         primaryActions={upComputerFooter.primaryActions}
         compact={upComputerFooter.compact ?? false}
-        onShowControls={upComputerFooter.onShowControls}
         className={upComputerFooter.className}
       />
     );

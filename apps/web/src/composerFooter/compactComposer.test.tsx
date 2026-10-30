@@ -27,15 +27,10 @@ vi.mock("../product/productFlags", async (importOriginal) => ({
   productSurface: () => surface.composerFooter,
 }));
 
-const { act, useEffect, useRef } = await import("react");
-const { createPortal } = await import("react-dom");
+const { act, useEffect } = await import("react");
 const { createRoot } = await import("react-dom/client");
-const {
-  isComposerCompact,
-  useCompactComposerChat,
-  useCompactComposerControls,
-  useIsCompactComposerChat,
-} = await import("./compactComposer");
+const { isComposerCompact, useCompactComposerChat, useIsCompactComposerChat } =
+  await import("./compactComposer");
 const { scopedThreadKey, scopeThreadRef } = await import("@t3tools/client-runtime/environment");
 const { EnvironmentId, ThreadId } = await import("@t3tools/contracts");
 type CompactComposerInput = import("./compactComposer").CompactComposerInput;
@@ -111,97 +106,5 @@ describe("useIsCompactComposerChat", () => {
     expect(compact).toBe(true);
     await act(async () => root.render(<Chat marked={false} />));
     expect(compact).toBe(false);
-  });
-});
-
-describe("useCompactComposerControls", () => {
-  let frames: FrameRequestCallback[] = [];
-  let container: HTMLDivElement;
-  let menuHost: HTMLDivElement;
-  let outside: HTMLButtonElement;
-  let root: import("react-dom/client").Root;
-  let shown: boolean | null = null;
-  let show: (() => void) | null = null;
-
-  function Composer() {
-    const formRef = useRef<HTMLFormElement>(null);
-    const controls = useCompactComposerControls(formRef);
-    useEffect(() => {
-      [shown, show] = controls;
-    }, [controls]);
-    return (
-      <form ref={formRef}>
-        <textarea aria-label="Message" />
-        {createPortal(
-          <div data-chat-composer-floating-layer="true">
-            <button type="button">Claude Opus 5.5</button>
-          </div>,
-          menuHost,
-        )}
-      </form>
-    );
-  }
-
-  const flushFrames = () =>
-    act(async () => {
-      const pending = frames;
-      frames = [];
-      for (const frame of pending) frame(0);
-    });
-
-  const focus = (element: HTMLElement) =>
-    act(async () => {
-      element.focus();
-    });
-
-  const showControls = () =>
-    act(async () => {
-      show?.();
-    });
-
-  beforeEach(async () => {
-    frames = [];
-    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-      frames.push(callback);
-      return frames.length;
-    });
-    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
-    container = document.createElement("div");
-    menuHost = document.createElement("div");
-    outside = document.createElement("button");
-    document.body.append(container, menuHost, outside);
-    root = createRoot(container);
-    await act(async () => root.render(<Composer />));
-  });
-
-  afterEach(async () => {
-    await act(async () => root.unmount());
-    container.remove();
-    menuHost.remove();
-    outside.remove();
-    vi.restoreAllMocks();
-  });
-
-  it("keeps the compact row while focus is in the prompt", async () => {
-    await focus(container.querySelector("textarea")!);
-    await flushFrames();
-    expect(shown).toBe(false);
-  });
-
-  it("keeps the controls while focus is in a menu the composer portaled out", async () => {
-    await focus(container.querySelector("textarea")!);
-    await showControls();
-    await focus(menuHost.querySelector("button")!);
-    await flushFrames();
-    expect(shown).toBe(true);
-  });
-
-  it("hides the controls a frame after focus leaves the composer", async () => {
-    await focus(container.querySelector("textarea")!);
-    await showControls();
-    await focus(outside);
-    expect(shown).toBe(true);
-    await flushFrames();
-    expect(shown).toBe(false);
   });
 });
