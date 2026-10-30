@@ -15,7 +15,7 @@ import { pointBelow, type MenuPoint } from "./PointMenu.tsx";
 /**
  * An automation in the Workers side's Automations list: its name, project,
  * status, schedule with the next run and how many tasks it created. Drags to
- * reorder among automations; double-click or the open button opens its window.
+ * reorder among automations; a click or the open button opens its window.
  */
 export const AutomationRow = memo(function AutomationRow(props: {
   readonly automation: TaskAutomationListItem;
@@ -67,7 +67,7 @@ export const AutomationRow = memo(function AutomationRow(props: {
         )}
         data-automation-id={automation.id}
         onContextMenu={openMenu}
-        onDoubleClick={() => windows.openAutomation(automation.id)}
+        onClick={() => windows.openAutomation(automation.id)}
       >
         <div
           className={cn(
@@ -96,14 +96,20 @@ export const AutomationRow = memo(function AutomationRow(props: {
           <IconAction
             label="Open automation"
             variant="outline"
-            onClick={() => windows.openAutomation(automation.id)}
+            onClick={(event) => {
+              event.stopPropagation();
+              windows.openAutomation(automation.id);
+            }}
           >
             <Maximize2Icon />
           </IconAction>
           <IconAction
             label="More actions"
             variant="outline"
-            onClick={(event) => props.onMenu(automation, pointBelow(event.currentTarget))}
+            onClick={(event) => {
+              event.stopPropagation();
+              props.onMenu(automation, pointBelow(event.currentTarget));
+            }}
           >
             <MoreHorizontalIcon />
           </IconAction>

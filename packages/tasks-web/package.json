@@ -18,6 +18,10 @@
     "./feature": {
       "types": "./src/feature.tsx",
       "import": "./src/feature.tsx"
+    },
+    "./planner": {
+      "types": "./src/planner/index.ts",
+      "import": "./src/planner/index.ts"
     }
   },
   "scripts": {

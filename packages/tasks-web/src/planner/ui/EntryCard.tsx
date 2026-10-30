@@ -2,11 +2,12 @@ import {
   memo,
   useState,
   type CSSProperties,
+  type KeyboardEvent,
   type MouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { useDraggable } from "@dnd-kit/core";
+import { useDraggable, type DraggableSyntheticListeners } from "@dnd-kit/core";
 import {
   CheckIcon,
   CircleCheckIcon,
@@ -41,6 +42,24 @@ export interface EntryDragData {
 }
 
 const handled = (entry: TaskScheduleEntry) => entry.status !== "open";
+
+/**
+ * A click or Enter on the card opens its task; dnd-kit swallows the click that
+ * ends a drag. Space still starts a keyboard drag, and Enter drops one.
+ */
+function openHandlers(open: (() => void) | null, listeners: DraggableSyntheticListeners) {
+  return {
+    onClick: () => open?.(),
+    onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+      if (open && event.key === "Enter" && event.target === event.currentTarget) {
+        event.preventDefault();
+        open();
+        return;
+      }
+      listeners?.onKeyDown?.(event);
+    },
+  };
+}
 
 /**
  * A card's surface and its hover actions' backing. "modern" tints the card
@@ -200,9 +219,10 @@ export const QueueEntryCard = memo(function QueueEntryCard(props: {
         props.selectMode && !props.selected && "opacity-50",
         props.selectMode && !props.selected ? "cursor-not-allowed" : "cursor-grab",
       )}
-      onDoubleClick={() => {
-        if (!props.selectMode) handlers.onOpen(entry);
-      }}
+      {...openHandlers(
+        props.selectMode || isDragging ? null : () => handlers.onOpen(entry),
+        listeners,
+      )}
       onContextMenu={(event: MouseEvent) => {
         if (props.selectMode) return;
         event.preventDefault();
@@ -306,11 +326,10 @@ export const CalendarEntryCard = memo(function CalendarEntryCard(props: {
         props.selectMode && !props.selected && "opacity-50",
         props.selectMode && !props.selected ? "cursor-not-allowed" : "cursor-grab",
       )}
-      onDoubleClick={(event) => {
-        if (props.selectMode) return;
-        event.stopPropagation();
-        handlers.onOpen(entry);
-      }}
+      {...openHandlers(
+        props.selectMode || isDragging ? null : () => handlers.onOpen(entry),
+        listeners,
+      )}
       onContextMenu={(event) => {
         if (props.selectMode) return;
         event.preventDefault();
@@ -337,6 +356,8 @@ export const CalendarEntryCard = memo(function CalendarEntryCard(props: {
           role="separator"
           aria-label="Drag to change the duration"
           onPointerDown={startResize}
+          // Pointer capture sends the click that ends a resize here; it must not open the card.
+          onClick={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
           onTouchStart={(event) => event.stopPropagation()}
         />

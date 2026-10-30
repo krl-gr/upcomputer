@@ -726,7 +726,7 @@ the week header side by side are its title bar row (both `WorkspacePageHeader`).
 | selection header Move / Copy / Delete                                | week header in select mode              | same                                                      |
 | day header click (target day for Add to queue)                       | day column header                       | same                                                      |
 | Reschedule incomplete, Set time & duration                           | day header hover menu                   | same                                                      |
-| entry done toggle, three-dots menu, double-click opens task          | entry card                              | same                                                      |
+| entry done toggle, three-dots menu, click opens task                 | entry card                              | same                                                      |
 | calendar drag to time, resize handle                                 | calendar card                           | same                                                      |
 | window title, "..." menu, X save-and-close                           | window header                           | same                                                      |
 | metadata chips, description/instances switch                         | window body                             | same                                                      |
