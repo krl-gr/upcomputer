@@ -1,5 +1,5 @@
 import type { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
-import { LockIcon, LockOpenIcon, PaperclipIcon } from "lucide-react";
+import { LockIcon, LockOpenIcon, PaperclipIcon, SlidersHorizontalIcon } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useState } from "react";
 
 import { CompactComposerControlsMenu } from "../components/chat/CompactComposerControlsMenu";
@@ -47,8 +47,10 @@ export interface UpComputerComposerFooterProps {
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   /** Upstream's context ring and send, stop and queue actions. */
   primaryActions: ReactNode;
-  /** The compact row (`isComposerCompact`): only the paperclip and the actions show, over the prompt. */
+  /** The compact row (`isComposerCompact`): only the paperclip, controls button and actions show, over the prompt. */
   compact?: boolean;
+  /** The compact row's button that shows the full composer with these controls. */
+  onShowControls?: (() => void) | undefined;
   className?: string | undefined;
 }
 
@@ -92,6 +94,27 @@ function AttachControl(props: { open: () => void }) {
         <PaperclipIcon aria-hidden="true" className="size-4" />
       </TooltipTrigger>
       <TooltipPopup side="top">Attach files</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function ShowControlsControl(props: { onClick: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label="Show composer controls"
+            className={COMPOSER_CONTROL_ICON_TRIGGER_CLASS}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={props.onClick}
+          />
+        }
+      >
+        <SlidersHorizontalIcon aria-hidden="true" className="size-4" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Model and options</TooltipPopup>
     </Tooltip>
   );
 }
@@ -416,6 +439,9 @@ export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
         data-chat-composer-transition-actions="true"
         className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
       >
+        {props.compact && props.onShowControls ? (
+          <ShowControlsControl onClick={props.onShowControls} />
+        ) : null}
         {props.primaryActions}
       </div>
     </div>

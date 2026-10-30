@@ -1,39 +1,81 @@
-import { type RefObject, useEffect, useLayoutEffect, useState } from "react";
+import { type RefObject, useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 import { isInsideRestingComposerControlScope } from "../components/chat/composerEventScope";
 import { observeResize } from "../lib/observeResize";
 import { productSurface } from "../product/productFlags";
 
 /*
- * The UpComputer composer's compact form: one row of paperclip, prompt and
- * send while the composer is idle. It only restyles the composer, so the
- * prompt editor stays the same element in both forms and keeps its draft,
- * selection and IME state.
+ * The UpComputer composer's compact form in bot chats: one row of paperclip,
+ * prompt and send, typed in for as long as the content fits it. It only
+ * restyles the composer, so the prompt editor stays the same element in both
+ * forms and keeps its draft, selection and IME state.
  */
 
 export interface CompactComposerInput {
-  /** The "Compact composer" setting. */
+  /** The chat is a bot's (`useCompactComposerChat`); other threads always get the full composer. */
+  isBotChat: boolean;
+  /** The stored `composerCompact` setting, drawn as "Full composer in bot chats" turned off. */
   enabled: boolean;
-  /** Focus is in the composer or in one of its menus, popovers or drawers. */
-  isFocusWithin: boolean;
   hasMultilinePrompt: boolean;
   /** Images, files, terminal contexts or pending snapshots in the draft. */
   hasAttachments: boolean;
   /** An approval, a question or a plan waits for the user. */
   hasPendingRequest: boolean;
-  /** A menu, drawer, drag-over, error or banner that needs the full composer. */
+  /** Its controls were asked for, or a menu, drag-over or error needs the full composer. */
   hasExpandedChrome: boolean;
 }
 
 export function isComposerCompact(input: CompactComposerInput): boolean {
   return (
+    input.isBotChat &&
     input.enabled &&
     productSurface("composerFooter") === "upcomputer" &&
-    !input.isFocusWithin &&
     !input.hasMultilinePrompt &&
     !input.hasAttachments &&
     !input.hasPendingRequest &&
     !input.hasExpandedChrome
+  );
+}
+
+/* Chats whose composer can rest as the compact row, by scoped thread key: bot chats, marked by their header. */
+const compactChats = new Map<string, number>();
+const listeners = new Set<() => void>();
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function setCompactChat(threadKey: string, delta: 1 | -1) {
+  const count = (compactChats.get(threadKey) ?? 0) + delta;
+  if (count > 0) compactChats.set(threadKey, count);
+  else compactChats.delete(threadKey);
+  for (const listener of listeners) listener();
+}
+
+/** While mounted, the chat's composer can rest as the compact row; null marks nothing. */
+export function useCompactComposerChat(threadKey: string | null): void {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the chat in the module store the composer reads
+  useEffect(() => {
+    if (threadKey === null) return;
+    setCompactChat(threadKey, 1);
+    return () => setCompactChat(threadKey, -1);
+  }, [threadKey]);
+}
+
+export function useIsCompactComposerChat(
+  environmentId: EnvironmentId,
+  threadId: ThreadId | null,
+): boolean {
+  const threadKey = threadId ? scopedThreadKey(scopeThreadRef(environmentId, threadId)) : null;
+  return useSyncExternalStore(
+    subscribe,
+    () => threadKey !== null && compactChats.has(threadKey),
+    () => false,
   );
 }
 
@@ -47,7 +89,7 @@ function isFocusWithinComposer(form: HTMLElement | null, target: EventTarget | n
  * Checked a frame after focus moves: closing a menu briefly leaves focus on
  * the body before the menu hands it back to the prompt.
  */
-export function useComposerFocusWithin(formRef: RefObject<HTMLFormElement | null>): boolean {
+function useComposerFocusWithin(formRef: RefObject<HTMLFormElement | null>): boolean {
   const [focused, setFocused] = useState(false);
   useEffect(() => {
     let frame: number | null = null;
@@ -56,7 +98,6 @@ export function useComposerFocusWithin(formRef: RefObject<HTMLFormElement | null
       setFocused(isFocusWithinComposer(formRef.current, document.activeElement));
     };
     const onFocusChange = (event: FocusEvent) => {
-      // Entering is immediate, so the full composer is there before the first key lands.
       if (event.type === "focusin" && isFocusWithinComposer(formRef.current, event.target)) {
         if (frame !== null) window.cancelAnimationFrame(frame);
         frame = null;
@@ -75,6 +116,23 @@ export function useComposerFocusWithin(formRef: RefObject<HTMLFormElement | null
     };
   }, [formRef]);
   return focused;
+}
+
+/**
+ * The compact row's controls button: it shows the full composer, with the
+ * model and its other controls, until focus leaves the composer and its menus.
+ */
+export function useCompactComposerControls(
+  formRef: RefObject<HTMLFormElement | null>,
+): readonly [shown: boolean, show: () => void] {
+  const isFocusWithin = useComposerFocusWithin(formRef);
+  const [shown, setShown] = useState(false);
+  const [wasFocusWithin, setWasFocusWithin] = useState(isFocusWithin);
+  if (wasFocusWithin !== isFocusWithin) {
+    setWasFocusWithin(isFocusWithin);
+    if (!isFocusWithin) setShown(false);
+  }
+  return [shown, () => setShown(true)] as const;
 }
 
 /**

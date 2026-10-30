@@ -73,6 +73,7 @@ import { useOrchestrationCommand } from "../../../../apps/web/src/state/use-orch
 import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/extensionApi.ts";
 import { claimSidebarThreads } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
 import { useTimelineMinimapByDay } from "../../../../apps/web/src/timelineMinimapDays/timelineMinimapDays.ts";
+import { useCompactComposerChat } from "../../../../apps/web/src/composerFooter/compactComposer.ts";
 import {
   SidebarCompactTooltip,
   useSidebarCompact,
@@ -500,7 +501,7 @@ function BotRow({
 /**
  * The chat header accessory. A bot chat has no header: the marker hides the
  * header's content (`ChatHeader`), and the bar floats over the chat with only
- * the window controls (`ChatView`). Other chats are left as they are; the
+ * the window controls (`ChatView`). Its composer rests as the compact row. Other chats are left as they are; the
  * thread's action menu offers turning one into a bot.
  */
 export function BotHeader({
@@ -512,10 +513,10 @@ export function BotHeader({
 }) {
   const { bots, loaded, enabled } = useBots(environmentId);
   const isBotChat = enabled && loaded && bots.some((bot) => bot.threadId === threadId);
+  const chatKey = isBotChat ? scopedThreadKey(scopeThreadRef(environmentId, threadId)) : null;
   // A bot chat runs for days: its minimap shows one tick per day.
-  useTimelineMinimapByDay(
-    isBotChat ? scopedThreadKey(scopeThreadRef(environmentId, threadId)) : null,
-  );
+  useTimelineMinimapByDay(chatKey);
+  useCompactComposerChat(chatKey);
   if (!isBotChat) return null;
   return <span hidden data-chat-header-hidden />;
 }

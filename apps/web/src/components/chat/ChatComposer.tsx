@@ -280,7 +280,8 @@ import { readEnvironmentScope } from "../../state/session";
 import {
   compactComposerClass,
   isComposerCompact,
-  useComposerFocusWithin,
+  useCompactComposerControls,
+  useIsCompactComposerChat,
 } from "../../composerFooter/compactComposer";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
 import { useComposerRestingTransition } from "./useComposerRestingTransition";
@@ -2323,14 +2324,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   });
   const hasBlockingComposerTopDrawer = pendingUserInputs.length > 0;
   const composerControlsCollapsed = isComposerCollapsedMobile;
-  const isComposerFocusWithin = useComposerFocusWithin(composerFormRef);
+  const [compactComposerControlsShown, showCompactComposerControls] =
+    useCompactComposerControls(composerFormRef);
+  const isBotChat = useIsCompactComposerChat(environmentId, activeThreadId);
   const isComposerCompactRow = isComposerCompact({
+    isBotChat,
     enabled: settings.composerCompact,
-    isFocusWithin: isComposerFocusWithin,
     hasMultilinePrompt,
     hasAttachments: composerContextRecords.size > 0 || pendingSnapShotIds.length > 0,
     hasPendingRequest: showComposerTopDrawer || showPlanFollowUpPrompt,
-    hasExpandedChrome: isComposerModelPickerOpen,
+    hasExpandedChrome:
+      compactComposerControlsShown ||
+      isComposerModelPickerOpen ||
+      isDragOverComposer ||
+      composerSubmissionError !== null ||
+      providerInputSubmissionError !== null,
   });
   // The collapsed mobile web composer keeps a second controls row inside the card.
   const showInlineRestingControls = isComposerCollapsedMobile;
@@ -3276,7 +3284,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ref={composerFormRef}
       onSubmit={submitComposerStable}
       onPointerDownCapture={(event) => {
-        // The compact row opens on a click anywhere but its own controls.
+        // A click anywhere on the compact row but its own controls puts the caret in its prompt.
         if (!isComposerCompactRow) return;
         const target = event.target;
         if (!(target instanceof Element)) return;
@@ -3644,6 +3652,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     : null,
                   primaryActions: composerPrimaryActions,
                   compact: isComposerCompactRow,
+                  onShowControls: () => {
+                    showCompactComposerControls();
+                    scheduleComposerFocus();
+                  },
                   className: cn(
                     pendingUserInputs.length > 0 && "pt-2",
                     showMobilePendingAnswerActions && "hidden sm:flex",
