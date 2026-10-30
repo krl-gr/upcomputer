@@ -131,3 +131,25 @@ test("trigger tags come from enabled agents only", async () => {
     ["browser-use", "dev-2"],
   );
 });
+
+test("the filter button counts each filter that is off its default", async () => {
+  const { appliedTaskFilterCount, DEFAULT_TASKS_PAGE_FILTERS } = await import("./pageFilters.ts");
+  NodeAssert.equal(appliedTaskFilterCount(DEFAULT_TASKS_PAGE_FILTERS, false), 0);
+  NodeAssert.equal(
+    appliedTaskFilterCount({ status: "__all__", lastRun: "__all__", tags: [] }, false),
+    0,
+    "no archive choice reads as Active",
+  );
+  NodeAssert.equal(
+    appliedTaskFilterCount({ ...DEFAULT_TASKS_PAGE_FILTERS, status: "To Do", tags: ["ui"] }, false),
+    2,
+  );
+  NodeAssert.equal(
+    appliedTaskFilterCount(
+      { status: "Done", lastRun: "failed", tags: ["ui", "dev-2"], archive: "all" },
+      true,
+    ),
+    5,
+    "several tags count once, and so does the project",
+  );
+});

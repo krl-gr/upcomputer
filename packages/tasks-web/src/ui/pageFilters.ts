@@ -59,6 +59,20 @@ export const DEFAULT_TASKS_PAGE_FILTERS: TasksPageFilters = {
   archive: "active",
 };
 
+/**
+ * How many of the five Tasks filters differ from their defaults (All projects,
+ * All statuses, Any last run, All tags, Active): the filter button's number.
+ */
+export function appliedTaskFilterCount(filters: TasksPageFilters, projectChosen: boolean): number {
+  return [
+    projectChosen,
+    filters.status !== DEFAULT_TASKS_PAGE_FILTERS.status,
+    filters.lastRun !== DEFAULT_TASKS_PAGE_FILTERS.lastRun,
+    filters.tags.length > 0,
+    (filters.archive ?? "active") !== DEFAULT_TASKS_PAGE_FILTERS.archive,
+  ].filter(Boolean).length;
+}
+
 export function useTasksPageFilters() {
   return useLocalStorage(
     TASKS_PAGE_FILTERS_STORAGE_KEY,
