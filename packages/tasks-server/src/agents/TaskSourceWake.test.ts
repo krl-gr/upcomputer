@@ -27,6 +27,7 @@ import { TASK_MIGRATION_CONTRIBUTION } from "../persistence/migrations/index.ts"
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TaskRepositoryLive } from "../persistence/TaskRepositoryLive.ts";
 import {
+  SOURCE_CHAIN_MAX_WAIT_MS,
   SOURCE_MAX_WAIT_MS,
   SOURCE_SETTLE_MS,
   SOURCE_WAKE_MAX_ATTEMPTS,
@@ -241,18 +242,25 @@ const withWake = <A, E>(
     ),
   );
 
-/** A run of a task created in `sourceThreadId`, finished at `at` unless still running. */
+/**
+ * A run of a task created in `sourceThreadId`, finished at `at` unless still running.
+ * Each run has its own task and the one agent, unless `owner` says otherwise.
+ */
 const finishedRun = (
   id: string,
   sourceThreadId: string,
   status: "completed" | "failed" | "running" = "completed",
+  startedAt = at,
+  owner: { readonly agent?: string; readonly task?: string } = {},
 ) =>
   Effect.gen(function* () {
     const repository = yield* TaskRepository;
+    const agentId = TaskAgentId.make(owner.agent ?? "agent");
+    const taskId = TaskId.make(owner.task ?? `task-${id}`);
     yield* repository.upsertAgent({
-      id: TaskAgentId.make("agent"),
+      id: agentId,
       projectId: null,
-      name: "Developer",
+      name: owner.agent ?? "Developer",
       enabled: false,
       startStatuses: [],
       startTags: [],
@@ -262,7 +270,7 @@ const finishedRun = (
       updatedAt: at,
     });
     yield* repository.upsert({
-      id: TaskId.make(`task-${id}`),
+      id: taskId,
       projectId: ProjectId.make("project"),
       title: `Task ${id}`,
       description: "",
@@ -281,12 +289,12 @@ const finishedRun = (
     });
     yield* repository.createAgentRun({
       id: TaskAgentRunId.make(id),
-      taskId: TaskId.make(`task-${id}`),
-      agentId: TaskAgentId.make("agent"),
+      taskId,
+      agentId,
       threadId: ThreadId.make(`thread-${id}`),
       modelSelection,
       status,
-      startedAt: at,
+      startedAt,
       completedAt: status === "running" ? null : at,
       triggerRunId: null,
       continuesRunId: null,
@@ -308,15 +316,38 @@ const wakeState = Effect.gen(function* () {
 });
 
 /** Ends a running run now. */
-const finishNow = (id: string) =>
+const finishNow = (id: string, status: "completed" | "failed" = "completed") =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const completedAt = DateTime.formatIso(yield* DateTime.now);
     yield* sql`
-      UPDATE task_agent_runs SET status = 'completed', completed_at = ${completedAt}
+      UPDATE task_agent_runs SET status = ${status}, completed_at = ${completedAt}
       WHERE id = ${id}
     `;
   });
+
+/** Starts a run now. */
+const startNow = (id: string, sourceThreadId: string, owner?: Parameters<typeof finishedRun>[4]) =>
+  Effect.flatMap(DateTime.now, (now) =>
+    finishedRun(id, sourceThreadId, "running", DateTime.formatIso(now), owner),
+  );
+
+/**
+ * A queue hand-off: the next run starts, then the previous one records its end,
+ * as a task agent's last two task updates do.
+ */
+const handOff = (previous: string, next: string, sourceThreadId: string) =>
+  Effect.gen(function* () {
+    yield* startNow(next, sourceThreadId);
+    yield* TestClock.adjust(30_000);
+    yield* finishNow(previous);
+  });
+
+const reportedRuns = (text: string) =>
+  text
+    .split("\n")
+    .filter((line) => line.startsWith("- Task "))
+    .map((line) => /run (\S+)/.exec(line)?.[1]);
 
 /** Makes every waiting batch due now, as if its retry time passed. */
 const retryNow = Effect.gen(function* () {
@@ -437,8 +468,11 @@ describe("TaskSourceWake settling", () => {
         dispatch,
         Effect.gen(function* () {
           const wake = yield* TaskSourceWake;
-          yield* finishedRun("r1", "chat");
-          yield* finishedRun("r2", "chat", "running");
+          const minutesBefore = (minutes: number) =>
+            new Date(Date.parse(at) - minutes * 60_000).toISOString();
+          yield* finishedRun("r1", "chat", "completed", minutesBefore(10));
+          // Started while r1 ran, but long before it ended: not its successor.
+          yield* finishedRun("r2", "chat", "running", minutesBefore(5));
           yield* wake.sweep;
           assert.lengthOf(dispatch.delivered, 0);
 
@@ -457,6 +491,144 @@ describe("TaskSourceWake settling", () => {
       );
     },
   );
+
+  it.effect("a chain of queued runs reports once, after its last run settles", () => {
+    const dispatch = fakeDispatch(() => null);
+    return withWake(
+      dispatch,
+      Effect.gen(function* () {
+        const wake = yield* TaskSourceWake;
+        yield* startNow("r1", "chat");
+        for (const [previous, next] of [
+          ["r1", "r2"],
+          ["r2", "r3"],
+        ] as const) {
+          yield* TestClock.adjust(2 * SOURCE_MAX_WAIT_MS);
+          yield* handOff(previous, next, "chat");
+          yield* TestClock.adjust(2 * SOURCE_MAX_WAIT_MS);
+          yield* wake.sweep;
+          assert.lengthOf(dispatch.delivered, 0);
+        }
+
+        yield* TestClock.adjust(2 * SOURCE_MAX_WAIT_MS);
+        yield* finishNow("r3");
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 0);
+        yield* TestClock.adjust(SOURCE_SETTLE_MS);
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 1);
+        const [message] = dispatch.delivered;
+        assert.deepStrictEqual(reportedRuns(message!.text), ["r1", "r2", "r3"]);
+        assert.include(message!.text, "No run for this chat's tasks is in progress now.");
+        assert.deepStrictEqual(yield* wakeState, { told: ["r1", "r2", "r3"], batches: [] });
+      }),
+    );
+  });
+
+  it.effect("a later delegation from the same chat does not hold an earlier report", () => {
+    const dispatch = fakeDispatch(() => null);
+    return withWake(
+      dispatch,
+      Effect.gen(function* () {
+        const wake = yield* TaskSourceWake;
+        const minutesBefore = (minutes: number) =>
+          new Date(Date.parse(at) - minutes * 60_000).toISOString();
+        yield* finishedRun("long", "chat", "running", minutesBefore(30));
+        yield* finishedRun("r1", "chat", "completed", minutesBefore(10));
+        // The chat delegates other work to another agent a few minutes after r1 ended.
+        yield* TestClock.setTime(Date.parse(at) + 3 * 60_000);
+        yield* startNow("later", "chat", { agent: "Researcher" });
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 0);
+
+        yield* TestClock.setTime(Date.parse(at) + SOURCE_MAX_WAIT_MS);
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 1);
+        assert.deepStrictEqual(reportedRuns(dispatch.delivered[0]!.text), ["r1"]);
+        assert.deepStrictEqual(yield* wakeState, { told: ["r1"], batches: [] });
+      }),
+    );
+  });
+
+  it.effect("a later run of the same task holds the report until it settles", () => {
+    const dispatch = fakeDispatch(() => null);
+    return withWake(
+      dispatch,
+      Effect.gen(function* () {
+        const wake = yield* TaskSourceWake;
+        yield* finishedRun("long", "chat", "running", at);
+        yield* finishedRun("work", "chat", "completed", at, { task: "task-work" });
+        // Another agent reviews the task, starting after the hand-off window.
+        yield* TestClock.setTime(Date.parse(at) + 3 * 60_000);
+        yield* startNow("review", "chat", { agent: "Reviewer", task: "task-work" });
+        yield* TestClock.adjust(2 * SOURCE_MAX_WAIT_MS);
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 0);
+
+        yield* finishNow("review");
+        yield* TestClock.adjust(SOURCE_MAX_WAIT_MS);
+        yield* wake.sweep;
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 1);
+        assert.deepStrictEqual(reportedRuns(dispatch.delivered[0]!.text), ["work", "review"]);
+        assert.deepStrictEqual(yield* wakeState, { told: ["review", "work"], batches: [] });
+      }),
+    );
+  });
+
+  it.effect("a failed step in a chain wakes at once, with the completed steps before it", () => {
+    const dispatch = fakeDispatch(() => null);
+    return withWake(
+      dispatch,
+      Effect.gen(function* () {
+        const wake = yield* TaskSourceWake;
+        yield* startNow("r1", "chat");
+        yield* TestClock.adjust(SOURCE_MAX_WAIT_MS);
+        yield* handOff("r1", "r2", "chat");
+        yield* TestClock.adjust(2 * SOURCE_MAX_WAIT_MS);
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 0);
+
+        yield* finishNow("r2", "failed");
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 1);
+        const [message] = dispatch.delivered;
+        assert.strictEqual(message!.kind, "wake");
+        assert.deepStrictEqual(reportedRuns(message!.text), ["r2", "r1"]);
+        assert.deepStrictEqual(yield* wakeState, { told: ["r1", "r2"], batches: [] });
+      }),
+    );
+  });
+
+  it.effect("a chain that never ends still reports after the longest chain wait", () => {
+    const dispatch = fakeDispatch(() => null);
+    return withWake(
+      dispatch,
+      Effect.gen(function* () {
+        const wake = yield* TaskSourceWake;
+        const step = 60 * 60_000;
+        const steps = SOURCE_CHAIN_MAX_WAIT_MS / step;
+        yield* startNow("r0", "chat");
+        for (let index = 1; index <= steps; index += 1) {
+          yield* TestClock.adjust(step);
+          yield* handOff(`r${index - 1}`, `r${index}`, "chat");
+          yield* wake.sweep;
+          assert.lengthOf(dispatch.delivered, 0);
+        }
+
+        // r0 ended SOURCE_CHAIN_MAX_WAIT_MS ago and the chain still runs.
+        yield* TestClock.adjust(step);
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 1);
+        const [message] = dispatch.delivered;
+        assert.deepStrictEqual(
+          reportedRuns(message!.text),
+          Array.from({ length: steps }, (_, index) => `r${index}`),
+        );
+        assert.notInclude(message!.text, "No run for this chat's tasks is in progress now.");
+      }),
+    );
+  });
 
   it.effect("an urgent batch split by the sweep window sends the failure first, not idle", () => {
     const dispatch = fakeDispatch(() => null);
