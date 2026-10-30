@@ -31,9 +31,41 @@
   display: none;
 }
 
-/* Glyphs and project tiles keep their standard size; bot faces 28px (drawn at 20px in a 16px slot). */
+/* Glyphs and project tiles keep their standard size; bot faces about 50px (drawn at 20px in a 16px slot). */
 [data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-list-row] > :first-child {
-  zoom: 1.4;
+  zoom: 2.53;
+}
+/* A bot's target is as wide as the traffic lights (60px), its face about 50px. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-list-row] {
+  width: 3.75rem;
+  height: 3.75rem;
+  border-radius: 0.875rem;
+  overflow: visible;
+}
+/* Equal 28px between groups: bots space by the menu's gap, New thread gets the 4px the other sections' menus add. */
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-sidebar="menu"]:has([data-sidebar-list-row]) {
+  row-gap: 10px;
+}
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-sidebar-threads-section]
+  > [data-sidebar-section-header] {
+  margin-bottom: 12px;
+}
+/* The footer's last button sits as far from the bottom as the bots' targets from the sides. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar="footer"] {
+  padding-bottom: 1rem;
+}
+/* The status badge keeps about 16px instead of growing with the face. */
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-sidebar-list-row]
+  g.cbc-prop:has(> .cbc-badge) {
+  transform-box: fill-box;
+  transform-origin: center;
+  scale: 0.9;
 }
 
 /* The thread list is left out; the Threads section keeps only New thread. */
@@ -61,10 +93,10 @@
  */
 [data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-section-header] {
   width: 1.75rem;
-  height: 1px;
+  height: 0;
   margin: 0.5rem auto;
   padding: 0;
-  background-color: var(--contrast-sidebar-border);
+  background-color: transparent;
 }
 [data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-section-header] > * {
   display: none;
@@ -138,4 +170,9 @@
   from {
     opacity: 0;
   }
+}
+
+/* The resize edge keeps its cursor but draws no thicker line on hover. */
+[data-sidebar-compact] [data-sidebar="rail"]:hover::after {
+  background-color: transparent;
 }

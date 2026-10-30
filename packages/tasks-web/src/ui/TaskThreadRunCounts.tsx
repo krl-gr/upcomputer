@@ -294,8 +294,8 @@ function onLightPillClassName(className: string) {
 const PILL_SURFACE = "bg-neutral-200 dark:bg-neutral-100";
 
 /**
- * Over the bot's top right in its 40px compact target, with a dot towards its head. The pill
- * starts 28px in and moves left rather than past the 92px column when its counts are wide.
+ * Over the bot's top right in its 60px compact target, with a dot towards its head. The pill
+ * starts 16px right of centre and moves left rather than past the 92px column when its counts are wide.
  */
 function RunPill({
   client,
@@ -317,10 +317,10 @@ function RunPill({
     <span className="hidden [[data-sidebar-compact=true]_&]:contents">
       <span
         aria-hidden
-        className={`pointer-events-none absolute top-1 left-[calc(50%+6px)] size-1 rounded-full ${PILL_SURFACE}`}
+        className={`pointer-events-none absolute top-[10px] left-[calc(50%+13px)] size-[5px] rounded-full ${PILL_SURFACE}`}
       />
-      <span className="pointer-events-none absolute -top-2.5 left-[calc(50%-20px)] flex w-16">
-        <span className="basis-7" />
+      <span className="pointer-events-none absolute -top-[7px] left-[calc(50%-20px)] flex w-16">
+        <span className="basis-9" />
         <ThreadTasksMenu
           client={client}
           environmentId={environmentId}
@@ -335,7 +335,7 @@ function RunPill({
                         type="button"
                         data-bot-run-pill={threadId}
                         aria-label={`Tasks for ${name}: ${summary}`}
-                        className={`pointer-events-auto flex h-[15px] flex-none cursor-pointer items-center gap-[3.5px] rounded-full px-[4.5px] text-[10px] leading-[15px] font-semibold tabular-nums outline-none hover:bg-neutral-300 focus-visible:ring-1 focus-visible:ring-ring dark:hover:bg-white ${PILL_SURFACE}`}
+                        className={`pointer-events-auto flex h-[18px] flex-none cursor-pointer items-center gap-1 rounded-full px-[5.5px] text-[11.5px] leading-[18px] font-semibold tabular-nums outline-none hover:bg-neutral-300 focus-visible:ring-1 focus-visible:ring-ring dark:hover:bg-white ${PILL_SURFACE}`}
                         onPointerDown={stopRowEvent}
                         onClick={stopRowEvent}
                         onKeyDown={stopRowKeyActivation}
