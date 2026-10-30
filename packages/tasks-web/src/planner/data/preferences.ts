@@ -12,6 +12,7 @@ import {
   useLocalStorage,
 } from "../../../../../apps/web/src/hooks/useLocalStorage.ts";
 import { DAY_COUNT_OPTIONS, todayKey } from "../logic/dates.ts";
+import { MIN_LIST_WIDTH } from "../logic/plannerWidth.ts";
 
 const PlannerPreferencesSchema = Schema.Struct({
   weekViewMode: Schema.optional(Schema.Literals(["queue", "calendar"])),
@@ -63,14 +64,7 @@ function localeWeekStart(): number {
   }
 }
 
-/**
- * The list header's controls between its gutters, with Tasks / Routines as a
- * select (`ListHeader`; the switch needs 424px). The list column is at least
- * this plus the gutters, and by default wide enough for the switch.
- */
-export const LIST_HEADER_WIDTH = 376;
 export const DEFAULT_LIST_WIDTH = 464;
-export const MIN_LIST_WIDTH = 420;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 

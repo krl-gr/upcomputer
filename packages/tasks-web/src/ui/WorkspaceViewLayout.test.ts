@@ -4,19 +4,12 @@ import { test } from "vite-plus/test";
 
 const source = NodeFS.readFileSync(new URL("./WorkspaceViewLayout.tsx", import.meta.url), "utf8");
 
-test("workspace header actions use a visible light hover and preserve the dark hover", () => {
-  const actionClassLines = source
-    .split("\n")
-    .filter(
-      (line) => line.includes("transition-colors") && line.includes("[-webkit-app-region:no-drag]"),
-    );
-
-  NodeAssert.equal(actionClassLines.length, 2);
-  for (const line of actionClassLines) {
-    NodeAssert.match(line, /hover:bg-accent/);
-    NodeAssert.match(line, /dark:hover:bg-white\/\[0\.05\]/);
-    NodeAssert.doesNotMatch(line, /transition-colors hover:bg-white/);
-  }
+test("workspace header actions are the shared outline button, not hand-rolled ones", () => {
+  NodeAssert.match(
+    source,
+    /<Button\s+variant="outline"\s+size=\{action\.label \? "sm" : "icon-sm"\}/,
+  );
+  NodeAssert.doesNotMatch(source, /<button/);
 });
 
 const sourceFiles = (directory: URL): string[] =>
@@ -56,9 +49,12 @@ test("the Tasks header keeps its project, status, last-run and tag filters", () 
     tasksView.indexOf("onNavigateBack={"),
   );
   NodeAssert.match(toolbar, /\{props\.projectSelect\}/);
-  NodeAssert.match(toolbar, /aria-label="Filter by status"/);
-  NodeAssert.match(toolbar, /aria-label="Filter by last run"/);
-  NodeAssert.match(toolbar, /<TagFilterCombobox/);
+  NodeAssert.match(toolbar, /<TaskFilterRow/);
+  NodeAssert.match(toolbar, /<TaskFiltersButton/);
+  const filters = NodeFS.readFileSync(new URL("./TaskFilters.tsx", import.meta.url), "utf8");
+  NodeAssert.match(filters, /aria-label="Filter by status"/);
+  NodeAssert.match(filters, /aria-label="Filter by last run"/);
+  NodeAssert.match(filters, /<TagFilterCombobox/);
 });
 
 test("Tasks and Agents share one project select, apart from the sidebar's scope", () => {

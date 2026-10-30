@@ -52,21 +52,21 @@ export function runInterruptResultPresentation(input: {
       return {
         kind: "failed",
         label: "Run failed",
-        detail: "Task agent run failed",
+        detail: "Worker run failed",
         tone: "danger",
       };
     case "interrupted":
       return {
         kind: "failed",
         label: "Run interrupted",
-        detail: "Task agent run could not continue",
+        detail: "Worker run could not continue",
         tone: "danger",
       };
     default:
       return {
         kind: "stopped",
         label: "Run ended",
-        detail: `Task agent run ${status}`,
+        detail: `Worker run ${status}`,
         tone: "neutral",
       };
   }

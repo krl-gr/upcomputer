@@ -1,7 +1,7 @@
-/* oxlint-disable t3code/no-native-title-tooltip -- ported V1 Tasks UI; moves to Tooltip with the product UI phase. */
 import { useCallback, useEffect, type ReactNode } from "react";
 import { PlusIcon } from "lucide-react";
 
+import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { isElectron } from "../../../../apps/web/src/env.ts";
 import { WorkspacePageHeader } from "../../../../apps/web/src/extensionApi.ts";
 import { SidebarInset } from "../../../../apps/web/src/components/ui/sidebar.tsx";
@@ -19,6 +19,29 @@ export interface WorkspaceViewAction {
 }
 
 /**
+ * A header button: the shared outline button at the planner list header's
+ * size, an icon alone or with its label.
+ */
+function HeaderAction(props: { readonly action: WorkspaceViewAction }) {
+  const { action } = props;
+  const icon = action.hideIcon ? null : action.icon;
+  return (
+    <Button
+      variant="outline"
+      size={action.label ? "sm" : "icon-sm"}
+      aria-label={action.ariaLabel}
+      data-track={action.track}
+      disabled={action.disabled}
+      onClick={action.onClick}
+      title={action.title ?? action.ariaLabel}
+    >
+      {icon}
+      {action.label}
+    </Button>
+  );
+}
+
+/**
  * The horizontal gutters of upstream's `WorkspacePageHeader`, so page content
  * starts under the page title and ends under the header's last control.
  */
@@ -29,9 +52,9 @@ const WORKSPACE_CONTENT_GUTTER_CLASS = "pl-(--workspace-gutter-start) pr-(--work
  * page header (title or back control on the left, controls on the right) over
  * content inside the same gutters. The sidebar toggle is upstream's shared one.
  *
- * The `panel` variant fits a right-panel surface: the panel's tab bar is the
- * chrome, so the header is a plain row that wraps its controls at narrow widths,
- * appears only with something in it, and Escape only acts from inside the view.
+ * The `panel` variant fits a right-panel surface: the header is the planner
+ * list header's frame without title bar duties, appears only with something
+ * in it, and Escape only acts from inside the view.
  */
 export function WorkspaceViewLayout({
   title,
@@ -81,20 +104,7 @@ export function WorkspaceViewLayout({
 
   const headerContent = (
     <>
-      {leadingAction ? (
-        <button
-          aria-label={leadingAction.ariaLabel}
-          data-track={leadingAction.track}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-white/[0.05] [-webkit-app-region:no-drag]"
-          disabled={leadingAction.disabled}
-          onClick={leadingAction.onClick}
-          title={leadingAction.title ?? leadingAction.ariaLabel}
-          type="button"
-        >
-          {leadingAction.icon}
-          {leadingAction.label ? <span>{leadingAction.label}</span> : null}
-        </button>
-      ) : null}
+      {leadingAction ? <HeaderAction action={leadingAction} /> : null}
       {title ? (
         <h1
           className={`${toolbar ? "shrink-0" : "flex-1"} min-w-0 truncate text-sm font-medium text-foreground`}
@@ -106,7 +116,7 @@ export function WorkspaceViewLayout({
         <div
           className={
             panel
-              ? "contents"
+              ? "flex min-w-0 flex-1 items-center gap-1.5"
               : "flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           }
         >
@@ -114,18 +124,12 @@ export function WorkspaceViewLayout({
         </div>
       ) : null}
       {action ? (
-        <button
-          aria-label={action.ariaLabel}
-          data-track={action.track}
-          className={`${action.label ? "h-8 gap-1.5 rounded-md px-2 font-medium text-foreground" : "size-8 rounded-full text-muted-foreground"} inline-flex shrink-0 items-center justify-center transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-white/[0.05] [-webkit-app-region:no-drag]`}
-          disabled={action.disabled}
-          onClick={action.onClick}
-          title={action.title ?? action.ariaLabel}
-          type="button"
-        >
-          {action.hideIcon ? null : (action.icon ?? <PlusIcon className="size-4" />)}
-          {action.label ? <span className="text-sm">{action.label}</span> : null}
-        </button>
+        <HeaderAction
+          action={{
+            ...action,
+            icon: action.hideIcon ? undefined : (action.icon ?? <PlusIcon />),
+          }}
+        />
       ) : null}
     </>
   );
@@ -141,11 +145,14 @@ export function WorkspaceViewLayout({
         }}
       >
         {header && (leadingAction || title || toolbar || action) ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pt-2">
-            {headerContent}
-          </div>
+          // The planner list header's frame, so Me and Workers share one header.
+          <WorkspacePageHeader clearCollapsedSidebar={false} className="border-b border-border">
+            <div className="flex min-w-0 flex-1 items-center gap-1">{headerContent}</div>
+          </WorkspacePageHeader>
         ) : null}
-        <div className={`flex min-h-0 flex-1 flex-col overflow-y-auto ${inset ? "px-3" : ""}`}>
+        <div
+          className={`flex min-h-0 flex-1 flex-col overflow-y-auto ${inset ? WORKSPACE_CONTENT_GUTTER_CLASS : ""}`}
+        >
           {children}
         </div>
       </div>

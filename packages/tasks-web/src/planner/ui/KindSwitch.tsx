@@ -1,11 +1,4 @@
 import {
-  Select,
-  SelectItem,
-  SelectPopup,
-  SelectTrigger,
-  SelectValue,
-} from "../../../../../apps/web/src/components/ui/select.tsx";
-import {
   ToggleGroup,
   ToggleGroupItem,
 } from "../../../../../apps/web/src/components/ui/toggle-group.tsx";
@@ -17,7 +10,7 @@ const kindOf = (value: unknown) => (value === "task" || value === "routine" ? va
 
 /**
  * Tasks / Routines: wande's two tabs, what the planner lists. Sits in the
- * list header right of the Me / Agents switch.
+ * list header right of the Me / Workers switch.
  */
 export function KindSwitch(props: {
   readonly value: PlannerKind;
@@ -36,32 +29,5 @@ export function KindSwitch(props: {
       <ToggleGroupItem value="task">{LABELS.task}</ToggleGroupItem>
       <ToggleGroupItem value="routine">{LABELS.routine}</ToggleGroupItem>
     </ToggleGroup>
-  );
-}
-
-/** `KindSwitch` as a select, for a list header too narrow for the switch. */
-export function KindSelect(props: {
-  readonly value: PlannerKind;
-  readonly onChange: (kind: PlannerKind) => void;
-}) {
-  return (
-    <Select
-      value={props.value}
-      onValueChange={(value) => {
-        const next = kindOf(value);
-        if (next) props.onChange(next);
-      }}
-    >
-      <SelectTrigger className="w-24 min-w-0" size="sm" aria-label="Tasks or routines">
-        <SelectValue>{LABELS[props.value]}</SelectValue>
-      </SelectTrigger>
-      <SelectPopup>
-        {(["task", "routine"] as const).map((kind) => (
-          <SelectItem key={kind} value={kind}>
-            {LABELS[kind]}
-          </SelectItem>
-        ))}
-      </SelectPopup>
-    </Select>
   );
 }

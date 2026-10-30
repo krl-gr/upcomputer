@@ -137,3 +137,38 @@ html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
   *:not([style*="transition"]) {
   transition: none;
 }
+
+/*
+ * Upstream's outline buttons and select triggers draw a plain 1px border like the light
+ * composer card, with no drop shadow or inset highlight. Focus keeps its ring, and states
+ * that recolour the border keep it: a destructive button's hover and press, a select's
+ * focus and invalid value.
+ */
+html[data-theme-id="upcomputer"]
+  :is(
+    .border-input.bg-popover:not(.text-destructive-foreground:is(:hover, [data-pressed])),
+    [data-slot="select-trigger"].border-input:not(:focus-visible, [aria-invalid="true"])
+  ) {
+  border-color: var(--border);
+}
+html[data-theme-id="upcomputer"]
+  :is(.border-input.bg-popover, [data-slot="select-trigger"].border-input):not(:focus-visible) {
+  box-shadow: none;
+}
+html[data-theme-id="upcomputer"]
+  :is(.border-input.bg-popover, [data-slot="select-trigger"].border-input)::before {
+  box-shadow: none;
+}
+/* Small select triggers round like the buttons beside them. */
+html[data-theme-id="upcomputer"] [data-slot="select-trigger"].rounded-md {
+  border-radius: var(--control-radius);
+}
+/* Segmented controls: the same plain frame, and the picked segment has no shadow. */
+html[data-theme-id="upcomputer"] [data-slot="toggle-group"][data-variant="segmented-outline"] {
+  border-color: var(--border);
+}
+html[data-theme-id="upcomputer"]
+  [data-slot="toggle-group"][data-variant^="segmented"]
+  > [data-pressed]:not(:focus-visible) {
+  box-shadow: none;
+}

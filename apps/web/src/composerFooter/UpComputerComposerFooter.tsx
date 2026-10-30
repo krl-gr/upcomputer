@@ -47,7 +47,7 @@ export interface UpComputerComposerFooterProps {
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   /** Upstream's context ring and send, stop and queue actions. */
   primaryActions: ReactNode;
-  /** The compact row (`isComposerCompact`): only the paperclip and the actions show, over the prompt. */
+  /** The compact row (`isComposerCompact`): only the paperclip and actions show, over the prompt. */
   compact?: boolean;
   className?: string | undefined;
 }

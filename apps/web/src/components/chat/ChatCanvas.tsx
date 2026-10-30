@@ -6,6 +6,7 @@ import { resolveChatCanvasModel, type ChatCanvasStore } from "./canvasStore";
 import { selectThreadPanelOpen, useRightPanelStore } from "../../rightPanelStore";
 import { observeResize } from "../../lib/observeResize";
 import type { ScopedThreadRef } from "@t3tools/contracts";
+import { isNarrowChat } from "../../narrowChat/narrowChat";
 
 export function ChatCanvas({
   store,
@@ -97,6 +98,7 @@ export function ChatCanvas({
         {...props}
         ref={elementRef}
         data-chat-canvas
+        data-chat-narrow={isNarrowChat(measurements.width) || undefined}
         data-preview-overlaps-chat={layout.overlapsChat || undefined}
         className="relative flex min-h-0 min-w-0 flex-1 flex-col"
         style={
@@ -109,6 +111,7 @@ export function ChatCanvas({
       >
         <div
           ref={widthProbeRef}
+          data-chat-width-probe
           aria-hidden
           className="pointer-events-none invisible absolute h-0 w-(--chat-content-max-width) min-w-[40rem] box-content ps-3 sm:ps-12"
         />

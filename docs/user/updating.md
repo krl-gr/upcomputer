@@ -1,25 +1,26 @@
 # Updating Up.computer
 
 The app you use and the server running your agents can be on different machines.
-When a server is behind your web or desktop app, the update button at the bottom
-of the sidebar and **Settings → Environments** offer to update it.
+When a server is behind your web or desktop app, the bell at the bottom of the
+sidebar and **Settings → Environments** offer to update it. A dot on the bell
+means an update or a notification is waiting.
 
 ## Update everything at once
 
-The update button at the bottom of the sidebar updates every connected machine
-in one step. It updates outdated providers, then servers that are behind, then
+**Update everything**, under Updates in the sidebar's bell, updates every
+connected machine in one step. It updates outdated providers, then servers that are behind, then
 the desktop app you are using. Servers move to the
 version your desktop app is installing, or to your web app's version. A
 background service stays on its current release channel. A remote desktop app
-installs the latest release from its own channel. Hover the button to see what
-it will update.
+installs the latest release from its own channel. The bell says what it will
+update, and the confirmation lists each machine.
 
-While it runs, the button widens to show progress. It names a machine that is
+While it runs, a progress bar next to the bell shows each step. It names a machine that is
 taking longer than usual, and offers **Retry** for a server that failed. Click
 it to see every machine. The desktop app restarts once each server has started
 its own restart, after a short countdown. Choose **Later** to keep working and
-restart from the update button when you are ready. A server still restarting
-finishes on its own, and the button keeps showing it after the desktop app
+restart from the progress bar when you are ready. A server still restarting
+finishes on its own, and the progress bar keeps showing it after the desktop app
 restarts.
 
 Server updates appear only after that version is published to npm. Remote
@@ -29,7 +30,7 @@ and why, such as a machine that is offline or needs a manual update. Use
 
 If a desktop app restarts on its old version, Up.computer tells you the update did
 not apply. It does not install that version again on its own, even when another
-device asks. Use the update button on that machine to retry.
+device asks. Use the bell on that machine to retry.
 
 The confirmation counts the running threads that the restarts will interrupt,
 and how many can resume afterwards. See **Continue threads after restarts**

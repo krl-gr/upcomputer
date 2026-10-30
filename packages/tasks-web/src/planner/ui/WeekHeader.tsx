@@ -5,7 +5,6 @@ import {
   ChevronsLeftIcon,
   ChevronsRightIcon,
   MoreHorizontalIcon,
-  Settings2Icon,
   XIcon,
 } from "lucide-react";
 
@@ -44,7 +43,8 @@ const DEFAULT_DURATIONS = [15, 20, 30, 45, 60, 90, 120];
 
 /**
  * The planner settings (wande's Settings tab, the planner part): view
- * preferences per device, then the server's reminder settings.
+ * preferences per device, then the server's reminder settings. A submenu of
+ * the week header's menu.
  */
 function PlannerSettings(props: {
   readonly onChange: (patch: Partial<PlannerPreferences>) => void;
@@ -52,12 +52,10 @@ function PlannerSettings(props: {
   const { preferences } = usePlanner();
   return (
     <Popover>
-      <PopoverTrigger
-        render={<Button size="icon-sm" variant="outline" aria-label="Planner settings" />}
-      >
-        <Settings2Icon />
+      <PopoverTrigger render={<Button size="sm" variant="ghost" className="justify-start" />}>
+        Settings
       </PopoverTrigger>
-      <PopoverPopup align="end" width="sm">
+      <PopoverPopup align="end" side="left" width="sm">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <Label>Week starts on</Label>
@@ -191,18 +189,19 @@ export function WeekHeader(props: {
   readonly onCopySelected: (dates: readonly string[], at: "top" | "bottom") => void;
   readonly onDeleteSelected: () => void;
   /**
-   * Beside the list on the page the header is the title bar's right half,
-   * as the right panel's tab bar is beside the thread header. Stacked under
-   * the list header, or in the right panel, it is a plain row.
+   * On the page the header is in the title bar: its right half beside the
+   * list, or the whole row when stacked. In the right panel it is a plain row.
    */
   readonly titleBar: boolean;
+  /** Stacked on the page: the planner's first row, so it clears the collapsed sidebar. */
+  readonly leftEdge: boolean;
 }) {
   const { preferences } = usePlanner();
-  // The left edge belongs to the list column, so no collapsed-sidebar inset.
   const header = {
     electron: isElectron && props.titleBar,
-    clearCollapsedSidebar: false,
-    className: "justify-between border-b border-border",
+    clearCollapsedSidebar: props.leftEdge,
+    // A container, so the day steps give way when its full row does not fit.
+    className: "@container justify-between border-b border-border",
   };
   const [menuOpen, setMenuOpen] = useState(false);
   const [goToOpen, setGoToOpen] = useState(false);
@@ -344,6 +343,7 @@ export function WeekHeader(props: {
           label="Previous day"
           variant="outline"
           size="icon-sm"
+          className="@max-[22rem]:hidden"
           onClick={() => props.onNavigate("previous-day")}
         >
           <ChevronLeftIcon />
@@ -355,6 +355,7 @@ export function WeekHeader(props: {
           label="Next day"
           variant="outline"
           size="icon-sm"
+          className="@max-[22rem]:hidden"
           onClick={() => props.onNavigate("next-day")}
         >
           <ChevronRightIcon />
@@ -407,6 +408,7 @@ export function WeekHeader(props: {
               >
                 Select items
               </Button>
+              <PlannerSettings onChange={props.onPreferencesChange} />
               <span className="px-2 pt-2 text-xs font-semibold text-muted-foreground">
                 Days shown
               </span>
@@ -445,7 +447,6 @@ export function WeekHeader(props: {
             </div>
           </PopoverPopup>
         </Popover>
-        <PlannerSettings onChange={props.onPreferencesChange} />
       </div>
     </WorkspacePageHeader>
   );

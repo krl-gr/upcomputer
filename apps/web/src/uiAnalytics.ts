@@ -13,6 +13,7 @@ const SECTION_VIEWS: Readonly<Record<string, AppView>> = {
   draft: "new_thread",
   tasks: "tasks",
   agents: "agents",
+  workers: "agents",
   automations: "automations",
   bots: "bots",
   settings: "settings",

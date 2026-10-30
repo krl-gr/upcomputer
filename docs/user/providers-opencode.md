@@ -21,7 +21,7 @@ installs, a 1.x release that Up.computer pins and tests.
 
 OpenCode 2 is a separate package, `@opencode/cli`. To move from 1.x, install it
 yourself, for example `npm install -g @opencode/cli`. Then refresh provider status.
-Up.computer's update button updates whichever package you have installed. It never
+Up.computer's provider updates update whichever package you have installed. It never
 switches a 1.x install to 2.x.
 
 OpenCode 2 converts the shared OpenCode database to its own format the first time it

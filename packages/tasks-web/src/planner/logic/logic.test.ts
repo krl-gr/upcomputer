@@ -11,8 +11,15 @@ import {
   queueDropTarget,
 } from "./dndPlanning.ts";
 import { insertionIndex } from "./placement.ts";
-import { plannerIsWide, WIDE_PLANNER_MIN_WIDTH } from "./plannerWidth.ts";
+import {
+  LIST_HEADER_WIDTH,
+  MIN_LIST_WIDTH,
+  MIN_WEEK_WIDTH,
+  plannerIsWide,
+  WIDE_PLANNER_MIN_WIDTH,
+} from "./plannerWidth.ts";
 import { countProgress, progressLabel, weekRangeOf } from "./progress.ts";
+import { snapStackedWeek } from "./stackedWeek.ts";
 import {
   entryTimingLabel,
   minutesToTime,
@@ -142,16 +149,28 @@ describe("progress", () => {
   });
 });
 
-describe("planner width", () => {
+describe("planner layout", () => {
   test("the list sits beside the week from the threshold up, stacked below it", () => {
     NodeAssert.equal(plannerIsWide(WIDE_PLANNER_MIN_WIDTH - 1), false);
     NodeAssert.equal(plannerIsWide(WIDE_PLANNER_MIN_WIDTH), true);
     NodeAssert.equal(plannerIsWide(WIDE_PLANNER_MIN_WIDTH + 1), true);
   });
 
-  test("the page switches where the lg window breakpoint did, beside the default sidebar", () => {
-    NodeAssert.equal(plannerIsWide(1024 - 256), true);
-    NodeAssert.equal(plannerIsWide(1023 - 256), false);
+  test("the planner goes wide only where the narrowest list and the narrowest week both fit", () => {
+    NodeAssert.equal(WIDE_PLANNER_MIN_WIDTH, MIN_LIST_WIDTH + MIN_WEEK_WIDTH);
+    NodeAssert.ok(MIN_LIST_WIDTH >= LIST_HEADER_WIDTH);
+    NodeAssert.equal(plannerIsWide(MIN_LIST_WIDTH + MIN_WEEK_WIDTH - 1), false);
+  });
+
+  test("a dragged stacked week settles hidden, split or full by its share of the room", () => {
+    const room = 500;
+    NodeAssert.equal(snapStackedWeek(0, room), "hidden");
+    NodeAssert.equal(snapStackedWeek(99, room), "hidden");
+    NodeAssert.equal(snapStackedWeek(100, room), "split");
+    NodeAssert.equal(snapStackedWeek(299, room), "split");
+    NodeAssert.equal(snapStackedWeek(300, room), "full");
+    NodeAssert.equal(snapStackedWeek(room, room), "full");
+    NodeAssert.equal(snapStackedWeek(40, 0), "hidden");
   });
 });
 

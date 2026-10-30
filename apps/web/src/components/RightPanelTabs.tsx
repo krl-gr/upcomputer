@@ -608,8 +608,8 @@ function PreviewFavicon({ capturedUrl, url }: { capturedUrl: string | null; url:
   return (
     <FaviconImage
       sources={[capturedUrl, publicProviderUrl]}
-      fallback={<Globe2 className="size-3 shrink-0" />}
-      className="size-3 shrink-0 rounded-sm object-contain"
+      fallback={<Globe2 className="size-4 shrink-0" />}
+      className="size-4 shrink-0 rounded-sm object-contain"
     />
   );
 }
@@ -654,20 +654,20 @@ function SurfaceIcon({
     case "preview":
       return <PreviewFavicon capturedUrl={previewCapturedUrl} url={previewUrl} />;
     case "diff":
-      return <FileDiff className="size-3 shrink-0" />;
+      return <FileDiff className="size-4 shrink-0" />;
     case "files":
-      return <Files className="size-3 shrink-0" />;
+      return <Files className="size-4 shrink-0" />;
     case "file":
       return (
         <PierreEntryIcon
           pathValue={surface.relativePath}
           kind="file"
           theme={theme}
-          className="size-3"
+          className="size-4"
         />
       );
     case "terminal":
-      return <TerminalSquare className="size-3 shrink-0" />;
+      return <TerminalSquare className="size-4 shrink-0" />;
     case "pull-request":
       return (
         <PullRequestSurfaceIcon
@@ -677,18 +677,18 @@ function SurfaceIcon({
         />
       );
     case "pull-requests":
-      return <PullRequestGlyph.link className="size-3 shrink-0" />;
+      return <PullRequestGlyph.link className="size-4 shrink-0" />;
     case "feature": {
       const Icon = productRightPanelSurface(surface.featureSurfaceId)?.icon ?? Blocks;
-      return <Icon className="size-3 shrink-0" />;
+      return <Icon className="size-4 shrink-0" />;
     }
     case "device":
       return surface.target?.platform === "ios" ? (
-        <AppleIcon className="size-3 shrink-0" />
+        <AppleIcon className="size-4 shrink-0" />
       ) : surface.target?.platform === "android" ? (
-        <AndroidIcon className="size-3 shrink-0" />
+        <AndroidIcon className="size-4 shrink-0" />
       ) : (
-        <Smartphone className="size-3 shrink-0" />
+        <Smartphone className="size-4 shrink-0" />
       );
   }
 }
@@ -777,13 +777,13 @@ function PullRequestSurfaceIcon({
   const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, reference);
   const status = linkedSnapshot ?? newestPullRequestSummary(detail, sharedSummary) ?? seed ?? null;
   if (status === null) {
-    return <PullRequestGlyph.pullRequest className="size-3 shrink-0 text-muted-foreground" />;
+    return <PullRequestGlyph.pullRequest className="size-4 shrink-0 text-muted-foreground" />;
   }
   const presentation = resolvePullRequestState({
     state: status.state,
     isDraft: status.isDraft ?? detail?.isDraft ?? seed?.isDraft ?? false,
   });
-  return <presentation.Icon className={cn("size-3 shrink-0", presentation.toneClassName)} />;
+  return <presentation.Icon className={cn("size-4 shrink-0", presentation.toneClassName)} />;
 }
 
 function SortableTabList(props: {
@@ -866,7 +866,7 @@ function RightPanelTab(
   });
   const content = (
     <>
-      <PanelTabCloseButton label={`Close ${title}`} onClick={() => onClose(surface)}>
+      <PanelTabCloseButton label={`Close ${title}`} onClick={() => onClose(surface)} size="md">
         <SurfaceIcon
           surface={surface}
           previewUrl={props.previewUrl}
@@ -888,7 +888,7 @@ function RightPanelTab(
             render={
               <button
                 type="button"
-                className="cursor-pointer flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
+                className="cursor-pointer flex size-5 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
                 aria-label={audio === "muted" ? `Unmute ${title}` : `Mute ${title}`}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -897,7 +897,7 @@ function RightPanelTab(
                     .catch(() => undefined);
                 }}
               >
-                <MorphIcon className="size-3" icon={audio === "muted" ? VolumeOff : Volume2} />
+                <MorphIcon className="size-4" icon={audio === "muted" ? VolumeOff : Volume2} />
               </button>
             }
           />
@@ -965,7 +965,7 @@ function RightPanelTab(
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
+        "cursor-pointer group/tab flex h-8 max-w-48 shrink-0 items-center gap-1 rounded-(--control-radius) pr-2.5 pl-1.5 text-sm",
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
         props.active
           ? "bg-accent text-foreground"
@@ -1344,12 +1344,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     <Button
                       aria-label="Add panel surface"
                       className="shrink-0"
-                      size="icon-xs"
+                      size="icon"
                       variant="ghost-muted"
                     />
                   }
                 >
-                  <Plus className="size-3.5" />
+                  <Plus className="size-4" />
                 </MenuTrigger>
                 <MenuPopup
                   align="start"

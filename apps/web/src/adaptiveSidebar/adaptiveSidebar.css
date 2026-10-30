@@ -1,0 +1,179 @@
+/*
+ * The compact sidebar (surface `sidebarLayout`, see adaptiveSidebar.tsx): the
+ * same sidebar drawn as a column of icons, keyed off `data-sidebar-compact` on
+ * the sidebar wrapper so a drag across the threshold switches without rendering.
+ * Unlayered, so these rules win over the rows' own utility classes.
+ */
+
+/*
+ * Every target is one 40px square, centred in the column: rows show only their
+ * leading icon, with no title, end labels or hover actions.
+ */
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  :is(
+    [data-sidebar="menu-button"],
+    [data-sidebar-list-row],
+    [data-sidebar-compact-search],
+    [data-sidebar-compact-new-thread]
+  ) {
+  justify-content: center;
+  gap: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-inline: auto;
+  padding: 0;
+}
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  :is([data-sidebar="menu-button"], [data-sidebar-list-row]):not([data-sidebar="footer"] *)
+  > :not(:first-child) {
+  display: none;
+}
+
+/* Glyphs and project tiles keep their standard size; bot faces about 50px (drawn at 20px in a 16px slot). */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-list-row] > :first-child {
+  zoom: 2.53;
+}
+/* A bot's target is as wide as the traffic lights (60px), its face about 50px. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-list-row] {
+  width: 3.75rem;
+  height: 3.75rem;
+  border-radius: 0.875rem;
+  overflow: visible;
+}
+/* Equal 28px between groups: New thread gets the 4px the other sections' menus add. */
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-sidebar-threads-section]
+  > [data-sidebar-section-header] {
+  margin-bottom: 12px;
+}
+/* The footer's last button sits as far from the bottom as the bots' targets from the sides. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar="footer"] {
+  padding-bottom: 1rem;
+}
+/* The status badge keeps about 16px instead of growing with the face. */
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-sidebar-list-row]
+  g.cbc-prop:has(> .cbc-badge) {
+  transform-box: fill-box;
+  transform-origin: center;
+  scale: 0.9;
+}
+
+/* The thread list is left out; the Threads section keeps only New thread. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-slot="sidebar-content"] {
+  display: none;
+}
+[data-sidebar-compact-new-thread] {
+  display: none;
+}
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-compact-new-thread] {
+  display: flex;
+}
+
+/* Search opens the command palette: the field needs the full width. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-compact-search] {
+  display: flex;
+}
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-compact-search] ~ * {
+  display: none;
+}
+
+/*
+ * An open section's header is a divider as wide as a target; a collapsed
+ * section is gone, its divider too. Threads stays for New thread.
+ */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-section-header] {
+  width: 1.75rem;
+  height: 0;
+  margin: 0.5rem auto;
+  padding: 0;
+  background-color: transparent;
+}
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-section-header] > * {
+  display: none;
+}
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  :not([data-sidebar-threads-section]):has(> [data-sidebar-section-header][data-open="false"]) {
+  display: none;
+}
+
+/* The footer stacks its buttons; its notices need the full width. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar="footer"] [data-sidebar="menu"] {
+  flex-direction: column;
+  align-items: center;
+}
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-sidebar="footer"]
+  > :not([data-sidebar="menu"]) {
+  display: none;
+}
+[data-sidebar-compact="true"] [data-app-sidebar] [data-track="sidebar.back"] {
+  justify-content: center;
+  padding-inline: 0;
+}
+/* Clipped rather than removed: its text is the button's name. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-track="sidebar.back"] > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/*
+ * A switch between full and compact (`data-sidebar-switching`, set for its
+ * duration): the width eases while the new layout fades in, so neither mode's
+ * content is seen at the other's width. Unlike upstream's panel transitions it
+ * runs by default, as it only follows a user's switch; the panel duration
+ * setting lengthens it, and reduced motion turns it off. Two names, so each
+ * switch restarts the fade.
+ */
+[data-sidebar-switching] {
+  --sidebar-switch-duration: 160ms;
+}
+[data-panel-animations="true"][data-sidebar-switching] {
+  --sidebar-switch-duration: var(--panel-animation-duration);
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-sidebar-switching]
+    > [data-slot="sidebar"]
+    > :is([data-slot="sidebar-gap"], [data-slot="sidebar-container"]) {
+    transition-property: width;
+    transition-duration: var(--sidebar-switch-duration);
+    transition-timing-function: ease-out;
+  }
+  [data-sidebar-switching][data-sidebar-compact="true"]
+    [data-app-sidebar]
+    [data-sidebar="sidebar"]
+    > * {
+    animation: sidebar-mode-fade-compact var(--sidebar-switch-duration) ease-in;
+  }
+  [data-sidebar-switching][data-sidebar-compact="false"]
+    [data-app-sidebar]
+    [data-sidebar="sidebar"]
+    > * {
+    animation: sidebar-mode-fade-full var(--sidebar-switch-duration) ease-in;
+  }
+}
+@keyframes sidebar-mode-fade-compact {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes sidebar-mode-fade-full {
+  from {
+    opacity: 0;
+  }
+}
+
+/* The resize edge keeps its cursor but draws no thicker line on hover. */
+[data-sidebar-compact] [data-sidebar="rail"]:hover::after {
+  background-color: transparent;
+}

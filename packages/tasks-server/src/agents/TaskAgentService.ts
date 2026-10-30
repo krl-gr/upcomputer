@@ -253,7 +253,7 @@ export function noMatchingAgentReason(
   );
   if (onStatus.length === 0) return null;
   if (agents.some((agent) => startsForTask(agent, task, nowMs))) return null;
-  return `No enabled agent starts on "${task.status}" with these tags, so this task will wait. Pick an agent, or change the status or tags.`;
+  return `No enabled worker starts on "${task.status}" with these tags, so this task will wait. Pick a worker, or change the status or tags.`;
 }
 
 /**
@@ -1141,7 +1141,7 @@ const make = Effect.gen(function* () {
         yield* recordNotStarted(
           latest.value,
           agent,
-          "The agent is a bot, and this task's project is not one of its projects. Add the project in the bot's settings, or create the task in one of its projects.",
+          "This is a bot, and this task's project is not one of its projects. Add the project in the bot's settings, or create the task in one of its projects.",
         );
       return;
     }

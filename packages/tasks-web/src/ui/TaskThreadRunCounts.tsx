@@ -5,9 +5,11 @@ import {
   useState,
   useSyncExternalStore,
   type KeyboardEvent,
+  type ReactElement,
   type SyntheticEvent,
 } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { ListTodoIcon } from "lucide-react";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { TaskThreadTasksResult } from "@t3tools/tasks-contracts/v1";
 import type {
@@ -18,8 +20,16 @@ import {
   Menu,
   MenuItem,
   MenuPopup,
+  MenuSub,
+  MenuSubPopup,
+  MenuSubTrigger,
   MenuTrigger,
 } from "../../../../apps/web/src/components/ui/menu.tsx";
+import {
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
+} from "../../../../apps/web/src/components/ui/tooltip.tsx";
 import {
   readTasksWebAccess,
   readTasksWebClient,
@@ -28,8 +38,8 @@ import {
 import type { TasksWebRpcClient } from "../rpc/index.ts";
 import { threadRunCountsStore, type ThreadRunCountsStore } from "../state/threadRunCounts.ts";
 import { taskKey } from "./shared.ts";
-import { RunCountNumbers } from "./RunCountNumbers.tsx";
-import { groupTaskRunCounts } from "./taskRunPresentation.ts";
+import { RunCountNumbers, runCountSummary } from "./RunCountNumbers.tsx";
+import { attentionRunCountGroups, groupTaskRunCounts } from "./taskRunPresentation.ts";
 
 const THREAD_TASKS_LIMIT = 50;
 const MENU_NOTE_CLASS = "px-2 py-1.5 text-muted-foreground text-sm";
@@ -87,44 +97,23 @@ function ThreadTasksMenuItems({
   ));
 }
 
-function Counts({
+/** The thread's tasks menu, opened by `trigger`, a `MenuTrigger`. */
+function ThreadTasksMenu({
   client,
-  store,
   environmentId,
   threadId,
-  fallback,
-}: ExperimentalWebThreadRowAccessoryProps & {
+  trigger,
+  onOpenChange,
+}: {
   client: TasksWebRpcClient;
-  store: ThreadRunCountsStore;
+  environmentId: EnvironmentId;
+  threadId: ThreadId;
+  trigger: ReactElement;
+  onOpenChange?: ((open: boolean) => void) | undefined;
 }) {
-  const subscribe = useCallback(
-    (listener: () => void) => store.subscribe(threadId, listener),
-    [store, threadId],
-  );
-  const snapshot = useCallback(() => store.get(threadId), [store, threadId]);
-  const counts = useSyncExternalStore(subscribe, snapshot, snapshot);
-  // One foreground handler per mounted row is unnecessary; the shared stream reconciles reconnects.
-  const groups = useMemo(() => groupTaskRunCounts(counts), [counts]);
-  if (groups.length === 0) return fallback;
-  const summary = `Task runs · ${groups.map((group) => `${group.label}: ${group.count}`).join(" · ")}`;
   return (
-    <Menu>
-      {/* Its own slot: the themed chat header fills every `menu-trigger` as a
-          toolbar control, while these counts stay bare numbers as in the sidebar. */}
-      <MenuTrigger
-        data-slot="task-run-counts"
-        className="pointer-events-auto inline-flex cursor-pointer items-center gap-1 rounded-sm tabular-nums opacity-80 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring data-popup-open:opacity-100"
-        data-task-run-counts={threadId}
-        aria-label={summary}
-        title={[summary, "Active runs, and finished runs since the thread was last opened"].join(
-          "\n",
-        )}
-        onPointerDown={stopRowEvent}
-        onClick={stopRowEvent}
-        onKeyDown={stopRowKeyActivation}
-      >
-        <RunCountNumbers groups={groups} />
-      </MenuTrigger>
+    <Menu {...(onOpenChange ? { onOpenChange } : {})}>
+      {trigger}
       <MenuPopup
         align="end"
         className="w-72"
@@ -136,6 +125,57 @@ function Counts({
         <ThreadTasksMenuItems client={client} environmentId={environmentId} threadId={threadId} />
       </MenuPopup>
     </Menu>
+  );
+}
+
+function useThreadRunCountGroups(store: ThreadRunCountsStore, threadId: ThreadId) {
+  const subscribe = useCallback(
+    (listener: () => void) => store.subscribe(threadId, listener),
+    [store, threadId],
+  );
+  const snapshot = useCallback(() => store.get(threadId), [store, threadId]);
+  const counts = useSyncExternalStore(subscribe, snapshot, snapshot);
+  // One foreground handler per mounted row is unnecessary; the shared stream reconciles reconnects.
+  return useMemo(() => groupTaskRunCounts(counts), [counts]);
+}
+
+function Counts({
+  client,
+  store,
+  environmentId,
+  threadId,
+  fallback,
+}: ExperimentalWebThreadRowAccessoryProps & {
+  client: TasksWebRpcClient;
+  store: ThreadRunCountsStore;
+}) {
+  const groups = useThreadRunCountGroups(store, threadId);
+  if (groups.length === 0) return fallback;
+  const summary = `Task runs · ${groups.map((group) => `${group.label}: ${group.count}`).join(" · ")}`;
+  return (
+    <ThreadTasksMenu
+      client={client}
+      environmentId={environmentId}
+      threadId={threadId}
+      trigger={
+        // Its own slot: the themed chat header fills every `menu-trigger` as a
+        // toolbar control, while these counts stay bare numbers as in the sidebar.
+        <MenuTrigger
+          data-slot="task-run-counts"
+          className="pointer-events-auto inline-flex cursor-pointer items-center gap-1 rounded-sm tabular-nums opacity-80 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring data-popup-open:opacity-100"
+          data-task-run-counts={threadId}
+          aria-label={summary}
+          title={[summary, "Active runs, and finished runs since the thread was last opened"].join(
+            "\n",
+          )}
+          onPointerDown={stopRowEvent}
+          onClick={stopRowEvent}
+          onKeyDown={stopRowKeyActivation}
+        >
+          <RunCountNumbers groups={groups} />
+        </MenuTrigger>
+      }
+    />
   );
 }
 
@@ -194,4 +234,165 @@ export function TaskThreadRunCounts(props: ExperimentalWebThreadRowAccessoryProp
   if (!readTasksWebAccess(props.environmentId).canReadTasks) return props.fallback;
   const client = readTasksWebClient(props.environmentId);
   return <Counts {...props} client={client} store={threadRunCountsStore(client)} />;
+}
+
+/**
+ * The run counts' tasks menu from an icon button, for a row whose thread has tasks but no
+ * counts to show. `className` gives the button its row's look.
+ */
+export function TaskThreadTasksButton(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly label: string;
+  readonly className: string;
+  readonly onOpenChange?: (open: boolean) => void;
+}) {
+  useTasksWebAccessRevision();
+  if (!readTasksWebAccess(props.environmentId).canReadTasks) return null;
+  return (
+    <ThreadTasksMenu
+      client={readTasksWebClient(props.environmentId)}
+      environmentId={props.environmentId}
+      threadId={props.threadId}
+      onOpenChange={props.onOpenChange}
+      trigger={
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <MenuTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={props.label}
+                    className={props.className}
+                    onPointerDown={stopRowEvent}
+                    onClick={stopRowEvent}
+                    onKeyDown={stopRowKeyActivation}
+                  />
+                }
+              />
+            }
+          >
+            <ListTodoIcon />
+          </TooltipTrigger>
+          <TooltipPopup side="top">Tasks</TooltipPopup>
+        </Tooltip>
+      }
+    />
+  );
+}
+
+/** A status colour as the light theme draws it: the pill stays light in either theme. */
+function onLightPillClassName(className: string) {
+  return className
+    .split(" ")
+    .filter((name) => !name.startsWith("dark:"))
+    .map((name) => (name === "text-muted-foreground" ? "text-neutral-500" : name))
+    .join(" ");
+}
+
+const PILL_SURFACE = "bg-neutral-200 dark:bg-neutral-100";
+
+/**
+ * Over the bot's top right in its 60px compact target, with a dot towards its head. The pill
+ * starts 16px right of centre and moves left rather than past the 92px column when its counts are wide.
+ */
+function RunPill({
+  client,
+  store,
+  environmentId,
+  threadId,
+  name,
+}: {
+  client: TasksWebRpcClient;
+  store: ThreadRunCountsStore;
+  environmentId: EnvironmentId;
+  threadId: ThreadId;
+  name: string;
+}) {
+  const groups = attentionRunCountGroups(useThreadRunCountGroups(store, threadId));
+  if (groups.length === 0) return null;
+  const summary = runCountSummary(groups);
+  return (
+    <span className="hidden [[data-sidebar-compact=true]_&]:contents">
+      <span
+        aria-hidden
+        className={`pointer-events-none absolute top-[10px] left-[calc(50%+13px)] size-[5px] rounded-full ${PILL_SURFACE}`}
+      />
+      <span className="pointer-events-none absolute -top-[7px] left-[calc(50%-20px)] flex w-16">
+        <span className="basis-9" />
+        <ThreadTasksMenu
+          client={client}
+          environmentId={environmentId}
+          threadId={threadId}
+          trigger={
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <MenuTrigger
+                    render={
+                      <button
+                        type="button"
+                        data-bot-run-pill={threadId}
+                        aria-label={`Tasks for ${name}: ${summary}`}
+                        className={`pointer-events-auto flex h-[18px] flex-none cursor-pointer items-center gap-1 rounded-full px-[5.5px] text-[11.5px] leading-[18px] font-semibold tabular-nums outline-none hover:bg-neutral-300 focus-visible:ring-1 focus-visible:ring-ring dark:hover:bg-white ${PILL_SURFACE}`}
+                        onPointerDown={stopRowEvent}
+                        onClick={stopRowEvent}
+                        onKeyDown={stopRowKeyActivation}
+                      />
+                    }
+                  />
+                }
+              >
+                <RunCountNumbers
+                  groups={groups.map((group) => ({
+                    ...group,
+                    className: onLightPillClassName(group.className),
+                  }))}
+                />
+              </TooltipTrigger>
+              <TooltipPopup side="right">{summary}</TooltipPopup>
+            </Tooltip>
+          }
+        />
+      </span>
+    </span>
+  );
+}
+
+/**
+ * A bot's run counts as a pill for the compact sidebar, where its row shows only the face.
+ * It opens the same tasks menu as the counts in the full row. Completed runs are left out.
+ */
+export function TaskThreadRunPill(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly name: string;
+}) {
+  useTasksWebAccessRevision();
+  if (!readTasksWebAccess(props.environmentId).canReadTasks) return null;
+  const client = readTasksWebClient(props.environmentId);
+  return <RunPill {...props} client={client} store={threadRunCountsStore(client)} />;
+}
+
+/** The thread's tasks menu as a submenu, for a context menu. Its caller checks task access. */
+export function TaskThreadTasksSubmenu(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+}) {
+  return (
+    <MenuSub>
+      <MenuSubTrigger>
+        <ListTodoIcon />
+        Tasks
+      </MenuSubTrigger>
+      <MenuSubPopup className="w-72">
+        <ThreadTasksMenuItems
+          client={readTasksWebClient(props.environmentId)}
+          environmentId={props.environmentId}
+          threadId={props.threadId}
+        />
+      </MenuSubPopup>
+    </MenuSub>
+  );
 }

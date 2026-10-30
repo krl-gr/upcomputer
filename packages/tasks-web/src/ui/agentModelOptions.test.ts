@@ -133,6 +133,6 @@ test("a run is labeled with its agent and its own model selection", () => {
   });
   NodeAssert.deepEqual(
     getTaskRunAgentPresentation({ ...run, environmentId: "remote" } as never, [agent], undefined),
-    { agentName: "Agent run", modelLabel: "gpt-test" },
+    { agentName: "Worker run", modelLabel: "gpt-test" },
   );
 });

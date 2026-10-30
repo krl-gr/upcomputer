@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { redirectFromAutomations } from "./automationsRedirect.ts";
 
-/** `/automations` now opens the Automations section of the Agents side of Tasks. */
+/** `/automations` now opens the Automations section of the Workers side of Tasks. */
 export default function AutomationsRoute() {
   const navigate = useNavigate();
   const search = useLocation({ select: (location) => location.search as Record<string, unknown> });

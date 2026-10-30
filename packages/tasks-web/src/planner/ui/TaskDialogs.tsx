@@ -75,19 +75,19 @@ function HandOffBody(props: {
   return (
     <>
       <AlertDialogHeader>
-        <AlertDialogTitle>Hand to an agent</AlertDialogTitle>
+        <AlertDialogTitle>Hand to a worker</AlertDialogTitle>
         <AlertDialogDescription>
           {agent
-            ? `"${props.title}" moves from your planner to Agents with ${agent.name}'s start tags, so ${agent.name} starts on it. You can take it back from its details there.`
-            : `"${props.title}" becomes an agent task and moves from your planner to Agents. An enabled agent whose status, tags and project match starts on it now. You can take it back from its details there.`}
+            ? `"${props.title}" moves from your planner to Workers with ${agent.name}'s start tags, so ${agent.name} starts on it. You can take it back from its details there.`
+            : `"${props.title}" becomes a worker task and moves from your planner to Workers. An enabled worker whose status, tags and project match starts on it now. You can take it back from its details there.`}
         </AlertDialogDescription>
       </AlertDialogHeader>
       {props.agents.length > 0 ? (
         <div className="px-6 pb-6">
           <Select value={choice} onValueChange={setChoice}>
-            <SelectTrigger aria-label="Agent">
+            <SelectTrigger aria-label="Worker">
               <SelectValue>
-                {choice === ANY_AGENT ? "No particular agent" : (agent?.name ?? "Choose an agent")}
+                {choice === ANY_AGENT ? "No particular worker" : (agent?.name ?? "Choose a worker")}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>
@@ -96,7 +96,7 @@ function HandOffBody(props: {
                   {name}
                 </SelectItem>
               ))}
-              <SelectItem value={ANY_AGENT}>No particular agent</SelectItem>
+              <SelectItem value={ANY_AGENT}>No particular worker</SelectItem>
             </SelectPopup>
           </Select>
         </div>
@@ -110,7 +110,7 @@ function HandOffBody(props: {
             props.onClose();
           }}
         >
-          {agent ? `Hand to ${agent.name}` : "Hand to agents"}
+          {agent ? `Hand to ${agent.name}` : "Hand to workers"}
         </Button>
       </AlertDialogFooter>
     </>

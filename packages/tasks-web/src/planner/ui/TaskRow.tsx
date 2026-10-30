@@ -4,11 +4,11 @@ import {
   ArchiveIcon,
   ArchiveRestoreIcon,
   CalendarIcon,
-  ChevronRightIcon,
   CircleCheckIcon,
   CircleIcon,
   ListPlusIcon,
-  MoreVerticalIcon,
+  Maximize2Icon,
+  MoreHorizontalIcon,
 } from "lucide-react";
 import { PERSON_DONE_STATUS, PERSON_OPEN_STATUS } from "@t3tools/tasks-contracts/v1";
 
@@ -22,6 +22,13 @@ import { IconAction } from "./IconAction.tsx";
 import { ProjectChip } from "./ProjectChip.tsx";
 import { usePlanner } from "./plannerContext.ts";
 import { pointBelow, type MenuPoint } from "./PointMenu.tsx";
+import {
+  ROW_CHIPS_CLASS,
+  ROW_CLASS,
+  ROW_DRAGGING_CLASS,
+  ROW_HOVER_CLASS,
+  ROW_TITLE_CLASS,
+} from "./rowShell.ts";
 import { RunSummary } from "./RunSummary.tsx";
 
 export function isFinished(task: PlannerTask) {
@@ -96,7 +103,8 @@ function TitleArea(props: {
     <div
       ref={ref}
       className={cn(
-        "min-h-[1lh] w-full cursor-text whitespace-pre-wrap break-words text-sm font-medium text-foreground outline-none",
+        ROW_TITLE_CLASS,
+        "min-h-[1lh] cursor-text whitespace-pre-wrap outline-none",
         props.done && "text-muted-foreground line-through",
       )}
       {...(props.editing
@@ -185,83 +193,80 @@ export const TaskRow = memo(function TaskRow(props: TaskRowProps) {
         {...(editing ? {} : attributes)}
         {...(editing ? {} : listeners)}
         className={cn(
-          "mx-2 flex min-w-0 items-start justify-between gap-2 rounded-xl px-3 py-3 transition-colors",
+          ROW_CLASS,
           editing ? "cursor-text" : "cursor-grab",
-          isDragging ? "opacity-50" : "hover:bg-accent/60",
+          isDragging ? ROW_DRAGGING_CLASS : ROW_HOVER_CLASS,
         )}
         data-task-id={task.id}
         onContextMenu={openMenu}
       >
-        <div className="min-w-0 flex-1">
-          <TitleArea
-            title={task.title}
-            done={finished}
-            editing={editing}
-            onEditingChange={setEditing}
-            onSave={(title) => void store.updateTask(task.id, { title })}
+        <TitleArea
+          title={task.title}
+          done={finished}
+          editing={editing}
+          onEditingChange={setEditing}
+          onSave={(title) => void store.updateTask(task.id, { title })}
+        />
+        <div className={ROW_CHIPS_CLASS}>
+          <ProjectChip
+            projects={projects}
+            value={task.projectId}
+            onChange={(projectId) => {
+              if (projectId) void store.updateTask(task.id, { projectId: projectId as never });
+            }}
           />
-          <div className="-ml-1 mt-2 flex min-w-0 flex-wrap items-center gap-1">
-            <ProjectChip
-              projects={projects}
-              value={task.projectId}
-              onChange={(projectId) => {
-                if (projectId) void store.updateTask(task.id, { projectId: projectId as never });
-              }}
-            />
-            {finished ? (
-              <IconAction
-                label="Restore"
-                variant="outline"
-                onClick={() => void store.restore([task.id])}
-              >
-                <ArchiveRestoreIcon />
-              </IconAction>
-            ) : (
-              <>
-                <IconAction
-                  label="Mark as done"
-                  variant="outline"
-                  onClick={() => void store.markDone([task.id])}
-                >
-                  <CircleCheckIcon />
-                </IconAction>
-                <IconAction
-                  label="Archive"
-                  variant="outline"
-                  onClick={() => void store.archive([task.id])}
-                >
-                  <ArchiveIcon />
-                </IconAction>
-              </>
-            )}
-            {statusLabel ? <TablePill>{statusLabel}</TablePill> : null}
-            <RunSummary task={task} />
-            {props.queueDate && preferences.weekViewMode === "queue" ? (
-              <IconAction
-                label={`Add to queue for ${props.queueDate}`}
-                variant="outline"
-                onClick={() =>
-                  void store.addEntries({ taskIds: [task.id as never], date: props.queueDate! })
-                }
-              >
-                <ListPlusIcon />
-              </IconAction>
-            ) : null}
+          {finished ? (
             <IconAction
-              label={progress ? `Schedule (${progress})` : "Schedule"}
+              label="Restore"
               variant="outline"
-              size={preferences.showProgress && progress ? "xs" : "icon-xs"}
-              onClick={() => windows.openDetail(task.id, "instances")}
+              onClick={() => void store.restore([task.id])}
             >
-              <CalendarIcon />
-              {preferences.showProgress && progress ? <span>{progress}</span> : null}
+              <ArchiveRestoreIcon />
             </IconAction>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
+          ) : (
+            <>
+              <IconAction
+                label="Mark as done"
+                variant="outline"
+                onClick={() => void store.markDone([task.id])}
+              >
+                <CircleCheckIcon />
+              </IconAction>
+              <IconAction
+                label="Archive"
+                variant="outline"
+                onClick={() => void store.archive([task.id])}
+              >
+                <ArchiveIcon />
+              </IconAction>
+            </>
+          )}
+          {statusLabel ? <TablePill>{statusLabel}</TablePill> : null}
+          <RunSummary task={task} />
+          {props.queueDate && preferences.weekViewMode === "queue" ? (
+            <IconAction
+              label={`Add to queue for ${props.queueDate}`}
+              variant="outline"
+              onClick={() =>
+                void store.addEntries({ taskIds: [task.id as never], date: props.queueDate! })
+              }
+            >
+              <ListPlusIcon />
+            </IconAction>
+          ) : null}
+          <IconAction
+            label={progress ? `Schedule (${progress})` : "Schedule"}
+            variant="outline"
+            size={preferences.showProgress && progress ? "xs" : "icon-xs"}
+            onClick={() => windows.openDetail(task.id, "instances")}
+          >
+            <CalendarIcon />
+            {preferences.showProgress && progress ? <span>{progress}</span> : null}
+          </IconAction>
           {props.selectMode ? (
             <IconAction
               label={props.selected ? "Deselect" : "Select"}
+              variant="outline"
               pressed={props.selected}
               onClick={() => props.onToggleSelected(task.id)}
             >
@@ -269,14 +274,19 @@ export const TaskRow = memo(function TaskRow(props: TaskRowProps) {
             </IconAction>
           ) : (
             <>
-              <IconAction label="Open details" onClick={() => windows.openDetail(task.id)}>
-                <ChevronRightIcon />
+              <IconAction
+                label="Open details"
+                variant="outline"
+                onClick={() => windows.openDetail(task.id)}
+              >
+                <Maximize2Icon />
               </IconAction>
               <IconAction
                 label="More actions"
+                variant="outline"
                 onClick={(event) => props.onMenu(task, pointBelow(event.currentTarget))}
               >
-                <MoreVerticalIcon />
+                <MoreHorizontalIcon />
               </IconAction>
             </>
           )}

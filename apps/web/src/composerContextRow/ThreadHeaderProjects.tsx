@@ -25,6 +25,7 @@ import {
 } from "../components/WorkspaceBreadcrumb";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useScratchProject } from "../hooks/useScratchProject";
+import { NoProjectIcon } from "../sidebarProjects/sidebarProjectIcons";
 import { useProject, useProjects, useThreadShell, useThreadShells } from "../state/entities";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -37,17 +38,6 @@ import { useRetargetDraftToProject } from "./useRetargetDraftToProject";
 
 const EMPTY_PROJECT_IDS: ReadonlyArray<string> = [];
 const MAX_HEADER_ICONS = 3;
-
-/** A chat without a project: a dashed rounded square where a project icon would be. */
-function NoProjectIcon() {
-  return (
-    <span
-      aria-hidden="true"
-      className="inline-block size-3.5 shrink-0 rounded-[25%] border border-current border-dashed"
-      data-thread-header-no-project=""
-    />
-  );
-}
 
 /**
  * The chat's projects at the start of the header, where upstream shows its
@@ -181,7 +171,7 @@ export const ThreadHeaderProjects = memo(function ThreadHeaderProjects(props: {
                 />
               }
             >
-              {headerProjects.length === 0 ? <NoProjectIcon /> : null}
+              {headerProjects.length === 0 ? <NoProjectIcon className="size-3.5" /> : null}
               {headerProjects.slice(0, MAX_HEADER_ICONS).map((project) => (
                 <ProjectFavicon key={project.id} project={project} className="size-3.5" />
               ))}

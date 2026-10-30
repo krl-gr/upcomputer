@@ -92,7 +92,7 @@ const taskCreateFields = {
 
 /** Server trigger semantics returned by task_context; not user-editable guidance. */
 export const TASK_TRIGGER_RULES = [
-  "An enabled agent starts on a task that is not archived when the task's status is in its startStatuses (empty means any), the task has all of its startTags, and the task's notBefore, if set, has passed.",
+  "An enabled agent (a task agent; users see it as a worker) starts on a task that is not archived when the task's status is in its startStatuses (empty means any), the task has all of its startTags, and the task's notBefore, if set, has passed.",
   "Setting a matching status or adding a matching tag starts the agent immediately. Park work in a status no agent starts on (for example Backlog), or set notBefore to delay it.",
   "An agent runs again on the same task only after the task's title, description, status, tags, notBefore, project, audience or archive state really changed after its previous run there ended, or after the agent itself was edited. Output, assignment, metadata and priority changes never restart agents. To retry, change the status or set notBefore (now or later).",
   "Several agents may run on one task at once. Such an agent should finish by removing its own trigger tag or moving the status; otherwise a later change starts it again.",
@@ -388,7 +388,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "agent_create",
     description:
-      'Create a task-agent definition. Call task_context with include ["agentCreation", "providers"] first and follow its agentCreation guidance and triggerRules.',
+      'Create a task-agent definition (users see task agents as workers). Call task_context with include ["agentCreation", "providers"] first and follow its agentCreation guidance and triggerRules.',
     inputSchema: object(
       {
         id,

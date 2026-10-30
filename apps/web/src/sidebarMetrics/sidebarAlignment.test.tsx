@@ -248,7 +248,7 @@ function ThreadSidebarUnderTest() {
               onClearSearch={noop}
             />
             <ProductSidebarNavigation />
-            <SidebarProjectsSection projectGroups={PROJECTS} onAddProject={noop} />
+            <SidebarProjectsSection projectGroups={PROJECTS} onAddProject={noop} loaded />
             <SidebarThreadsSectionHeader
               onNewThread={noop}
               currentEnvironmentId={null}
@@ -403,8 +403,8 @@ function measureRows(names: ReadonlyArray<string>): MeasuredRow[] {
 }
 
 interface MeasuredHeader {
-  /** The sidebar toggle's icon, relative to the sidebar. */
-  readonly toggleIconLeft: number;
+  /** Whether upstream's sidebar toggle shows; the sidebar's width decides its mode instead. */
+  readonly toggleShown: boolean;
   readonly headerHeight: number;
   readonly topbarHeight: number;
   readonly hasBrand: boolean;
@@ -421,7 +421,7 @@ function measureHeader(): MeasuredHeader {
   const topbarHeight = probe.getBoundingClientRect().height;
   probe.remove();
   return {
-    toggleIconLeft: toggleIcon.getBoundingClientRect().left - sidebar.getBoundingClientRect().left,
+    toggleShown: toggleIcon.checkVisibility(),
     headerHeight: header.getBoundingClientRect().height,
     topbarHeight,
     hasBrand:
@@ -431,7 +431,7 @@ function measureHeader(): MeasuredHeader {
   };
 }
 
-const NAV = ["Tasks", "Agents"];
+const NAV = ["Tasks", "Workers"];
 const PROJECT_ROWS = ["All projects", "UpComputer", "Site", "Docs", "No project", "More"];
 const ROWS = ["Search", ...NAV, "Projects", ...PROJECT_ROWS, "Threads", ...THREAD_TITLES];
 
@@ -511,8 +511,8 @@ describe.skipIf(browser === null)("sidebar alignment (real layout in Chromium)",
     expect(sectionGaps[0]).toBeGreaterThan(gapsBetween(NAV.map(row))[0]!);
   });
 
-  it("starts the sidebar toggle's icon where the row icons do", () => {
-    expectWithinPixel("sidebar toggle icon", header.toggleIconLeft, row("Search").icon!.left);
+  it("shows no sidebar toggle on desktop, where the sidebar's width decides its mode", () => {
+    expect(header.toggleShown).toBe(false);
   });
 
   it("shows no brand or stage badge above Search, in a titlebar-high header", () => {
@@ -752,7 +752,7 @@ function measureText(input: { readonly names: ReadonlyArray<string>; readonly al
 }
 
 // Inactive rows of each kind; "Tasks", "All projects" and the first thread are active.
-const RESTING_ROWS = ["Agents", "UpComputer", "Site", "No project", "More"];
+const RESTING_ROWS = ["Workers", "UpComputer", "Site", "No project", "More"];
 const RESTING_THREADS = THREAD_TITLES.slice(1);
 
 describe.skipIf(browser === null)("sidebar text under the Up.computer theme (Chromium)", () => {
@@ -787,14 +787,15 @@ describe.skipIf(browser === null)("sidebar text under the Up.computer theme (Chr
         search.painted.forEach((channel, index) =>
           expect(Math.abs(channel - v1Row[index]!), `channel ${index}`).toBeLessThanOrEqual(2),
         );
-        // Section titles stay a step dimmer than the rows.
+        // Section titles stay a step dimmer than the rows, at their weight.
         for (const title of ["Projects", "Threads"]) {
           expect(text[title]!.contrast, `${title} title`).toBeLessThan(search.contrast);
+          expect(text[title]!.weight, `${title} weight`).toBe(search.weight);
         }
-        // Hover and active keep the menu buttons' own look.
-        const agents = '[data-sidebar="menu-button"]:has-text("Agents")';
-        await page.hover(agents);
-        expect(await page.$eval(agents, (row) => getComputedStyle(row).color)).not.toBe(
+        // Hover and active keep the menu buttons' own colours; active is no bolder.
+        const workers = '[data-sidebar="menu-button"]:has-text("Workers")';
+        await page.hover(workers);
+        expect(await page.$eval(workers, (row) => getComputedStyle(row).color)).not.toBe(
           search.color,
         );
         const active = await page.$eval(
@@ -805,7 +806,7 @@ describe.skipIf(browser === null)("sidebar text under the Up.computer theme (Chr
           },
         );
         expect(active.color).not.toBe(search.color);
-        expect(active.weight).toBe("500");
+        expect(active.weight).toBe(search.weight);
       } finally {
         await page.close();
       }

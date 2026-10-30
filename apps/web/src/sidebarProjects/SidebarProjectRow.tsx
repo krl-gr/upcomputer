@@ -9,6 +9,7 @@ import {
 import { Menu, MenuPopup, MenuTrigger } from "../components/ui/menu";
 import { SidebarMenuButton } from "../components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { SidebarCompactTooltip } from "../adaptiveSidebar/adaptiveSidebar";
 import { cn } from "../lib/utils";
 import { SIDEBAR_ACTION_BUTTON } from "../sidebarMetrics/sidebarMetrics";
 
@@ -43,82 +44,84 @@ export function SidebarProjectRow(props: {
   };
 
   return (
-    <SidebarMenuButton
-      isActive={isActive}
-      render={
-        <div
-          role="button"
-          tabIndex={0}
-          className={cn("group/sidebar-row", menuOpen && !isActive && "bg-sidebar-row-hover")}
-        />
-      }
-      onClick={(event) => {
-        if (isRowEvent(event)) onSelect();
-      }}
-      onKeyDown={(event) => {
-        if (event.target !== event.currentTarget) return;
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        onSelect();
-      }}
-      onContextMenu={(event) => {
-        if (!menuItems || !event.currentTarget.contains(event.target as Element)) return;
-        event.preventDefault();
-        setMenuOpen(true);
-      }}
-    >
-      {icon}
-      <span className="flex-1 truncate">{label}</span>
-      <span
-        data-testid="sidebar-project-row-actions"
-        className={cn(
-          "items-center gap-0.5",
-          menuOpen
-            ? "flex"
-            : "hidden group-focus-within/sidebar-row:flex group-any-hover/sidebar-row:flex",
-        )}
+    <SidebarCompactTooltip label={label}>
+      <SidebarMenuButton
+        isActive={isActive}
+        render={
+          <div
+            role="button"
+            tabIndex={0}
+            className={cn("group/sidebar-row", menuOpen && !isActive && "bg-sidebar-row-hover")}
+          />
+        }
+        onClick={(event) => {
+          if (isRowEvent(event)) onSelect();
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          onSelect();
+        }}
+        onContextMenu={(event) => {
+          if (!menuItems || !event.currentTarget.contains(event.target as Element)) return;
+          event.preventDefault();
+          setMenuOpen(true);
+        }}
       >
-        {menuItems ? (
-          <Menu open={menuOpen} onOpenChange={setMenuOpen}>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <MenuTrigger
-                    render={
-                      <button
-                        type="button"
-                        aria-label={menuLabel}
-                        className={SIDEBAR_ACTION_BUTTON}
-                      />
-                    }
-                  />
-                }
-              >
-                <EllipsisIcon className="size-3.5" />
-              </TooltipTrigger>
-              <TooltipPopup side="top">Project actions</TooltipPopup>
-            </Tooltip>
-            <MenuPopup side="bottom" align="end">
-              {menuItems}
-            </MenuPopup>
-          </Menu>
-        ) : null}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                aria-label={newChatLabel}
-                className={SIDEBAR_ACTION_BUTTON}
-                onClick={onNewChat}
-              />
-            }
-          >
-            <SquarePenIcon className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipPopup side="top">{newChatLabel}</TooltipPopup>
-        </Tooltip>
-      </span>
-    </SidebarMenuButton>
+        {icon}
+        <span className="flex-1 truncate">{label}</span>
+        <span
+          data-testid="sidebar-project-row-actions"
+          className={cn(
+            "items-center gap-0.5",
+            menuOpen
+              ? "flex"
+              : "hidden group-focus-within/sidebar-row:flex group-any-hover/sidebar-row:flex",
+          )}
+        >
+          {menuItems ? (
+            <Menu open={menuOpen} onOpenChange={setMenuOpen}>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <MenuTrigger
+                      render={
+                        <button
+                          type="button"
+                          aria-label={menuLabel}
+                          className={SIDEBAR_ACTION_BUTTON}
+                        />
+                      }
+                    />
+                  }
+                >
+                  <EllipsisIcon />
+                </TooltipTrigger>
+                <TooltipPopup side="top">Project actions</TooltipPopup>
+              </Tooltip>
+              <MenuPopup side="bottom" align="end">
+                {menuItems}
+              </MenuPopup>
+            </Menu>
+          ) : null}
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={newChatLabel}
+                  className={SIDEBAR_ACTION_BUTTON}
+                  onClick={onNewChat}
+                />
+              }
+            >
+              <SquarePenIcon />
+            </TooltipTrigger>
+            <TooltipPopup side="top">{newChatLabel}</TooltipPopup>
+          </Tooltip>
+        </span>
+      </SidebarMenuButton>
+    </SidebarCompactTooltip>
   );
 }

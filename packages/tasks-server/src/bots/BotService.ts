@@ -964,9 +964,15 @@ const make = Effect.gen(function* () {
             FROM task_agent_runs r JOIN tasks t ON t.id = r.task_id
             WHERE r.completed_at IS NULL AND t.root_thread_id = ${bot.threadId}
             ORDER BY r.started_at DESC, r.id ASC LIMIT ${ACTIVE_RUNS_SHOWN}`;
+            // The set `threadTasks` lists; a task created, archived or deleted there changes
+            // the chat's runs, which every client's bot list refetches on.
+            const [tasks] = yield* sql<{ readonly found: number }>`SELECT EXISTS (
+              SELECT 1 FROM tasks WHERE root_thread_id = ${bot.threadId} AND archived_at IS NULL
+            ) AS found`;
             return {
               ...bot,
               activeTaskRunThreadIds: active.map((row) => ThreadId.make(row.threadId)),
+              chatHasTasks: tasks?.found === 1,
               ...(run === undefined
                 ? {}
                 : {

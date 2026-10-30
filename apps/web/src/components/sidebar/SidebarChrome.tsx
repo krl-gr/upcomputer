@@ -28,12 +28,14 @@ import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPr
 import { useShownPathname } from "../../hooks/useShownPathname";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
-import { SidebarBackgroundNotices } from "./SidebarBackgroundNotices";
+import { SidebarNotifications } from "~/sidebarNotifications/SidebarNotifications";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { APP_BASE_NAME } from "~/branding";
 import { observeResize } from "~/lib/observeResize";
+import { ProductSidebarFooterNavigation } from "~/product/ProductSlots";
+import { useSidebarFooterTooltipSide } from "~/adaptiveSidebar/adaptiveSidebar";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -147,6 +149,7 @@ function SidebarUtilityItem({
   track: string;
   onClick: () => void;
 }) {
+  const tooltipSide = useSidebarFooterTooltipSide();
   return (
     <SidebarMenuItem className="shrink-0">
       <Tooltip>
@@ -157,7 +160,7 @@ function SidebarUtilityItem({
             </SidebarMenuButton>
           }
         />
-        <TooltipPopup side="top">{label}</TooltipPopup>
+        <TooltipPopup side={tooltipSide}>{label}</TooltipPopup>
       </Tooltip>
     </SidebarMenuItem>
   );
@@ -218,6 +221,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             track="sidebar.settings"
             onClick={handleSettingsClick}
           />
+          <ProductSidebarFooterNavigation />
           {pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<PullRequestGlyph.pullRequest />}
@@ -234,8 +238,11 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           />
         </>
       )}
-      <SidebarBackgroundNotices />
-      <SidebarUpdatePill />
+      {productSurface("sidebarNotifications") === "upcomputer" ? (
+        <SidebarNotifications />
+      ) : (
+        <SidebarUpdatePill />
+      )}
     </SidebarMenu>
   );
 });

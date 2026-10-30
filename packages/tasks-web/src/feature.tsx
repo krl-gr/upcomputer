@@ -137,9 +137,10 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   ],
   routes: [
     { id: "tasks", path: "/tasks", load: () => import("./ui/TasksRoute.tsx") },
-    { id: "agents", path: "/agents", load: () => import("./ui/AgentsRoute.tsx") },
+    { id: "workers", path: "/workers", load: () => import("./ui/AgentsRoute.tsx") },
+    { id: "agents", path: "/agents", load: () => import("./ui/AgentsRedirectRoute.tsx") },
     { id: "bots", path: "/bots", load: () => import("./bots/BotPage.tsx") },
-    // Automations live on the Agents side of Tasks; old links redirect there.
+    // Automations live on the Workers side of Tasks; old links redirect there.
     { id: "automations", path: "/automations", load: () => import("./ui/AutomationsRoute.tsx") },
   ],
   navigation: [
@@ -151,6 +152,13 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
       icon: ListTodoIcon,
       accessory: NavigationRunCounts,
     },
-    { id: "agents", label: "Agents", path: "/agents", order: 30, icon: BotIcon },
+    {
+      id: "agents",
+      label: "Workers",
+      path: "/workers",
+      order: 30,
+      icon: BotIcon,
+      placement: "footer",
+    },
   ],
 });

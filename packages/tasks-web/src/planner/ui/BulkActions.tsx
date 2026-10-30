@@ -3,7 +3,7 @@ import {
   ArchiveRestoreIcon,
   CircleCheckIcon,
   ListPlusIcon,
-  MoreVerticalIcon,
+  MoreHorizontalIcon,
   XIcon,
 } from "lucide-react";
 
@@ -107,7 +107,7 @@ export function BulkActions(props: {
           <MenuTrigger
             render={<Button size="icon-xs" variant="outline" aria-label="More bulk actions" />}
           >
-            <MoreVerticalIcon />
+            <MoreHorizontalIcon />
           </MenuTrigger>
           <MenuPopup align="end">
             <MenuItem disabled={none} onClick={() => run(() => store.reorder(ids, {}))}>

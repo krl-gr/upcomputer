@@ -45,6 +45,11 @@ import { isAppModalPage } from "./sidebar/mainAppLocation";
 import type { SidebarRouteReveal } from "./sidebar/routeReveal";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { productSurface } from "../product/productFlags";
+import {
+  sidebarTriggerShown,
+  useAdaptiveSidebar,
+  useSidebarToggle,
+} from "../adaptiveSidebar/adaptiveSidebar";
 import { SIDEBAR_TOGGLE_ALIGNMENT } from "../sidebarMetrics/sidebarMetrics";
 import {
   clampThreadSidebarWidth,
@@ -297,9 +302,14 @@ function registerThreadUndoCommands(
 function registerAppShellCommands(router: AnyRouter, shellElement: Element): () => void {
   // The provider mirrors the visibility it renders onto its wrapper, so the
   // committed state is readable when a key arrives.
-  const readSidebarVisible = () =>
-    shellElement.closest('[data-slot="sidebar-wrapper"]')?.getAttribute("data-sidebar-state") ===
-    "expanded";
+  const readSidebarVisible = () => {
+    const wrapper = shellElement.closest('[data-slot="sidebar-wrapper"]');
+    // UpComputer: the compact sidebar has no room for the notice either.
+    return (
+      wrapper?.getAttribute("data-sidebar-state") === "expanded" &&
+      wrapper.getAttribute("data-sidebar-compact") !== "true"
+    );
+  };
   const disposers = [
     registerThreadUndoCommands(router, readSidebarVisible),
     registerNavigationHistoryCommands(router),
@@ -319,7 +329,8 @@ function SidebarControl() {
   const router = useRouter();
   const usagePageOpen = useLocation({ select: (location) => location.pathname === "/usage" });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const { toggleSidebar, isMobile, mobileSheetMounted } = useSidebar();
+  const { toggleSidebar: toggleOpen, isMobile, mobileSheetMounted } = useSidebar();
+  const toggleSidebar = useSidebarToggle(toggleOpen);
   const isSidebarVisible = useSidebarVisibility();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const stageBackdropVariant = useSidebarStageBackdropVariant(environmentIdentificationMode);
@@ -380,6 +391,7 @@ function SidebarControl() {
       className={cn(
         "pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center",
         isMobile && mobileSheetMounted && "hidden",
+        !sidebarTriggerShown(isMobile) && "hidden",
       )}
       data-sidebar-control=""
     >
@@ -419,6 +431,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // A clamped drag may not change width, so viewport changes need a separate subscription.
   const viewportWidth = useSyncExternalStore(subscribeToViewportWidth, readViewportWidth);
+  const adaptiveSidebar = useAdaptiveSidebar(viewportWidth);
   const [brandWidth, setBrandWidth] = useState(0);
   const sidebarMinimumWidth = resolveThreadSidebarMinimumWidth(brandWidth);
   const sidebarMaximumWidth = resolveThreadSidebarMaximumWidth(viewportWidth, sidebarMinimumWidth);
@@ -446,7 +459,9 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     ...windowControlsInsetStyle,
   } as CSSProperties;
   const sidebarProviderStyle = {
-    "--sidebar-width": `${clampThreadSidebarWidth(sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}px`,
+    "--sidebar-width":
+      adaptiveSidebar?.cssWidth ??
+      `${clampThreadSidebarWidth(sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}px`,
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
     "--compact-sidebar-width": COMPACT_SIDEBAR_WIDTH,
     ...sidebarToggleStyle,
@@ -457,6 +472,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       <SidebarProvider
         className="h-dvh! min-h-0!"
         data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
+        data-sidebar-compact={adaptiveSidebar ? String(adaptiveSidebar.compact) : undefined}
         defaultOpen
         style={sidebarProviderStyle}
       >
@@ -476,13 +492,14 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
               wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
             storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
             onResize: setSidebarWidth,
+            ...adaptiveSidebar?.resizable,
           }}
           style={sidebarToggleStyle}
         >
           <ThreadSidebar routeReveal={sidebarRouteReveal} />
-          <SidebarRail onDoubleClick={resetSidebarWidth} />
+          <SidebarRail onDoubleClick={adaptiveSidebar?.reset ?? resetSidebarWidth} />
         </Sidebar>
-        <CompactSidebar />
+        {adaptiveSidebar ? null : <CompactSidebar />}
         {children}
         <BackgroundThreadAnnouncer />
         <SidebarControl />

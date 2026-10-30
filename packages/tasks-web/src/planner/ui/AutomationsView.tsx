@@ -130,7 +130,7 @@ function AutomationsBody(props: {
 }
 
 /**
- * The Agents side's Automations section: the automations of one environment
+ * The Workers side's Automations section: the automations of one environment
  * (the planner's choice), each creating agent tasks on a schedule. New
  * Automation, a double-click or a row's arrow opens the automation's window,
  * which also lists the tasks it created.

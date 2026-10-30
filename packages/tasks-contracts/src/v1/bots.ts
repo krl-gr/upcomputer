@@ -143,6 +143,11 @@ export const Bot = Schema.Struct({
    * by any agent; their approvals and questions show as the bot's. Absent from older servers.
    */
   activeTaskRunThreadIds: Schema.optional(Schema.Array(ThreadId)),
+  /**
+   * Whether the bot's chat has tasks, the ones its tasks menu lists (`threadTasks`), so the
+   * sidebar can offer that menu once no run counts show. Absent from older servers.
+   */
+  chatHasTasks: Schema.optional(Schema.Boolean),
 });
 export type Bot = typeof Bot.Type;
 

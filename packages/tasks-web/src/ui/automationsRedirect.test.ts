@@ -13,7 +13,7 @@ import { redirectFromAutomations } from "./automationsRedirect.ts";
 
 const stored = (key: string) => getLocalStorageItem(key, Schema.NullOr(Schema.String));
 
-test("/automations opens the Agents side on its Automations section", () => {
+test("/automations opens the Workers side on its Automations section", () => {
   NodeAssert.deepEqual(redirectFromAutomations({}), {
     to: "/tasks",
     search: { view: "table" },

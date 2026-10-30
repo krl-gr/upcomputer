@@ -1,80 +1,84 @@
-import { type RefObject, useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
-import { isInsideRestingComposerControlScope } from "../components/chat/composerEventScope";
 import { observeResize } from "../lib/observeResize";
 import { productSurface } from "../product/productFlags";
 
 /*
- * The UpComputer composer's compact form: one row of paperclip, prompt and
- * send while the composer is idle. It only restyles the composer, so the
- * prompt editor stays the same element in both forms and keeps its draft,
- * selection and IME state.
+ * The UpComputer composer's compact form in bot chats: one row of paperclip,
+ * prompt and send, typed in for as long as the content fits it. It only
+ * restyles the composer, so the prompt editor stays the same element in both
+ * forms and keeps its draft, selection and IME state.
  */
 
 export interface CompactComposerInput {
-  /** The "Compact composer" setting. */
+  /** The chat is a bot's (`useCompactComposerChat`); other threads always get the full composer. */
+  isBotChat: boolean;
+  /** The stored `composerCompact` setting, drawn as "Full composer in bot chats" turned off. */
   enabled: boolean;
-  /** Focus is in the composer or in one of its menus, popovers or drawers. */
-  isFocusWithin: boolean;
   hasMultilinePrompt: boolean;
+  /** The one-line prompt reaches the compact row's fade (`useCompactPromptReachesFade`). */
+  hasLongPrompt: boolean;
   /** Images, files, terminal contexts or pending snapshots in the draft. */
   hasAttachments: boolean;
   /** An approval, a question or a plan waits for the user. */
   hasPendingRequest: boolean;
-  /** A menu, drawer, drag-over, error or banner that needs the full composer. */
+  /** Its controls were asked for, or a menu, drag-over or error needs the full composer. */
   hasExpandedChrome: boolean;
 }
 
 export function isComposerCompact(input: CompactComposerInput): boolean {
   return (
+    input.isBotChat &&
     input.enabled &&
     productSurface("composerFooter") === "upcomputer" &&
-    !input.isFocusWithin &&
     !input.hasMultilinePrompt &&
+    !input.hasLongPrompt &&
     !input.hasAttachments &&
     !input.hasPendingRequest &&
     !input.hasExpandedChrome
   );
 }
 
-function isFocusWithinComposer(form: HTMLElement | null, target: EventTarget | null): boolean {
-  if (!form || !(target instanceof Node)) return false;
-  return form.contains(target) || isInsideRestingComposerControlScope(target);
+/* Chats whose composer can rest as the compact row, by scoped thread key: bot chats, marked by their header. */
+const compactChats = new Map<string, number>();
+const listeners = new Set<() => void>();
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
-/**
- * Whether focus is in the composer form or a menu it portaled out of it.
- * Checked a frame after focus moves: closing a menu briefly leaves focus on
- * the body before the menu hands it back to the prompt.
- */
-export function useComposerFocusWithin(formRef: RefObject<HTMLFormElement | null>): boolean {
-  const [focused, setFocused] = useState(false);
+function setCompactChat(threadKey: string, delta: 1 | -1) {
+  const count = (compactChats.get(threadKey) ?? 0) + delta;
+  if (count > 0) compactChats.set(threadKey, count);
+  else compactChats.delete(threadKey);
+  for (const listener of listeners) listener();
+}
+
+/** While mounted, the chat's composer can rest as the compact row; null marks nothing. */
+export function useCompactComposerChat(threadKey: string | null): void {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the chat in the module store the composer reads
   useEffect(() => {
-    let frame: number | null = null;
-    const check = () => {
-      frame = null;
-      setFocused(isFocusWithinComposer(formRef.current, document.activeElement));
-    };
-    const onFocusChange = (event: FocusEvent) => {
-      // Entering is immediate, so the full composer is there before the first key lands.
-      if (event.type === "focusin" && isFocusWithinComposer(formRef.current, event.target)) {
-        if (frame !== null) window.cancelAnimationFrame(frame);
-        frame = null;
-        setFocused(true);
-        return;
-      }
-      if (frame === null) frame = window.requestAnimationFrame(check);
-    };
-    check();
-    document.addEventListener("focusin", onFocusChange);
-    document.addEventListener("focusout", onFocusChange);
-    return () => {
-      if (frame !== null) window.cancelAnimationFrame(frame);
-      document.removeEventListener("focusin", onFocusChange);
-      document.removeEventListener("focusout", onFocusChange);
-    };
-  }, [formRef]);
-  return focused;
+    if (threadKey === null) return;
+    setCompactChat(threadKey, 1);
+    return () => setCompactChat(threadKey, -1);
+  }, [threadKey]);
+}
+
+export function useIsCompactComposerChat(
+  environmentId: EnvironmentId,
+  threadId: ThreadId | null,
+): boolean {
+  const threadKey = threadId ? scopedThreadKey(scopeThreadRef(environmentId, threadId)) : null;
+  return useSyncExternalStore(
+    subscribe,
+    () => threadKey !== null && compactChats.has(threadKey),
+    () => false,
+  );
 }
 
 /**
@@ -99,6 +103,91 @@ export function useCompactComposerActionsWidth(
     };
   }, [actions, compact]);
 }
+
+export interface CompactPromptMeasurement {
+  /** The compact row is showing, so `compactLineWidth` is measured. */
+  readonly compact: boolean;
+  readonly textWidth: number;
+  /** The full composer's prompt line. */
+  readonly fullLineWidth: number;
+  /** The compact row's prompt line up to its fade. */
+  readonly compactLineWidth: number;
+}
+
+/**
+ * Whether a one-line prompt reaches the compact row's fade. The full form has
+ * no compact line to measure, so it keeps how much shorter that line was when
+ * last compact: both forms apply the same limit and cannot flip each other.
+ */
+export function createCompactPromptFit(): (measurement: CompactPromptMeasurement) => boolean {
+  let shortfall: number | null = null;
+  return (measurement) => {
+    if (measurement.compact) shortfall = measurement.fullLineWidth - measurement.compactLineWidth;
+    return shortfall !== null && measurement.textWidth > measurement.fullLineWidth - shortfall;
+  };
+}
+
+const px = (value: string) => Number.parseFloat(value) || 0;
+
+/** From the first character to the last: the range of the editor's contents spans its paragraph's box. */
+function textWidth(editor: HTMLElement): number {
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let first: Node | null = null;
+  let last: Node | null = null;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node.nodeValue) continue;
+    first ??= node;
+    last = node;
+  }
+  if (!first || !last) return 0;
+  const range = document.createRange();
+  range.setStart(first, 0);
+  range.setEnd(last, last.nodeValue?.length ?? 0);
+  return range.getBoundingClientRect().width;
+}
+
+/** Whether the prompt reaches the compact row's fade, and the ref callback that measures it on the composer body. */
+export function useCompactPromptReachesFade(): readonly [
+  boolean,
+  (body: HTMLElement | null) => (() => void) | undefined,
+] {
+  const [reachesFade, setReachesFade] = useState(false);
+  const [fit] = useState(createCompactPromptFit);
+  const observeBody = (body: HTMLElement | null) => {
+    const editor = body?.querySelector<HTMLElement>('[data-testid="composer-editor"]');
+    if (!body || !editor) return;
+    const measure = () => {
+      if (editor.clientWidth === 0) return;
+      const bodyStyle = getComputedStyle(body);
+      const editorStyle = getComputedStyle(editor);
+      const fade = COMPACT_FADE_REM * px(getComputedStyle(document.documentElement).fontSize);
+      setReachesFade(
+        fit({
+          compact:
+            body
+              .closest('[data-chat-composer-surface="true"]')
+              ?.querySelector('[data-composer-footer-compact="true"]') != null,
+          textWidth: textWidth(editor),
+          fullLineWidth: body.clientWidth - px(bodyStyle.paddingLeft) - px(bodyStyle.paddingRight),
+          compactLineWidth:
+            editor.clientWidth - px(editorStyle.paddingLeft) - px(editorStyle.paddingRight) - fade,
+        }),
+      );
+    };
+    measure();
+    const stopObserving = observeResize([body, editor], measure);
+    const mutationObserver = new MutationObserver(measure);
+    mutationObserver.observe(body, { childList: true, characterData: true, subtree: true });
+    return () => {
+      stopObserving();
+      mutationObserver.disconnect();
+    };
+  };
+  return [reachesFade, observeBody] as const;
+}
+
+/** The width of the editor's fade in the compact row: the `1.5rem` of its mask. */
+const COMPACT_FADE_REM = 1.5;
 
 /*
  * The compact row's geometry: the footer overlays the card with only the paperclip and the

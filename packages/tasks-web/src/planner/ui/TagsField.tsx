@@ -46,7 +46,7 @@ export function TagsField(props: {
         <DetailAutocompleteInput
           value={value}
           options={options}
-          placeholder="Add tags… an agent's tag hands it the task"
+          placeholder="Add tags… a worker's tag hands it the task"
           ariaLabel="Task tags"
           className={INPUT_CLASS}
           onChange={setValue}

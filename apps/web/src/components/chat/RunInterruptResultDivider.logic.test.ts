@@ -74,7 +74,7 @@ describe("runInterruptResultPresentation", () => {
     ).toEqual({
       kind: "failed",
       label: "Run failed",
-      detail: "Task agent run failed",
+      detail: "Worker run failed",
       tone: "danger",
     });
     expect(
@@ -85,7 +85,7 @@ describe("runInterruptResultPresentation", () => {
     ).toEqual({
       kind: "failed",
       label: "Run interrupted",
-      detail: "Task agent run could not continue",
+      detail: "Worker run could not continue",
       tone: "danger",
     });
   });
@@ -99,7 +99,7 @@ describe("runInterruptResultPresentation", () => {
     ).toEqual({
       kind: "stopped",
       label: "Run ended",
-      detail: "Task agent run cancelled",
+      detail: "Worker run cancelled",
       tone: "neutral",
     });
   });

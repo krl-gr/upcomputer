@@ -27,16 +27,23 @@ vi.mock("../product/productFlags", async (importOriginal) => ({
   productSurface: () => surface.composerFooter,
 }));
 
-const { act, useEffect, useRef } = await import("react");
-const { createPortal } = await import("react-dom");
+const { act, useEffect } = await import("react");
 const { createRoot } = await import("react-dom/client");
-const { isComposerCompact, useComposerFocusWithin } = await import("./compactComposer");
+const {
+  createCompactPromptFit,
+  isComposerCompact,
+  useCompactComposerChat,
+  useIsCompactComposerChat,
+} = await import("./compactComposer");
+const { scopedThreadKey, scopeThreadRef } = await import("@t3tools/client-runtime/environment");
+const { EnvironmentId, ThreadId } = await import("@t3tools/contracts");
 type CompactComposerInput = import("./compactComposer").CompactComposerInput;
 
 const idle: CompactComposerInput = {
+  isBotChat: true,
   enabled: true,
-  isFocusWithin: false,
   hasMultilinePrompt: false,
+  hasLongPrompt: false,
   hasAttachments: false,
   hasPendingRequest: false,
   hasExpandedChrome: false,
@@ -47,17 +54,18 @@ afterEach(() => {
 });
 
 describe("isComposerCompact", () => {
-  it("compacts an idle composer", () => {
+  it("compacts a bot chat's composer whose content fits one row", () => {
     expect(isComposerCompact(idle)).toBe(true);
   });
 
   it.each([
-    ["the setting is off", { enabled: false }],
-    ["focus is in the composer or its menus", { isFocusWithin: true }],
+    ["the chat is an ordinary thread", { isBotChat: false }],
+    ["full composer in bot chats is on", { enabled: false }],
     ["the prompt runs past one line", { hasMultilinePrompt: true }],
+    ["the prompt reaches the row's fade", { hasLongPrompt: true }],
     ["the draft has attachments", { hasAttachments: true }],
     ["an approval or question waits", { hasPendingRequest: true }],
-    ["a menu, drag, error or banner is up", { hasExpandedChrome: true }],
+    ["its controls, a menu, drag or error are up", { hasExpandedChrome: true }],
   ])("stays full when %s", (_reason, override) => {
     expect(isComposerCompact({ ...idle, ...override })).toBe(false);
   });
@@ -68,86 +76,66 @@ describe("isComposerCompact", () => {
   });
 });
 
-describe("useComposerFocusWithin", () => {
-  let frames: FrameRequestCallback[] = [];
-  let container: HTMLDivElement;
-  let menuHost: HTMLDivElement;
-  let outside: HTMLButtonElement;
-  let root: import("react-dom/client").Root;
-  let focused: boolean | null = null;
+describe("createCompactPromptFit", () => {
+  // The full line is 760px; the compact row's line, up to its fade, 700px.
+  const full = { compact: false, fullLineWidth: 760, compactLineWidth: 0 };
+  const compact = { compact: true, fullLineWidth: 760, compactLineWidth: 700 };
 
-  function Composer() {
-    const formRef = useRef<HTMLFormElement>(null);
-    const isFocusWithin = useComposerFocusWithin(formRef);
-    useEffect(() => {
-      focused = isFocusWithin;
-    }, [isFocusWithin]);
-    return (
-      <form ref={formRef}>
-        <textarea aria-label="Message" />
-        {createPortal(
-          <div data-chat-composer-floating-layer="true">
-            <button type="button">Claude Opus 5.5</button>
-          </div>,
-          menuHost,
-        )}
-      </form>
+  it("goes full when the line reaches the fade, and stays full with the same text", () => {
+    const fits = createCompactPromptFit();
+    expect(fits({ ...compact, textWidth: 700 })).toBe(false);
+    expect(fits({ ...compact, textWidth: 730 })).toBe(true);
+    expect(fits({ ...full, textWidth: 730 })).toBe(true);
+    expect(fits({ ...full, textWidth: 700 })).toBe(false);
+  });
+
+  it("keeps the limit through a resize while full", () => {
+    const fits = createCompactPromptFit();
+    fits({ ...compact, textWidth: 0 });
+    expect(fits({ ...full, fullLineWidth: 560, textWidth: 510 })).toBe(true);
+    expect(fits({ ...full, fullLineWidth: 560, textWidth: 490 })).toBe(false);
+  });
+
+  it("leaves the full form alone until it has been compact", () => {
+    expect(createCompactPromptFit()({ ...full, textWidth: 750 })).toBe(false);
+  });
+});
+
+describe("useIsCompactComposerChat", () => {
+  const environmentId = EnvironmentId.make("environment-1");
+  const threadId = ThreadId.make("thread-1");
+  let container: HTMLDivElement;
+  let root: import("react-dom/client").Root;
+  let compact: boolean | null = null;
+
+  function Chat(props: { readonly marked: boolean }) {
+    useCompactComposerChat(
+      props.marked ? scopedThreadKey(scopeThreadRef(environmentId, threadId)) : null,
     );
+    const isCompact = useIsCompactComposerChat(environmentId, threadId);
+    useEffect(() => {
+      compact = isCompact;
+    }, [isCompact]);
+    return null;
   }
 
-  const flushFrames = () =>
-    act(async () => {
-      const pending = frames;
-      frames = [];
-      for (const frame of pending) frame(0);
-    });
-
-  const focus = (element: HTMLElement) =>
-    act(async () => {
-      element.focus();
-    });
-
-  beforeEach(async () => {
-    frames = [];
-    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-      frames.push(callback);
-      return frames.length;
-    });
-    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+  beforeEach(() => {
     container = document.createElement("div");
-    menuHost = document.createElement("div");
-    outside = document.createElement("button");
-    document.body.append(container, menuHost, outside);
+    document.body.append(container);
     root = createRoot(container);
-    await act(async () => root.render(<Composer />));
   });
 
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
-    menuHost.remove();
-    outside.remove();
-    vi.restoreAllMocks();
   });
 
-  it("expands as soon as focus enters the prompt", async () => {
-    expect(focused).toBe(false);
-    await focus(container.querySelector("textarea")!);
-    expect(focused).toBe(true);
-  });
-
-  it("stays expanded while focus is in a menu the composer portaled out", async () => {
-    await focus(container.querySelector("textarea")!);
-    await focus(menuHost.querySelector("button")!);
-    await flushFrames();
-    expect(focused).toBe(true);
-  });
-
-  it("collapses a frame after focus leaves the composer", async () => {
-    await focus(container.querySelector("textarea")!);
-    await focus(outside);
-    expect(focused).toBe(true);
-    await flushFrames();
-    expect(focused).toBe(false);
+  it("follows the bot header's mark on the chat", async () => {
+    await act(async () => root.render(<Chat marked={false} />));
+    expect(compact).toBe(false);
+    await act(async () => root.render(<Chat marked />));
+    expect(compact).toBe(true);
+    await act(async () => root.render(<Chat marked={false} />));
+    expect(compact).toBe(false);
   });
 });

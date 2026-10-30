@@ -9,6 +9,7 @@ import {
 
 import { cn } from "~/lib/utils";
 import { productSurface } from "~/product/productFlags";
+import { SidebarCompactSearch } from "~/adaptiveSidebar/adaptiveSidebar";
 import { SIDEBAR_SEARCH_ROW_TEXT } from "~/sidebarMetrics/sidebarMetrics";
 import { Button } from "../ui/button";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
@@ -62,6 +63,7 @@ export function SidebarThreadHeader({
 
   return (
     <div className="flex items-center gap-1">
+      <SidebarCompactSearch />
       <div
         ref={searchFieldRef}
         className={cn(

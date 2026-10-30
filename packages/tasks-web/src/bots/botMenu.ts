@@ -48,3 +48,14 @@ export function botThreadActions({
     },
   ];
 }
+
+export type BotRowMenuEntry = "settings" | "tasks";
+
+/**
+ * A bot row's context menu: the tasks menu its counts or tasks button open
+ * for a person who may read tasks, then its settings. In the compact sidebar it is the way to
+ * its hover actions.
+ */
+export function botRowMenuEntries(canReadTasks: boolean): ReadonlyArray<BotRowMenuEntry> {
+  return canReadTasks ? ["tasks", "settings"] : ["settings"];
+}

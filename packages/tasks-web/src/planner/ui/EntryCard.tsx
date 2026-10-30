@@ -7,7 +7,13 @@ import {
   type ReactNode,
 } from "react";
 import { useDraggable } from "@dnd-kit/core";
-import { CheckIcon, CircleCheckIcon, CircleIcon, MoreVerticalIcon, SquareIcon } from "lucide-react";
+import {
+  CheckIcon,
+  CircleCheckIcon,
+  CircleIcon,
+  MoreHorizontalIcon,
+  SquareIcon,
+} from "lucide-react";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
 import { cn } from "../../../../../apps/web/src/lib/utils.ts";
@@ -17,7 +23,7 @@ import { entryTimingLabel, minutesToPixels, resizedDuration } from "../logic/tim
 import { IconAction } from "./IconAction.tsx";
 import { usePlanner } from "./plannerContext.ts";
 import { pointBelow, type MenuPoint } from "./PointMenu.tsx";
-import { projectStripeClassName } from "./projectStripe.ts";
+import { projectStripeClassName, projectTintClassName } from "./projectStripe.ts";
 import { isFinished } from "./TaskRow.tsx";
 
 export interface EntryCardHandlers {
@@ -35,6 +41,20 @@ export interface EntryDragData {
 }
 
 const handled = (entry: TaskScheduleEntry) => entry.status !== "open";
+
+/**
+ * A card's surface and its hover actions' backing. "modern" tints the card
+ * with its project's color, neutral when handled or finished, and has no
+ * border; "classic" keeps the bordered white card.
+ */
+function useEntrySurface(entry: TaskScheduleEntry, task: PlannerTask | undefined) {
+  const { preferences, projectById } = usePlanner();
+  if (preferences.cardStyle === "classic")
+    return { card: "border bg-card shadow-xs/5", actions: "bg-card" };
+  const muted = !task || handled(entry) || isFinished(task);
+  const tint = projectTintClassName(muted ? null : (projectById.get(task.projectId) ?? null));
+  return { card: tint, actions: tint };
+}
 
 /**
  * The card's look: wande's two card styles. "modern" has a stripe in the
@@ -68,7 +88,7 @@ function EntryBody(props: {
       ) : null}
       <div
         className={cn(
-          "flex min-w-0 items-start gap-1",
+          "relative flex min-w-0 items-center gap-1",
           preferences.cardStyle === "modern" && "pl-2",
         )}
       >
@@ -96,6 +116,8 @@ function EntryBody(props: {
 
 function EntryButtons(props: {
   readonly entry: TaskScheduleEntry;
+  /** The card's surface, so the actions hide the title they cover. */
+  readonly surface: string;
   readonly selectMode: boolean;
   readonly selected: boolean;
   readonly handlers: EntryCardHandlers;
@@ -116,9 +138,14 @@ function EntryButtons(props: {
       </IconAction>
     );
   return (
-    // Always visible on touch screens; on mouse screens they overlay the card on hover
-    // instead of taking width from the title.
-    <span className="flex shrink-0 items-center opacity-100 transition-opacity md:absolute md:top-0.5 md:right-0.5 md:rounded-md md:bg-card md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+    // Always visible on touch screens; on mouse screens they overlay the title's end on
+    // hover instead of taking width from it. Centered on the text, not a tall block.
+    <span
+      className={cn(
+        "flex shrink-0 items-center rounded-md opacity-100 transition-opacity md:absolute md:top-1/2 md:right-0 md:-translate-y-1/2 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100",
+        props.surface,
+      )}
+    >
       <IconAction
         label={entry.status === "done" ? "Mark as not done" : "Mark as done"}
         size="icon-micro"
@@ -137,7 +164,7 @@ function EntryButtons(props: {
           handlers.onMenu(entry, pointBelow(event.currentTarget));
         }}
       >
-        <MoreVerticalIcon />
+        <MoreHorizontalIcon />
       </IconAction>
     </span>
   );
@@ -152,6 +179,7 @@ export const QueueEntryCard = memo(function QueueEntryCard(props: {
   readonly handlers: EntryCardHandlers;
 }) {
   const { entry, handlers } = props;
+  const surface = useEntrySurface(entry, props.task);
   const pending = entry.id.startsWith("pending-entry-");
   // Its day column is the drop target; where in the column follows the pointer.
   const { attributes, listeners, isDragging, setNodeRef } = useDraggable({
@@ -166,7 +194,8 @@ export const QueueEntryCard = memo(function QueueEntryCard(props: {
       {...listeners}
       data-entry-id={entry.id}
       className={cn(
-        "group relative rounded-md border bg-card px-2 py-1.5 shadow-xs/5",
+        "group relative rounded-md px-2 py-1.5",
+        surface.card,
         isDragging && "opacity-40",
         props.selectMode && !props.selected && "opacity-50",
         props.selectMode && !props.selected ? "cursor-not-allowed" : "cursor-grab",
@@ -186,6 +215,7 @@ export const QueueEntryCard = memo(function QueueEntryCard(props: {
         trailing={
           <EntryButtons
             entry={entry}
+            surface={surface.actions}
             selectMode={props.selectMode}
             selected={props.selected}
             handlers={handlers}
@@ -209,6 +239,7 @@ export const CalendarEntryCard = memo(function CalendarEntryCard(props: {
 }) {
   const { entry, position, handlers } = props;
   const { preferences } = usePlanner();
+  const surface = useEntrySurface(entry, props.task);
   const [previewHeight, setPreviewHeight] = useState<number | null>(null);
   const resizing = previewHeight !== null;
   const pending = entry.id.startsWith("pending-entry-");
@@ -269,7 +300,8 @@ export const CalendarEntryCard = memo(function CalendarEntryCard(props: {
       data-entry-id={entry.id}
       style={style}
       className={cn(
-        "group absolute overflow-hidden rounded-md border bg-card px-1.5 py-1 shadow-xs/5",
+        "group absolute overflow-hidden rounded-md px-1.5 py-1",
+        surface.card,
         isDragging && "opacity-40",
         props.selectMode && !props.selected && "opacity-50",
         props.selectMode && !props.selected ? "cursor-not-allowed" : "cursor-grab",
@@ -292,6 +324,7 @@ export const CalendarEntryCard = memo(function CalendarEntryCard(props: {
         trailing={
           <EntryButtons
             entry={entry}
+            surface={surface.actions}
             selectMode={props.selectMode}
             selected={props.selected}
             handlers={handlers}
@@ -318,8 +351,9 @@ export function EntryDragPreview(props: {
   readonly task: PlannerTask | undefined;
   readonly count: number;
 }) {
+  const surface = useEntrySurface(props.entry, props.task);
   return (
-    <div className="relative w-40 rounded-md border bg-card px-2 py-1.5 shadow-lg">
+    <div className={cn("relative w-40 rounded-md border px-2 py-1.5 shadow-lg", surface.actions)}>
       <EntryBody entry={props.entry} task={props.task} />
       {props.count > 1 ? (
         <span className="absolute -right-2 -bottom-2 rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground tabular-nums">

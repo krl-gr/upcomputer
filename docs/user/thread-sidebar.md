@@ -149,6 +149,15 @@ right-click it, to start a thread in that project. Pinned threads stay above the
 Snoozed and Settled stay below them. In this mode you cannot drag threads, and the Working section
 is off. Each device keeps its own choice.
 
+### Narrow the sidebar
+
+On web and desktop, drag the sidebar's edge to change its width. Narrower than about 170
+pixels, it becomes a column of icons: hover one for its name, and a dot on an icon stands
+for a status or a task count. Sections you collapsed stay hidden in the column. Press
+`mod+b` to switch between the full sidebar and the column; the full sidebar comes back
+at the width it had. Double-click the edge to reset the width. On a phone the sidebar
+opens as a sheet, as before.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list
@@ -299,7 +308,7 @@ A bot's chat has no header; its row shows the same statuses as a thread row, and
 counts its background task too: **Waiting** while the task runs, **Awaiting Input**
 when it is blocked, and **Failed** when it fails or is interrupted, until you open
 the bot's conversation. It also shows **Pending Approval** or **Awaiting Input**
-while any task started from the conversation, the bot's own or another agent's,
+while any task started from the conversation, the bot's own or a worker's,
 waits for you. Hover the bot's name for the cause.
 
 Hover the row and click the settings button to open the bot's page. There you

@@ -29,11 +29,14 @@ import {
   Collapsible,
   CollapsiblePanel,
 } from "../../../../apps/web/src/components/ui/collapsible.tsx";
+import { MenuItem, MenuPopup } from "../../../../apps/web/src/components/ui/menu.tsx";
 import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "../../../../apps/web/src/components/ui/sidebar.tsx";
+  SidebarRowContextMenu,
+  SidebarRowContextMenuTrigger,
+} from "../../../../apps/web/src/sidebarThreadRow/SidebarRowContextMenu.ts";
+import { SidebarMenu, SidebarMenuItem } from "../../../../apps/web/src/components/ui/sidebar.tsx";
+import { SidebarEmptyRow } from "../../../../apps/web/src/sidebarProjects/SidebarEmptyRow.tsx";
+import { useSidebarProjectScope } from "../../../../apps/web/src/sidebarProjects/sidebarProjectScope.ts";
 import {
   Tooltip,
   TooltipPopup,
@@ -52,13 +55,13 @@ import {
   SIDEBAR_SECTION_GAP,
   SIDEBAR_SECTION_HEADER_GAP,
 } from "../../../../apps/web/src/sidebarMetrics/sidebarMetrics.ts";
-import { ThreadStatusLabel } from "../../../../apps/web/src/sidebarThreadRow/ThreadStatusLabel.tsx";
 import {
   SIDEBAR_LIST_ROW,
   SIDEBAR_LIST_ROW_ACTIVE,
   SIDEBAR_LIST_ROW_REST,
   SidebarListRowEnd,
   sidebarListRowActionClassName,
+  sidebarListRowExtraActionClassName,
   sidebarListRowTitleClassName,
 } from "../../../../apps/web/src/sidebarThreadRow/sidebarListRow.tsx";
 import { cn } from "../../../../apps/web/src/lib/utils.ts";
@@ -69,7 +72,21 @@ import { threadEnvironment } from "../../../../apps/web/src/state/threads.ts";
 import { useOrchestrationCommand } from "../../../../apps/web/src/state/use-orchestration-command.ts";
 import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/extensionApi.ts";
 import { claimSidebarThreads } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
-import { TaskThreadRunCounts } from "../ui/TaskThreadRunCounts.tsx";
+import { useTimelineMinimapByDay } from "../../../../apps/web/src/timelineMinimapDays/timelineMinimapDays.ts";
+import { useCompactComposerChat } from "../../../../apps/web/src/composerFooter/compactComposer.ts";
+import {
+  SidebarCompactTooltip,
+  useSidebarCompact,
+} from "../../../../apps/web/src/adaptiveSidebar/adaptiveSidebar.tsx";
+import { readTasksWebAccess, useTasksWebAccessRevision } from "../environmentApi.ts";
+import {
+  TaskThreadRunCounts,
+  TaskThreadRunPill,
+  TaskThreadTasksButton,
+  TaskThreadTasksSubmenu,
+} from "../ui/TaskThreadRunCounts.tsx";
+import { botRowMenuEntries } from "./botMenu.ts";
+import { botsInProjectScope } from "./botProjectScope.ts";
 import {
   BotAvatar,
   botPage,
@@ -142,14 +159,16 @@ function CompactEnvironmentBots({
   readonly several: boolean;
 }) {
   const { bots, enabled } = useBots(environmentId);
+  const scope = useSidebarProjectScope();
   const title = useBotSectionTitle(environmentId, several);
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
   const navigate = useNavigate();
   const isActive = useIsBotActive(environmentId);
-  if (!enabled) return null;
+  const shown = botsInProjectScope(environmentId, bots, scope);
+  if (!enabled || (scope !== null && shown.length === 0)) return null;
   return (
     <CompactSidebarPill label={title}>
-      {bots.map((bot) => (
+      {shown.map((bot) => (
         <CompactBotButton
           key={bot.agent.id}
           environmentId={environmentId}
@@ -205,6 +224,7 @@ function EnvironmentBots({
   readonly several: boolean;
 }) {
   const { bots, error, enabled } = useBots(environmentId);
+  const scope = useSidebarProjectScope();
   const title = useBotSectionTitle(environmentId, several);
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
   const navigate = useNavigate();
@@ -214,8 +234,8 @@ function EnvironmentBots({
     true,
     Schema.Boolean,
   );
-  // Each bot's chat is listed here, so Threads leaves it out; a removed bot's
-  // chat returns there with the next list.
+  // Each bot's chat belongs here, so Threads leaves it out, even while the
+  // Projects filter hides its bot; a removed bot's chat returns there with the next list.
   const chatKeys = (enabled ? bots : [])
     .map((bot) => scopedThreadKey(scopeThreadRef(environmentId, bot.threadId)))
     .join("\n");
@@ -223,7 +243,9 @@ function EnvironmentBots({
     () => claimSidebarThreads(`bots:${environmentId}`, chatKeys ? chatKeys.split("\n") : []),
     [environmentId, chatKeys],
   );
-  if (!enabled) return null;
+  const shown = botsInProjectScope(environmentId, bots, scope);
+  // A filter no bot matches hides the section; a bot chat it hides stays open.
+  if (!enabled || (scope !== null && shown.length === 0 && !error)) return null;
   const create = () => {
     if (canWrite) void navigate(botPage(environmentId));
   };
@@ -236,15 +258,16 @@ function EnvironmentBots({
           onToggle={() => setOpen(!open)}
           action={
             <SidebarSectionHeaderAction label="Create bot" track="bots.create" onClick={create}>
-              <PlusIcon className="size-3.5" />
+              <PlusIcon />
             </SidebarSectionHeaderAction>
           }
         />
       </div>
-      <CollapsiblePanel>
+      {/* Each bot's run pill rises above its compact target, over the panel's top edge. */}
+      <CollapsiblePanel className="[[data-sidebar-compact=true]_&]:overflow-visible">
         <div className={`${SIDEBAR_SECTION_HEADER_GAP} ${SIDEBAR_MENU_SCOPE}`}>
           <SidebarMenu>
-            {bots.map((bot) => (
+            {shown.map((bot) => (
               <SidebarMenuItem key={bot.agent.id}>
                 <BotRow
                   environmentId={environmentId}
@@ -258,12 +281,11 @@ function EnvironmentBots({
               </SidebarMenuItem>
             ))}
             {bots.length === 0 ? (
-              <SidebarMenuItem>
-                <SidebarMenuButton disabled={!canWrite} onClick={create}>
-                  <PlusIcon />
-                  <span>Create your first bot</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              <SidebarEmptyRow
+                label="Create your first bot"
+                disabled={!canWrite}
+                onClick={create}
+              />
             ) : null}
           </SidebarMenu>
           {error ? (
@@ -278,9 +300,10 @@ function EnvironmentBots({
 }
 
 /**
- * A bot's sidebar row from the compact thread row's parts: face, status while not idle, name,
- * its tasks' run counts, and settings where a thread row has "…". A double-click renames the
- * chat, and the server renames the bot with it.
+ * A bot's sidebar row from the compact thread row's parts: face (its state, which the name's
+ * tooltip says), name, run counts, and settings where a thread row has "…". A chat with tasks
+ * but no counts offers its tasks menu from an icon next to settings. Double-click renames it.
+ * A right-click offers settings and tasks, which the compact sidebar shows no button for.
  */
 function BotRow({
   environmentId,
@@ -296,11 +319,15 @@ function BotRow({
   readonly onSettings: () => void;
 }) {
   const status = useBotStatus(environmentId, bot);
-  const canRename = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const compact = useSidebarCompact();
+  const canRename = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope) && !compact;
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [tasksMenuOpen, setTasksMenuOpen] = useState(false);
+  useTasksWebAccessRevision();
+  const menuEntries = botRowMenuEntries(readTasksWebAccess(environmentId).canReadTasks);
   const renameDone = useRef(false);
   const commitRename = (title: string) => {
     renameDone.current = true;
@@ -334,95 +361,147 @@ function BotRow({
     (event.target as Element).closest("button, input") === null;
   const nameClassName = sidebarListRowTitleClassName(active);
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-current={active ? "page" : undefined}
-      className={cn(SIDEBAR_LIST_ROW, active ? SIDEBAR_LIST_ROW_ACTIVE : SIDEBAR_LIST_ROW_REST)}
-      onClick={(event) => {
-        if (isRowEvent(event)) onOpen();
-      }}
-      onDoubleClick={(event) => {
-        if (!canRename || renaming !== null || !isRowEvent(event)) return;
-        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-        event.preventDefault();
-        renameDone.current = false;
-        setRenaming(bot.agent.name);
-      }}
-      onKeyDown={(event) => {
-        if (event.target !== event.currentTarget) return;
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        onOpen();
-      }}
-    >
-      {/* The face overflows the 16px icon slot, so the name lines up with the
+    <>
+      <SidebarRowContextMenu disabled={renaming !== null}>
+        <SidebarCompactTooltip
+          label={status.detail ? `${bot.agent.name}: ${status.detail}` : bot.agent.name}
+        >
+          <SidebarRowContextMenuTrigger
+            render={
+              <div
+                role="button"
+                tabIndex={0}
+                aria-current={active ? "page" : undefined}
+                data-sidebar-list-row=""
+                className={cn(
+                  SIDEBAR_LIST_ROW,
+                  active ? SIDEBAR_LIST_ROW_ACTIVE : SIDEBAR_LIST_ROW_REST,
+                )}
+                onClick={(event) => {
+                  if (isRowEvent(event)) onOpen();
+                }}
+                onDoubleClick={(event) => {
+                  if (!canRename || renaming !== null || !isRowEvent(event)) return;
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  event.preventDefault();
+                  renameDone.current = false;
+                  setRenaming(bot.agent.name);
+                }}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  onOpen();
+                }}
+              >
+                {/* The face overflows the 16px icon slot, so the name lines up with the
           other rows' labels and switching styles moves nothing. */}
-      <span className="flex size-4 shrink-0 items-center justify-center">
-        <BotAvatar id={bot.agent.id} appearance={bot.appearance} state={status.state} size={20} />
-      </span>
-      <ThreadStatusLabel status={status.label} />
-      {renaming !== null ? (
-        <input
-          autoFocus
-          value={renaming}
-          aria-label="Bot name"
-          onChange={(event) => setRenaming(event.target.value)}
-          onFocus={(event) => event.currentTarget.select()}
-          onKeyDown={(event) => {
-            event.stopPropagation();
-            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-            if (event.key === "Enter") {
-              event.preventDefault();
-              commitRename(renaming);
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              renameDone.current = true;
-              setRenaming(null);
+                <span className="flex size-4 shrink-0 items-center justify-center">
+                  <BotAvatar
+                    id={bot.agent.id}
+                    appearance={bot.appearance}
+                    state={status.state}
+                    size={20}
+                  />
+                </span>
+                {renaming !== null ? (
+                  <input
+                    autoFocus
+                    value={renaming}
+                    aria-label="Bot name"
+                    onChange={(event) => setRenaming(event.target.value)}
+                    onFocus={(event) => event.currentTarget.select()}
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        commitRename(renaming);
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        renameDone.current = true;
+                        setRenaming(null);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (!renameDone.current) commitRename(renaming);
+                    }}
+                    className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm text-card-foreground outline-none focus:border-foreground"
+                  />
+                ) : status.detail ? (
+                  <Tooltip>
+                    <TooltipTrigger render={<span className={nameClassName} />}>
+                      {bot.agent.name}
+                    </TooltipTrigger>
+                    <TooltipPopup side="top">{status.detail}</TooltipPopup>
+                  </Tooltip>
+                ) : (
+                  <span className={nameClassName}>{bot.agent.name}</span>
+                )}
+                <SidebarListRowEnd
+                  pinned={tasksMenuOpen}
+                  action={
+                    <button
+                      type="button"
+                      aria-label={`Settings for ${bot.agent.name}`}
+                      className={sidebarListRowActionClassName(tasksMenuOpen)}
+                      onClick={onSettings}
+                    >
+                      <SettingsIcon />
+                    </button>
+                  }
+                >
+                  <TaskThreadRunCounts
+                    environmentId={environmentId}
+                    threadId={bot.threadId}
+                    fallback={
+                      bot.chatHasTasks ? (
+                        <TaskThreadTasksButton
+                          environmentId={environmentId}
+                          threadId={bot.threadId}
+                          label={`Tasks for ${bot.agent.name}`}
+                          className={sidebarListRowExtraActionClassName(tasksMenuOpen)}
+                          onOpenChange={setTasksMenuOpen}
+                        />
+                      ) : null
+                    }
+                  />
+                </SidebarListRowEnd>
+              </div>
             }
-          }}
-          onBlur={() => {
-            if (!renameDone.current) commitRename(renaming);
-          }}
-          className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm text-card-foreground outline-none focus:border-foreground"
-        />
-      ) : status.detail ? (
-        <Tooltip>
-          <TooltipTrigger render={<span className={nameClassName} />}>
-            {bot.agent.name}
-          </TooltipTrigger>
-          <TooltipPopup side="top">{status.detail}</TooltipPopup>
-        </Tooltip>
-      ) : (
-        <span className={nameClassName}>{bot.agent.name}</span>
-      )}
-      <SidebarListRowEnd
-        pinned={false}
-        action={
-          <button
-            type="button"
-            aria-label={`Settings for ${bot.agent.name}`}
-            className={sidebarListRowActionClassName(false)}
-            onClick={onSettings}
-          >
-            <SettingsIcon className="size-4" />
-          </button>
-        }
-      >
-        <TaskThreadRunCounts
-          environmentId={environmentId}
-          threadId={bot.threadId}
-          fallback={null}
-        />
-      </SidebarListRowEnd>
-    </div>
+          />
+        </SidebarCompactTooltip>
+        {/* A sibling of the row: clicks in the portaled menu do not bubble to the row. */}
+        <MenuPopup align="start" sideOffset={2}>
+          {menuEntries.map((entry) =>
+            entry === "settings" ? (
+              <MenuItem key={entry} onClick={onSettings}>
+                <SettingsIcon />
+                Settings
+              </MenuItem>
+            ) : (
+              <TaskThreadTasksSubmenu
+                key={entry}
+                environmentId={environmentId}
+                threadId={bot.threadId}
+              />
+            ),
+          )}
+        </MenuPopup>
+      </SidebarRowContextMenu>
+      <TaskThreadRunPill
+        environmentId={environmentId}
+        threadId={bot.threadId}
+        name={bot.agent.name}
+      />
+    </>
   );
 }
 
 /**
  * The chat header accessory. A bot chat has no header: the marker hides the
  * header's content (`ChatHeader`), and the bar floats over the chat with only
- * the window controls (`ChatView`). Other chats are left as they are; the
+ * the window controls (`ChatView`). Its composer rests as the compact row. Other chats are left as they are; the
  * thread's action menu offers turning one into a bot.
  */
 export function BotHeader({
@@ -433,6 +512,11 @@ export function BotHeader({
   readonly threadId: ThreadId;
 }) {
   const { bots, loaded, enabled } = useBots(environmentId);
-  if (!enabled || !loaded || !bots.some((bot) => bot.threadId === threadId)) return null;
+  const isBotChat = enabled && loaded && bots.some((bot) => bot.threadId === threadId);
+  const chatKey = isBotChat ? scopedThreadKey(scopeThreadRef(environmentId, threadId)) : null;
+  // A bot chat runs for days: its minimap shows one tick per day.
+  useTimelineMinimapByDay(chatKey);
+  useCompactComposerChat(chatKey);
+  if (!isBotChat) return null;
   return <span hidden data-chat-header-hidden />;
 }

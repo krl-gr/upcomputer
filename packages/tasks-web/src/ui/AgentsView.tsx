@@ -243,7 +243,7 @@ export function AgentTableRow(props: AgentTableRowProps) {
 
   return (
     <tr
-      aria-label={`Open agent ${agent.name}`}
+      aria-label={`Open worker ${agent.name}`}
       className="cursor-pointer border-b border-border transition-colors hover:bg-muted/20"
       onClick={(event) => {
         if (!eventTargetsInteractiveRowDescendant(event)) onOpen();
@@ -572,8 +572,8 @@ export function AgentsView(props: AgentsViewProps) {
             !target || !baseModelSelection
               ? "Select a project"
               : !name
-                ? "Agent name is required"
-                : "Agent instructions are required",
+                ? "Worker name is required"
+                : "Worker instructions are required",
         });
         return;
       }
@@ -607,7 +607,7 @@ export function AgentsView(props: AgentsViewProps) {
       if (!client) {
         toastManager.add({
           type: "error",
-          title: "Couldn't save the agent",
+          title: "Couldn't save the worker",
           description: "The computer with your tasks isn't connected. Reconnect, then try again.",
         });
         return;
@@ -638,7 +638,7 @@ export function AgentsView(props: AgentsViewProps) {
           });
         });
         if (!editingAgent) {
-          toastManager.add({ type: "success", title: "Agent created", description: name });
+          toastManager.add({ type: "success", title: "Worker created", description: name });
           setViewMode(null);
         }
         props.onReload();
@@ -646,7 +646,7 @@ export function AgentsView(props: AgentsViewProps) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: editingAgent ? "Failed to update agent" : "Failed to create agent",
+            title: editingAgent ? "Failed to update worker" : "Failed to create worker",
             description: errorDescription(error),
           }),
         );
@@ -695,7 +695,7 @@ export function AgentsView(props: AgentsViewProps) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Failed to update agent",
+            title: "Failed to update worker",
             description: errorDescription(error),
           }),
         );
@@ -706,13 +706,13 @@ export function AgentsView(props: AgentsViewProps) {
 
   return (
     <WorkspaceViewLayout
-      title={editingAgent ? "" : isCreateMode ? "New agent" : "Agents"}
+      title={editingAgent ? "" : isCreateMode ? "New worker" : "Workers"}
       action={
         editingAgent
           ? undefined
           : isCreateMode
             ? {
-                ariaLabel: "Create agent",
+                ariaLabel: "Create worker",
                 track: "agents.create_save",
                 disabled: mutableProjects.length === 0 || savingKey !== null,
                 hideIcon: true,
@@ -723,7 +723,7 @@ export function AgentsView(props: AgentsViewProps) {
               }
             : SHOW_MANUAL_CREATE_ACTIONS.agents
               ? {
-                  ariaLabel: "Create agent",
+                  ariaLabel: "Create worker",
                   track: "agents.create",
                   disabled: mutableProjects.length === 0 || savingKey !== null,
                   onClick: openCreate,
@@ -733,7 +733,7 @@ export function AgentsView(props: AgentsViewProps) {
       leadingAction={
         editingAgent || isCreateMode
           ? {
-              ariaLabel: editingAgent ? "Back to agents" : "Cancel agent creation",
+              ariaLabel: editingAgent ? "Back to workers" : "Cancel worker creation",
               track: editingAgent ? "agents.back" : "agents.create_cancel",
               disabled: isCreateMode && savingKey !== null,
               icon: <ArrowLeftIcon className="size-4" />,
@@ -790,7 +790,7 @@ export function AgentsView(props: AgentsViewProps) {
                 <LazyMarkdownEditor
                   value={form.instructions}
                   placeholder="Instructions…"
-                  ariaLabel="Agent instructions"
+                  ariaLabel="Worker instructions"
                   className={INSTRUCTIONS_EDITOR_CLASS}
                   onChange={(instructions) => setForm((current) => ({ ...current, instructions }))}
                   onBlur={() => {
@@ -817,7 +817,7 @@ export function AgentsView(props: AgentsViewProps) {
                       <input
                         className={DETAIL_INPUT_CLASS}
                         value={form.name}
-                        aria-label="Agent name"
+                        aria-label="Worker name"
                         onChange={(event) =>
                           setForm((current) => ({ ...current, name: event.target.value }))
                         }
@@ -1037,7 +1037,7 @@ export function AgentsView(props: AgentsViewProps) {
                         className={DETAIL_INPUT_CLASS}
                         value={form.startRunStatuses}
                         placeholder="Task state"
-                        title="Start when another agent's run on the task ends as failed, interrupted or blocked"
+                        title="Start when another worker's run on the task ends as failed, interrupted or blocked"
                         aria-label="Start after runs ending as"
                         onChange={(event) =>
                           setForm((current) => ({
@@ -1126,7 +1126,7 @@ export function AgentsView(props: AgentsViewProps) {
               <LazyMarkdownEditor
                 value={form.instructions}
                 placeholder="Instructions…"
-                ariaLabel="Agent instructions"
+                ariaLabel="Worker instructions"
                 className={INSTRUCTIONS_EDITOR_CLASS}
                 onChange={(instructions) => setForm((current) => ({ ...current, instructions }))}
               />
@@ -1139,8 +1139,8 @@ export function AgentsView(props: AgentsViewProps) {
                       autoFocus
                       className={DETAIL_INPUT_CLASS}
                       value={form.name}
-                      placeholder="Agent name…"
-                      aria-label="Agent name"
+                      placeholder="Worker name…"
+                      aria-label="Worker name"
                       onChange={(event) =>
                         setForm((current) => ({ ...current, name: event.target.value }))
                       }
@@ -1166,7 +1166,7 @@ export function AgentsView(props: AgentsViewProps) {
                       <SelectTrigger
                         className={DETAIL_SELECT_TRIGGER_CLASS}
                         variant="ghost"
-                        aria-label="Agent project"
+                        aria-label="Worker project"
                       >
                         <SelectValue>
                           {selectedProject ? (
@@ -1309,7 +1309,7 @@ export function AgentsView(props: AgentsViewProps) {
                   <DetailSidebarRow label="Enabled">
                     <Switch
                       checked={form.enabled}
-                      aria-label="Enable new agent"
+                      aria-label="Enable new worker"
                       onCheckedChange={(checked) =>
                         setForm((current) => ({ ...current, enabled: Boolean(checked) }))
                       }
@@ -1351,19 +1351,19 @@ export function AgentsView(props: AgentsViewProps) {
           {hasReadOnlyProjects ? (
             <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
               Some projects are read-only or do not currently have an available default provider and
-              model. Existing agents remain readable, while invalid creation controls stay hidden.
+              model. Existing workers remain readable, while invalid creation controls stay hidden.
             </div>
           ) : null}
           {props.status === "error" ? (
             <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-              Up.computer couldn't load your agents. {props.errorMessage ?? "Try again."}
+              Up.computer couldn't load your workers. {props.errorMessage ?? "Try again."}
               <button type="button" className="ml-3 underline" onClick={props.onReload}>
                 Retry
               </button>
             </div>
           ) : props.status === "offline" ? (
             <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-              The environment with Tasks is not reachable right now. Agents show when it connects.
+              The environment with Tasks is not reachable right now. Workers show when it connects.
             </div>
           ) : null}
           {props.status === "error" ? null : visibleAgents.length === 0 ? (
@@ -1372,11 +1372,11 @@ export function AgentsView(props: AgentsViewProps) {
             props.status === "loading" || props.status === "offline" ? null : (
               <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                 {projectFilter && listedAgents.length > 0 ? (
-                  `No agents for ${projectFilter.label}`
+                  `No workers for ${projectFilter.label}`
                 ) : (
                   <StartThreadEmptyState
-                    title="No agents yet"
-                    body="You don't need to set them up by hand. Ask any thread for something big, and it creates the agents and tasks it needs. New tasks start their agents automatically."
+                    title="No workers yet"
+                    body="You don't need to set them up by hand. Ask any thread for something big, and it creates the workers and tasks it needs. New tasks start their workers automatically."
                   />
                 )}
               </div>

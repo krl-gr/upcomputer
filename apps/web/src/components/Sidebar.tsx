@@ -211,6 +211,7 @@ import {
 import { projectLinksByKey } from "../linkedProjects/projectScope";
 import { SidebarProjectsSection } from "../sidebarProjects/SidebarProjectsSection";
 import {
+  SidebarThreadListEmpty,
   SidebarThreadsSectionHeader,
   useSidebarThreadListShown,
 } from "../sidebarProjects/SidebarThreadsSection";
@@ -3152,6 +3153,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 <SidebarProjectsSection
                   projectGroups={sidebarProjectRowsShown ? projectGroups : EMPTY_PROJECT_GROUPS}
                   onAddProject={openAddProjectCommandPalette}
+                  loaded={sidebarProjectRowsShown}
                 />
                 <ProductSidebarSections />
                 {/* Below the Projects rows, so it appears with them rather than moving down. */}
@@ -3592,7 +3594,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             snoozedThreads.length +
             settledCount ===
             0 ? (
-            <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
+            <SidebarThreadListEmpty
+              waiting={sidebarWaiting !== null}
+              scopedProjectGroups={scopedProjectGroups}
+              onNewThread={handleNewThreadClick}
+              currentEnvironmentId={newThreadContext.activeThread?.environmentId ?? null}
+            >
               {/* The UpComputer Projects section keeps Add project, and a chat needs no project. */}
               {sidebarWaiting !== null ? (
                 <>
@@ -3625,7 +3632,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               ) : (
                 "No threads yet"
               )}
-            </div>
+            </SidebarThreadListEmpty>
           ) : null}
         </SidebarGroup>
       </SidebarContent>

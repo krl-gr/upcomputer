@@ -25,7 +25,7 @@ import { ProjectFilterSelect } from "./ProjectFilterSelect.tsx";
 
 /**
  * The Tasks page as a right-panel surface beside a thread: the same Me or
- * Agents side (the page's last choice) with the page's filters, whatever the
+ * Workers side (the page's last choice) with the page's filters, whatever the
  * thread's project, and a task opened inside the panel instead of the URL.
  */
 export default function TasksPanel() {
@@ -165,6 +165,7 @@ function TablePanel(props: {
           onChange={setProjectKey}
         />
       }
+      onProjectFilterReset={() => setProjectKey(null)}
       filters={filters}
       onFiltersChange={setFilters}
       hasMore={pages.hasMore}

@@ -111,6 +111,7 @@ describe("appViewForPathname", () => {
     expect(appViewForPathname("/draft/draft-1")).toBe("new_thread");
     expect(appViewForPathname("/tasks")).toBe("tasks");
     expect(appViewForPathname("/agents")).toBe("agents");
+    expect(appViewForPathname("/workers")).toBe("agents");
     expect(appViewForPathname("/settings/providers")).toBe("settings");
     expect(appViewForPathname("/projects/acme-repo")).toBe("projects");
     expect(appViewForPathname("/acme/thread/extra")).toBe("other");

@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   confirm: vi.fn(async (_message: string) => true),
   connectPairing: vi.fn(async (_input: { pairingUrl: string }) => ({ _tag: "Success" })),
   localEnvironmentDisabled: false,
+  pullRequestsShown: true,
 }));
 
 // One connected primary environment that can read pull requests. Its project list and
@@ -32,6 +33,15 @@ vi.mock(import("../../state/environments"), async (original) => ({
           serverConfig: {},
         }) as never,
 }));
+// Upstream's world shows pull requests; Up.computer hides them, which one case covers.
+vi.mock(import("../../product/productFlags"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    isProductFeatureShown: (flag) =>
+      flag === "pullRequests" ? state.pullRequestsShown : actual.isProductFeatureShown(flag),
+  };
+});
 vi.mock(import("../../localEnvironment"), () => ({
   isLocalEnvironmentDisabled: () => state.localEnvironmentDisabled,
 }));
@@ -122,6 +132,7 @@ function setup() {
   vi.clearAllMocks();
   state.confirm.mockResolvedValue(true);
   state.localEnvironmentDisabled = false;
+  state.pullRequestsShown = true;
   state.projects = [];
   appAtomRegistry.set(discoverySettled, false);
 }
@@ -229,4 +240,13 @@ it("does not hold a PR link for project discovery that never settles with Local 
   state.localEnvironmentDisabled = true;
   await using _coordinator = await mount(pullRequestUrl);
   await vi.waitFor(() => expect(state.openScratchProject).toHaveBeenCalledOnce());
+});
+
+it("opens a PR link as an ordinary link, without waiting for discovery, when pull requests are hidden", async () => {
+  setup();
+  state.pullRequestsShown = false;
+  state.projects = [project];
+  await using _coordinator = await mount(pullRequestUrl);
+  await vi.waitFor(() => expect(state.openScratchProject).toHaveBeenCalledOnce());
+  expect(state.navigate).not.toHaveBeenCalled();
 });

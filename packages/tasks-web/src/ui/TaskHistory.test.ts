@@ -35,7 +35,7 @@ test("history names the agent of a run and keeps only readable history events", 
     [
       { id: "e4", title: "Unarchived", actor: "Server", reason: null },
       { id: "e3", title: "In Progress → Needs Review", actor: "Developer", reason: null },
-      { id: "e2", title: "To Do → In Progress", actor: "Agent run", reason: null },
+      { id: "e2", title: "To Do → In Progress", actor: "Worker run", reason: null },
     ],
   );
 });
@@ -44,7 +44,7 @@ test("history explains why an agent did not start", () => {
   const entries = taskHistoryEntries(
     [
       event("e2", "task.no-matching-agent", {
-        reason: 'No enabled agent starts on "To Do" with these tags, so this task will wait.',
+        reason: 'No enabled worker starts on "To Do" with these tags, so this task will wait.',
       }),
       event("e1", "task.agent-not-started", {
         agentId: "agent-1",
@@ -57,8 +57,8 @@ test("history explains why an agent did not start", () => {
   NodeAssert.deepEqual(
     entries.map(({ title, actor }) => ({ title, actor })),
     [
-      { title: "No agent will pick this up", actor: "Server" },
-      { title: "Agent didn't start", actor: "Developer" },
+      { title: "No worker will pick this up", actor: "Server" },
+      { title: "Didn't start", actor: "Developer" },
     ],
   );
 });

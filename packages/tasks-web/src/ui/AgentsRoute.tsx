@@ -64,7 +64,7 @@ export default function AgentsRoute() {
       return;
     }
     void navigate({
-      to: selectedAgentKey ? "/agents" : "/",
+      to: selectedAgentKey ? "/workers" : "/",
       ...(selectedAgentKey ? { search: {}, replace: true } : {}),
     } as never);
   }, [canGoBack, navigate, selectedAgentKey]);
@@ -94,7 +94,7 @@ export default function AgentsRoute() {
       onNavigateBack={navigateBack}
       onSelectedAgentKeyChange={(agentKey) => {
         void navigate({
-          to: "/agents",
+          to: "/workers",
           search: agentKey ? { agent: agentKey } : {},
           ...(agentKey ? {} : { replace: true }),
         } as never);

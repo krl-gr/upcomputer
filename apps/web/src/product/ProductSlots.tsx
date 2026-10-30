@@ -10,6 +10,11 @@ import {
   useSidebar,
 } from "../components/ui/sidebar";
 import { SIDEBAR_AFTER_SEARCH_GAP, SIDEBAR_MENU_SCOPE } from "../sidebarMetrics/sidebarMetrics";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import {
+  SidebarCompactTooltip,
+  useSidebarFooterTooltipSide,
+} from "../adaptiveSidebar/adaptiveSidebar";
 import { cn } from "../lib/utils";
 import { WEB_PRODUCT } from "./productEntry";
 import type {
@@ -49,42 +54,82 @@ export function chatHeaderAccessoryElements(
   );
 }
 
+const rowNavigation = WEB_PRODUCT.navigation.filter((item) => item.placement === undefined);
+const footerNavigation = WEB_PRODUCT.navigation.filter((item) => item.placement === "footer");
+
+function useNavigateTo() {
+  const navigate = useNavigate();
+  const { isMobile, setOpenMobile } = useSidebar();
+  return (path: string) => {
+    if (isMobile) setOpenMobile(false);
+    void navigate({ to: "/$", params: { _splat: path.slice(1) } });
+  };
+}
+
 /** Feature entries in the sidebar's primary navigation. */
 export function ProductSidebarNavigation() {
-  const navigate = useNavigate();
+  const navigateTo = useNavigateTo();
   const pathname = useLocation({ select: (location) => location.pathname });
-  const { isMobile, setOpenMobile } = useSidebar();
-  if (WEB_PRODUCT.navigation.length === 0) return null;
+  if (rowNavigation.length === 0) return null;
   return (
     <div className={cn(SIDEBAR_AFTER_SEARCH_GAP, SIDEBAR_MENU_SCOPE)}>
       <SidebarMenu>
-        {WEB_PRODUCT.navigation.map((item) => {
+        {rowNavigation.map((item) => {
           const Icon = item.icon;
           const Accessory = item.accessory;
           return (
             <SidebarMenuItem key={item.id}>
-              <SidebarMenuButton
-                data-track={`nav.${item.id}`}
-                isActive={isExperimentalWebNavigationActive(item, pathname)}
-                onClick={() => {
-                  if (isMobile) setOpenMobile(false);
-                  void navigate({ to: "/$", params: { _splat: item.path.slice(1) } });
-                }}
-              >
-                {Icon ? <Icon /> : null}
-                <span className="flex-1 truncate">{item.label}</span>
-                {Accessory ? (
-                  <span className="ml-auto shrink-0 tabular-nums">
-                    <Accessory />
-                  </span>
-                ) : null}
-              </SidebarMenuButton>
+              <SidebarCompactTooltip label={item.label}>
+                <SidebarMenuButton
+                  data-track={`nav.${item.id}`}
+                  isActive={isExperimentalWebNavigationActive(item, pathname)}
+                  onClick={() => navigateTo(item.path)}
+                >
+                  {Icon ? <Icon /> : null}
+                  <span className="flex-1 truncate">{item.label}</span>
+                  {Accessory ? (
+                    <span className="ml-auto shrink-0 tabular-nums">
+                      <Accessory />
+                    </span>
+                  ) : null}
+                </SidebarMenuButton>
+              </SidebarCompactTooltip>
             </SidebarMenuItem>
           );
         })}
       </SidebarMenu>
     </div>
   );
+}
+
+/** Feature entries placed in the sidebar footer, as its utility buttons are. */
+export function ProductSidebarFooterNavigation() {
+  const navigateTo = useNavigateTo();
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const tooltipSide = useSidebarFooterTooltipSide();
+  return footerNavigation.map((item) => {
+    const Icon = item.icon;
+    return (
+      <SidebarMenuItem key={item.id} className="shrink-0">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <SidebarMenuButton
+                aria-label={item.label}
+                data-track={`nav.${item.id}`}
+                isActive={isExperimentalWebNavigationActive(item, pathname)}
+                onClick={() => navigateTo(item.path)}
+                size="icon"
+              >
+                {Icon ? <Icon /> : null}
+              </SidebarMenuButton>
+            }
+          />
+          <TooltipPopup side={tooltipSide}>{item.label}</TooltipPopup>
+        </Tooltip>
+      </SidebarMenuItem>
+    );
+  });
 }
 
 /** The primary navigation's pill in the compact sidebar. */

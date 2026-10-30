@@ -128,11 +128,15 @@ function visibleThreadIds() {
 let root: Root;
 let container: HTMLDivElement;
 
-function render(projectGroups = PROJECTS) {
+function render(projectGroups = PROJECTS, loaded = true) {
   return act(async () => {
     root.render(
       <SidebarProvider>
-        <SidebarProjectsSection projectGroups={projectGroups} onAddProject={spies.addProject} />
+        <SidebarProjectsSection
+          projectGroups={projectGroups}
+          onAddProject={spies.addProject}
+          loaded={loaded}
+        />
       </SidebarProvider>,
     );
   });
@@ -375,13 +379,18 @@ describe("SidebarSectionHeader", () => {
     expect(header.action("Add project")).not.toBeNull();
   });
 
-  it("keeps the header and its Add project action with no projects", async () => {
-    await render([]);
+  it("offers Add project as its only row with no projects, once loaded", async () => {
+    await render([], false);
     const header = sectionHeader("sidebar-projects-toggle");
     expect(header.title()).toBe("Projects");
     expect(rowLabels()).toEqual([]);
     await click(header.action("Add project")!);
     expect(spies.addProject).toHaveBeenCalledOnce();
+
+    await render([]);
+    expect(rowLabels()).toEqual(["Add project"]);
+    await click(container.querySelector<HTMLElement>("[data-sidebar='menu-button']")!);
+    expect(spies.addProject).toHaveBeenCalledTimes(2);
   });
 
   it("runs upstream's add project action without toggling the section", async () => {

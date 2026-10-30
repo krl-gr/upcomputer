@@ -21,3 +21,14 @@ export function projectStripeClassName(project: PlannerProject | null): string {
   const color = plannerProjectColor(project);
   return color ? `bg-current ${projectIconColorClassName(color)}` : "bg-muted-foreground/60";
 }
+
+/**
+ * A modern card's surface: its project's badge color mixed into the card
+ * color, as the project monogram tints its badge; neutral without one. Opaque,
+ * so the hover actions can wear the same surface over the title.
+ */
+export function projectTintClassName(project: PlannerProject | null): string {
+  const color = plannerProjectColor(project);
+  const tint = color ? projectIconColorClassName(color) : "text-muted-foreground";
+  return `${tint} bg-[color-mix(in_srgb,currentColor_12%,var(--card))]`;
+}

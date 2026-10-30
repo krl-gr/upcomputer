@@ -126,6 +126,22 @@ export interface ProductSurfaces {
    */
   readonly sidebarVibrancy: ProductSurfaceVariant;
   /**
+   * The sidebar footer's update control. With `upcomputer` one bell holds app,
+   * server and provider updates and the background notices.
+   */
+  readonly sidebarNotifications: ProductSurfaceVariant;
+  /**
+   * The desktop sidebar's layout. With `upcomputer` it has no hide button: its
+   * width decides between the full sidebar and a compact column of the same
+   * rows as icons, and upstream's separate compact sidebar is not mounted.
+   */
+  readonly sidebarLayout: ProductSurfaceVariant;
+  /**
+   * The thread details card on the chat canvas. With `upcomputer` it is closed
+   * in every thread until the user opens it, and nothing opens it for them.
+   */
+  readonly threadDetailsCard: ProductSurfaceVariant;
+  /**
    * First-run setup on a local or paired server. With `upcomputer` it is V1's
    * agent table: one screen to make an agent work, then project import only
    * when there is something to import. Hosted web keeps upstream's wizard,
@@ -143,6 +159,9 @@ export const UPSTREAM_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   composerFooter: "upstream",
   composerContextRow: "upstream",
   sidebarVibrancy: "upstream",
+  sidebarNotifications: "upstream",
+  sidebarLayout: "upstream",
+  threadDetailsCard: "upstream",
   onboarding: "upstream",
 });
 
@@ -153,6 +172,9 @@ export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   composerFooter: "upcomputer",
   composerContextRow: "upcomputer",
   sidebarVibrancy: "upcomputer",
+  sidebarNotifications: "upcomputer",
+  sidebarLayout: "upcomputer",
+  threadDetailsCard: "upcomputer",
   onboarding: "upcomputer",
 });
 
