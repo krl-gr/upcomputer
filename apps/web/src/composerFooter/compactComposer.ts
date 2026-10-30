@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
@@ -18,6 +18,8 @@ export interface CompactComposerInput {
   /** The stored `composerCompact` setting, drawn as "Full composer in bot chats" turned off. */
   enabled: boolean;
   hasMultilinePrompt: boolean;
+  /** The one-line prompt reaches the compact row's fade (`useCompactPromptReachesFade`). */
+  hasLongPrompt: boolean;
   /** Images, files, terminal contexts or pending snapshots in the draft. */
   hasAttachments: boolean;
   /** An approval, a question or a plan waits for the user. */
@@ -32,6 +34,7 @@ export function isComposerCompact(input: CompactComposerInput): boolean {
     input.enabled &&
     productSurface("composerFooter") === "upcomputer" &&
     !input.hasMultilinePrompt &&
+    !input.hasLongPrompt &&
     !input.hasAttachments &&
     !input.hasPendingRequest &&
     !input.hasExpandedChrome
@@ -100,6 +103,91 @@ export function useCompactComposerActionsWidth(
     };
   }, [actions, compact]);
 }
+
+export interface CompactPromptMeasurement {
+  /** The compact row is showing, so `compactLineWidth` is measured. */
+  readonly compact: boolean;
+  readonly textWidth: number;
+  /** The full composer's prompt line. */
+  readonly fullLineWidth: number;
+  /** The compact row's prompt line up to its fade. */
+  readonly compactLineWidth: number;
+}
+
+/**
+ * Whether a one-line prompt reaches the compact row's fade. The full form has
+ * no compact line to measure, so it keeps how much shorter that line was when
+ * last compact: both forms apply the same limit and cannot flip each other.
+ */
+export function createCompactPromptFit(): (measurement: CompactPromptMeasurement) => boolean {
+  let shortfall: number | null = null;
+  return (measurement) => {
+    if (measurement.compact) shortfall = measurement.fullLineWidth - measurement.compactLineWidth;
+    return shortfall !== null && measurement.textWidth > measurement.fullLineWidth - shortfall;
+  };
+}
+
+const px = (value: string) => Number.parseFloat(value) || 0;
+
+/** From the first character to the last: the range of the editor's contents spans its paragraph's box. */
+function textWidth(editor: HTMLElement): number {
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let first: Node | null = null;
+  let last: Node | null = null;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node.nodeValue) continue;
+    first ??= node;
+    last = node;
+  }
+  if (!first || !last) return 0;
+  const range = document.createRange();
+  range.setStart(first, 0);
+  range.setEnd(last, last.nodeValue?.length ?? 0);
+  return range.getBoundingClientRect().width;
+}
+
+/** Whether the prompt reaches the compact row's fade, and the ref callback that measures it on the composer body. */
+export function useCompactPromptReachesFade(): readonly [
+  boolean,
+  (body: HTMLElement | null) => (() => void) | undefined,
+] {
+  const [reachesFade, setReachesFade] = useState(false);
+  const [fit] = useState(createCompactPromptFit);
+  const observeBody = (body: HTMLElement | null) => {
+    const editor = body?.querySelector<HTMLElement>('[data-testid="composer-editor"]');
+    if (!body || !editor) return;
+    const measure = () => {
+      if (editor.clientWidth === 0) return;
+      const bodyStyle = getComputedStyle(body);
+      const editorStyle = getComputedStyle(editor);
+      const fade = COMPACT_FADE_REM * px(getComputedStyle(document.documentElement).fontSize);
+      setReachesFade(
+        fit({
+          compact:
+            body
+              .closest('[data-chat-composer-surface="true"]')
+              ?.querySelector('[data-composer-footer-compact="true"]') != null,
+          textWidth: textWidth(editor),
+          fullLineWidth: body.clientWidth - px(bodyStyle.paddingLeft) - px(bodyStyle.paddingRight),
+          compactLineWidth:
+            editor.clientWidth - px(editorStyle.paddingLeft) - px(editorStyle.paddingRight) - fade,
+        }),
+      );
+    };
+    measure();
+    const stopObserving = observeResize([body, editor], measure);
+    const mutationObserver = new MutationObserver(measure);
+    mutationObserver.observe(body, { childList: true, characterData: true, subtree: true });
+    return () => {
+      stopObserving();
+      mutationObserver.disconnect();
+    };
+  };
+  return [reachesFade, observeBody] as const;
+}
+
+/** The width of the editor's fade in the compact row: the `1.5rem` of its mask. */
+const COMPACT_FADE_REM = 1.5;
 
 /*
  * The compact row's geometry: the footer overlays the card with only the paperclip and the

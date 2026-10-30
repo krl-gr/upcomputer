@@ -280,6 +280,7 @@ import { readEnvironmentScope } from "../../state/session";
 import {
   compactComposerClass,
   isComposerCompact,
+  useCompactPromptReachesFade,
   useIsCompactComposerChat,
 } from "../../composerFooter/compactComposer";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
@@ -1084,6 +1085,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const [composerMenuAnchor, setComposerMenuAnchor] = useState<HTMLDivElement | null>(null);
   const [hasWrappedPrompt, observeWrappedPrompt] = useComposerMultilinePrompt();
+  const [hasLongPrompt, observeLongPrompt] = useCompactPromptReachesFade();
   const hasMultilinePrompt = prompt.includes("\n") || hasWrappedPrompt;
   // A pending question stays expanded: its card moves into the banner dock,
   // so collapsing would leave the surface empty and squashed beneath it.
@@ -2328,6 +2330,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isBotChat,
     enabled: settings.composerCompact,
     hasMultilinePrompt,
+    hasLongPrompt,
     hasAttachments: composerContextRecords.size > 0 || pendingSnapShotIds.length > 0,
     hasPendingRequest: showComposerTopDrawer || showPlanFollowUpPrompt,
     hasExpandedChrome:
@@ -3455,9 +3458,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               ref={(node) => {
                 setComposerMenuAnchor(node);
                 const stopObserving = observeWrappedPrompt(node);
+                const stopObservingLongPrompt = observeLongPrompt(node);
                 return () => {
                   setComposerMenuAnchor(null);
                   stopObserving?.();
+                  stopObservingLongPrompt?.();
                 };
               }}
               data-chat-composer-body="true"

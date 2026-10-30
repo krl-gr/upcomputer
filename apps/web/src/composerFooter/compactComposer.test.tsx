@@ -29,8 +29,12 @@ vi.mock("../product/productFlags", async (importOriginal) => ({
 
 const { act, useEffect } = await import("react");
 const { createRoot } = await import("react-dom/client");
-const { isComposerCompact, useCompactComposerChat, useIsCompactComposerChat } =
-  await import("./compactComposer");
+const {
+  createCompactPromptFit,
+  isComposerCompact,
+  useCompactComposerChat,
+  useIsCompactComposerChat,
+} = await import("./compactComposer");
 const { scopedThreadKey, scopeThreadRef } = await import("@t3tools/client-runtime/environment");
 const { EnvironmentId, ThreadId } = await import("@t3tools/contracts");
 type CompactComposerInput = import("./compactComposer").CompactComposerInput;
@@ -39,6 +43,7 @@ const idle: CompactComposerInput = {
   isBotChat: true,
   enabled: true,
   hasMultilinePrompt: false,
+  hasLongPrompt: false,
   hasAttachments: false,
   hasPendingRequest: false,
   hasExpandedChrome: false,
@@ -57,6 +62,7 @@ describe("isComposerCompact", () => {
     ["the chat is an ordinary thread", { isBotChat: false }],
     ["full composer in bot chats is on", { enabled: false }],
     ["the prompt runs past one line", { hasMultilinePrompt: true }],
+    ["the prompt reaches the row's fade", { hasLongPrompt: true }],
     ["the draft has attachments", { hasAttachments: true }],
     ["an approval or question waits", { hasPendingRequest: true }],
     ["its controls, a menu, drag or error are up", { hasExpandedChrome: true }],
@@ -67,6 +73,31 @@ describe("isComposerCompact", () => {
   it("leaves upstream's composer alone", () => {
     surface.composerFooter = "upstream";
     expect(isComposerCompact(idle)).toBe(false);
+  });
+});
+
+describe("createCompactPromptFit", () => {
+  // The full line is 760px; the compact row's line, up to its fade, 700px.
+  const full = { compact: false, fullLineWidth: 760, compactLineWidth: 0 };
+  const compact = { compact: true, fullLineWidth: 760, compactLineWidth: 700 };
+
+  it("goes full when the line reaches the fade, and stays full with the same text", () => {
+    const fits = createCompactPromptFit();
+    expect(fits({ ...compact, textWidth: 700 })).toBe(false);
+    expect(fits({ ...compact, textWidth: 730 })).toBe(true);
+    expect(fits({ ...full, textWidth: 730 })).toBe(true);
+    expect(fits({ ...full, textWidth: 700 })).toBe(false);
+  });
+
+  it("keeps the limit through a resize while full", () => {
+    const fits = createCompactPromptFit();
+    fits({ ...compact, textWidth: 0 });
+    expect(fits({ ...full, fullLineWidth: 560, textWidth: 510 })).toBe(true);
+    expect(fits({ ...full, fullLineWidth: 560, textWidth: 490 })).toBe(false);
+  });
+
+  it("leaves the full form alone until it has been compact", () => {
+    expect(createCompactPromptFit()({ ...full, textWidth: 750 })).toBe(false);
   });
 });
 
