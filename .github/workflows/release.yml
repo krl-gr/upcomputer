@@ -855,7 +855,7 @@ jobs:
           vercel_scope_args=(--scope "$vercel_scope")
 
           echo "Deploying hosted web app for $channel_name channel."
-          deployment_url="$(
+          deploy_output="$(
             vp dlx vercel@53.1.1 deploy \
               --prod \
               --skip-domain \
@@ -876,9 +876,14 @@ jobs:
               --build-env "VITE_HOSTED_APP_CHANNEL=$channel_name"
           )"
 
-          # Vercel CLI 53 prints a JSON summary when stdout is not a terminal.
-          if [[ "$deployment_url" == "{"* ]]; then
-            deployment_url="$(jq -r '.deployment.url' <<<"$deployment_url")"
+          # Vercel CLI 53 prints a JSON summary when stdout is not a terminal, and
+          # `vp dlx` may add its own lines (such as pnpm's "Done in ...") after it.
+          deployment_url="$( (jq -r '.deployment.url // empty' <<<"$deploy_output" 2>/dev/null || true) | head -n 1)"
+          if [[ -z "$deployment_url" ]]; then
+            deployment_url="$(grep -Eo 'https://[^[:space:]"]+' <<<"$deploy_output" | head -n 1 || true)"
+          fi
+          if [[ -n "$deployment_url" && "$deployment_url" != https://* ]]; then
+            deployment_url="https://$deployment_url"
           fi
           if [[ "$deployment_url" != https://* ]]; then
             echo "Could not read the deployment URL from the Vercel CLI output." >&2
