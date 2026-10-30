@@ -23,6 +23,7 @@ import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { useScratchProject } from "../../hooks/useScratchProject";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useOpenChangeRequestLink } from "../../lib/openPullRequestLink";
+import { isProductFeatureShown } from "../../product/productFlags";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../../rightPanelStore";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { resolveThreadRouteTarget } from "../../threadRoutes";
@@ -216,6 +217,7 @@ export function DesktopWebLinkCoordinator() {
     // links, and only those, until discovery settles; an ordinary link never waits for it.
     // Discovery never settles without the local environment, so those links do not wait.
     const hold =
+      isProductFeatureShown("pullRequests") &&
       openPullRequestsInApp &&
       !localEnvironmentDisabled &&
       sourceControlClients.parseChangeRequestUrl(url) !== null
