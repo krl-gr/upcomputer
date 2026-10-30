@@ -843,7 +843,8 @@ jobs:
           router_domain="${router_domain#https://}"
           router_domain="${router_domain%%/*}"
 
-          if [[ "${{ needs.preflight.outputs.release_channel }}" == "stable" ]]; then
+          # Release candidates are stable-channel prereleases; they must not replace the latest web app.
+          if [[ "${{ needs.preflight.outputs.release_channel }}" == "stable" && "${{ needs.preflight.outputs.is_prerelease }}" != "true" ]]; then
             channel_domain="$latest_domain"
             channel_name="latest"
           else
