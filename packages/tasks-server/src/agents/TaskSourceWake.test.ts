@@ -242,19 +242,25 @@ const withWake = <A, E>(
     ),
   );
 
-/** A run of a task created in `sourceThreadId`, finished at `at` unless still running. */
+/**
+ * A run of a task created in `sourceThreadId`, finished at `at` unless still running.
+ * Each run has its own task and the one agent, unless `owner` says otherwise.
+ */
 const finishedRun = (
   id: string,
   sourceThreadId: string,
   status: "completed" | "failed" | "running" = "completed",
   startedAt = at,
+  owner: { readonly agent?: string; readonly task?: string } = {},
 ) =>
   Effect.gen(function* () {
     const repository = yield* TaskRepository;
+    const agentId = TaskAgentId.make(owner.agent ?? "agent");
+    const taskId = TaskId.make(owner.task ?? `task-${id}`);
     yield* repository.upsertAgent({
-      id: TaskAgentId.make("agent"),
+      id: agentId,
       projectId: null,
-      name: "Developer",
+      name: owner.agent ?? "Developer",
       enabled: false,
       startStatuses: [],
       startTags: [],
@@ -264,7 +270,7 @@ const finishedRun = (
       updatedAt: at,
     });
     yield* repository.upsert({
-      id: TaskId.make(`task-${id}`),
+      id: taskId,
       projectId: ProjectId.make("project"),
       title: `Task ${id}`,
       description: "",
@@ -283,8 +289,8 @@ const finishedRun = (
     });
     yield* repository.createAgentRun({
       id: TaskAgentRunId.make(id),
-      taskId: TaskId.make(`task-${id}`),
-      agentId: TaskAgentId.make("agent"),
+      taskId,
+      agentId,
       threadId: ThreadId.make(`thread-${id}`),
       modelSelection,
       status,
@@ -321,9 +327,9 @@ const finishNow = (id: string, status: "completed" | "failed" = "completed") =>
   });
 
 /** Starts a run now. */
-const startNow = (id: string, sourceThreadId: string) =>
+const startNow = (id: string, sourceThreadId: string, owner?: Parameters<typeof finishedRun>[4]) =>
   Effect.flatMap(DateTime.now, (now) =>
-    finishedRun(id, sourceThreadId, "running", DateTime.formatIso(now)),
+    finishedRun(id, sourceThreadId, "running", DateTime.formatIso(now), owner),
   );
 
 /**
@@ -515,6 +521,57 @@ describe("TaskSourceWake settling", () => {
         assert.deepStrictEqual(reportedRuns(message!.text), ["r1", "r2", "r3"]);
         assert.include(message!.text, "No run for this chat's tasks is in progress now.");
         assert.deepStrictEqual(yield* wakeState, { told: ["r1", "r2", "r3"], batches: [] });
+      }),
+    );
+  });
+
+  it.effect("a later delegation from the same chat does not hold an earlier report", () => {
+    const dispatch = fakeDispatch(() => null);
+    return withWake(
+      dispatch,
+      Effect.gen(function* () {
+        const wake = yield* TaskSourceWake;
+        const minutesBefore = (minutes: number) =>
+          new Date(Date.parse(at) - minutes * 60_000).toISOString();
+        yield* finishedRun("long", "chat", "running", minutesBefore(30));
+        yield* finishedRun("r1", "chat", "completed", minutesBefore(10));
+        // The chat delegates other work to another agent a few minutes after r1 ended.
+        yield* TestClock.setTime(Date.parse(at) + 3 * 60_000);
+        yield* startNow("later", "chat", { agent: "Researcher" });
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 0);
+
+        yield* TestClock.setTime(Date.parse(at) + SOURCE_MAX_WAIT_MS);
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 1);
+        assert.deepStrictEqual(reportedRuns(dispatch.delivered[0]!.text), ["r1"]);
+        assert.deepStrictEqual(yield* wakeState, { told: ["r1"], batches: [] });
+      }),
+    );
+  });
+
+  it.effect("a later run of the same task holds the report until it settles", () => {
+    const dispatch = fakeDispatch(() => null);
+    return withWake(
+      dispatch,
+      Effect.gen(function* () {
+        const wake = yield* TaskSourceWake;
+        yield* finishedRun("long", "chat", "running", at);
+        yield* finishedRun("work", "chat", "completed", at, { task: "task-work" });
+        // Another agent reviews the task, starting after the hand-off window.
+        yield* TestClock.setTime(Date.parse(at) + 3 * 60_000);
+        yield* startNow("review", "chat", { agent: "Reviewer", task: "task-work" });
+        yield* TestClock.adjust(2 * SOURCE_MAX_WAIT_MS);
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 0);
+
+        yield* finishNow("review");
+        yield* TestClock.adjust(SOURCE_MAX_WAIT_MS);
+        yield* wake.sweep;
+        yield* wake.sweep;
+        assert.lengthOf(dispatch.delivered, 1);
+        assert.deepStrictEqual(reportedRuns(dispatch.delivered[0]!.text), ["work", "review"]);
+        assert.deepStrictEqual(yield* wakeState, { told: ["review", "work"], batches: [] });
       }),
     );
   });

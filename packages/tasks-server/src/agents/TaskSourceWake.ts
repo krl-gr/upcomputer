@@ -43,8 +43,8 @@ export const SOURCE_SETTLE_MS = 15_000;
  */
 export const SOURCE_MAX_WAIT_MS = 5 * 60_000;
 /**
- * A run that started at most this long before a completed run ended, and after it
- * started, is its successor. A queue hand-off starts the next run before the run
+ * How close to a completed run's end the same agent's next run starts when it
+ * picks up the next queued task. The hand-off starts the next run before the run
  * handing off records its end, 18 to 44 s earlier in practice.
  */
 const SOURCE_HANDOFF_MS = 2 * 60_000;
@@ -263,9 +263,11 @@ const WakeBatchRow = Schema.Struct({
  *
  * A completed run waits until none of the chat's tasks has had a run in progress for
  * SOURCE_SETTLE_MS, so a chat that queued several tasks hears once at the end; the task
- * UI shows the progress in between. It waits at most SOURCE_MAX_WAIT_MS for runs that
- * were already in progress, and while a successor runs (a queue hand-off, a review
- * after the work) at most SOURCE_CHAIN_MAX_WAIT_MS. A blocked, failed or interrupted
+ * UI shows the progress in between. It waits at most SOURCE_MAX_WAIT_MS for other runs,
+ * and while a successor in its chain runs or waits to be reported at most
+ * SOURCE_CHAIN_MAX_WAIT_MS. A successor is a later run of the same task (a review, a
+ * retry), a run it triggered or that continues it, or the same agent's next run
+ * starting within SOURCE_HANDOFF_MS of its end (a queue hand-off). A blocked, failed or interrupted
  * run goes out at once, ahead of the completed runs waiting for the same chat, which
  * go with it.
  *
@@ -316,8 +318,9 @@ export const makeTaskSourceWake = Effect.gen(function* () {
    * Finished runs not yet told and not yet in a batch whose chat may hear now:
    * its tasks have settled (no run in progress or recently ended), one of them
    * ended in a way the chat may need to act on, or a completed one has waited
-   * SOURCE_MAX_WAIT_MS with no successor in progress or recently ended, or
-   * SOURCE_CHAIN_MAX_WAIT_MS.
+   * SOURCE_MAX_WAIT_MS with no successor in progress, recently ended or itself
+   * waiting, or SOURCE_CHAIN_MAX_WAIT_MS. A waiting successor hands the wait down
+   * the chain, so its last run decides when the whole chain is reported.
    * The rest wait here, so a chat that delegates a queue hears once when it
    * settles, not on every run.
    */
@@ -362,12 +365,33 @@ export const makeTaskSourceWake = Effect.gen(function* () {
               FROM task_agent_runs AS next_run
               JOIN tasks AS next_task ON next_task.id = next_run.task_id
               WHERE next_task.source_thread_id = waited_task.source_thread_id
-                AND (next_run.completed_at IS NULL OR next_run.completed_at > ${settledBefore})
                 AND next_run.started_at > waited_run.started_at
-                AND next_run.started_at > strftime(
-                  '%Y-%m-%dT%H:%M:%fZ',
-                  waited_run.completed_at,
-                  ${`-${SOURCE_HANDOFF_MS / 1000} seconds`}
+                AND (
+                  next_run.completed_at IS NULL
+                  OR next_run.completed_at > ${settledBefore}
+                  OR (
+                    next_run.status = 'completed'
+                    AND next_run.source_wake_at IS NULL
+                    AND next_run.source_wake_batch_id IS NULL
+                    AND next_task.archived_at IS NULL
+                  )
+                )
+                AND (
+                  next_run.task_id = waited_run.task_id
+                  OR next_run.trigger_run_id = waited_run.id
+                  OR next_run.continues_run_id = waited_run.id
+                  OR (
+                    next_run.agent_id = waited_run.agent_id
+                    AND next_run.started_at BETWEEN strftime(
+                      '%Y-%m-%dT%H:%M:%fZ',
+                      waited_run.completed_at,
+                      ${`-${SOURCE_HANDOFF_MS / 1000} seconds`}
+                    ) AND strftime(
+                      '%Y-%m-%dT%H:%M:%fZ',
+                      waited_run.completed_at,
+                      ${`+${SOURCE_HANDOFF_MS / 1000} seconds`}
+                    )
+                  )
                 )
             )
           )
