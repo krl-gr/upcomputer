@@ -121,6 +121,10 @@ export interface VisitThreadInput extends ThreadCommandInput {
 
 export type MarkThreadUnreadInput = ThreadCommandInput;
 
+export interface MoveThreadProjectInput extends ThreadCommandInput {
+  readonly projectId: ProjectId;
+}
+
 export interface UpdateThreadMetadataInput extends ThreadCommandInput {
   readonly limitRecovery?: import("@t3tools/contracts").OrchestrationV2LimitRecoveryUpdate | null;
   readonly title?: string;
@@ -589,6 +593,18 @@ export const markThreadUnread = Effect.fn("EnvironmentCommands.markThreadUnread"
     type: "thread.mark-unread",
     commandId: yield* allocateCommandId(input),
     threadId: input.threadId,
+  });
+});
+
+/** The server only moves an idle thread without a worktree, within its environment. */
+export const moveThreadProject = Effect.fn("EnvironmentCommands.moveThreadProject")(function* (
+  input: MoveThreadProjectInput,
+) {
+  return yield* dispatch({
+    type: "thread.project.move",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    projectId: input.projectId,
   });
 });
 

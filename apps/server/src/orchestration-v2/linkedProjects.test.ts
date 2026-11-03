@@ -374,6 +374,17 @@ it.layer(testLayer)("moving a thread to another project", (it) => {
         threadId,
         branch: "feature/old-project",
       });
+      yield* orchestrator.dispatch({
+        type: "thread.pin",
+        commandId: CommandId.make("move-accept-pin"),
+        threadId,
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.settle",
+        commandId: CommandId.make("move-accept-settle"),
+        threadId,
+      });
+      const before = yield* threadOf(threadId);
       const exit = yield* move(threadId, docs, "accept");
       assert.equal(exit._tag, "Success");
       const thread = yield* threadOf(threadId);
@@ -384,6 +395,18 @@ it.layer(testLayer)("moving a thread to another project", (it) => {
       assert.deepEqual(thread.linkedProjectIds, []);
       assert.equal(thread.projectLinksPinned, true);
       assert.deepEqual(thread.pullRequests, []);
+      assert.deepEqual(
+        [thread.pinnedAt, thread.pinOrderKey, thread.settledOverride],
+        [before.pinnedAt, before.pinOrderKey, "settled"],
+      );
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const notes = (yield* projections.getThreadProjection(threadId)).turnItems.filter(
+        (item) => item.type === "notification",
+      );
+      assert.deepEqual(
+        notes.map((item) => (item.type === "notification" ? [item.runId, item.summary] : [])),
+        [[null, "Moved from project-home to project-docs"]],
+      );
     }),
   );
 
