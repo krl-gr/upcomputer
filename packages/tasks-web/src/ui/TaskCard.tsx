@@ -26,7 +26,10 @@ import {
   ROW_TITLE_CLASS,
 } from "../planner/ui/rowShell.ts";
 import type { ScopedTaskListItem } from "../state/taskPages.ts";
-import { RunCountNumbers, runCountSummary } from "./RunCountNumbers.tsx";
+import {
+  RunCountNumbers,
+  runCountSummary,
+} from "../../../../apps/web/src/sidebarThreadRow/runCountBadge.tsx";
 import { groupTaskRunCounts } from "./taskRunPresentation.ts";
 
 /**
