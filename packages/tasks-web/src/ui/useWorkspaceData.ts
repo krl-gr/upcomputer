@@ -72,7 +72,7 @@ export interface TasksWorkspaceData {
 
 /** The sidebar's logical projects, grouped and ordered as the sidebar shows them. */
 export function useSidebarProjectSnapshots() {
-  // Tasks and Workers follow the sidebar's Computers switcher.
+  // Tasks and Workers follow the sidebar's Computers section.
   const projects = useSidebarComputerProjects(useProjects(), true);
   const { environments } = useEnvironments();
   const projectOrder = useUiStateStore((store) => store.projectOrder);

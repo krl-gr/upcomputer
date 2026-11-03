@@ -28,6 +28,8 @@ export interface SidebarComputer {
   readonly status: ComputerStatus;
   /** Too old to connect at all: only the update can bring it back. */
   readonly unsupported: boolean;
+  /** Offline or too old to connect: the sidebar shows what it had when last connected. */
+  readonly stale: boolean;
   readonly serverVersion: string | null;
   readonly description: string;
   readonly counts: ComputerRunCounts;
@@ -82,7 +84,7 @@ function describeComputer(presentation: EnvironmentPresentation, status: Compute
   }
 }
 
-/** The computers the switcher lists, in its order, with their status and run counts. */
+/** The computers the Computers section lists, in its order, with their status and run counts. */
 export function useSidebarComputers(
   computerIds: ReadonlyArray<EnvironmentId>,
 ): ReadonlyArray<SidebarComputer> {
@@ -104,6 +106,9 @@ export function useSidebarComputers(
         machine: machines.get(environmentId) ?? "server",
         status,
         unsupported: presentation.connection.phase === "unsupported",
+        stale:
+          status === "offline" ||
+          (status === "outdated" && presentation.connection.phase === "unsupported"),
         serverVersion: presentation.serverConfig?.environment.serverVersion ?? null,
         description: describeComputer(presentation, status),
         counts: counts.get(environmentId) ?? NO_COMPUTER_RUNS,
@@ -113,7 +118,7 @@ export function useSidebarComputers(
   });
 }
 
-/** The name the sidebar uses for a computer, for labels outside the switcher. */
+/** The name the sidebar uses for a computer, for labels outside the Computers section. */
 export function useComputerName(environmentId: EnvironmentId): string | null {
   const { environments } = useEnvironments();
   const primaryId = usePrimaryEnvironmentId();

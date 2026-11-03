@@ -5,9 +5,11 @@ import {
   resolveSidebarThreadStatus,
   resolveThreadLastVisitedAt,
 } from "../components/Sidebar.logic";
+import type { RunCountGroup } from "../sidebarThreadRow/runCountBadge";
+import { THREAD_STATUS_LABELS } from "../sidebarThreadRow/ThreadStatusLabel";
 
 /*
- * The sidebar's Computers switcher (UpComputer): which computer the sidebar,
+ * The sidebar's Computers section (UpComputer): which computer the sidebar,
  * Bots, Tasks and Workers show. "all" lists every computer in one list.
  */
 
@@ -20,7 +22,7 @@ export interface ComputerRoute {
 }
 
 export interface ComputerSelection {
-  /** Two or more computers are known, so the switcher shows and filters. */
+  /** Two or more computers are known, so the section shows and filters. */
   readonly shown: boolean;
   readonly choice: ComputerChoice;
   /** The open thread is on another computer than the saved choice, which switches to it. */
@@ -153,67 +155,26 @@ function failureUnseen(
   return Number.isNaN(completedAt) || Number.isNaN(visitedAt) || completedAt > visitedAt;
 }
 
-export type ComputerAttentionKind = "approval" | "input" | "failed";
+const COUNT_ORDER = ["working", "approval", "input", "failed"] as const;
 
-export interface ComputerAttention {
-  readonly environmentId: EnvironmentId;
-  readonly input: number;
-  readonly approval: number;
-  readonly failed: number;
+/** A computer's counts as the sidebar's run count badge shows them, in the thread rows' colours. */
+export function computerRunCountGroups(counts: ComputerRunCounts): ReadonlyArray<RunCountGroup> {
+  return COUNT_ORDER.flatMap((kind) =>
+    counts[kind] > 0
+      ? [
+          {
+            label: THREAD_STATUS_LABELS[kind].label,
+            count: counts[kind],
+            className: THREAD_STATUS_LABELS[kind].className,
+          },
+        ]
+      : [],
+  );
 }
 
 /**
- * What waits for the user on the computers the sidebar does not show: runs
- * awaiting input or an approval, and unseen failures. Offline computers count
- * nothing, since their cached state may be stale. Empty in All computers.
- */
-export function otherComputersAttention(input: {
-  readonly selection: ComputerSelection;
-  readonly counts: ReadonlyMap<EnvironmentId, ComputerRunCounts>;
-  readonly connectedIds: ReadonlyArray<EnvironmentId>;
-}): {
-  readonly total: number;
-  readonly kind: ComputerAttentionKind | null;
-  readonly computers: ReadonlyArray<ComputerAttention>;
-} {
-  const { selection, counts, connectedIds } = input;
-  if (!selection.shown || selection.choice === "all") {
-    return { total: 0, kind: null, computers: [] };
-  }
-  const computers = connectedIds.flatMap((environmentId) => {
-    if (environmentId === selection.choice) return [];
-    const { input: waiting, approval, failed } = counts.get(environmentId) ?? NO_COMPUTER_RUNS;
-    return waiting + approval + failed > 0
-      ? [{ environmentId, input: waiting, approval, failed }]
-      : [];
-  });
-  const sum = (key: ComputerAttentionKind) =>
-    computers.reduce((total, computer) => total + computer[key], 0);
-  const kind: ComputerAttentionKind | null =
-    sum("approval") > 0
-      ? "approval"
-      : sum("input") > 0
-        ? "input"
-        : sum("failed") > 0
-          ? "failed"
-          : null;
-  return { total: sum("approval") + sum("input") + sum("failed"), kind, computers };
-}
-
-/** One computer's attention in words, for example "1 awaiting input, 2 failed". */
-export function describeComputerAttention(attention: Omit<ComputerAttention, "environmentId">) {
-  return [
-    attention.approval > 0 ? `${attention.approval} awaiting approval` : null,
-    attention.input > 0 ? `${attention.input} awaiting input` : null,
-    attention.failed > 0 ? `${attention.failed} failed` : null,
-  ]
-    .filter((part): part is string => part !== null)
-    .join(", ");
-}
-
-/**
- * The computer a shortcut picks: Ctrl+1 to Ctrl+9 the computers in menu
- * order, Ctrl+0 All computers. On Windows and Linux, Ctrl+digit is the thread
+ * The computer a shortcut picks: Ctrl+1 to Ctrl+9 the computers in the
+ * section's order, Ctrl+0 All computers. On Windows and Linux, Ctrl+digit is the thread
  * jump and the browser's tab switch, so there it is Ctrl+Alt+digit.
  */
 export function computerShortcutChoice(
@@ -234,7 +195,7 @@ export function computerShortcutChoice(
   return computerIds[digit - 1] ?? null;
 }
 
-/** The shortcut's label for a menu row: index 0 is All computers. */
+/** The shortcut's label for a row: index 0 is All computers. */
 export function computerShortcutLabel(index: number, isMac: boolean): string | null {
   if (index > 9) return null;
   return isMac ? `⌃${index}` : `Ctrl+Alt+${index}`;

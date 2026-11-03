@@ -254,7 +254,7 @@ import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { ProductSidebarNavigation, ProductSidebarSections } from "../product/ProductSlots";
-import { SidebarComputerSwitcher } from "../sidebarComputers/SidebarComputerSwitcher";
+import { SidebarComputersSection } from "../sidebarComputers/SidebarComputersSection";
 import { useSidebarComputerScope } from "../sidebarComputers/sidebarComputerSelection";
 import {
   filterIdsToComputerScope,
@@ -3165,7 +3165,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               onClearSearch={clearThreadSearch}
             />
             <ProductSidebarNavigation />
-            <SidebarComputerSwitcher />
+            <SidebarComputersSection />
             {productSurface("sidebarProjects") === "upcomputer" ? (
               <>
                 <SidebarProjectsSection

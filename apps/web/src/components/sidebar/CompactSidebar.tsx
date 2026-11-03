@@ -23,7 +23,7 @@ import {
   ProductCompactSidebarSections,
 } from "../../product/ProductSlots";
 import { productSurface } from "../../product/productFlags";
-import { CompactSidebarComputerSwitcher } from "../../sidebarComputers/SidebarComputerSwitcher";
+import { CompactSidebarComputers } from "../../sidebarComputers/SidebarComputersSection";
 import { sidebarComputerScratchTarget } from "../../sidebarComputers/sidebarComputerSelection";
 import { SidebarProjectsMore } from "../../sidebarProjects/SidebarProjectsSection";
 import { newThreadStartsWithoutProject } from "../../sidebarProjects/SidebarThreadsSection";
@@ -77,7 +77,7 @@ function CompactSidebarContent() {
       <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto py-2 [scrollbar-width:none]">
         <CompactSearch />
         <ProductCompactSidebarNavigation />
-        <CompactSidebarComputerSwitcher />
+        <CompactSidebarComputers />
         {productSurface("sidebarProjects") === "upcomputer" ? <CompactProjects /> : null}
         <ProductCompactSidebarSections />
         <CompactThreads />

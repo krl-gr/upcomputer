@@ -25,7 +25,7 @@ const STORAGE_KEY = "upcomputer:sidebar-computer";
 interface StoreState {
   /** The person's pick; null until they pick, which means this computer. */
   readonly saved: ComputerChoice | null;
-  /** The last open thread the switcher followed; in memory, so a restart follows the open thread. */
+  /** The last open thread the sidebar followed; in memory, so a restart follows the open thread. */
   readonly revealedRouteKey: string | null;
 }
 
@@ -73,7 +73,7 @@ export function markSidebarComputerRouteRevealed(routeKey: string, choice: Compu
   update({ saved: choice ?? state.saved, revealedRouteKey: routeKey });
 }
 
-/** Saved and connected computers the switcher lists: this computer first, then the catalog's order. */
+/** Saved and connected computers the Computers section lists after All computers: this computer first, then the catalog's order. */
 const knownComputerIdsAtom = Atom.make((get) => {
   const enabled: EnvironmentId[] = [];
   const primary = get(primaryEnvironmentIdAtom);
@@ -99,7 +99,7 @@ function useComputerRoute() {
   return { environmentId, threadId };
 }
 
-/** The switcher's state: whether it shows, and the computer the sidebar shows. */
+/** The Computers section's state: whether it shows, and the computer the sidebar shows. */
 export function useSidebarComputerSelection(): ComputerSelection & {
   readonly computerIds: ReadonlyArray<EnvironmentId>;
   readonly routeKey: string | null;

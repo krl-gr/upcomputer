@@ -11,13 +11,12 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { makeThreadFixture } from "../test-fixtures";
 import {
+  computerRunCountGroups,
   computerShortcutChoice,
   countComputerRuns,
   filterToComputerScope,
-  otherComputersAttention,
   projectKeysInComputerScope,
   resolveComputerSelection,
-  type ComputerSelection,
 } from "./sidebarComputers.logic";
 
 const mac = EnvironmentId.make("env-mac");
@@ -38,7 +37,7 @@ describe("resolveComputerSelection", () => {
     revealedRouteKey: null,
   } as const;
 
-  it("hides the switcher and filters nothing with one computer", () => {
+  it("hides the section and filters nothing with one computer", () => {
     const selection = resolveComputerSelection({ ...base, saved: studio, computerIds: [mac] });
     expect(selection).toEqual({ shown: false, choice: "all", revealsRoute: false });
     expect(filterToComputerScope([{ environmentId: mac }], null)).toHaveLength(1);
@@ -120,6 +119,14 @@ describe("countComputerRuns", () => {
     );
     expect(counts.get(mac)).toEqual({ working: 1, input: 0, approval: 0, failed: 0 });
     expect(counts.get(studio)).toEqual({ working: 0, input: 1, approval: 1, failed: 2 });
+    // Each computer's row shows them in the run count badge's order, without zeros.
+    expect(
+      computerRunCountGroups(counts.get(studio)!).map(({ label, count }) => [label, count]),
+    ).toEqual([
+      ["Pending Approval", 1],
+      ["Awaiting Input", 1],
+      ["Failed", 2],
+    ]);
   });
 
   it("treats a local visit as seen on servers without visit tracking", () => {
@@ -131,54 +138,6 @@ describe("countComputerRuns", () => {
         studio,
       ),
     ).toBeUndefined();
-  });
-});
-
-describe("otherComputersAttention", () => {
-  const counts = new Map([
-    [mac, { working: 3, input: 1, approval: 0, failed: 0 }],
-    [studio, { working: 2, input: 1, approval: 0, failed: 2 }],
-    [mini, { working: 0, input: 4, approval: 1, failed: 0 }],
-  ]);
-  const on = (choice: ComputerSelection["choice"]): ComputerSelection => ({
-    shown: true,
-    choice,
-    revealsRoute: false,
-  });
-
-  it("counts input, approvals and failures on the other connected computers only", () => {
-    const attention = otherComputersAttention({
-      selection: on(mac),
-      counts,
-      connectedIds: [mac, studio],
-    });
-    // Working runs elsewhere and the offline Mac mini are left out.
-    expect(attention.total).toBe(3);
-    expect(attention.kind).toBe("input");
-    expect(attention.computers).toEqual([
-      { environmentId: studio, input: 1, approval: 0, failed: 2 },
-    ]);
-  });
-
-  it("puts approvals first and shows nothing in All computers or with one computer", () => {
-    expect(
-      otherComputersAttention({ selection: on(studio), counts, connectedIds: [mac, studio, mini] })
-        .kind,
-    ).toBe("approval");
-    const failedOnly = new Map([[studio, { working: 0, input: 0, approval: 0, failed: 1 }]]);
-    expect(
-      otherComputersAttention({ selection: on(mac), counts: failedOnly, connectedIds: [studio] }),
-    ).toMatchObject({ total: 1, kind: "failed" });
-    expect(
-      otherComputersAttention({ selection: on("all"), counts, connectedIds: [mac, studio] }).total,
-    ).toBe(0);
-    expect(
-      otherComputersAttention({
-        selection: { shown: false, choice: "all", revealsRoute: false },
-        counts,
-        connectedIds: [mac],
-      }).total,
-    ).toBe(0);
   });
 });
 

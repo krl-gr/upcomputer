@@ -10,7 +10,7 @@ import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore"
 import { useClientSettings } from "./useSettings";
 import { useSidebarComputerProjects } from "../sidebarComputers/sidebarComputerSelection";
 
-/** `computerScoped`: only the projects of the computer the sidebar's Computers switcher shows. */
+/** `computerScoped`: only the projects of the computer the sidebar's Computers section shows. */
 export function useSidebarProjectGroups(computerScoped = false) {
   const projects = useSidebarComputerProjects(useProjects(), computerScoped);
   // Activity order lags a running thread's streaming ticks until its next

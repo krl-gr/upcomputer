@@ -58,7 +58,7 @@ export function TaskNavigationRunCounts() {
   const { environments } = useEnvironments();
   const serverConfigs = useServerConfigs();
   const accessRevision = useTasksWebAccessRevision();
-  // The sidebar's Computers switcher scopes the count, as it scopes the Tasks page.
+  // The sidebar's Computers section scopes the count, as it scopes the Tasks page.
   const computerScope = useSidebarComputerScope();
   const clients = useMemo(() => {
     const result: Array<{ environmentId: EnvironmentId; client: TasksWebRpcClient }> = [];

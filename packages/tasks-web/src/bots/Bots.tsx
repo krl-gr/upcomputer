@@ -107,7 +107,7 @@ import {
 
 /**
  * The environments with a Bots section: this computer first, then each connected one, as far as
- * the sidebar's Computers switcher shows them.
+ * the sidebar's Computers section shows them.
  */
 function useBotEnvironmentIds() {
   const connected = useConnectedEnvironmentIds();
@@ -167,7 +167,8 @@ export function SidebarBots() {
 
 /**
  * The Bots section of a picked computer that shows none: offline, its last known bots dimmed
- * with a note; connected but too old for bots, a note saying so. Nothing while it still loads.
+ * (its info popover in the Computers section says why); connected but too old for bots, a note
+ * saying so. Nothing while it still loads, or while offline with no bots seen yet.
  */
 function UnavailableComputerBots({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const connected = useConnectedEnvironmentIds().includes(environmentId);
@@ -177,12 +178,17 @@ function UnavailableComputerBots({ environmentId }: { readonly environmentId: En
   const unsupported =
     connected && (readBotsUnsupported(environmentId) || access.availability === "unavailable");
   if (connected && !unsupported) return null;
-  const lastBots = connected ? null : readShownBots(environmentId);
+  const lastBots = connected ? [] : (readShownBots(environmentId) ?? []);
+  if (!connected && lastBots.length === 0) return null;
   return (
     <div className={SIDEBAR_SECTION_GAP} data-computer-bots={connected ? "unsupported" : "offline"}>
       <SidebarSectionHeader title="Bots" open onToggle={() => {}} />
       <div className={`${SIDEBAR_SECTION_HEADER_GAP} ${SIDEBAR_MENU_SCOPE}`}>
-        {lastBots !== null && lastBots.length > 0 ? (
+        {connected ? (
+          <p className="px-3 pt-1 text-xs text-sidebar-muted-foreground [[data-sidebar-compact=true]_&]:hidden">
+            Bots need a newer Up.computer on {name}.
+          </p>
+        ) : (
           <div className="opacity-55" aria-disabled>
             <SidebarMenu>
               {lastBots.map((bot) => (
@@ -202,14 +208,7 @@ function UnavailableComputerBots({ environmentId }: { readonly environmentId: En
               ))}
             </SidebarMenu>
           </div>
-        ) : null}
-        <p className="px-3 pt-1 text-xs text-sidebar-muted-foreground [[data-sidebar-compact=true]_&]:hidden">
-          {connected
-            ? `Bots need a newer Up.computer on ${name}.`
-            : lastBots !== null && lastBots.length > 0
-              ? `${name} is offline. These are its bots as last seen.`
-              : `Bots show when ${name} is back.`}
-        </p>
+        )}
       </div>
     </div>
   );
