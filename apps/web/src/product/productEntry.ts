@@ -6,6 +6,7 @@ import {
 } from "@t3tools/shared/productFlags";
 
 import { LINKED_PROJECTS_WEB_FEATURE } from "../linkedProjects/feature";
+import { THREAD_PROJECT_MOVE_WEB_FEATURE } from "../threadProjectMove/feature";
 import { composeExperimentalWebFeatures } from "./WebProduct";
 
 /**
@@ -15,6 +16,11 @@ import { composeExperimentalWebFeatures } from "./WebProduct";
  * its own composition.
  */
 export const WEB_PRODUCT = composeExperimentalWebFeatures(
-  [COMPUTER_USE_WEB_FEATURE, LINKED_PROJECTS_WEB_FEATURE, TASKS_WEB_FEATURE],
+  [
+    COMPUTER_USE_WEB_FEATURE,
+    LINKED_PROJECTS_WEB_FEATURE,
+    THREAD_PROJECT_MOVE_WEB_FEATURE,
+    TASKS_WEB_FEATURE,
+  ],
   { flags: UPCOMPUTER_PRODUCT_FLAGS, surfaces: UPCOMPUTER_PRODUCT_SURFACES },
 );

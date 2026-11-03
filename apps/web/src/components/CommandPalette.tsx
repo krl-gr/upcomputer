@@ -147,6 +147,7 @@ import {
 } from "../commandPaletteStore";
 import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
 import { isProductFeatureShown } from "../product/productFlags";
+import { useThreadProjectMovePaletteItem } from "../threadProjectMove/useThreadProjectMovePaletteItem";
 import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
   cn,
@@ -442,6 +443,9 @@ function OpenCommandPaletteDialog(props: {
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
+  const moveThreadItem = useThreadProjectMovePaletteItem(
+    activeThread ? scopeThreadRef(activeThread.environmentId, activeThread.id) : null,
+  );
   const paletteRouteTarget = useThreadRouteTarget();
   const projects = useProjects();
   const referenceThreadRef =
@@ -1306,6 +1310,8 @@ function OpenCommandPaletteDialog(props: {
       run: copyActiveThreadReference,
     });
   }
+
+  if (moveThreadItem !== null) actionItems.push(moveThreadItem);
 
   if (
     activeThread !== null &&

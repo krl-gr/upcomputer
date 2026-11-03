@@ -16,7 +16,7 @@ import {
 import { useRouter } from "@tanstack/react-router";
 
 import { pickSnoozePreset, resolveSnoozePresets } from "../components/Sidebar.snooze";
-import { productThreadActions } from "../product/threadActions";
+import { productThreadActions, runProductThreadAction } from "../product/threadActions";
 import {
   buildThreadActionMenuItems,
   threadActionRequiresOperate,
@@ -166,9 +166,9 @@ export function useThreadActionMenu(input: {
         return;
       }
       if (action.startsWith("feature:")) {
-        featureActions
-          .find((candidate) => candidate.id === action)
-          ?.run({ navigate: (options) => router.navigate(options) });
+        runProductThreadAction(featureActions, action, {
+          navigate: (options) => router.navigate(options),
+        });
         return;
       }
       if (action.startsWith("snooze:")) {
