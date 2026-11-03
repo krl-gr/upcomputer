@@ -41,6 +41,7 @@ import {
   SIDEBAR_SECTION_HEADER_GAP,
 } from "../sidebarMetrics/sidebarMetrics";
 import { SidebarCompactTooltip } from "../adaptiveSidebar/adaptiveSidebar";
+import { ComputerRowMark } from "../sidebarComputers/ComputerRowMark";
 import { SidebarEmptyRow } from "./SidebarEmptyRow";
 import { SidebarProjectRow } from "./SidebarProjectRow";
 import { SidebarSectionHeader, SidebarSectionHeaderAction } from "./SidebarSectionHeader";
@@ -156,6 +157,13 @@ export function SidebarProjectsSection(props: {
                     icon={<ProjectRowIcon project={project} />}
                     isActive={scopeKey === project.projectKey}
                     onSelect={() => setScopeKey(project.projectKey)}
+                    mark={
+                      <ComputerRowMark
+                        environmentIds={project.memberProjects.map(
+                          (member) => member.environmentId,
+                        )}
+                      />
+                    }
                     newChatLabel={`New chat in ${project.displayName}`}
                     onNewChat={() => startNewThread(project)}
                     menuLabel={`Project actions for ${project.displayName}`}

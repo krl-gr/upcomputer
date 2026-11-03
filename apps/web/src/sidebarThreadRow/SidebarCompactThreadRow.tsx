@@ -41,6 +41,7 @@ import {
   sidebarListRowFadingLabelClassName,
   sidebarListRowTitleClassName,
 } from "./sidebarListRow";
+import { ComputerRowMark } from "../sidebarComputers/ComputerRowMark";
 import { SidebarThreadProjectIcons } from "./SidebarThreadProjectIcons";
 import { resolveThreadStatusLabel, ThreadStatusLabel } from "./ThreadStatusLabel";
 
@@ -290,6 +291,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
           }
         >
           <SidebarThreadProjectIcons thread={thread} project={props.project} />
+          <ComputerRowMark environmentIds={[thread.environmentId]} />
           <ThreadStatusLabel status={statusLabel} />
           {isRenaming ? (
             <input

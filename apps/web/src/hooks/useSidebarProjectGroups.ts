@@ -8,9 +8,11 @@ import { useEnvironmentIdentities, usePrimaryEnvironmentId } from "../state/envi
 import { useDelegatedUnderParent, useProjects, useQuietThreadShells } from "../state/entities";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
+import { useSidebarComputerProjects } from "../sidebarComputers/sidebarComputerSelection";
 
-export function useSidebarProjectGroups() {
-  const projects = useProjects();
+/** `computerScoped`: only the projects of the computer the sidebar's Computers switcher shows. */
+export function useSidebarProjectGroups(computerScoped = false) {
+  const projects = useSidebarComputerProjects(useProjects(), computerScoped);
   // Activity order lags a running thread's streaming ticks until its next
   // real change; reading every tick re-rendered the whole sidebar with it.
   const threads = useQuietThreadShells();

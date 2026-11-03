@@ -1,5 +1,6 @@
 import { AuthPreviewOperateScope, type EnvironmentId } from "@t3tools/contracts";
 import { newThreadStartsWithoutProject } from "../sidebarProjects/SidebarThreadsSection";
+import { sidebarComputerScratchTarget } from "../sidebarComputers/sidebarComputerSelection";
 import type { AnyRouter } from "@tanstack/react-router";
 
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
@@ -110,7 +111,8 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       "chat.newLocal": startNewLocal,
       "chat.newWithoutProject": (event) => {
         const { activeThread, activeDraftThread } = readThreadContext();
-        const environmentId = scratch.scratchEnvironmentId(
+        const environmentId = sidebarComputerScratchTarget(
+          scratch,
           activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null,
         );
         if (environmentId === null) return;
@@ -124,7 +126,8 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         // UpComputer: New thread opens a chat without a project, as the sidebar's Threads pencil does.
         if (newThreadStartsWithoutProject(boringSidebarEnabled || legacySidebarEnabled)) {
           const { activeThread, activeDraftThread } = readThreadContext();
-          const environmentId = scratch.scratchEnvironmentId(
+          const environmentId = sidebarComputerScratchTarget(
+            scratch,
             activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null,
           );
           if (environmentId !== null) {

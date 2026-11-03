@@ -32,6 +32,8 @@ export function SidebarProjectRow(props: {
   readonly menuLabel?: string;
   /** `MenuItem`s of the "…" menu; without them the row has no menu. */
   readonly menuItems?: ReactNode;
+  /** Shown after the label, such as the machine icon of a project on another computer. */
+  readonly mark?: ReactNode;
 }) {
   const { label, icon, isActive, newChatLabel, onSelect, onNewChat, menuLabel, menuItems } = props;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -71,6 +73,7 @@ export function SidebarProjectRow(props: {
       >
         {icon}
         <span className="flex-1 truncate">{label}</span>
+        {props.mark}
         <span
           data-testid="sidebar-project-row-actions"
           className={cn(
