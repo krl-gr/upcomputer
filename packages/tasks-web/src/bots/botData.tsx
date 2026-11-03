@@ -131,6 +131,11 @@ export function botsChanged() {
     if (store.listeners.size > 0) void refresh(environmentId, store);
 }
 
+/** Whether the environment's server answered that it predates bots. */
+export function readBotsUnsupported(environmentId: EnvironmentId) {
+  return stores.get(environmentId)?.list.unsupported === true;
+}
+
 /** The environment's bots as last shown; null before a list has loaded. */
 export function readShownBots(environmentId: EnvironmentId) {
   const list = stores.get(environmentId)?.list;

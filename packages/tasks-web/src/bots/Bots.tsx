@@ -21,7 +21,6 @@ import { BOTS_RPC_METHODS, type Bot } from "@t3tools/tasks-contracts/v1";
 import * as Schema from "effect/Schema";
 import {
   useConnectedEnvironmentIds,
-  useEnvironment,
   usePrimaryEnvironmentId,
 } from "../../../../apps/web/src/state/environments.ts";
 import { useLocalStorage } from "../../../../apps/web/src/hooks/useLocalStorage.ts";
@@ -78,7 +77,14 @@ import {
   SidebarCompactTooltip,
   useSidebarCompact,
 } from "../../../../apps/web/src/adaptiveSidebar/adaptiveSidebar.tsx";
-import { readTasksWebAccess, useTasksWebAccessRevision } from "../environmentApi.ts";
+import {
+  readTasksWebAccess,
+  useTasksWebAccess,
+  useTasksWebAccessRevision,
+} from "../environmentApi.ts";
+import { useSidebarComputerScope } from "../../../../apps/web/src/sidebarComputers/sidebarComputerSelection.ts";
+import { filterIdsToComputerScope } from "../../../../apps/web/src/sidebarComputers/sidebarComputers.logic.ts";
+import { useComputerName } from "../../../../apps/web/src/sidebarComputers/useSidebarComputers.ts";
 import {
   TaskThreadRunCounts,
   TaskThreadRunPill,
@@ -92,20 +98,31 @@ import {
   botPage,
   botSectionTitle,
   errorReason,
+  readBotsUnsupported,
+  readShownBots,
   useBotSectionEnvironmentIds,
   useBots,
   useBotStatus,
 } from "./botData.tsx";
 
-/** The environments with a Bots section: this computer first, then each connected one. */
+/**
+ * The environments with a Bots section: this computer first, then each connected one, as far as
+ * the sidebar's Computers switcher shows them.
+ */
 function useBotEnvironmentIds() {
   const connected = useConnectedEnvironmentIds();
   const primary = usePrimaryEnvironmentId();
-  return useBotSectionEnvironmentIds([...new Set([...(primary ? [primary] : []), ...connected])]);
+  const computerScope = useSidebarComputerScope();
+  return useBotSectionEnvironmentIds(
+    filterIdsToComputerScope(
+      [...new Set([...(primary ? [primary] : []), ...connected])],
+      computerScope,
+    ),
+  );
 }
 
 function useBotSectionTitle(environmentId: EnvironmentId, several: boolean) {
-  return botSectionTitle(useEnvironment(environmentId)?.label, several);
+  return botSectionTitle(useComputerName(environmentId), several);
 }
 
 /** Whether a bot is the one on screen: its page or its chat. */
@@ -138,9 +155,64 @@ function openBotChat(
 
 export function SidebarBots() {
   const environmentIds = useBotEnvironmentIds();
+  const computerScope = useSidebarComputerScope();
+  const selected = computerScope === null ? null : ([...computerScope][0] ?? null);
+  if (selected !== null && !environmentIds.includes(selected)) {
+    return <UnavailableComputerBots environmentId={selected} />;
+  }
   return environmentIds.map((id) => (
     <EnvironmentBots key={id} environmentId={id} several={environmentIds.length > 1} />
   ));
+}
+
+/**
+ * The Bots section of a picked computer that shows none: offline, its last known bots dimmed
+ * with a note; connected but too old for bots, a note saying so. Nothing while it still loads.
+ */
+function UnavailableComputerBots({ environmentId }: { readonly environmentId: EnvironmentId }) {
+  const connected = useConnectedEnvironmentIds().includes(environmentId);
+  const access = useTasksWebAccess(environmentId);
+  useTasksWebAccessRevision();
+  const name = useComputerName(environmentId) ?? "This computer";
+  const unsupported =
+    connected && (readBotsUnsupported(environmentId) || access.availability === "unavailable");
+  if (connected && !unsupported) return null;
+  const lastBots = connected ? null : readShownBots(environmentId);
+  return (
+    <div className={SIDEBAR_SECTION_GAP} data-computer-bots={connected ? "unsupported" : "offline"}>
+      <SidebarSectionHeader title="Bots" open onToggle={() => {}} />
+      <div className={`${SIDEBAR_SECTION_HEADER_GAP} ${SIDEBAR_MENU_SCOPE}`}>
+        {lastBots !== null && lastBots.length > 0 ? (
+          <div className="opacity-55" aria-disabled>
+            <SidebarMenu>
+              {lastBots.map((bot) => (
+                <SidebarMenuItem key={bot.agent.id}>
+                  <div className={cn(SIDEBAR_LIST_ROW, "text-sidebar-foreground")}>
+                    <span className="flex size-4 shrink-0 items-center justify-center">
+                      <BotAvatar
+                        id={bot.agent.id}
+                        appearance={bot.appearance}
+                        state="idle"
+                        size={20}
+                      />
+                    </span>
+                    <span className={sidebarListRowTitleClassName(false)}>{bot.agent.name}</span>
+                  </div>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </div>
+        ) : null}
+        <p className="px-3 pt-1 text-xs text-sidebar-muted-foreground [[data-sidebar-compact=true]_&]:hidden">
+          {connected
+            ? `Bots need a newer Up.computer on ${name}.`
+            : lastBots !== null && lastBots.length > 0
+              ? `${name} is offline. These are its bots as last seen.`
+              : `Bots show when ${name} is back.`}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 /** Each environment's bots as avatars, one pill per environment like its sidebar section. */

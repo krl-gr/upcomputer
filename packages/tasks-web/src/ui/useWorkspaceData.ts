@@ -27,6 +27,11 @@ import {
   usePrimaryEnvironmentId,
 } from "../../../../apps/web/src/state/environments.ts";
 import { useUiStateStore } from "../../../../apps/web/src/uiStateStore.ts";
+import {
+  useSidebarComputerProjects,
+  useSidebarComputerScope,
+} from "../../../../apps/web/src/sidebarComputers/sidebarComputerSelection.ts";
+import { filterIdsToComputerScope } from "../../../../apps/web/src/sidebarComputers/sidebarComputers.logic.ts";
 import { usePrimarySettings } from "../../../../apps/web/src/hooks/useSettings.ts";
 import {
   getProjectOrderKey,
@@ -67,7 +72,8 @@ export interface TasksWorkspaceData {
 
 /** The sidebar's logical projects, grouped and ordered as the sidebar shows them. */
 export function useSidebarProjectSnapshots() {
-  const projects = useProjects();
+  // Tasks and Workers follow the sidebar's Computers switcher.
+  const projects = useSidebarComputerProjects(useProjects(), true);
   const { environments } = useEnvironments();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const grouping = usePrimarySettings(selectProjectGroupingSettings);
@@ -142,9 +148,11 @@ export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceDat
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const [reloadVersion, setReloadVersion] = useState(0);
 
+  const computerScope = useSidebarComputerScope();
   const environmentIds = useMemo(
-    () => tasksEnvironmentIds(projects, primaryEnvironmentId),
-    [projects, primaryEnvironmentId],
+    () =>
+      filterIdsToComputerScope(tasksEnvironmentIds(projects, primaryEnvironmentId), computerScope),
+    [projects, primaryEnvironmentId, computerScope],
   );
   const projectNamesByEnvironment = useMemo(() => {
     const result = new Map<EnvironmentId, Map<ProjectId, string>>();
