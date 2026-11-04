@@ -32,6 +32,7 @@ import { SidebarSectionHeader } from "../sidebarProjects/SidebarSectionHeader";
 import { AllProjectsIcon } from "../sidebarProjects/sidebarProjectIcons";
 import {
   RUN_COUNT_PILL,
+  RUN_COUNT_PILL_SURFACE,
   RunCountNumbers,
   onLightRunCountGroup,
   runCountSummary,
@@ -140,7 +141,7 @@ function compactLabel(computer: SidebarComputer): string {
 }
 
 /**
- * The compact sidebars' pill over a computer's icon, the look of a bot's run pill. A 40px
+ * The narrow sidebar's pill over a computer's icon, the look of a bot's run pill. A 40px
  * target has room for a few numbers only, so it shows what needs the person: approvals,
  * input and unseen failures.
  */
@@ -154,6 +155,28 @@ function ComputerCountPill(props: { readonly computer: SidebarComputer }) {
       className={cn("pointer-events-none", RUN_COUNT_PILL)}
     >
       <RunCountNumbers groups={groups.map(onLightRunCountGroup)} />
+    </span>
+  );
+}
+
+/**
+ * The hidden sidebar's column has no room beside a computer's 32px button, so its corner shows
+ * one number: the most urgent kind's, approvals before input before failures.
+ */
+function ComputerCountBadge(props: { readonly computer: SidebarComputer }) {
+  const [urgent] = computerRunCountGroups({ ...props.computer.counts, working: 0 });
+  if (urgent === undefined) return null;
+  return (
+    <span
+      aria-hidden
+      data-computer-count-pill={props.computer.environmentId}
+      className={cn(
+        "pointer-events-none absolute top-0 right-0 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-3xs leading-none font-semibold tabular-nums",
+        RUN_COUNT_PILL_SURFACE,
+        onLightRunCountGroup(urgent).className,
+      )}
+    >
+      {urgent.count}
     </span>
   );
 }
@@ -423,9 +446,7 @@ export function CompactSidebarComputers() {
           >
             <ComputerIcon computer={computer} />
           </CompactSidebarButton>
-          <span className="pointer-events-none absolute -top-1 -right-1.5 flex">
-            <ComputerCountPill computer={computer} />
-          </span>
+          <ComputerCountBadge computer={computer} />
         </span>
       ))}
     </CompactSidebarPill>
