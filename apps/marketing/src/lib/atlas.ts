@@ -29,7 +29,7 @@ export interface AtlasCell {
 export interface AtlasProduct {
   id: string;
   name: string;
-  feature_count: number;
+  feature_count: number | null;
 }
 
 export interface AtlasData {
@@ -41,6 +41,16 @@ export interface AtlasData {
   cells: AtlasCell[];
   sources: Record<string, { title: string; url: string }>;
   quotes: Record<string, { title: string; url: string; quote: string; acquired_at: string | null }>;
+}
+
+/** `built_at` (YYYY-MM-DD) as "November 4, 2026". */
+export function formatBuiltAt(builtAt: string): string {
+  return new Date(`${builtAt}T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 export interface FlatNode extends AtlasNode {
@@ -55,6 +65,8 @@ export const TOOL_ICONS: Record<string, string> = {
   "cursor-cli": "/harnesses/cursor_light.svg",
   "opencode-cli": "/harnesses/opencode-dark.svg",
   "pi-cli": "/harnesses/pi.svg",
+  "hermes-agent": "/harnesses/hermes-agent-dark.png",
+  "antigravity-cli": "/harnesses/antigravity.png",
   "grok-build": "/harnesses/grok-dark.svg",
 };
 
