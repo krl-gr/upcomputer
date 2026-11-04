@@ -127,17 +127,6 @@ export function useSidebarComputerSelection(): ComputerSelection & {
   return { ...selection, computerIds, routeKey: route?.key ?? null };
 }
 
-/**
- * Whether the sidebar lists every computer, for row marks. Reads no route, so
- * rows do not re-render on navigation: All computers never follows a route.
- */
-export function useSidebarShowsAllComputers(): boolean {
-  const computerIds = useAtomValue(knownComputerIdsAtom);
-  const saved = useSyncExternalStore(subscribe, getSaved, getSaved);
-  return computerIds.length > 1 && saved === "all";
-}
-const getSaved = () => state.saved;
-
 const scopeCache = new Map<ComputerChoice, ReadonlySet<EnvironmentId> | null>();
 function scopeForChoice(choice: ComputerChoice): ReadonlySet<EnvironmentId> | null {
   let scope = scopeCache.get(choice);

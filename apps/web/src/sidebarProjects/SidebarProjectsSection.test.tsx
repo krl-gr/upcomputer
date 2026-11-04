@@ -46,7 +46,6 @@ vi.mock("../state/entities", () => ({
   useServerConfigs: () => new Map([[environmentId, { scratchWorkspaceRoot: "/home/scratch" }]]),
 }));
 vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => environmentId }));
-vi.mock("../sidebarComputers/ComputerRowMark", () => ({ ComputerRowMark: () => null }));
 vi.mock("../hooks/useHandleNewThread", () => ({ useNewThreadHandler: () => spies.newThread }));
 // Environments offering a thread without a project (upstream's scratch project).
 const scratch = vi.hoisted(() => ({ environmentIds: new Set<string | null>(["env-local"]) }));
