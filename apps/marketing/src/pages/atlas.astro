@@ -1,13 +1,21 @@
 ---
 import rawData from "../data/atlas.json";
 import Layout from "../layouts/Layout.astro";
-import { TOOL_ICONS, cellKey, flattenTree, statusHint, type AtlasData } from "../lib/atlas";
+import {
+  TOOL_ICONS,
+  cellKey,
+  flattenTree,
+  formatBuiltAt,
+  statusHint,
+  type AtlasData,
+} from "../lib/atlas";
 
 const data = rawData as AtlasData;
 const flat = flattenTree(data.nodes);
 const cells = new Map(data.cells.map((c) => [cellKey(c.capability_id, c.product_id), c]));
 const columnCount = data.products.length + 1;
 const monogram = (name: string) => name.charAt(0).toUpperCase();
+const updated = formatBuiltAt(data.built_at);
 
 // Coverage chart: how many Atlas features each tool's docs confirm.
 const featureIds = flat.filter((n) => n.kind === "capability").map((n) => n.id);
@@ -33,7 +41,7 @@ const SHOW_COVERAGE = false;
         Keeping up with everything coding agents can do is hard.<br />So we mapped it for you.
       </h1>
       <p class="atlas-note">
-        Work in progress. Mapped by agents from official docs, so some entries may be wrong.
+        Updated <time datetime={data.built_at}>{updated}</time>. Mapped from each tool’s official docs.
       </p>
     </header>
 
@@ -161,7 +169,7 @@ const SHOW_COVERAGE = false;
         human reviews the result. Every answer links to the page it comes from. Spotted a mistake?
         <a href="https://github.com/krl-gr/upcomputer/issues" target="_blank" rel="noopener noreferrer">Tell us</a>.
       </p>
-      <span>Updated {data.built_at}</span>
+      <span>Updated <time datetime={data.built_at}>{updated}</time></span>
     </footer>
   </section>
 
@@ -210,7 +218,7 @@ const SHOW_COVERAGE = false;
 
   .atlas-note {
     margin-top: 10px;
-    color: #f3e3a3;
+    color: rgba(255, 255, 255, 0.72);
     font-size: 15px;
     letter-spacing: -0.005em;
     line-height: 1.45;

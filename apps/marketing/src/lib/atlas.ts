@@ -43,6 +43,16 @@ export interface AtlasData {
   quotes: Record<string, { title: string; url: string; quote: string; acquired_at: string | null }>;
 }
 
+/** `built_at` (YYYY-MM-DD) as "November 4, 2026". */
+export function formatBuiltAt(builtAt: string): string {
+  return new Date(`${builtAt}T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export interface FlatNode extends AtlasNode {
   ancestors: string[];
   depth: number;
