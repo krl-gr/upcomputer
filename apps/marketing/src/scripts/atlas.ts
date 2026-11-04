@@ -170,3 +170,18 @@ window.addEventListener("popstate", () => {
   render(false);
 });
 render(false);
+
+// The nav is transparent. While the table header is stuck under it, give the nav a solid
+// background so scrolled rows don't show through it.
+const nav = document.querySelector<HTMLElement>(".nav");
+const table = document.querySelector<HTMLTableElement>(".capability-table");
+if (nav && table) {
+  const updateNav = () => {
+    const navBottom = nav.getBoundingClientRect().bottom;
+    const rect = table.getBoundingClientRect();
+    nav.classList.toggle("is-over-table", rect.top < navBottom && rect.bottom > navBottom);
+  };
+  window.addEventListener("scroll", updateNav, { passive: true });
+  window.addEventListener("resize", updateNav);
+  updateNav();
+}

@@ -434,6 +434,12 @@ const SHOW_COVERAGE = false;
     vertical-align: middle;
   }
 
+  /* Set by the page script while the table header is stuck under the nav. */
+  :global(.nav.is-over-table) {
+    border-bottom: 1px solid var(--border);
+    background: #0e0e10;
+  }
+
   .capability-table thead th {
     position: sticky;
     top: var(--nav-height);
