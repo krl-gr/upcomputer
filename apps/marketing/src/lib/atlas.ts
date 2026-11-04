@@ -55,6 +55,8 @@ export const TOOL_ICONS: Record<string, string> = {
   "cursor-cli": "/harnesses/cursor_light.svg",
   "opencode-cli": "/harnesses/opencode-dark.svg",
   "pi-cli": "/harnesses/pi.svg",
+  "hermes-agent": "/harnesses/hermes-agent-dark.png",
+  "antigravity-cli": "/harnesses/antigravity.png",
   "grok-build": "/harnesses/grok-dark.svg",
 };
 
