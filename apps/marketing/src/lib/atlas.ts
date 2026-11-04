@@ -29,7 +29,7 @@ export interface AtlasCell {
 export interface AtlasProduct {
   id: string;
   name: string;
-  feature_count: number;
+  feature_count: number | null;
 }
 
 export interface AtlasData {

@@ -25,7 +25,7 @@ const SHOW_COVERAGE = false;
 <Layout
   backdrop="full"
   title="CLI Atlas: what your coding agent can do"
-  description="Every feature of Claude Code, Codex, Cursor CLI, OpenCode, Pi and Hermes Agent in one list, with how each tool does it and a link to the official docs."
+  description="Every feature of Claude Code, Codex, Cursor CLI, OpenCode, Pi, Hermes Agent, Antigravity CLI and Grok Build in one list, with how each tool does it and a link to the official docs."
 >
   <section class="atlas">
     <header class="atlas-head">
@@ -779,6 +779,21 @@ const SHOW_COVERAGE = false;
     .atlas-foot {
       flex-direction: column;
       gap: 8px;
+    }
+  }
+
+  /* Phones: eight tool columns leave the feature names room to wrap. */
+  @media (max-width: 480px) {
+    .capability-table .tool-col {
+      width: 30px;
+      min-width: 30px;
+    }
+
+    .capability-table thead .tool-col img,
+    .capability-table thead .tool-col .tool-monogram {
+      width: 16px;
+      min-width: 16px;
+      height: 16px;
     }
   }
 </style>
