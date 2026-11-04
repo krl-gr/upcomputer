@@ -47,6 +47,8 @@ interface BotList {
 interface BotListStore {
   list: BotList;
   readonly listeners: Set<() => void>;
+  /** Counts publishes, so a snapshot can tell a changed list by value. */
+  version: number;
   fetching: boolean;
   again: boolean;
   stopChanges: (() => void) | undefined;
@@ -85,6 +87,7 @@ function storeFor(environmentId: EnvironmentId) {
   if (!store) {
     store = {
       list: EMPTY,
+      version: 0,
       listeners: new Set(),
       fetching: false,
       again: false,
@@ -97,6 +100,7 @@ function storeFor(environmentId: EnvironmentId) {
 
 function publish(store: BotListStore, list: BotList) {
   store.list = list;
+  store.version += 1;
   for (const listener of store.listeners) listener();
 }
 
@@ -188,13 +192,21 @@ export function useBots(environmentId: EnvironmentId) {
   return { ...list, enabled: enabled && !list.unsupported };
 }
 
+/** One computer's part of the Bots section. */
+export interface BotSectionList {
+  readonly environmentId: EnvironmentId;
+  readonly bots: ReadonlyArray<Bot>;
+  readonly error: string;
+}
+
 /**
- * The environments, in the given order, whose Bots section shows: their list answered, or
- * failed in a way worth showing. One still loading or whose server predates bots has none.
+ * The lists, in the given environments' order, that the one Bots section merges: those that
+ * answered, or failed in a way worth showing. One still loading or whose server predates bots
+ * adds nothing.
  */
-export function useBotSectionEnvironmentIds(
+export function useBotSectionLists(
   environmentIds: ReadonlyArray<EnvironmentId>,
-): ReadonlyArray<EnvironmentId> {
+): ReadonlyArray<BotSectionList> {
   const key = environmentIds.join("\n");
   const subscribe = useCallback(
     (listener: () => void) => {
@@ -226,19 +238,28 @@ export function useBotSectionEnvironmentIds(
   );
   const read = () =>
     environmentIds
-      .filter((environmentId) => {
-        if (!readTasksWebAccess(environmentId).canReadAgents) return false;
-        const list = storeFor(environmentId).list;
-        return !list.unsupported && (list.loaded || list.error !== "");
+      .flatMap((environmentId) => {
+        if (!readTasksWebAccess(environmentId).canReadAgents) return [];
+        const store = storeFor(environmentId);
+        const { list } = store;
+        return !list.unsupported && (list.loaded || list.error !== "")
+          ? [`${environmentId}\t${store.version}`]
+          : [];
       })
       .join("\n");
   const shown = useSyncExternalStore(subscribe, read, read);
-  return useMemo(() => (shown ? (shown.split("\n") as Array<EnvironmentId>) : []), [shown]);
+  return useMemo(
+    () =>
+      shown
+        ? shown.split("\n").map((entry) => {
+            const environmentId = entry.slice(0, entry.lastIndexOf("\t")) as EnvironmentId;
+            const { bots, error } = storeFor(environmentId).list;
+            return { environmentId, bots, error };
+          })
+        : [],
+    [shown],
+  );
 }
-
-/** With several computers showing bots, each section names its computer. */
-export const botSectionTitle = (computerName: string | null | undefined, several: boolean) =>
-  several && computerName ? `Bots · ${computerName}` : "Bots";
 
 /** Navigation to a bot's page: an existing bot, a chat to turn into one, or a new bot. */
 export function botPage(

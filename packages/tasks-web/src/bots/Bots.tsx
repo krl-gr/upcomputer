@@ -96,24 +96,24 @@ import { botsInProjectScope } from "./botProjectScope.ts";
 import {
   BotAvatar,
   botPage,
-  botSectionTitle,
   errorReason,
   readBotsUnsupported,
   readShownBots,
-  useBotSectionEnvironmentIds,
   useBots,
+  useBotSectionLists,
   useBotStatus,
+  type BotSectionList,
 } from "./botData.tsx";
 
 /**
- * The environments with a Bots section: this computer first, then each connected one, as far as
- * the sidebar's Computers section shows them.
+ * The bot lists the one Bots section merges: this computer first, then each connected one, as
+ * far as the sidebar's Computers section shows them.
  */
-function useBotEnvironmentIds() {
+function useBotLists() {
   const connected = useConnectedEnvironmentIds();
   const primary = usePrimaryEnvironmentId();
   const computerScope = useSidebarComputerScope();
-  return useBotSectionEnvironmentIds(
+  return useBotSectionLists(
     filterIdsToComputerScope(
       [...new Set([...(primary ? [primary] : []), ...connected])],
       computerScope,
@@ -121,24 +121,28 @@ function useBotEnvironmentIds() {
   );
 }
 
-function useBotSectionTitle(environmentId: EnvironmentId, several: boolean) {
-  return botSectionTitle(useComputerName(environmentId), several);
+/** Each computer's bots the sidebar's Projects filter leaves, merged in the lists' order. */
+function useShownBots(lists: ReadonlyArray<BotSectionList>) {
+  const scope = useSidebarProjectScope();
+  return lists.flatMap(({ environmentId, bots }) =>
+    botsInProjectScope(environmentId, bots, scope).map((bot) => ({ environmentId, bot })),
+  );
 }
 
 /** Whether a bot is the one on screen: its page or its chat. */
-function useIsBotActive(environmentId: EnvironmentId) {
+function useIsBotActive() {
   const params = useParams({ strict: false });
   const pageBot = useLocation({
     select: (location) => {
       if (location.pathname !== "/bots") return null;
       const search = location.search as Record<string, unknown>;
-      return search.environment === environmentId && typeof search.bot === "string"
-        ? search.bot
+      return typeof search.environment === "string" && typeof search.bot === "string"
+        ? `${search.environment}\t${search.bot}`
         : null;
     },
   });
-  return (bot: Bot) =>
-    pageBot === bot.agent.id ||
+  return (environmentId: EnvironmentId, bot: Bot) =>
+    pageBot === `${environmentId}\t${bot.agent.id}` ||
     (params.threadId === bot.threadId && params.environmentId === environmentId);
 }
 
@@ -154,15 +158,13 @@ function openBotChat(
 }
 
 export function SidebarBots() {
-  const environmentIds = useBotEnvironmentIds();
+  const lists = useBotLists();
   const computerScope = useSidebarComputerScope();
   const selected = computerScope === null ? null : ([...computerScope][0] ?? null);
-  if (selected !== null && !environmentIds.includes(selected)) {
+  if (selected !== null && !lists.some((list) => list.environmentId === selected)) {
     return <UnavailableComputerBots environmentId={selected} />;
   }
-  return environmentIds.map((id) => (
-    <EnvironmentBots key={id} environmentId={id} several={environmentIds.length > 1} />
-  ));
+  return lists.length > 0 ? <BotsSection lists={lists} /> : null;
 }
 
 /**
@@ -214,45 +216,33 @@ function UnavailableComputerBots({ environmentId }: { readonly environmentId: En
   );
 }
 
-/** Each environment's bots as avatars, one pill per environment like its sidebar section. */
+/** Every shown computer's bots as avatars in one pill, like the one Bots section. */
 export function CompactSidebarBots() {
-  const environmentIds = useBotEnvironmentIds();
-  return environmentIds.map((id) => (
-    <CompactEnvironmentBots key={id} environmentId={id} several={environmentIds.length > 1} />
-  ));
-}
-
-function CompactEnvironmentBots({
-  environmentId,
-  several,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly several: boolean;
-}) {
-  const { bots, enabled } = useBots(environmentId);
+  const lists = useBotLists();
+  const shown = useShownBots(lists);
   const scope = useSidebarProjectScope();
-  const title = useBotSectionTitle(environmentId, several);
-  const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
+  // New bots go to the first computer shown: this one in All computers.
+  const createOn = lists[0]?.environmentId ?? null;
+  const canWrite = useExperimentalFeatureRpcPermission(createOn, BOTS_RPC_METHODS.save);
   const navigate = useNavigate();
-  const isActive = useIsBotActive(environmentId);
-  const shown = botsInProjectScope(environmentId, bots, scope);
-  if (!enabled || (scope !== null && shown.length === 0)) return null;
+  const isActive = useIsBotActive();
+  if (createOn === null || (scope !== null && shown.length === 0)) return null;
   return (
-    <CompactSidebarPill label={title}>
-      {shown.map((bot) => (
+    <CompactSidebarPill label="Bots">
+      {shown.map(({ environmentId, bot }) => (
         <CompactBotButton
-          key={bot.agent.id}
+          key={`${environmentId}:${bot.agent.id}`}
           environmentId={environmentId}
           bot={bot}
-          active={isActive(bot)}
+          active={isActive(environmentId, bot)}
           onOpen={() => openBotChat(navigate, environmentId, bot)}
         />
       ))}
-      {bots.length === 0 ? (
+      {lists.every((list) => list.bots.length === 0) ? (
         <CompactSidebarButton
           label="Create your first bot"
           disabled={!canWrite}
-          onClick={() => void navigate(botPage(environmentId))}
+          onClick={() => void navigate(botPage(createOn))}
         >
           <PlusIcon />
         </CompactSidebarButton>
@@ -287,44 +277,36 @@ function CompactBotButton({
   );
 }
 
-function EnvironmentBots({
-  environmentId,
-  several,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly several: boolean;
-}) {
-  const { bots, error, enabled } = useBots(environmentId);
+/** One Bots section for every computer the sidebar shows, its bots merged like Threads. */
+function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> }) {
+  const shown = useShownBots(lists);
   const scope = useSidebarProjectScope();
-  const title = useBotSectionTitle(environmentId, several);
-  const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.save);
+  // New bots go to the first computer shown: this one in All computers.
+  const createOn = lists[0]!.environmentId;
+  const canWrite = useExperimentalFeatureRpcPermission(createOn, BOTS_RPC_METHODS.save);
   const navigate = useNavigate();
-  const isActive = useIsBotActive(environmentId);
-  const [open, setOpen] = useLocalStorage(
-    `upcomputer:bots-open:${environmentId}`,
-    true,
-    Schema.Boolean,
-  );
+  const isActive = useIsBotActive();
+  const [open, setOpen] = useLocalStorage("upcomputer:bots-open", true, Schema.Boolean);
   // Each bot's chat belongs here, so Threads leaves it out, even while the
   // Projects filter hides its bot; a removed bot's chat returns there with the next list.
-  const chatKeys = (enabled ? bots : [])
-    .map((bot) => scopedThreadKey(scopeThreadRef(environmentId, bot.threadId)))
+  const chatKeys = lists
+    .flatMap(({ environmentId, bots }) =>
+      bots.map((bot) => scopedThreadKey(scopeThreadRef(environmentId, bot.threadId))),
+    )
     .join("\n");
-  useEffect(
-    () => claimSidebarThreads(`bots:${environmentId}`, chatKeys ? chatKeys.split("\n") : []),
-    [environmentId, chatKeys],
-  );
-  const shown = botsInProjectScope(environmentId, bots, scope);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the claims registry entry while mounted
+  useEffect(() => claimSidebarThreads("bots", chatKeys ? chatKeys.split("\n") : []), [chatKeys]);
+  const errors = lists.filter((list) => list.error !== "");
   // A filter no bot matches hides the section; a bot chat it hides stays open.
-  if (!enabled || (scope !== null && shown.length === 0 && !error)) return null;
+  if (scope !== null && shown.length === 0 && errors.length === 0) return null;
   const create = () => {
-    if (canWrite) void navigate(botPage(environmentId));
+    if (canWrite) void navigate(botPage(createOn));
   };
   return (
     <Collapsible open={open}>
       <div className={SIDEBAR_SECTION_GAP}>
         <SidebarSectionHeader
-          title={title}
+          title="Bots"
           open={open}
           onToggle={() => setOpen(!open)}
           action={
@@ -338,12 +320,12 @@ function EnvironmentBots({
       <CollapsiblePanel className="[[data-sidebar-compact=true]_&]:overflow-visible">
         <div className={`${SIDEBAR_SECTION_HEADER_GAP} ${SIDEBAR_MENU_SCOPE}`}>
           <SidebarMenu>
-            {shown.map((bot) => (
-              <SidebarMenuItem key={bot.agent.id}>
+            {shown.map(({ environmentId, bot }) => (
+              <SidebarMenuItem key={`${environmentId}:${bot.agent.id}`}>
                 <BotRow
                   environmentId={environmentId}
                   bot={bot}
-                  active={isActive(bot)}
+                  active={isActive(environmentId, bot)}
                   onOpen={() => openBotChat(navigate, environmentId, bot)}
                   onSettings={() => {
                     void navigate(botPage(environmentId, { bot: bot.agent.id }));
@@ -351,7 +333,7 @@ function EnvironmentBots({
                 />
               </SidebarMenuItem>
             ))}
-            {bots.length === 0 ? (
+            {lists.every((list) => list.bots.length === 0) ? (
               <SidebarEmptyRow
                 label="Create your first bot"
                 disabled={!canWrite}
@@ -359,14 +341,35 @@ function EnvironmentBots({
               />
             ) : null}
           </SidebarMenu>
-          {error ? (
-            <p role="alert" className="px-3 text-xs text-destructive">
-              {error}
-            </p>
-          ) : null}
+          {errors.map((list) => (
+            <BotListError
+              key={list.environmentId}
+              environmentId={list.environmentId}
+              error={list.error}
+              named={lists.length > 1}
+            />
+          ))}
         </div>
       </CollapsiblePanel>
     </Collapsible>
+  );
+}
+
+/** A computer's failed bot list; with several computers merged, it names the computer. */
+function BotListError({
+  environmentId,
+  error,
+  named,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly error: string;
+  readonly named: boolean;
+}) {
+  const name = useComputerName(environmentId);
+  return (
+    <p role="alert" className="px-3 text-xs text-destructive">
+      {named && name ? `${name}: ${error}` : error}
+    </p>
   );
 }
 
