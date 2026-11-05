@@ -23,7 +23,7 @@ export function AllProjectsIcon(props: { readonly className?: string }) {
     <svg
       viewBox="0 0 16 16"
       fill="currentColor"
-      fillOpacity={0.28}
+      fillOpacity={0.14}
       aria-hidden="true"
       data-icon="all-projects"
       className={props.className}
