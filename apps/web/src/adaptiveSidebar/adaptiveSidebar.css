@@ -70,6 +70,10 @@
 [data-sidebar-compact-new-thread] {
   display: none;
 }
+/* With a Pinned section the full sidebar draws Threads in the list; the column keeps this copy. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-threads-section="compact-only"] {
+  display: block;
+}
 [data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-compact-new-thread] {
   display: flex;
 }

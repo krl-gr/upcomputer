@@ -199,15 +199,24 @@ export function createSidebarSortingStrategy(input: {
           ? cardHeight
           : slimHeight;
       const moved = item.kind === "thread" && item.key === active.key;
+      // Upstream's drag labels sit in empty markers; UpComputer's section headers have height.
       return item.kind === "marker" &&
         (item.marker === "pinned-header" || item.marker === "pinned-divider")
-        ? labelHeight
+        ? Math.max(rect?.height ?? 0, labelHeight)
         : item.kind === "marker" && item.marker.endsWith("placeholder")
           ? slimHeight
           : moved
             ? fallback
             : (rect?.height ?? fallback);
     });
+    // Rows outside the sortable list (UpComputer's drafts) can follow the divider.
+    const dividerIndex = indices.get(sidebarMarkerId("pinned-divider"));
+    const dividerRect = dividerIndex === undefined ? undefined : rects[dividerIndex];
+    const afterDividerRect = dividerIndex === undefined ? undefined : rects[dividerIndex + 1];
+    const afterDividerSpace =
+      dividerRect && afterDividerRect
+        ? Math.max(0, afterDividerRect.top - dividerRect.bottom - 1)
+        : 0;
     const firstShelf = items.findIndex(isShelfHeader);
     const shelfRect = rects[firstShelf];
     const beforeShelf = rects[firstShelf - 1];
@@ -216,7 +225,10 @@ export function createSidebarSortingStrategy(input: {
       shelfRect && beforeShelf && lastRect && shelfRect.top > beforeShelf.bottom + 1
         ? Math.max(
             0,
-            lastRect.bottom - rects[0].top - heights.reduce((sum, height) => sum + height + 1, -1),
+            lastRect.bottom -
+              rects[0].top -
+              afterDividerSpace -
+              heights.reduce((sum, height) => sum + height + 1, -1),
           )
         : 0;
     const result = items.map(() => hidden);
@@ -230,6 +242,7 @@ export function createSidebarSortingStrategy(input: {
       const rect = index === undefined ? undefined : rects[index];
       if (index !== undefined && rect) result[index] = { ...stationary, y: top - rect.top };
       top += heights[projectedIndex]! + 1;
+      if (item.kind === "marker" && item.marker === "pinned-divider") top += afterDividerSpace;
     }
     result[activeIndex] = stationary;
     return result;
