@@ -100,8 +100,6 @@ function rowProps(
       ...(linkedProjectIds ? { linkedProjectIds } : {}),
     } as unknown as SidebarCompactThreadRowProps["thread"],
     variantAction: "settle",
-    isPinned: false,
-    dropVerb: null,
     sweepAction: null,
     snoozeWakeLabelText: null,
     isActive: false,

@@ -51,7 +51,8 @@ and worktree while you stay in the new thread composer. This requires a Git proj
 
 ## Pin and reorder threads
 
-Pin a thread from its menu to keep it above your active work.
+Pin a thread from its menu to keep it in the **Pinned** section above **Threads**. The
+section appears once a thread is pinned; click its header to collapse or expand it.
 
 On web and desktop, unpinning, settling, snoozing, and archiving a thread each show
 a notification with **Undo** for five seconds. Undo restores the thread's previous
@@ -71,20 +72,14 @@ scroll position instead of following the thread to its new place in the list.
 Pinning does not prevent automatic settlement. Settling a thread removes its pin.
 
 On web and desktop, drag a thread between sections to change its state. Drag a thread up into
-the pinned section to pin it at the spot you drop it; drag a pinned thread down into the active
-list to unpin it. Dragging a thread onto the **Settled** header settles it, and dragging a settled
-thread into the active list un-settles it. A snoozed thread can be dragged out of the snoozed
-shelf, which wakes it, but threads cannot be dragged into the shelf because snoozing needs a wake
-time. Dragging a pinned thread out of the pinned section does not ask for unpin confirmation.
-Pinned and active boundary labels appear only while dragging, without moving the rows. The
-other rows slide aside to show where the thread will land. When you cross into another section,
-the dragged thread shows the action the drop performs, with its icon: **Pin**, **Unpin**,
-**Settle**, **Un-settle**, or **Wake**. Its status and hover actions hide during the drag. A pinned
-thread keeps its pin only while it stays in the pinned section; once it leaves, the badge takes
-over. Reordering within the same section shows no badge. When there are no pins, drag to the top
-edge to pin a thread. Section labels stay readable for the whole drag, and the section the
-thread is over takes the accent color. Section labels also
-identify empty sections and a collapsed settled shelf.
+**Pinned** to pin it at the spot you drop it; drag a pinned thread down into **Threads** to
+unpin it. A collapsed section takes no drops. Dragging a thread onto the **Settled** header
+settles it, and dragging a settled thread into the active list un-settles it. A snoozed thread
+can be dragged out of the snoozed shelf, which wakes it, but threads cannot be dragged into the
+shelf because snoozing needs a wake time. Dragging a pinned thread out of the pinned section does
+not ask for unpin confirmation. The other rows slide aside to show where the thread will land.
+When there are no pins, drag to the top edge to pin a thread. The shelf the thread is over takes
+the accent color, and shelf labels also identify empty sections and a collapsed settled shelf.
 
 Drag within the pinned or active section to change its order. Other rows slide aside to show the
 spot where the thread will land. Drops into either section keep the position you choose. On

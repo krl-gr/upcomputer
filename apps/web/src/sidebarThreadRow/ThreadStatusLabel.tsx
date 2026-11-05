@@ -6,7 +6,8 @@ import { cn } from "../lib/utils";
 export type ThreadStatusLabelKind = Exclude<SidebarV2TopStatusKind, "woke">;
 
 export interface ThreadStatusLabelEntry {
-  readonly kind: ThreadStatusLabelKind;
+  /** "draft": a typed, unsent message, named only when no status applies. */
+  readonly kind: ThreadStatusLabelKind | "draft";
   readonly label: string;
   readonly className: string;
 }
@@ -29,14 +30,25 @@ export const THREAD_STATUS_LABELS: {
   waiting: { label: "Waiting", className: "text-muted-foreground" },
 };
 
-/** The label for a thread, from upstream's status derivation. */
+/** A draft's label: as quiet as Waiting. */
+export const DRAFT_STATUS_LABEL: ThreadStatusLabelEntry = {
+  kind: "draft",
+  label: "Draft",
+  className: "text-muted-foreground",
+};
+
+/**
+ * The label for a thread, from upstream's status derivation. A typed, unsent
+ * message shows "Draft" only when the thread has no status of its own.
+ */
 export function resolveThreadStatusLabel(input: {
   readonly status: SidebarThreadStatus;
   readonly isUnread: boolean;
   readonly isWoke: boolean;
+  readonly hasUnsentDraft?: boolean;
 }): ThreadStatusLabelEntry | null {
   const kind = resolveSidebarV2TopStatus(input);
-  if (kind === null || kind === "woke") return null;
+  if (kind === null || kind === "woke") return input.hasUnsentDraft ? DRAFT_STATUS_LABEL : null;
   return { kind, ...THREAD_STATUS_LABELS[kind] };
 }
 

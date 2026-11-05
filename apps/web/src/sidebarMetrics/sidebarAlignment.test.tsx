@@ -195,8 +195,6 @@ function threadRow(title: string, index: number): SidebarCompactThreadRowProps {
       titleRegeneration: null,
     } as unknown as SidebarCompactThreadRowProps["thread"],
     variantAction: "settle",
-    isPinned: false,
-    dropVerb: null,
     sweepAction: null,
     snoozeWakeLabelText: null,
     isActive: index === 0,

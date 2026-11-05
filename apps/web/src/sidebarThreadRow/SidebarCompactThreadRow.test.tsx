@@ -93,8 +93,6 @@ function rowProps(
   return {
     thread: thread("plain"),
     variantAction: "settle",
-    isPinned: false,
-    dropVerb: null,
     sweepAction: null,
     snoozeWakeLabelText: null,
     isActive: false,
@@ -271,9 +269,8 @@ describe("SidebarCompactThreadRow", () => {
     expect(titles[3]).not.toContain("text-sidebar-muted-foreground");
   });
 
-  it("renders the shelves' rows compactly: pinned, snoozed and working", async () => {
+  it("renders the shelves' rows compactly: snoozed and working", async () => {
     await render([
-      rowProps({ thread: thread("pinned"), isPinned: true }),
       rowProps({
         thread: thread("snoozed"),
         variantAction: "unsnooze",
@@ -281,8 +278,7 @@ describe("SidebarCompactThreadRow", () => {
       }),
       rowProps({ thread: thread("working", { runtime: { status: "running" } }) }),
     ]);
-    const [pinned, snoozed, working] = compactRows();
-    expect(pinned?.querySelector("[aria-label='Pinned']")).not.toBeNull();
+    const [snoozed, working] = compactRows();
     // Snoozed rows show when they come back, not when they were last touched.
     expect(snoozed?.textContent).toContain("2h");
     expect(snoozed?.textContent).not.toContain("3h");
