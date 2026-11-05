@@ -83,6 +83,8 @@ export interface SidebarCompactThreadRowProps {
   /** Upstream's thread actions menu, the same one right-click opens. */
   readonly onContextMenu: (threadRef: ScopedThreadRef, position: { x: number; y: number }) => void;
   readonly onFileDropThreads?: ((threadRef: ScopedThreadRef, files: File[]) => void) | undefined;
+  /** Upstream's route reveal: until the open thread's row mounts, its project scope may widen. */
+  readonly revealRef?: ((row: HTMLElement, threadKey: string) => void) | undefined;
 }
 
 const MENU_CLOSING_KEYS = new Set(["Escape", "Enter", " ", "Tab"]);
@@ -207,9 +209,13 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
     return () => window.removeEventListener("dragend", clearFileDrag);
   }, [isFileDragOver]);
 
+  const { revealRef } = props;
+  const rootRef = (row: HTMLElement | null) => {
+    if (row !== null) revealRef?.(row, threadKey);
+    sortable?.setNodeRef(row);
+  };
   const sortableRootProps = sortable
     ? {
-        ref: sortable.setNodeRef,
         style: {
           transform: CSS.Translate.toString(sortable.transform),
           transition: sortable.transition,
@@ -226,6 +232,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
 
   return (
     <li
+      ref={rootRef}
       data-thread-item={threadKey}
       {...sortableRootProps}
       {...(fileDropHandlers ?? {})}
