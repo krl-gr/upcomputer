@@ -32,6 +32,7 @@ squashfs-root/
 dist-electron/
 .electron-runtime/
 .showcase/
+.ui-states/
 apps/mobile/.showcase/
 apps/mobile/.generated/
 apps/mobile/.android-cache/

@@ -182,6 +182,36 @@ const renderScenariosProject = {
   },
 } satisfies TestProjectInlineConfiguration;
 
+// UI state sheets render real components into labelled PNGs; they run only through
+// scripts/ui-states.ts, which names the output directory.
+const uiStatesProject = {
+  ...browserTestProject,
+  test: {
+    ...browserTestProject.test,
+    name: "ui-states",
+    include: ["src/uiStates/*.states.tsx"],
+    // A sheet renders every state twice, once per theme.
+    testTimeout: 60_000,
+    browser: {
+      ...browserTestProject.test.browser,
+      provider: playwright({ contextOptions: { deviceScaleFactor: 2 } }),
+      // Wide and tall enough that a sheet never scrolls inside the tester frame.
+      viewport: { width: 1200, height: 4000 },
+      instances: [{ browser: "chromium" }],
+      commands: {
+        ...browserTestProject.test.browser.commands,
+        writeUiStatesSheet: async (context, fileName: string) => {
+          const directory = process.env.T3CODE_UI_STATES_DIR;
+          if (!directory) throw new Error("T3CODE_UI_STATES_DIR is not set");
+          await context.iframe
+            .locator("[data-ui-states-sheet]")
+            .screenshot({ path: `${directory}/${fileName}.png`, animations: "disabled" });
+        },
+      },
+    },
+  },
+} satisfies TestProjectInlineConfiguration;
+
 function resolveDevProxyTarget(
   backendPort: string | undefined,
   wsUrl: string | undefined,
@@ -404,6 +434,7 @@ export default defineConfig(() => {
         defineProject(unitTestProject),
         defineProject(browserTestProject),
         defineProject(renderScenariosProject),
+        defineProject(uiStatesProject),
       ],
     },
   };
