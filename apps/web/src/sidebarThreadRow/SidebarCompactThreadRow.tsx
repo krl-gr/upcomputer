@@ -3,7 +3,7 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import type { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { EllipsisIcon, PinIcon } from "lucide-react";
+import { EllipsisIcon } from "lucide-react";
 import {
   memo,
   useEffect,
@@ -14,12 +14,12 @@ import {
 } from "react";
 
 import { makeWorkspaceFileDropHandlers } from "../components/chat/workspaceFileDrop";
+import { useThreadHasUnsentDraft } from "../composerDraftStore";
 import {
   hasUnseenCompletion,
   resolveSidebarRowAccessibility,
   resolveSidebarThreadStatus,
   resolveThreadLastVisitedAt,
-  type SidebarDropVerb,
 } from "../components/Sidebar.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
@@ -54,17 +54,17 @@ export interface SidebarCompactThreadRowProps {
   readonly thread: SidebarThreadSummary;
   /** "unsnooze" marks a row in the Snoozed shelf. */
   readonly variantAction: SweepAction;
-  readonly isPinned: boolean;
   readonly sortable?:
     | Pick<
         ReturnType<typeof useSortable>,
         "listeners" | "setNodeRef" | "transform" | "transition" | "isDragging"
       >
     | undefined;
-  readonly dropVerb: SidebarDropVerb | null;
   readonly sweepAction: SweepAction | null;
   readonly snoozeWakeLabelText: string | null;
   readonly isActive: boolean;
+  /** The thread the route shows, open or not: its unsent message is the composer's. */
+  readonly isRouteThread?: boolean | undefined;
   readonly jumpLabel: string | null;
   readonly project: EnvironmentProject | null;
   readonly projectDisplayName: string | null;
@@ -85,21 +85,17 @@ export interface SidebarCompactThreadRowProps {
   readonly onFileDropThreads?: ((threadRef: ScopedThreadRef, files: File[]) => void) | undefined;
 }
 
-const DROP_VERB_LABELS: Record<SidebarDropVerb, string> = {
-  pin: "Pin",
-  unpin: "Unpin",
-  settle: "Settle",
-  unsettle: "Un-settle",
-  wake: "Wake",
-};
-
 const MENU_CLOSING_KEYS = new Set(["Escape", "Enter", " ", "Tab"]);
 
 /** Upstream's compact relative time ("3h", "now"). */
-function threadTimeLabel(thread: SidebarThreadSummary): string {
-  const label = formatRelativeTimeLabel(thread.latestUserMessageAt ?? thread.updatedAt);
+export function compactRelativeTimeLabel(iso: string): string {
+  const label = formatRelativeTimeLabel(iso);
   if (label === "just now") return "now";
   return label.endsWith(" ago") ? label.slice(0, -4) : label;
+}
+
+function threadTimeLabel(thread: SidebarThreadSummary): string {
+  return compactRelativeTimeLabel(thread.latestUserMessageAt ?? thread.updatedAt);
 }
 
 /**
@@ -132,10 +128,12 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
   const lastVisitedAt = resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt);
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
+  const hasUnsentDraft = useThreadHasUnsentDraft(threadRef) && !props.isRouteThread;
   const statusLabel = resolveThreadStatusLabel({
     status: resolveSidebarThreadStatus(thread),
     isUnread,
     isWoke: false,
+    hasUnsentDraft,
   });
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
@@ -224,11 +222,6 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
         ...sortable.listeners,
       }
     : {};
-  const destinationVerb = sortable?.isDragging
-    ? props.dropVerb
-    : props.sweepAction === "unsnooze"
-      ? "wake"
-      : props.sweepAction;
   const isSnoozedRow = props.variantAction === "unsnooze" && props.snoozeWakeLabelText !== null;
 
   return (
@@ -320,73 +313,48 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
               {thread.title}
             </span>
           )}
-          {destinationVerb != null ? (
-            <span
-              role="status"
-              className="pointer-events-none ml-auto inline-flex h-5 shrink-0 items-center rounded-sm border border-primary/40 bg-primary/10 px-1.5 text-2xs font-medium text-primary"
-            >
-              {DROP_VERB_LABELS[destinationVerb]}
-            </span>
-          ) : (
-            <SidebarListRowEnd
-              pinned={menuOpen}
-              action={
-                <button
-                  type="button"
-                  data-thread-selection-safe
-                  aria-label={`Thread actions for ${thread.title}`}
-                  className={sidebarListRowActionClassName(menuOpen)}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={openMenu}
-                >
-                  <EllipsisIcon />
-                </button>
-              }
-            >
-              {props.isPinned ? (
-                <PinIcon
-                  role="img"
-                  aria-label="Pinned"
-                  className="size-3 shrink-0 text-muted-foreground/65"
-                />
-              ) : null}
-              {isSnoozedRow ? (
-                <span
-                  data-fading-label
-                  className={cn(
-                    "text-info-foreground",
-                    sidebarListRowFadingLabelClassName(menuOpen),
-                  )}
-                >
-                  {props.snoozeWakeLabelText}
-                </span>
-              ) : (
-                <ProductThreadRowAccessory
-                  environmentId={thread.environmentId}
-                  threadId={thread.id}
-                  fallback={
-                    <span
-                      data-fading-label
-                      className={sidebarListRowFadingLabelClassName(menuOpen)}
-                    >
-                      {threadTimeLabel(thread)}
-                    </span>
-                  }
-                />
-              )}
-            </SidebarListRowEnd>
-          )}
+          <SidebarListRowEnd
+            pinned={menuOpen}
+            action={
+              <button
+                type="button"
+                data-thread-selection-safe
+                aria-label={`Thread actions for ${thread.title}`}
+                className={sidebarListRowActionClassName(menuOpen)}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={openMenu}
+              >
+                <EllipsisIcon />
+              </button>
+            }
+          >
+            {props.jumpLabel ? (
+              // Held jump keys name the shortcut where the time is, in the time's style.
+              <span data-fading-label className={sidebarListRowFadingLabelClassName(menuOpen)}>
+                {props.jumpLabel}
+              </span>
+            ) : isSnoozedRow ? (
+              <span
+                data-fading-label
+                className={cn("text-info-foreground", sidebarListRowFadingLabelClassName(menuOpen))}
+              >
+                {props.snoozeWakeLabelText}
+              </span>
+            ) : (
+              <ProductThreadRowAccessory
+                environmentId={thread.environmentId}
+                threadId={thread.id}
+                fallback={
+                  <span data-fading-label className={sidebarListRowFadingLabelClassName(menuOpen)}>
+                    {threadTimeLabel(thread)}
+                  </span>
+                }
+              />
+            )}
+          </SidebarListRowEnd>
           {thread.titleRegeneration != null ? (
             <span role="status" className="sr-only">
               Regenerating title
-            </span>
-          ) : null}
-          {props.jumpLabel ? (
-            <span
-              aria-hidden
-              className="pointer-events-none absolute right-1.5 top-1/2 z-10 inline-flex h-5 -translate-y-1/2 items-center rounded-full border border-border/80 bg-background/95 px-1.5 font-mono text-3xs font-medium tracking-tight text-foreground shadow-sm"
-            >
-              {props.jumpLabel}
             </span>
           ) : null}
         </TooltipTrigger>

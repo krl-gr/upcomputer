@@ -353,6 +353,66 @@ describe("sidebar drag projection", () => {
     },
   );
 
+  // UpComputer: Pinned and Threads are real 32px headers, and new-chat drafts sit
+  // below the Threads header, outside the sortable list.
+  it.each([
+    ["pins a thread dropped into the Pinned section", "a1", "p2", { p2: 33, divider: 33, a2: 0 }],
+    [
+      "unpins a thread dropped into the Threads section",
+      "p2",
+      "a1",
+      { a1: -33, divider: -33, a2: 0 },
+    ],
+  ] as const)(
+    "%s, keeping the drafts' space below the Threads header",
+    (_, active, over, offsets) => {
+      const items = [
+        pinnedHeader,
+        thread("p1", "pinned"),
+        thread("p2", "pinned"),
+        divider,
+        marker("active-placeholder"),
+        thread("a1", "active"),
+        thread("a2", "active"),
+      ];
+      const draftSpace = 66;
+      let top = 100;
+      const rects = items.map((item) => {
+        const height = item.kind === "marker" && item.marker === "active-placeholder" ? 0 : 32;
+        const rect = { top, height, bottom: top + height, left: 0, right: 260, width: 260 };
+        // The placeholder's negative margin takes back the list gap.
+        top += height === 0 ? 0 : height + 1;
+        if (item === divider) top += draftSpace;
+        return rect;
+      });
+      const strategy = createSidebarSortingStrategy({
+        items,
+        settledOrder: [],
+        settledExpanded: true,
+        boundaryLabelHeight: 0,
+      });
+      const activeIndex = items.findIndex((item) => sidebarListItemId(item) === active);
+      const args = {
+        activeIndex,
+        overIndex: items.findIndex((item) => sidebarListItemId(item) === over),
+        activeNodeRect: rects[activeIndex]!,
+        rects,
+        index: 0,
+      } satisfies Parameters<SortingStrategy>[0];
+      const offset = (id: string) =>
+        strategy({ ...args, index: items.findIndex((item) => sidebarListItemId(item) === id) })?.y;
+      expect(resolveSidebarDropTarget(items, active, over)?.section).toBe(
+        active === "a1" ? "pinned" : "active",
+      );
+      expect(offset(sidebarMarkerId("pinned-header"))).toBe(0);
+      expect(offset(sidebarMarkerId("pinned-divider"))).toBe(offsets.divider);
+      expect(offset(active)).toBe(0);
+      for (const [key, y] of Object.entries(offsets)) {
+        if (key !== "divider") expect(offset(key)).toBe(y);
+      }
+    },
+  );
+
   it("opens label space below each pinned boundary while dragging", () => {
     const items = [
       pinnedHeader,

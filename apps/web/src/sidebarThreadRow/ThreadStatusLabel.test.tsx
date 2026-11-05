@@ -97,6 +97,40 @@ describe("THREAD_STATUS_LABELS", () => {
     expect(THREAD_STATUS_LABELS.limited.className).toBe("text-warning-foreground");
     expect(THREAD_STATUS_LABELS.approval.className).toBe("text-warning-foreground");
   });
+
+  it("names an unsent draft only when no status applies", () => {
+    for (const status of Object.keys(EVERY_STATUS) as SidebarThreadStatus[]) {
+      for (const isUnread of [false, true]) {
+        for (const isWoke of [false, true]) {
+          const withoutDraft = resolveThreadStatusLabel({ status, isUnread, isWoke });
+          const withDraft = resolveThreadStatusLabel({
+            status,
+            isUnread,
+            isWoke,
+            hasUnsentDraft: true,
+          });
+          if (withoutDraft === null) {
+            expect(withDraft).toEqual({
+              kind: "draft",
+              label: "Draft",
+              className: THREAD_STATUS_LABELS.waiting.className,
+            });
+          } else {
+            expect(withDraft).toEqual(withoutDraft);
+          }
+        }
+      }
+    }
+    // Completed (an unread finish) wins over the draft.
+    expect(
+      resolveThreadStatusLabel({
+        status: "ready",
+        isUnread: true,
+        isWoke: false,
+        hasUnsentDraft: true,
+      })?.label,
+    ).toBe("Completed");
+  });
 });
 
 // ── Upstream's detailed card row, through the hook in Sidebar.tsx ──

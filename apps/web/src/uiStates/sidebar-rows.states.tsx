@@ -13,7 +13,14 @@ import {
 import { SidebarDraftBlock } from "../components/sidebar/SidebarDraftBlock";
 import { SidebarMenu, SidebarMenuItem } from "../components/ui/sidebar";
 import { shortcutLabelForCommand, threadJumpCommandForIndex } from "../keybindings";
-import { SIDEBAR_MENU_SCOPE } from "../sidebarMetrics/sidebarMetrics";
+import { cn } from "../lib/utils";
+import {
+  SIDEBAR_LIST_ROW_SPACING,
+  SIDEBAR_MENU_SCOPE,
+  SIDEBAR_SECTION_GAP,
+} from "../sidebarMetrics/sidebarMetrics";
+import { SidebarSectionHeader } from "../sidebarProjects/SidebarSectionHeader";
+import { SidebarPinnedSectionHeader } from "../sidebarProjects/SidebarThreadsSection";
 import {
   SidebarCompactThreadRow,
   type SidebarCompactThreadRowProps,
@@ -90,8 +97,6 @@ function threadRowProps(
   return {
     thread,
     variantAction: "settle",
-    isPinned: false,
-    dropVerb: null,
     sweepAction: null,
     snoozeWakeLabelText: null,
     isActive: false,
@@ -180,21 +185,26 @@ const ATTACHMENTS_DRAFT = composerDraft({
 function draftState(
   name: string,
   composer: ComposerThreadDraftState,
-  options: { readonly active?: boolean; readonly hover?: boolean } = {},
+  options: {
+    readonly active?: boolean;
+    readonly hover?: boolean;
+    readonly project?: typeof PROJECT;
+  } = {},
 ): UiState {
-  const projectKey = `${ENVIRONMENT_ID}:${PROJECT.id}`;
+  const project = options.project ?? PROJECT;
+  const projectKey = `${ENVIRONMENT_ID}:${project.id}`;
   return {
     name,
     setup: () =>
       patchStore(useComposerDraftStore, {
         draftsByThreadKey: { [DRAFT_ID]: composer },
-        draftThreadsByThreadKey: { [DRAFT_ID]: draftSession },
+        draftThreadsByThreadKey: { [DRAFT_ID]: { ...draftSession, projectId: project.id } },
       }),
     render: () => (
       <ul>
         <SidebarDraftBlock
-          projectByKey={new Map([[projectKey, PROJECT]])}
-          projectDisplayNameByKey={new Map([[projectKey, PROJECT.title]])}
+          projectByKey={new Map([[projectKey, project]])}
+          projectDisplayNameByKey={new Map([[projectKey, project.title]])}
           scopedProjectKeys={null}
           routeDraftId={options.active ? DRAFT_ID : null}
           onNavigateToDraft={noop}
@@ -202,6 +212,7 @@ function draftState(
         />
       </ul>
     ),
+    settle: (cell) => waitForImages(cell),
     ...(options.hover ? { hover: "[data-testid=sidebar-draft-row]" } : {}),
   };
 }
@@ -255,6 +266,11 @@ const jumpLabel = shortcutLabelForCommand(
 if (jumpLabel === null) throw new Error("The first thread jump has no default shortcut");
 const snoozedUntil = iso(14 * HOUR);
 const draftThread = threadShell("thread-draft", "Polish onboarding copy");
+const workingDraftThread = threadShell(
+  "thread-draft-working",
+  "Polish onboarding copy",
+  STATUS_WIRE.Working,
+);
 
 const STATUS_STATES = Object.entries(STATUS_WIRE).map(([label, wire]): UiState => ({
   name: `status: ${label}`,
@@ -265,14 +281,6 @@ const STATUS_STATES = Object.entries(STATUS_WIRE).map(([label, wire]): UiState =
 
 const THREAD_STATES: ReadonlyArray<UiState> = [
   ...STATUS_STATES,
-  {
-    name: "pinned",
-    render: threadRow(
-      threadRowProps(threadShell("thread-pinned", "Release checklist", { pinnedAt: at(-HOUR) }), {
-        isPinned: true,
-      }),
-    ),
-  },
   {
     name: "task run counts (in place of the time)",
     render: threadRow(threadRowProps(threadShell("thread-runs", "Nightly dependency updates"))),
@@ -361,10 +369,9 @@ const THREAD_STATES: ReadonlyArray<UiState> = [
     render: threadRow(threadRowProps(plain, { isRenaming: true, renamingTitle: plain.title })),
   },
   {
-    name: "dragging, drop badge: Pin",
+    name: "dragging",
     render: threadRow(
       threadRowProps(plain, {
-        dropVerb: "pin",
         sortable: {
           listeners: undefined,
           setNodeRef: noop,
@@ -389,12 +396,20 @@ const THREAD_STATES: ReadonlyArray<UiState> = [
   },
   { name: `jump hint (${jumpLabel})`, render: threadRow(threadRowProps(plain, { jumpLabel })) },
   {
-    name: "unsent draft (compact row draws nothing)",
+    name: "Draft (unsent reply)",
     setup: () =>
       patchStore(useComposerDraftStore, {
         draftsByThreadKey: { [threadKeyOf(draftThread)]: PROMPT_DRAFT },
       }),
     render: threadRow(threadRowProps(draftThread)),
+  },
+  {
+    name: "unsent reply while Working (status wins)",
+    setup: () =>
+      patchStore(useComposerDraftStore, {
+        draftsByThreadKey: { [threadKeyOf(workingDraftThread)]: PROMPT_DRAFT },
+      }),
+    render: threadRow(threadRowProps(workingDraftThread)),
   },
   {
     name: "woke (compact row draws nothing)",
@@ -411,10 +426,39 @@ const THREAD_STATES: ReadonlyArray<UiState> = [
 ];
 
 const DRAFT_STATES: ReadonlyArray<UiState> = [
-  draftState("default", PROMPT_DRAFT),
+  draftState("Draft (new chat)", PROMPT_DRAFT),
   draftState("active", PROMPT_DRAFT, { active: true }),
-  draftState("hover (discard button shown)", PROMPT_DRAFT, { hover: true }),
+  draftState("hover (… button: Discard draft)", PROMPT_DRAFT, { hover: true }),
   draftState("attachments only", ATTACHMENTS_DRAFT),
+  draftState("no project", PROMPT_DRAFT, { project: SCRATCH }),
+];
+
+const PINNED_SECTION_STATES: ReadonlyArray<UiState> = [
+  {
+    name: "Pinned section above Threads",
+    render: () => (
+      <ul className="flex flex-col gap-px">
+        <li className={cn("list-none", SIDEBAR_LIST_ROW_SPACING)}>
+          <SidebarPinnedSectionHeader />
+        </li>
+        <SidebarCompactThreadRow
+          {...threadRowProps(
+            threadShell("thread-pinned", "Release checklist", { pinnedAt: at(-HOUR) }),
+          )}
+        />
+        <SidebarCompactThreadRow
+          {...threadRowProps(
+            threadShell("thread-pinned-2", "Weekly planning", { pinnedAt: at(-2 * HOUR) }),
+          )}
+        />
+        <li className={cn("list-none", SIDEBAR_SECTION_GAP, SIDEBAR_LIST_ROW_SPACING)}>
+          {/* The Threads header's own component needs the app's sidebar and environments. */}
+          <SidebarSectionHeader title="Threads" open onToggle={noop} />
+        </li>
+        <SidebarCompactThreadRow {...threadRowProps(plain)} />
+      </ul>
+    ),
+  },
 ];
 
 const BOT_STATES: ReadonlyArray<UiState> = [
@@ -430,6 +474,7 @@ it("sidebar-rows", async () => {
   await captureUiStateSheet("sidebar-rows", [
     { title: "Compact thread row", states: THREAD_STATES },
     { title: "New-chat draft row", states: DRAFT_STATES },
+    { title: "Pinned section", states: PINNED_SECTION_STATES },
     { title: "Bot row", states: BOT_STATES },
   ]);
 });

@@ -100,6 +100,26 @@ export function SidebarDragBoundary(props: {
   );
 }
 
+/**
+ * UpComputer: a sidebar section header in the list (Pinned, Threads), where
+ * upstream draws its drag-only Pinned and Active labels.
+ */
+export function SidebarListSectionMarker(props: {
+  marker: "pinned-header" | "pinned-divider";
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <SortableSidebarMarker
+      marker={props.marker}
+      data-testid={`sidebar-${props.marker}`}
+      className={cn("relative", props.className)}
+    >
+      {props.children}
+    </SortableSidebarMarker>
+  );
+}
+
 export function SidebarSectionHeader(props: {
   marker: "working-header" | "snoozed-header" | "settled-header";
   label: string;

@@ -209,10 +209,13 @@ import {
   resolveSidebarRowThreadId,
 } from "./Sidebar.logic";
 import { projectLinksByKey } from "../linkedProjects/projectScope";
+import { SIDEBAR_LIST_ROW_SPACING, SIDEBAR_SECTION_GAP } from "../sidebarMetrics/sidebarMetrics";
 import { SidebarProjectsSection } from "../sidebarProjects/SidebarProjectsSection";
 import {
+  SidebarPinnedSectionHeader,
   SidebarThreadListEmpty,
   SidebarThreadsSectionHeader,
+  useSidebarPinnedOpen,
   useSidebarThreadListShown,
 } from "../sidebarProjects/SidebarThreadsSection";
 import {
@@ -281,6 +284,7 @@ import {
 } from "./sidebar/SidebarProjectFolderHeader";
 import {
   SidebarDragBoundary,
+  SidebarListSectionMarker,
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
 } from "./sidebar/SidebarListMarkers";
@@ -1376,6 +1380,20 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     });
   const sidebarWaiting =
     sidebarEmptyState === "waiting" ? describeWorkspaceWaiting(workspaceDelivery.waitingOn) : null;
+  // UpComputer: pins get their own section above Threads. Both headers then sit in
+  // the list, so a thread drags between them to pin or unpin, and a collapsed
+  // section leaves its rows out of the list and takes no drops.
+  const sidebarSectionsInList = productSurface("sidebarProjects") === "upcomputer";
+  const [pinnedSectionOpen] = useSidebarPinnedOpen();
+  const pinnedSectionShown =
+    sidebarSectionsInList &&
+    sidebarProjectRowsShown &&
+    !isSearchingThreads &&
+    pinnedThreads.length > 0;
+  const pinnedRowsHidden = pinnedSectionShown && !pinnedSectionOpen;
+  const threadRowsHidden = pinnedSectionShown && !threadListShown;
+  const sectionTakesDrop = (section: SidebarSection) =>
+    section === "pinned" ? !pinnedRowsHidden : !threadRowsHidden;
 
   // Ranked across environments as the palette ranks them, so one
   // environment's list does not sit above another's better matches; rows
@@ -1920,8 +1938,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (list && header) {
       const listRect = list.getBoundingClientRect();
       const scale = list.offsetWidth > 0 ? listRect.width / list.offsetWidth : 1;
-      dragLabelOffsetRef.current =
-        header.getBoundingClientRect().top - listRect.top + SIDEBAR_DRAG_LABEL_HEIGHT * scale;
+      const headerRect = header.getBoundingClientRect();
+      dragLabelOffsetRef.current = pinnedSectionShown
+        ? headerRect.bottom - listRect.top
+        : headerRect.top - listRect.top + SIDEBAR_DRAG_LABEL_HEIGHT * scale;
     } else {
       dragLabelOffsetRef.current = 0;
     }
@@ -1958,9 +1978,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       return [];
     }
     const items: SidebarListItem[] = [{ kind: "marker", marker: "pinned-header" }];
-    const pinnedRows = rowsOf(pinnedThreads, "pinned");
+    const pinnedRows = rowsOf(pinnedRowsHidden ? [] : pinnedThreads, "pinned");
     items.push(...pinnedRows);
     items.push({ kind: "marker", marker: "pinned-divider" });
+    if (threadRowsHidden) return items;
     const activeRows = rowsOf(activeThreads, "active");
     items.push({ kind: "marker", marker: "active-placeholder" });
     items.push(...activeRows);
@@ -2043,7 +2064,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items: sidebarListItems,
     enabled: !isContextDrag,
-    boundaryLabelHeight: SIDEBAR_DRAG_LABEL_HEIGHT,
+    // UpComputer's section headers have their own height; there are no drag labels.
+    boundaryLabelHeight: sidebarSectionsInList ? 0 : SIDEBAR_DRAG_LABEL_HEIGHT,
     settledOrder: draggedSettledOrder,
     ...(draggedActiveOrder === undefined ? {} : { activeOrder: draggedActiveOrder }),
     settledExpanded: settledShelfExpanded,
@@ -2062,7 +2084,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     return createSidebarCollisionDetection(
       (id) => {
         const target = resolveSidebarDropTarget(sidebarListItems, draggedThreadKey, id);
-        if (target === null) return false;
+        if (target === null || !sectionTakesDrop(target.section)) return false;
         return (
           planSidebarThreadDrop({
             activeKey: draggedThreadKey,
@@ -2097,6 +2119,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         : resolveSidebarDropTarget(sidebarListItems, activeKey, String(event.over.id));
     const activeThread = threadByKey.get(activeKey);
     if (activeSection === undefined || target === null || activeThread === undefined) return;
+    if (!sectionTakesDrop(target.section)) return;
     const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
     const plan = planSidebarThreadDrop({
       activeKey,
@@ -3185,6 +3208,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     }
                     newThreadDisabled={projects.length === 0}
                     newThreadShortcutLabel={newThreadShortcutLabel}
+                    placement={pinnedSectionShown ? "compact-only" : "fixed"}
                   />
                 ) : null}
               </>
@@ -3262,7 +3286,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               </p>
             )
           ) : null}
-          {!isSearchingThreads && threadListShown ? (
+          {!isSearchingThreads && (threadListShown || pinnedSectionShown) ? (
             <TooltipProvider
               key="sidebar-thread-tooltips-150"
               delay={150}
@@ -3410,7 +3434,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         );
                       };
                       const from = isContextDrag ? null : (dragState?.activeSection ?? null);
-                      const items: ReactNode[] = [
+                      const draftBlock = (
                         <SidebarDraftBlock
                           key="draft-sessions"
                           projectByKey={projectByKey}
@@ -3419,8 +3443,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           routeDraftId={routeDraftIdForRows}
                           onNavigateToDraft={navigateToDraft}
                           onDraftContextMenu={handleDraftContextMenu}
-                        />,
-                      ];
+                        />
+                      );
+                      // With a Pinned section, drafts open the Threads section below its header.
+                      const items: ReactNode[] = pinnedSectionShown ? [] : [draftBlock];
                       for (const item of sidebarListItems) {
                         if (item.kind === "thread") {
                           // Folders draw active rows in their own place below.
@@ -3456,22 +3482,58 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         switch (item.marker) {
                           case "pinned-header":
                             items.push(
-                              <SidebarDragBoundary
-                                key="pinned-header"
-                                marker="pinned-header"
-                                label="Pinned"
-                                visible={from !== null}
-                                isDropTarget={dragTargetSection === "pinned"}
-                              />,
+                              pinnedSectionShown ? (
+                                <SidebarListSectionMarker
+                                  key="pinned-header"
+                                  marker="pinned-header"
+                                  className={SIDEBAR_LIST_ROW_SPACING}
+                                >
+                                  <SidebarPinnedSectionHeader />
+                                </SidebarListSectionMarker>
+                              ) : (
+                                <SidebarDragBoundary
+                                  key="pinned-header"
+                                  marker="pinned-header"
+                                  label="Pinned"
+                                  visible={from !== null && !sidebarSectionsInList}
+                                  isDropTarget={dragTargetSection === "pinned"}
+                                />
+                              ),
                             );
                             break;
                           case "pinned-divider":
+                            if (pinnedSectionShown) {
+                              items.push(
+                                <SidebarListSectionMarker
+                                  key="pinned-divider"
+                                  marker="pinned-divider"
+                                  className={cn(SIDEBAR_SECTION_GAP, SIDEBAR_LIST_ROW_SPACING)}
+                                >
+                                  {/* Crossing it moves a drag between the sections (Sidebar.drag.ts). */}
+                                  <div className="sidebar-drag-boundary-label">
+                                    <SidebarThreadsSectionHeader
+                                      onNewThread={handleNewThreadClick}
+                                      currentEnvironmentId={
+                                        newThreadContext.activeThread?.environmentId ??
+                                        newThreadContext.activeDraftThread?.environmentId ??
+                                        null
+                                      }
+                                      newThreadDisabled={projects.length === 0}
+                                      newThreadShortcutLabel={newThreadShortcutLabel}
+                                      placement="list"
+                                    />
+                                  </div>
+                                </SidebarListSectionMarker>,
+                              );
+                              if (!threadRowsHidden) items.push(draftBlock);
+                              break;
+                            }
                             items.push(
                               <SidebarDragBoundary
                                 key="pinned-divider"
                                 marker="pinned-divider"
                                 label="Active"
-                                visible={from !== null}
+                                visible={from !== null && !sidebarSectionsInList}
                                 isDropTarget={dragTargetSection === "active"}
                               />,
                             );

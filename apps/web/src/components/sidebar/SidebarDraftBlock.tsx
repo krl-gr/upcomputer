@@ -20,6 +20,8 @@ import {
   type DraftSessionState,
 } from "../../composerDraftStore";
 import { draftPenClassName, draftSurfaceClassName } from "./SidebarThreadRow";
+import { SidebarCompactDraftRow } from "../../sidebarThreadRow/SidebarCompactDraftRow";
+import { useSidebarThreadRowSurface } from "../../sidebarThreadRow/threadListSetting";
 
 const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   draftId: DraftId;
@@ -148,6 +150,8 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
 }) {
   const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
   const draftsByThreadKey = useComposerDraftStore((store) => store.draftsByThreadKey);
+  // UpComputer: the compact list draws drafts as its rows, with no divider.
+  const compact = useSidebarThreadRowSurface() === "upcomputer";
   const [frozenActive, setFrozenActive] = useState<{
     routeDraftId: string | null;
     row: SidebarDraftRowData | null;
@@ -199,6 +203,21 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
     <>
       {drafts.map(({ composer, draftId, session }) => {
         const projectKey = `${session.environmentId}:${session.projectId}`;
+        if (compact) {
+          return (
+            <SidebarCompactDraftRow
+              key={draftId}
+              draftId={draftId}
+              session={session}
+              composer={composer}
+              project={props.projectByKey.get(projectKey) ?? null}
+              projectDisplayName={props.projectDisplayNameByKey.get(projectKey) ?? null}
+              isActive={draftId === props.routeDraftId}
+              onNavigate={props.onNavigateToDraft}
+              onContextMenu={props.onDraftContextMenu}
+            />
+          );
+        }
         return (
           <SidebarDraftRow
             key={draftId}
@@ -213,11 +232,13 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
           />
         );
       })}
-      <li
-        aria-hidden
-        data-testid="sidebar-draft-divider"
-        className="mx-2.5 my-1.5 h-px list-none bg-sidebar-border/60"
-      />
+      {compact ? null : (
+        <li
+          aria-hidden
+          data-testid="sidebar-draft-divider"
+          className="mx-2.5 my-1.5 h-px list-none bg-sidebar-border/60"
+        />
+      )}
     </>
   );
 });

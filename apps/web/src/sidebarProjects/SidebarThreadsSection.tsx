@@ -28,6 +28,28 @@ export const SIDEBAR_THREADS_OPEN_STORAGE_KEY = "upcomputer:sidebar-threads-open
 const useSidebarThreadsOpen = () =>
   useLocalStorage(SIDEBAR_THREADS_OPEN_STORAGE_KEY, true, Schema.Boolean);
 
+const SIDEBAR_PINNED_OPEN_STORAGE_KEY = "upcomputer:sidebar-pinned-open";
+
+/** Whether the Pinned section above Threads is open. */
+export const useSidebarPinnedOpen = () =>
+  useLocalStorage(SIDEBAR_PINNED_OPEN_STORAGE_KEY, true, Schema.Boolean);
+
+/**
+ * The header of the Pinned section. It sits in upstream's thread list, above
+ * the Threads header, so threads drag between the two to pin and unpin.
+ */
+export function SidebarPinnedSectionHeader() {
+  const [open, setOpen] = useSidebarPinnedOpen();
+  return (
+    <SidebarSectionHeader
+      title="Pinned"
+      open={open}
+      onToggle={() => setOpen(!open)}
+      testId="sidebar-pinned-toggle"
+    />
+  );
+}
+
 /**
  * Whether upstream's thread list shows: false only while the UpComputer
  * Threads section (surface `sidebarProjects`) is collapsed.
@@ -81,47 +103,56 @@ function useNewThreadWithoutProject({ onNewThread, currentEnvironmentId }: NewTh
 }
 
 /**
- * The header of the sidebar's Threads section, over upstream's thread list.
- * It collapses the list (see `useSidebarThreadListShown`) and carries the
- * New thread action that upstream keeps in the search row.
+ * The header of the sidebar's Threads section, over upstream's thread list. It
+ * collapses the list (see `useSidebarThreadListShown`) and carries New thread.
+ * With a Pinned section it moves into the list; the fixed copy serves the icon column.
  */
 export function SidebarThreadsSectionHeader(
   props: NewThreadProps & {
     /** Upstream's disabled state (no projects); a chat without a project needs none. */
     readonly newThreadDisabled: boolean;
     readonly newThreadShortcutLabel: string | null | undefined;
+    readonly placement?: "fixed" | "list" | "compact-only";
   },
 ) {
-  const { newThreadDisabled, newThreadShortcutLabel } = props;
+  const { newThreadDisabled, newThreadShortcutLabel, placement = "fixed" } = props;
   const [open, setOpen] = useSidebarThreadsOpen();
   const newThread = useNewThreadWithoutProject(props);
   const newThreadTooltip = newThreadShortcutLabel
     ? `New thread (${newThreadShortcutLabel})`
     : "New thread";
   const newThreadShown = !(newThreadDisabled && !newThread.available);
+  const header = (
+    <SidebarSectionHeader
+      title="Threads"
+      open={open}
+      onToggle={() => setOpen(!open)}
+      testId="sidebar-threads-toggle"
+      action={
+        newThreadShown ? (
+          <SidebarSectionHeaderAction
+            label="New thread"
+            track="sidebar.new_thread"
+            tooltip={newThreadTooltip}
+            onClick={newThread.start}
+          >
+            <SquarePenIcon />
+          </SidebarSectionHeaderAction>
+        ) : null
+      }
+    />
+  );
+  if (placement === "list") return header;
   return (
     <div
-      data-sidebar-threads-section=""
-      className={cn(SIDEBAR_SECTION_GAP, SIDEBAR_FIXED_HEADER_END_GAP)}
+      data-sidebar-threads-section={placement === "compact-only" ? "compact-only" : ""}
+      className={cn(
+        SIDEBAR_SECTION_GAP,
+        SIDEBAR_FIXED_HEADER_END_GAP,
+        placement === "compact-only" && "hidden",
+      )}
     >
-      <SidebarSectionHeader
-        title="Threads"
-        open={open}
-        onToggle={() => setOpen(!open)}
-        testId="sidebar-threads-toggle"
-        action={
-          newThreadShown ? (
-            <SidebarSectionHeaderAction
-              label="New thread"
-              track="sidebar.new_thread"
-              tooltip={newThreadTooltip}
-              onClick={newThread.start}
-            >
-              <SquarePenIcon />
-            </SidebarSectionHeaderAction>
-          ) : null
-        }
-      />
+      {header}
       {newThreadShown ? (
         <SidebarCompactNewThread tooltip={newThreadTooltip} onClick={newThread.start} />
       ) : null}
