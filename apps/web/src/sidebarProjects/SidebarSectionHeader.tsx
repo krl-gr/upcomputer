@@ -9,6 +9,7 @@ import {
   SIDEBAR_ROW_HEIGHT,
   SIDEBAR_ROW_INSET,
   SIDEBAR_ROW_INSET_END,
+  SIDEBAR_SECTION_CHEVRON_SIZE,
 } from "../sidebarMetrics/sidebarMetrics";
 
 /**
@@ -52,7 +53,7 @@ export function SidebarSectionHeader(props: {
         <ChevronRightIcon
           aria-hidden
           data-testid="sidebar-section-chevron"
-          className={cn("size-3.5 shrink-0", open && "rotate-90")}
+          className={cn(SIDEBAR_SECTION_CHEVRON_SIZE, "shrink-0", open && "rotate-90")}
         />
       </button>
       {action}

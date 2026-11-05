@@ -209,7 +209,11 @@ import {
   resolveSidebarRowThreadId,
 } from "./Sidebar.logic";
 import { projectLinksByKey } from "../linkedProjects/projectScope";
-import { SIDEBAR_LIST_ROW_SPACING, SIDEBAR_SECTION_GAP } from "../sidebarMetrics/sidebarMetrics";
+import {
+  SIDEBAR_ICON_SIZE,
+  SIDEBAR_LIST_ROW_SPACING,
+  SIDEBAR_SECTION_GAP,
+} from "../sidebarMetrics/sidebarMetrics";
 import { SidebarProjectsSection } from "../sidebarProjects/SidebarProjectsSection";
 import {
   SidebarPinnedSectionHeader,
@@ -3063,10 +3067,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       </span>
                     ) : scopedProjectGroups[0] ? (
                       <span className="flex shrink-0">
-                        <ProjectFavicon project={scopedProjectGroups[0]} className="size-4" />
+                        <ProjectFavicon
+                          project={scopedProjectGroups[0]}
+                          className={SIDEBAR_ICON_SIZE}
+                        />
                       </span>
                     ) : (
-                      <ListFilterIcon className="size-4" />
+                      <ListFilterIcon className={SIDEBAR_ICON_SIZE} />
                     )}
                   </ComboboxTrigger>
                   <ComboboxPopup

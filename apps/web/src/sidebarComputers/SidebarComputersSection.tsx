@@ -24,6 +24,7 @@ import { SidebarCompactTooltip } from "../adaptiveSidebar/adaptiveSidebar";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { cn } from "../lib/utils";
 import {
+  SIDEBAR_ICON_SIZE,
   SIDEBAR_MENU_SCOPE,
   SIDEBAR_SECTION_GAP,
   SIDEBAR_SECTION_HEADER_GAP,
@@ -81,8 +82,8 @@ function ComputerIcon(props: { readonly computer: SidebarComputer | null }) {
   const { computer } = props;
   if (computer === null) return <AllProjectsIcon />;
   return (
-    <span className="relative flex size-4 shrink-0 items-center justify-center">
-      <EnvironmentMachineIcon kind={computer.machine} className="size-4" />
+    <span className={cn("relative flex shrink-0 items-center justify-center", SIDEBAR_ICON_SIZE)}>
+      <EnvironmentMachineIcon kind={computer.machine} className={SIDEBAR_ICON_SIZE} />
       <span
         aria-hidden
         data-computer-status={computer.status}

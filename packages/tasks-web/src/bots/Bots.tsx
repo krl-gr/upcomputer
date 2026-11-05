@@ -50,6 +50,7 @@ import {
   CompactSidebarPill,
 } from "../../../../apps/web/src/components/sidebar/CompactSidebarPill.tsx";
 import {
+  SIDEBAR_BOT_FACE_SLOT,
   SIDEBAR_MENU_SCOPE,
   SIDEBAR_SECTION_GAP,
   SIDEBAR_SECTION_HEADER_GAP,
@@ -196,7 +197,7 @@ function UnavailableComputerBots({ environmentId }: { readonly environmentId: En
               {lastBots.map((bot) => (
                 <SidebarMenuItem key={bot.agent.id}>
                   <div className={cn(SIDEBAR_LIST_ROW, "text-sidebar-foreground")}>
-                    <span className="flex size-4 shrink-0 items-center justify-center">
+                    <span className={SIDEBAR_BOT_FACE_SLOT}>
                       <BotAvatar
                         id={bot.agent.id}
                         appearance={bot.appearance}
@@ -468,9 +469,8 @@ export function BotRow({
                   onOpen();
                 }}
               >
-                {/* The face overflows the 16px icon slot, so the name lines up with the
-          other rows' labels and switching styles moves nothing. */}
-                <span className="flex size-4 shrink-0 items-center justify-center">
+                {/* Switching styles moves nothing: the slot keeps the icon size. */}
+                <span className={SIDEBAR_BOT_FACE_SLOT}>
                   <BotAvatar
                     id={bot.agent.id}
                     appearance={bot.appearance}

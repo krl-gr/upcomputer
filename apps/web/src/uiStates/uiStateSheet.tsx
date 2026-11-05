@@ -9,7 +9,7 @@ import { DEFAULT_THEME_PREFERENCE, applyThemePalette } from "../themePalette";
 declare module "vite-plus/test/browser" {
   interface BrowserCommands {
     /** Defined in vite.config.ts. Writes the sheet element to `<fileName>.png`. */
-    writeUiStatesSheet: (fileName: string) => Promise<void>;
+    writeUiStatesSheet: (fileName: string, density?: UiStateDensity) => Promise<void>;
   }
 }
 
@@ -31,6 +31,23 @@ export interface UiStateGroup {
   readonly title: string;
   readonly states: ReadonlyArray<UiState>;
 }
+
+/** A sheet column: every state again, under CSS variables set on its cells. */
+export interface UiStateColumn {
+  readonly title: string;
+  readonly variables: Readonly<Record<`--${string}`, string>>;
+}
+
+/**
+ * `retina` captures at the sheet's device scale (2); `nonretina` at 1, every pixel
+ * then drawn as a 2x2 block, so a Retina screen shows a 1x display's rendering.
+ */
+export type UiStateDensity = "retina" | "nonretina";
+
+const DENSITY_TITLES: Record<UiStateDensity, string> = {
+  retina: "Retina, 2x",
+  nonretina: "non-Retina, 1x shown at 2x",
+};
 
 const HOVER_ATTRIBUTE = "data-ui-state-hover";
 const THEMES = ["dark", "light"] as const;
@@ -99,9 +116,19 @@ async function renderState(state: UiState, cell: HTMLElement, stack: AsyncDispos
 
 /**
  * Renders each state's real component next to its name, once per theme, and writes
- * `<name>-dark.png` and `<name>-light.png` (see `scripts/ui-states.ts`).
+ * `<name>-dark.png` and `<name>-light.png` (see `scripts/ui-states.ts`). With
+ * `columns`, each state renders once per column; with `densities`, each theme is
+ * written once per density, to `<name>-<theme>-<density>.png`.
  */
-export async function captureUiStateSheet(name: string, groups: ReadonlyArray<UiStateGroup>) {
+export async function captureUiStateSheet(
+  name: string,
+  groups: ReadonlyArray<UiStateGroup>,
+  options: {
+    readonly columns?: ReadonlyArray<UiStateColumn>;
+    readonly densities?: ReadonlyArray<UiStateDensity>;
+  } = {},
+) {
+  const { columns, densities } = options;
   for (const theme of THEMES) {
     applyTheme(theme);
     await using stack = new AsyncDisposableStack();
@@ -109,7 +136,14 @@ export async function captureUiStateSheet(name: string, groups: ReadonlyArray<Ui
     sheet.dataset.uiStatesSheet = "";
     document.body.append(sheet);
     stack.defer(() => sheet.remove());
-    sheet.append(element("div", "text-base font-semibold", `${name} · ${theme}`));
+    const title = element("div", "text-base font-semibold", `${name} · ${theme}`);
+    sheet.append(title);
+    if (columns) {
+      const header = element("div", "flex items-center gap-4 text-sm font-semibold");
+      header.append(element("div", "w-48 shrink-0"));
+      for (const column of columns) header.append(element("div", "w-64 shrink-0", column.title));
+      sheet.append(header);
+    }
     for (const group of groups) {
       const section = element("section", "flex flex-col gap-1.5");
       section.append(
@@ -118,17 +152,35 @@ export async function captureUiStateSheet(name: string, groups: ReadonlyArray<Ui
       sheet.append(section);
       for (const state of group.states) {
         const row = element("div", "flex items-center gap-4");
-        const cell = element(
-          "div",
-          "w-64 shrink-0 bg-sidebar px-(--sidebar-content-inset) py-1 text-sidebar-foreground",
-        );
-        row.append(cell, element("div", "w-72 text-xs text-muted-foreground", state.name));
+        const cells = (columns ?? [null]).map((column) => {
+          const cell = element(
+            "div",
+            "w-64 shrink-0 bg-sidebar px-(--sidebar-content-inset) py-1 text-sidebar-foreground",
+          );
+          for (const [variable, value] of Object.entries(column?.variables ?? {})) {
+            cell.style.setProperty(variable, value);
+          }
+          return cell;
+        });
+        if (columns) {
+          row.append(element("div", "w-48 shrink-0 text-xs text-muted-foreground", state.name));
+          row.append(...cells);
+        } else {
+          row.append(...cells, element("div", "w-72 text-xs text-muted-foreground", state.name));
+        }
         section.append(row);
-        await renderState(state, cell, stack);
+        for (const cell of cells) await renderState(state, cell, stack);
       }
     }
     emulateHoverInStyleSheets();
     await document.fonts.ready;
-    await commands.writeUiStatesSheet(`${name}-${theme}`);
+    if (!densities) {
+      await commands.writeUiStatesSheet(`${name}-${theme}`);
+      continue;
+    }
+    for (const density of densities) {
+      title.textContent = `${name} · ${theme} · ${DENSITY_TITLES[density]}`;
+      await commands.writeUiStatesSheet(`${name}-${theme}-${density}`, density);
+    }
   }
 }

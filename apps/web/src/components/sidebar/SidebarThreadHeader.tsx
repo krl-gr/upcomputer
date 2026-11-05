@@ -71,7 +71,7 @@ export function SidebarThreadHeader({
           productSurface("sidebarProjects") === "upcomputer" && SIDEBAR_SEARCH_ROW_TEXT,
         )}
       >
-        <SearchIcon className="size-4 shrink-0 text-(--sidebar-icon-color)" />
+        <SearchIcon className="size-(--sidebar-icon-size) shrink-0 text-(--sidebar-icon-color)" />
         <SidebarInput
           ref={searchInputRef}
           nativeInput

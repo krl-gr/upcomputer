@@ -1,7 +1,6 @@
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { snoozeWakeLabel } from "@t3tools/client-runtime/state/thread-settled";
 import { ChatAttachmentId } from "@t3tools/contracts";
-import type { Bot } from "@t3tools/tasks-contracts/v1";
 import { expect, it, vi } from "vite-plus/test";
 
 import {
@@ -11,23 +10,14 @@ import {
   type DraftSessionState,
 } from "../composerDraftStore";
 import { SidebarDraftBlock } from "../components/sidebar/SidebarDraftBlock";
-import { SidebarMenu, SidebarMenuItem } from "../components/ui/sidebar";
 import { shortcutLabelForCommand, threadJumpCommandForIndex } from "../keybindings";
 import { cn } from "../lib/utils";
-import {
-  SIDEBAR_LIST_ROW_SPACING,
-  SIDEBAR_MENU_SCOPE,
-  SIDEBAR_SECTION_GAP,
-} from "../sidebarMetrics/sidebarMetrics";
+import { SIDEBAR_LIST_ROW_SPACING, SIDEBAR_SECTION_GAP } from "../sidebarMetrics/sidebarMetrics";
 import { SidebarSectionHeader } from "../sidebarProjects/SidebarSectionHeader";
 import { SidebarPinnedSectionHeader } from "../sidebarProjects/SidebarThreadsSection";
-import {
-  SidebarCompactThreadRow,
-  type SidebarCompactThreadRowProps,
-} from "../sidebarThreadRow/SidebarCompactThreadRow";
+import { SidebarCompactThreadRow } from "../sidebarThreadRow/SidebarCompactThreadRow";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useUiStateStore } from "../uiStateStore";
-import { BotRow } from "@t3tools/tasks-web/bots";
 import { act } from "../../test/render";
 import {
   ENVIRONMENT_ID,
@@ -45,6 +35,7 @@ import {
   threadShell,
   titleRegeneration,
 } from "./sidebarRowFixtures";
+import { botState, noop, threadRow, threadRowProps, waitForImages } from "./sidebarRowStates";
 import { captureUiStateSheet, type UiState } from "./uiStateSheet";
 
 // Data sources, not UI: the projects, server config and bot chat shells the app would
@@ -87,42 +78,6 @@ vi.mock("../../../../packages/tasks-web/src/environmentApi.ts", async (importOri
     useTasksWebAccessRevision: () => 0,
   };
 });
-
-const noop = () => undefined;
-
-function threadRowProps(
-  thread: SidebarCompactThreadRowProps["thread"],
-  overrides: Partial<SidebarCompactThreadRowProps> = {},
-): SidebarCompactThreadRowProps {
-  return {
-    thread,
-    variantAction: "settle",
-    sweepAction: null,
-    snoozeWakeLabelText: null,
-    isActive: false,
-    jumpLabel: null,
-    project: PROJECT,
-    projectDisplayName: PROJECT.title,
-    onThreadClick: noop,
-    onThreadActivate: noop,
-    onStartRename: noop,
-    onRenameTitleChange: noop,
-    onCommitRename: noop,
-    onCancelRename: noop,
-    isRenaming: false,
-    renamingTitle: "",
-    onContextMenu: noop,
-    ...overrides,
-  };
-}
-
-function threadRow(props: SidebarCompactThreadRowProps) {
-  return () => (
-    <ul>
-      <SidebarCompactThreadRow {...props} />
-    </ul>
-  );
-}
 
 const ROW = "[data-testid=sidebar-row-compact]";
 
@@ -215,37 +170,6 @@ function draftState(
     settle: (cell) => waitForImages(cell),
     ...(options.hover ? { hover: "[data-testid=sidebar-draft-row]" } : {}),
   };
-}
-
-function botState(
-  name: string,
-  shown: Bot,
-  options: { readonly active?: boolean; readonly hover?: boolean } = {},
-): UiState {
-  return {
-    name,
-    render: () => (
-      <div className={SIDEBAR_MENU_SCOPE}>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <BotRow
-              environmentId={ENVIRONMENT_ID}
-              bot={shown}
-              active={options.active ?? false}
-              onOpen={noop}
-              onSettings={noop}
-            />
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </div>
-    ),
-    settle: (cell) => waitForImages(cell),
-    ...(options.hover ? { hover: "[data-sidebar-list-row]" } : {}),
-  };
-}
-
-async function waitForImages(cell: HTMLElement) {
-  await Promise.all([...cell.querySelectorAll("img")].map((image) => image.decode()));
 }
 
 async function waitForRunCounts(cell: HTMLElement) {
