@@ -960,13 +960,49 @@ jobs:
         if: steps.update_versions.outputs.changed == 'true'
         run: vp install --lockfile-only --ignore-scripts
 
+      # The up.computer site (Cloudflare Pages, rebuilt on every push to main)
+      # links its downloads to RELEASE_VERSION. Only final stable releases move
+      # it: RCs are stable-channel prereleases and nightlies never reach here.
+      - id: update_marketing
+        name: Point marketing downloads at the release
+        if: needs.preflight.outputs.release_channel == 'stable' && needs.preflight.outputs.is_prerelease != 'true'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          file=apps/marketing/src/lib/releases.ts
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Refusing to point the site at non-final version '$RELEASE_VERSION'." >&2
+            exit 1
+          fi
+          pattern='^export const RELEASE_VERSION = "[^"]*";$'
+          matches="$(grep -cE "$pattern" "$file" || true)"
+          if [[ "$matches" != "1" ]]; then
+            echo "::error file=$file::Expected exactly one RELEASE_VERSION declaration, found ${matches:-0}." >&2
+            exit 1
+          fi
+          replacement="export const RELEASE_VERSION = \"$RELEASE_VERSION\";"
+          sed -E "s/$pattern/$replacement/" "$file" > "$file.tmp"
+          mv "$file.tmp" "$file"
+          if ! grep -qxF "$replacement" "$file"; then
+            echo "::error file=$file::RELEASE_VERSION was not rewritten to $RELEASE_VERSION." >&2
+            exit 1
+          fi
+          if git diff --quiet -- "$file"; then
+            echo "Marketing downloads already point at $RELEASE_VERSION."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Marketing downloads now point at $RELEASE_VERSION."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Commit and push version bump
-        if: steps.update_versions.outputs.changed == 'true'
+        if: steps.update_versions.outputs.changed == 'true' || steps.update_marketing.outputs.changed == 'true'
         shell: bash
         env:
           RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
         run: |
-          if git diff --quiet -- apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json pnpm-lock.yaml; then
+          if git diff --quiet -- apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json pnpm-lock.yaml apps/marketing/src/lib/releases.ts; then
             echo "No version changes to commit."
             exit 0
           fi
@@ -974,7 +1010,7 @@ jobs:
           git config user.name "${{ steps.app_bot.outputs.name }}"
           git config user.email "${{ steps.app_bot.outputs.email }}"
 
-          git add apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json pnpm-lock.yaml
+          git add apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json pnpm-lock.yaml apps/marketing/src/lib/releases.ts
           git commit -m "chore(release): prepare $RELEASE_TAG"
           git push origin HEAD:main
 
