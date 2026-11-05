@@ -40,6 +40,12 @@ const LazySidebarBots = lazy(() =>
     return { default: bots.SidebarBots };
   }),
 );
+/**
+ * A bot's own chat, once the Bots section has loaded. It stays in its bot's working project,
+ * so other features leave out moving it.
+ */
+export const isBotChatThread = (thread: ExperimentalWebThreadAccessoryProps) =>
+  botMenu?.isBotChat(thread) ?? false;
 const LazyCompactSidebarBots = lazy(() =>
   import("./bots/Bots.tsx").then((module) => ({ default: module.CompactSidebarBots })),
 );

@@ -37,6 +37,7 @@ import {
   findExperimentalWebRoute,
   findExperimentalWebSettingsPage,
   isExperimentalWebNavigationActive,
+  runExperimentalWebThreadAction,
 } from "./WebProduct";
 
 const NotesCountRpc = Rpc.make("test.notes.count", { success: Schema.Number });
@@ -165,6 +166,54 @@ describe("web product composition", () => {
     expect(collectExperimentalWebThreadActions(composeExperimentalWebFeatures([]), thread)).toEqual(
       [],
     );
+  });
+
+  it("offers a feature action's choices as a submenu, or its reason when it cannot run", () => {
+    const thread = { environmentId, threadId: ThreadId.make("thread-choices") };
+    const chosen: Array<string | undefined> = [];
+    const navigate = async () => {};
+    const product = (unavailableReason?: string) =>
+      composeExperimentalWebFeatures([
+        {
+          id: "test.move",
+          version: 1,
+          threadActions: () => [
+            {
+              id: "move",
+              label: "Move",
+              choices: [
+                { id: "a/b", label: "A" },
+                { id: "c", label: "C" },
+              ],
+              ...(unavailableReason === undefined ? {} : { unavailableReason }),
+              run: (_context, choiceId) => {
+                chosen.push(choiceId);
+              },
+            },
+          ],
+        },
+      ]);
+
+    const [move] = collectExperimentalWebThreadActions(product(), thread);
+    expect(move?.children).toEqual([
+      { id: "feature:test.move:move/a/b", label: "A" },
+      { id: "feature:test.move:move/c", label: "C" },
+    ]);
+    const actions = collectExperimentalWebThreadActions(product(), thread);
+    for (const menuId of [
+      "feature:test.move:move",
+      "feature:test.move:move/x",
+      "feature:test.move:move/a/b",
+    ])
+      runExperimentalWebThreadAction(actions, menuId, { navigate });
+    expect(chosen).toEqual(["a/b"]);
+
+    const blocked = collectExperimentalWebThreadActions(product("Busy"), thread);
+    expect(blocked[0]?.children).toEqual([
+      { id: "feature:test.move:move/", label: "Busy", disabled: true },
+    ]);
+    runExperimentalWebThreadAction(blocked, "feature:test.move:move/c", { navigate });
+    expect(chosen).toEqual(["a/b"]);
   });
 
   it("rejects features that collide with core or each other", () => {

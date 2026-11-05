@@ -3084,6 +3084,18 @@ export const OrchestrationV2Command = Schema.Union([
     /** Projects to remove from the thread's linked projects. */
     unlinkProjectIds: Schema.optional(Schema.Array(ProjectId)),
   }),
+  /**
+   * Moves an idle thread without a worktree to another project of this environment. Clears what
+   * belonged to the old project: branch, project and pull request links, and provider sessions
+   * started in its directory. The timeline notes the move, and the agent hears of it next turn.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.project.move"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    projectId: ProjectId,
+    title: Schema.optional(TrimmedNonEmptyString),
+  }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request.link"),
     commandId: CommandId,
@@ -3440,18 +3452,6 @@ const OrchestrationV2InternalCommand = Schema.Union([
         notification: OrchestrationV2Notification,
       }),
     ),
-  }),
-  /**
-   * Moves an idle thread without a worktree to another project, for a bot whose working
-   * project changed. Clears what belonged to the old project: branch, project and pull request
-   * links, and provider sessions started in its directory.
-   */
-  Schema.Struct({
-    type: Schema.Literal("thread.project.move"),
-    commandId: CommandId,
-    threadId: ThreadId,
-    projectId: ProjectId,
-    title: Schema.optional(TrimmedNonEmptyString),
   }),
   /**
    * Records a notification in the thread's timeline without a message or a run, so no

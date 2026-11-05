@@ -32,6 +32,7 @@ import {
   OrchestrationV2Command,
   type OrchestrationV2InternalCommand,
   type OrchestrationV2LimitRecoveryUpdate,
+  type OrchestrationV2Notification,
   type OrchestrationV2ServerCommand,
   type ThreadPullRequestLink,
   type ThreadPullRequestWatch,
@@ -91,7 +92,12 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as ProjectStore from "./ProjectStore.ts";
-import { isOnlyThreadProjectLinksUpdate, resolveThreadProjectLinks } from "./linkedProjects.ts";
+import { threadProjectMoveRefusal } from "./ThreadProjectMoveGate.ts";
+import {
+  isOnlyThreadProjectLinksUpdate,
+  projectMoveNotification,
+  resolveThreadProjectLinks,
+} from "./linkedProjects.ts";
 import {
   isCheckpointRestoreIsolated,
   SHARED_WORKSPACE_RESTORE_MESSAGE,
@@ -2939,6 +2945,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
     const movingProject =
       command.type === "thread.project.move" && command.projectId !== thread.projectId;
+    let moveNote: OrchestrationV2Notification | null = null;
     if (movingProject) {
       const state = yield* projectionStore
         .getThreadRecords(command.threadId, ["runs", "runtimeRequests"])
@@ -2957,6 +2964,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           cause: "Only an idle chat without a worktree can change its working project.",
         });
       }
+      const refusal = yield* threadProjectMoveRefusal({
+        threadId: command.threadId,
+        projectId: command.projectId,
+      }).pipe(mapDispatchError(command));
+      if (refusal !== null)
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: refusal,
+        });
+      const source = yield* projects
+        .get(thread.projectId, { includeDeleted: true })
+        .pipe(mapDispatchError(command));
+      moveNote = projectMoveNotification(
+        Option.match(source, { onNone: () => null, onSome: (row) => row.title }),
+        target.value.title,
+      );
     }
     const projectLinks =
       command.type === "thread.metadata.update"
@@ -3799,6 +3823,34 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       occurredAt: now,
       payload: updatedThread,
     });
+    if (moveNote !== null) {
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "turn-item.updated",
+        threadId: command.threadId,
+        occurredAt: now,
+        payload: {
+          id: idAllocator.derive.recordedNotificationTurnItem({ commandId: command.commandId }),
+          threadId: command.threadId,
+          runId: null,
+          nodeId: null,
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: yield* nextTurnItemOrdinal({ thread }),
+          status: "completed",
+          title: null,
+          startedAt: now,
+          completedAt: now,
+          updatedAt: now,
+          type: "notification",
+          ...moveNote,
+        },
+      });
+    }
     // Archiving ends the guest share, so its waiting files go too.
     yield* releaseGuestAttachments(command, thread.guestShare, updatedThread.guestShare, effects);
 

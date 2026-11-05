@@ -20,6 +20,7 @@ import {
   type ExperimentalWebSettingsPageContribution,
   type ExperimentalWebThreadAccessoryProps,
   type ExperimentalWebThreadAction,
+  type ExperimentalWebThreadActionContext,
 } from "./WebFeature";
 
 type ErasedRpcGroup = RpcGroup.RpcGroup<Rpc.Any>;
@@ -159,11 +160,41 @@ export function collectExperimentalWebThreadActions(
     } catch {
       return [];
     }
-    return actions.map((action) => ({
-      ...action,
-      id: `feature:${feature.id}:${action.id}` as const,
-    }));
+    return actions.map((action) => {
+      const id = `feature:${feature.id}:${action.id}` as const;
+      const children =
+        action.unavailableReason !== undefined
+          ? [{ id: `${id}/` as const, label: action.unavailableReason, disabled: true }]
+          : action.choices?.map((choice) => ({
+              id: `${id}/${choice.id}` as const,
+              label: choice.label,
+            }));
+      return {
+        id,
+        label: action.label,
+        ...(action.icon === undefined ? {} : { icon: action.icon }),
+        ...(children === undefined ? {} : { children }),
+        run: action.run,
+        choiceIds: new Set(
+          action.unavailableReason === undefined ? action.choices?.map((choice) => choice.id) : [],
+        ),
+      };
+    });
   });
+}
+
+/** Runs the collected thread action, or the choice of one, a menu entry with this id stands for. */
+export function runExperimentalWebThreadAction(
+  actions: ReturnType<typeof collectExperimentalWebThreadActions>,
+  menuId: string,
+  context: ExperimentalWebThreadActionContext,
+) {
+  for (const action of actions) {
+    if (menuId === action.id && action.children === undefined) return action.run(context);
+    if (!menuId.startsWith(`${action.id}/`)) continue;
+    const choiceId = menuId.slice(action.id.length + 1);
+    if (action.choiceIds.has(choiceId)) return action.run(context, choiceId);
+  }
 }
 
 export function findExperimentalWebRoute(

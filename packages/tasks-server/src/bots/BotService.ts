@@ -209,6 +209,14 @@ export class BotService extends Context.Service<
       agentId: TaskAgentId,
     ) => Effect.Effect<{ readonly name: string; readonly memories: number } | null, TaskError>;
     readonly forThread: (threadId: ThreadId) => Effect.Effect<Bot | null, TaskError>;
+    /**
+     * Why the thread may not move to the project, or null. A bot's chat follows its bot's
+     * working project, which only the bot's settings change.
+     */
+    readonly projectMoveRefusal: (input: {
+      readonly threadId: ThreadId;
+      readonly projectId: ProjectId;
+    }) => Effect.Effect<string | null, TaskError>;
     readonly assign: (input: {
       readonly agentId: TaskAgentId;
       readonly requestId: string;
@@ -320,6 +328,15 @@ const make = Effect.gen(function* () {
     rowForThread(threadId).pipe(
       Effect.flatMap((row) => (row === null ? Effect.succeed(null) : decode(row))),
     );
+  const projectMoveRefusal = Effect.fn("BotService.projectMoveRefusal")(function* (input: {
+    readonly threadId: ThreadId;
+    readonly projectId: ProjectId;
+  }) {
+    const row = (yield* rows).find((item) => item.threadId === input.threadId);
+    return row === undefined || row.projectId === input.projectId
+      ? null
+      : "A bot's chat stays in the bot's working project. Change it in the bot's settings.";
+  }, Effect.mapError(asError));
   const memory = Effect.fn("BotService.memory")(function* (agentId: TaskAgentId) {
     yield* get(agentId);
     return yield* sql`SELECT id, agent_id AS "agentId", project_id AS "projectId", text, source,
@@ -1069,6 +1086,7 @@ const make = Effect.gen(function* () {
     forThread: Effect.fn("BotService.forThread")(function* (threadId) {
       return yield* forThread(threadId);
     }, Effect.mapError(asError)),
+    projectMoveRefusal,
     memory: Effect.fn("BotService.memory")(function* (id) {
       return yield* memory(id);
     }, Effect.mapError(asError)),

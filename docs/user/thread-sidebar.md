@@ -49,6 +49,21 @@ in a new thread's model picker to add or remove them. A regular click returns to
 single model. Choose a base branch and send. Each selection starts a separate thread
 and worktree while you stay in the new thread composer. This requires a Git project.
 
+### Move a thread to another project
+
+On web and desktop, right-click a thread in the sidebar or open its thread menu and choose
+**Move to project**, or run **Move thread to project...** from the command palette, then pick
+a project on the same computer. **No project** is offered once you have started a thread
+without a project on that computer. The conversation, title, pin and settled state move with
+the thread, and a note in the thread says where it came from.
+
+Only an idle thread that works in its project's folder can move; a thread in its own worktree
+stays where it is. A bot's chat moves with the bot's working project, which you change on the
+bot's page. Moving clears what belonged to the old project: the branch, linked projects
+and pull requests, and the agent's session there. Your next message starts a new session in the
+new folder that picks up the conversation. Diffs of earlier turns still come from the old
+project's folder.
+
 ## Pin and reorder threads
 
 Pin a thread from its menu to keep it in the **Pinned** section above **Threads**. The
