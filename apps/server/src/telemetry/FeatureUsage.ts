@@ -35,6 +35,7 @@ const COMMAND_FEATURES: {
   "thread.snooze": () => ({ feature: "thread.snooze" }),
   "thread.pin": () => ({ feature: "thread.pin" }),
   "thread.settle": () => ({ feature: "thread.settle" }),
+  "thread.project.move": () => ({ feature: "thread.project_move" }),
   "thread.pull-request.link": () => ({ feature: "thread.pull_request.link" }),
   "thread.pull-request.watch": (command) =>
     use("thread.pull_request.watch", command.watching ? "on" : "off"),

@@ -27,6 +27,7 @@ import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
+import { registerThreadProjectMoveGate } from "./ThreadProjectMoveGate.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 
@@ -374,6 +375,17 @@ it.layer(testLayer)("moving a thread to another project", (it) => {
         threadId,
         branch: "feature/old-project",
       });
+      yield* orchestrator.dispatch({
+        type: "thread.pin",
+        commandId: CommandId.make("move-accept-pin"),
+        threadId,
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.settle",
+        commandId: CommandId.make("move-accept-settle"),
+        threadId,
+      });
+      const before = yield* threadOf(threadId);
       const exit = yield* move(threadId, docs, "accept");
       assert.equal(exit._tag, "Success");
       const thread = yield* threadOf(threadId);
@@ -384,6 +396,18 @@ it.layer(testLayer)("moving a thread to another project", (it) => {
       assert.deepEqual(thread.linkedProjectIds, []);
       assert.equal(thread.projectLinksPinned, true);
       assert.deepEqual(thread.pullRequests, []);
+      assert.deepEqual(
+        [thread.pinnedAt, thread.pinOrderKey, thread.settledOverride],
+        [before.pinnedAt, before.pinOrderKey, "settled"],
+      );
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const notes = (yield* projections.getThreadProjection(threadId)).turnItems.filter(
+        (item) => item.type === "notification",
+      );
+      assert.deepEqual(
+        notes.map((item) => (item.type === "notification" ? [item.runId, item.summary] : [])),
+        [[null, "Moved from project-home to project-docs"]],
+      );
     }),
   );
 
@@ -430,5 +454,27 @@ it.layer(testLayer)("moving a thread to another project", (it) => {
         assert.notEqual(thread.title, "Moved");
       }
     }),
+  );
+
+  it.effect("a registered gate refuses the moves it names, with its reason", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const kept = ThreadId.make("thread:move-gate-kept");
+        const free = ThreadId.make("thread:move-gate-free");
+        yield* seed(kept);
+        yield* seed(free);
+        yield* registerThreadProjectMoveGate((input) =>
+          Effect.succeed(
+            input.threadId === kept && input.projectId !== infra ? "Stays with its bot" : null,
+          ),
+        );
+        const refused = yield* move(kept, docs, "gate-refused");
+        assert.equal(refused._tag, "Failure");
+        assert.include(String(refused), "Stays with its bot");
+        assert.equal((yield* threadOf(kept)).projectId, home);
+        assert.equal((yield* move(kept, infra, "gate-admitted"))._tag, "Success");
+        assert.equal((yield* move(free, docs, "gate-free"))._tag, "Success");
+      }),
+    ),
   );
 });

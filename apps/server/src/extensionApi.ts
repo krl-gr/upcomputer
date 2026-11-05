@@ -39,6 +39,7 @@ export { ServerSettingsService } from "./serverSettings.ts";
 export { AnalyticsService, type TelemetryMilestone } from "./telemetry/AnalyticsService.ts";
 export { registerHeartbeatCounts } from "./telemetry/HeartbeatCounts.ts";
 export { registerTurnContextResolver, TurnContextRefusal } from "./orchestration-v2/TurnContext.ts";
+export { registerThreadProjectMoveGate } from "./orchestration-v2/ThreadProjectMoveGate.ts";
 export { forkParked } from "./serverActivation.ts";
 export {
   UPCOMPUTER_PRODUCT_FLAGS,

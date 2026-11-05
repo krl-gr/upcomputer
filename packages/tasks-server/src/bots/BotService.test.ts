@@ -328,12 +328,28 @@ it.effect("a failed bot lookup does not stop the turn, and a known bot chat says
   ),
 );
 
-it.effect("a bot chat in another project stops the turn with a plain refusal", () =>
+it.effect("a bot chat in another project stops the turn, and moves only to its bot's project", () =>
   run(
     Effect.gen(function* () {
       const bots = yield* BotService;
       yield* seedBot;
-      const moved = { ...turn(botThread, "Hello"), projectId: ProjectId.make("project-other") };
+      const other = ProjectId.make("project-other");
+      assert.deepStrictEqual(
+        yield* Effect.forEach(
+          [
+            { threadId: botThread, projectId: other },
+            { threadId: botThread, projectId: project },
+            { threadId: plainThread, projectId: other },
+          ],
+          bots.projectMoveRefusal,
+        ),
+        [
+          "A bot's chat stays in the bot's working project. Change it in the bot's settings.",
+          null,
+          null,
+        ],
+      );
+      const moved = { ...turn(botThread, "Hello"), projectId: other };
       const refusal = yield* Effect.flip(bots.context(moved));
       assert.equal(refusal._tag, "TurnContextRefusal");
       assert.deepInclude(refusal, {

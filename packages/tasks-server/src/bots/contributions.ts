@@ -10,6 +10,7 @@ import * as Layer from "effect/Layer";
 import {
   defineNamespacedRpcContribution,
   forkParked,
+  registerThreadProjectMoveGate,
   registerTurnContextResolver,
 } from "../../../../apps/server/src/extensionApi.ts";
 import { retryOperational } from "../retryOperational.ts";
@@ -19,6 +20,7 @@ export const BotContextLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const bots = yield* BotService;
     yield* registerTurnContextResolver(bots.context);
+    yield* registerThreadProjectMoveGate(bots.projectMoveRefusal);
     yield* forkParked(
       bots.recover.pipe(
         Effect.catch((cause) => Effect.logError("Bot chat recovery failed", { cause })),

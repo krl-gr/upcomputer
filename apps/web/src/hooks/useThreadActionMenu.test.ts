@@ -43,6 +43,10 @@ vi.mock("../product/threadActions", () => ({
   productThreadActions: () => [
     { id: "feature:test:act", label: "Act", run: () => recordEffect("feature") },
   ],
+  runProductThreadAction: (
+    actions: ReadonlyArray<{ readonly id: string; readonly run: () => void }>,
+    menuId: string,
+  ) => actions.find((action) => action.id === menuId)?.run(),
 }));
 vi.mock("react", () => ({
   useCallback: (callback: unknown) => callback,

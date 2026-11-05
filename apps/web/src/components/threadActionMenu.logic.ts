@@ -94,6 +94,7 @@ export interface ThreadActionMenuState {
     readonly id: `feature:${string}`;
     readonly label: string;
     readonly icon?: string;
+    readonly children?: ReadonlyArray<ContextMenuItem<`feature:${string}`>>;
   }>;
   /** Guest links need their own grant, so the caller checks it instead of `canOperate`. */
   readonly canShareWithGuest?: boolean;
@@ -215,6 +216,7 @@ export function buildThreadActionMenuItems(
       id: action.id,
       label: action.label,
       ...(action.icon === undefined ? {} : { icon: action.icon }),
+      ...(action.children === undefined ? {} : { children: action.children }),
       ...(index === 0 ? { separatorBefore: true } : {}),
     })),
     {

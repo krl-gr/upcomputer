@@ -71,7 +71,11 @@ export interface ExperimentalWebThreadAction {
   readonly label: string;
   /** A context menu icon name, such as "bot"; desktop menus show none. */
   readonly icon?: string;
-  readonly run: (context: ExperimentalWebThreadActionContext) => void;
+  /** Makes the entry a submenu; `run` receives the chosen id. */
+  readonly choices?: ReadonlyArray<{ readonly id: string; readonly label: string }>;
+  /** Why the action cannot run now, shown greyed out in its submenu instead of choices. */
+  readonly unavailableReason?: string;
+  readonly run: (context: ExperimentalWebThreadActionContext, choiceId?: string) => void;
 }
 
 export interface ExperimentalWebThreadRowAccessoryProps extends ExperimentalWebThreadAccessoryProps {

@@ -1,6 +1,7 @@
 import type {
   OrchestrationV2AppThread,
   OrchestrationV2Command,
+  OrchestrationV2Notification,
   ProjectId,
 } from "@t3tools/contracts";
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
@@ -189,3 +190,18 @@ export const resolveThreadLinkedDirectories = Effect.fn("resolveThreadLinkedDire
       ),
     ),
 );
+
+/**
+ * The timeline note a project move leaves, which the agent also reads on its next turn.
+ * A deleted old project still has a title; a missing one leaves only the destination.
+ */
+export const projectMoveNotification = (
+  fromTitle: string | null,
+  toTitle: string,
+): OrchestrationV2Notification => ({
+  source: { kind: "system" },
+  outcome: "updated",
+  summary: fromTitle === null ? `Moved to ${toTitle}` : `Moved from ${fromTitle} to ${toTitle}`,
+  detail:
+    "The working folder changed. The old project's branch, pull request and project links were cleared, and its provider session ended.",
+});

@@ -262,7 +262,7 @@ import {
   filterToComputerScope,
   projectKeysInComputerScope,
 } from "../sidebarComputers/sidebarComputers.logic";
-import { productThreadActions } from "../product/threadActions";
+import { productThreadActions, runProductThreadAction } from "../product/threadActions";
 import { useClaimedSidebarThreadKeys } from "../product/sidebarThreadClaims";
 import { useDraftFirstSendPending } from "../draftFirstSend";
 import { TooltipProvider } from "./ui/tooltip";
@@ -2673,9 +2673,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         if (clicked._tag === "Failure" || clicked.value === null) return;
         if (threadActionRequiresOperate(clicked.value) && !checkThreadOperations([thread])) return;
         if (clicked.value.startsWith("feature:")) {
-          featureActions
-            .find((candidate) => candidate.id === clicked.value)
-            ?.run({ navigate: (options) => router.navigate(options) });
+          runProductThreadAction(featureActions, clicked.value, {
+            navigate: (options) => router.navigate(options),
+          });
           return;
         }
         if (clicked.value?.startsWith("snooze:")) {
