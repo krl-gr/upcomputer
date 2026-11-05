@@ -1,0 +1,129 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { blogPostPath, getBlogPosts } from "../../lib/blog";
+
+const posts = await getBlogPosts();
+---
+
+<Layout
+  title="Blog · Up.computer"
+  backdrop="raised"
+  description="How to run coding agents in parallel, hand work between them and keep track of it all, from the people building Up.computer."
+>
+  <section class="blog-shell">
+    <header class="blog-head">
+      <h1>Notes on running coding agents.</h1>
+      <p class="blog-lead">
+        How we run several agent CLIs at once, let them manage their own tasks, and keep track of
+        what they did.
+      </p>
+    </header>
+
+    {posts.length === 0 ? (
+      <p class="blog-empty">No posts yet.</p>
+    ) : (
+      <ol class="post-list">
+        {posts.map((post) => (
+          <li>
+            <a class="post-card" href={blogPostPath(post)}>
+              {post.data.draft && (
+                <p class="post-meta">
+                  <span class="post-draft">{post.data.releaseCandidate ? "Release candidate" : "Draft"}</span>
+                </p>
+              )}
+              <h2>{post.data.title}</h2>
+              <p class="post-summary">{post.data.description}</p>
+            </a>
+          </li>
+        ))}
+      </ol>
+    )}
+  </section>
+</Layout>
+
+<style>
+  .blog-shell {
+    width: 100%;
+    max-width: 760px;
+    margin: 0 auto;
+    /* Starts just below the raised horizon, like an article. */
+    padding: 230px 1.5rem 72px;
+  }
+
+  .blog-head {
+    margin-bottom: 40px;
+    text-align: center;
+  }
+
+  h1 {
+    color: #fff;
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1.45;
+    letter-spacing: -0.005em;
+  }
+
+  .blog-lead {
+    margin-top: 10px;
+    color: var(--fg-muted);
+    font-size: 15px;
+    line-height: 1.45;
+    letter-spacing: -0.005em;
+  }
+
+  .blog-empty {
+    color: var(--fg-dim);
+    font-size: 15px;
+    text-align: center;
+  }
+
+  .post-list {
+    list-style: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .post-list li {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .post-card {
+    display: block;
+    padding: 20px 0;
+    transition: opacity 0.18s ease;
+  }
+
+  .post-card:hover h2 {
+    color: #fff;
+  }
+
+  .post-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--fg-dim);
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  .post-draft {
+    color: var(--warn);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .post-card h2 {
+    margin-top: 6px;
+    color: rgba(255, 255, 255, 0.88);
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.45;
+    transition: color 0.18s ease;
+  }
+
+  .post-summary {
+    margin-top: 4px;
+    color: var(--fg-muted);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+</style>

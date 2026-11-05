@@ -1,0 +1,240 @@
+---
+import type { GetStaticPaths } from "astro";
+import { render } from "astro:content";
+import Layout from "../../layouts/Layout.astro";
+import { SITE_URL, blogPostPath, getBlogPosts, type BlogPost } from "../../lib/blog";
+import { GITHUB_REPOSITORY_URL } from "../../lib/site";
+
+export const getStaticPaths = (async () => {
+  const posts = await getBlogPosts();
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }));
+}) satisfies GetStaticPaths;
+
+interface Props {
+  post: BlogPost;
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+const { title, description, date, updated, author, headings } = post.data;
+const url = new URL(blogPostPath(post), SITE_URL).href;
+
+const structuredData = {
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  headline: title,
+  description,
+  datePublished: date.toISOString(),
+  dateModified: (updated ?? date).toISOString(),
+  author: { "@type": "Person", name: author },
+  publisher: { "@type": "Organization", name: "Up.computer", url: `${SITE_URL}/` },
+  mainEntityOfPage: url,
+  url,
+  image: `${SITE_URL}/og-image.jpg`,
+};
+---
+
+<Layout
+  backdrop="raised"
+  title={`${title} · Up.computer`}
+  description={description}
+  ogType="article"
+  publishedTime={date}
+  modifiedTime={updated}
+  structuredData={structuredData}
+>
+  <article class="post-shell">
+    <header class="post-head">
+      <h1>{title}</h1>
+    </header>
+
+    <div class:list={["post-content", { "run-in-heads": headings === "run-in" }]}>
+      <Content />
+    </div>
+
+    <aside class="post-cta">
+      <p>
+        Up.computer is a free, open-source desktop app for running the agent CLIs you already use.
+      </p>
+      <div class="post-cta-actions">
+        <a
+          class="btn btn-primary"
+          href="/download"
+          data-analytics-event="marketing_download_cta_clicked"
+          data-analytics-placement="blog_post"
+        >Download</a>
+        <a
+          class="btn btn-ghost"
+          href={GITHUB_REPOSITORY_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-analytics-event="marketing_github_clicked"
+          data-analytics-placement="blog_post"
+        >GitHub</a>
+      </div>
+    </aside>
+  </article>
+</Layout>
+
+<style>
+  .post-shell {
+    width: 100%;
+    max-width: 720px;
+    margin: 0 auto;
+    /* Starts just below the raised horizon. */
+    padding: 230px 1.5rem 6rem;
+  }
+
+  h1 {
+    font-size: clamp(2.1rem, 6vw, 3.4rem);
+    font-weight: 500;
+    letter-spacing: -0.045em;
+    line-height: 1.05;
+  }
+
+  .post-content {
+    margin-top: 2.5rem;
+    color: var(--fg-muted);
+    font-size: 1.05rem;
+    line-height: 1.75;
+  }
+
+  .post-content > :global(:first-child) {
+    margin-top: 0;
+  }
+
+  .post-content > :global(p:first-child) {
+    color: var(--fg);
+    font-style: italic;
+    font-size: 1.15rem;
+    line-height: 1.7;
+  }
+
+  .post-content :global(h2) {
+    margin: 2.75rem 0 0.75rem;
+    color: var(--fg);
+    font-size: 1.45rem;
+    font-weight: 500;
+    letter-spacing: -0.025em;
+    line-height: 1.25;
+  }
+
+  /* Run-in heads: the h2 and its first paragraph share a line, "Heading. Text...". */
+  /* Doubled class: wins over the regular h2 and h3 rules, so every head looks the same. */
+  .post-content.run-in-heads :global(:is(h2, h3)) {
+    display: inline;
+    margin: 0;
+    color: var(--fg);
+    font-size: inherit;
+    font-weight: 400;
+    letter-spacing: normal;
+    line-height: inherit;
+  }
+
+  /* Heads carry their own punctuation in the text, so a question can end with "?". */
+  .run-in-heads :global(:is(h2, h3)::after) {
+    content: " ";
+  }
+
+  .run-in-heads :global(:is(h2, h3) + p) {
+    display: inline;
+  }
+
+  /* Breaks the line before each head, also after a one-paragraph section. */
+  .run-in-heads :global(:is(h2, h3)::before) {
+    content: "";
+    display: block;
+    margin-top: 2rem;
+  }
+
+  .post-content :global(h3) {
+    margin: 2rem 0 0.5rem;
+    color: var(--fg);
+    font-size: 1.12rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .post-content :global(p),
+  .post-content :global(ul),
+  .post-content :global(ol),
+  .post-content :global(blockquote),
+  .post-content :global(pre) {
+    margin-top: 1rem;
+  }
+
+  .post-content :global(ul),
+  .post-content :global(ol) {
+    padding-left: 1.4rem;
+  }
+
+  .post-content :global(li + li) {
+    margin-top: 0.4rem;
+  }
+
+  .post-content :global(strong) {
+    color: var(--fg);
+    font-weight: 600;
+  }
+
+  .post-content :global(a) {
+    color: var(--fg);
+    text-decoration: underline;
+    text-decoration-color: var(--border-strong);
+    text-underline-offset: 3px;
+    transition: text-decoration-color 0.18s ease;
+  }
+
+  .post-content :global(a:hover) {
+    text-decoration-color: var(--fg);
+  }
+
+  .post-content :global(code) {
+    padding: 0.1em 0.35em;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-card);
+    color: var(--fg);
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+  }
+
+  .post-content :global(pre) {
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    font-size: 0.85rem;
+  }
+
+  .post-content :global(pre code) {
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .post-content :global(blockquote) {
+    padding-left: 1rem;
+    border-left: 2px solid var(--border-strong);
+  }
+
+  .post-cta {
+    margin-top: 4rem;
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+  }
+
+  .post-cta p {
+    color: var(--fg-muted);
+    line-height: 1.6;
+  }
+
+  .post-cta-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+  }
+</style>
