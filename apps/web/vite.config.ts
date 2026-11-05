@@ -182,6 +182,8 @@ const renderScenariosProject = {
   },
 } satisfies TestProjectInlineConfiguration;
 
+const UI_STATES_DEVICE_SCALE = 2;
+
 // UI state sheets render real components into labelled PNGs; they run only through
 // scripts/ui-states.ts, which names the output directory.
 const uiStatesProject = {
@@ -194,18 +196,73 @@ const uiStatesProject = {
     testTimeout: 60_000,
     browser: {
       ...browserTestProject.test.browser,
-      provider: playwright({ contextOptions: { deviceScaleFactor: 2 } }),
+      provider: playwright({ contextOptions: { deviceScaleFactor: UI_STATES_DEVICE_SCALE } }),
       // Wide and tall enough that a sheet never scrolls inside the tester frame.
       viewport: { width: 1200, height: 4000 },
       instances: [{ browser: "chromium" }],
       commands: {
         ...browserTestProject.test.browser.commands,
-        writeUiStatesSheet: async (context, fileName: string) => {
+        writeUiStatesSheet: async (
+          context,
+          fileName: string,
+          density: "retina" | "nonretina" = "retina",
+        ) => {
           const directory = process.env.T3CODE_UI_STATES_DIR;
           if (!directory) throw new Error("T3CODE_UI_STATES_DIR is not set");
-          await context.iframe
-            .locator("[data-ui-states-sheet]")
-            .screenshot({ path: `${directory}/${fileName}.png`, animations: "disabled" });
+          const path = `${directory}/${fileName}.png`;
+          const sheet = context.iframe.locator("[data-ui-states-sheet]");
+          if (density === "retina") {
+            await sheet.screenshot({ path, animations: "disabled" });
+            return;
+          }
+          // Renders at one device pixel per CSS pixel, then doubles each pixel, so a
+          // Retina screen shows a 1x display's softness at the same physical size.
+          const cdp = await context.page.context().newCDPSession(context.page);
+          const viewport = context.page.viewportSize()!;
+          await cdp.send("Emulation.setDeviceMetricsOverride", {
+            ...viewport,
+            mobile: false,
+            deviceScaleFactor: 1,
+          });
+          try {
+            // Playwright's own screenshot would restore its 2x, so this session captures.
+            // Animations settle as Playwright's `animations: "disabled"` leaves them.
+            await (
+              await context.frame()
+            ).evaluate(() => {
+              for (const animation of document.getAnimations()) {
+                if (animation.effect?.getComputedTiming().endTime === Infinity) animation.cancel();
+                else animation.finish();
+              }
+            });
+            const box = (await sheet.boundingBox())!;
+            const { data } = await cdp.send("Page.captureScreenshot", {
+              format: "png",
+              clip: { ...box, scale: 1 },
+              captureBeyondViewport: true,
+            });
+            const doubled = await context.page.evaluate(async (base64) => {
+              const image = await createImageBitmap(
+                await (await fetch(`data:image/png;base64,${base64}`)).blob(),
+                { colorSpaceConversion: "none", premultiplyAlpha: "none" },
+              );
+              const canvas = document.createElement("canvas");
+              canvas.width = image.width * 2;
+              canvas.height = image.height * 2;
+              const context2d = canvas.getContext("2d")!;
+              context2d.imageSmoothingEnabled = false;
+              context2d.drawImage(image, 0, 0, canvas.width, canvas.height);
+              return canvas.toDataURL("image/png");
+            }, data);
+            await NodeFSP.writeFile(path, Buffer.from(doubled.split(",")[1]!, "base64"));
+          } finally {
+            // Not detached: detaching drops Playwright's own override too, leaving 1x.
+            await cdp.send("Emulation.setDeviceMetricsOverride", {
+              ...viewport,
+              mobile: false,
+              deviceScaleFactor: UI_STATES_DEVICE_SCALE,
+            });
+          }
         },
       },
     },

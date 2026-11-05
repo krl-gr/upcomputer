@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off globalConsole:off - a synchronous wrapper around one vitest project.
+// @effect-diagnostics nodeBuiltinImport:off globalConsole:off globalDate:off - a synchronous wrapper around one vitest project.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -13,7 +13,8 @@ const HELP = `Usage: vp run ui-states [sheet]
 
 Renders UI state sheets (apps/web/src/uiStates/<sheet>${SHEET_SUFFIX}) in headless
 Chromium with the app's CSS and theme, and writes <sheet>-dark.png and
-<sheet>-light.png to .ui-states/. Without a sheet it renders every sheet.`;
+<sheet>-light.png to .ui-states/ (a sheet with densities writes
+<sheet>-<theme>-retina.png and -nonretina.png). Without a sheet it renders every sheet.`;
 
 const sheets = NodeFS.readdirSync(sheetDirectory)
   .filter((file) => file.endsWith(SHEET_SUFFIX))
@@ -33,6 +34,7 @@ if (unknown.length > 0) {
 const selected = requested.length > 0 ? requested : sheets;
 
 NodeFS.mkdirSync(outputDirectory, { recursive: true });
+const startedAt = Date.now();
 const result = NodeChildProcess.spawnSync(
   "vp",
   [
@@ -52,8 +54,8 @@ if (result.status !== 0) {
   console.error(`ui-states failed (exit ${result.status ?? result.signal})`);
   process.exit(1);
 }
-for (const sheet of selected) {
-  for (const theme of ["dark", "light"]) {
-    console.log(NodePath.join(outputDirectory, `${sheet}-${theme}.png`));
-  }
-}
+const written = NodeFS.readdirSync(outputDirectory)
+  .map((file) => NodePath.join(outputDirectory, file))
+  .filter((file) => file.endsWith(".png") && NodeFS.statSync(file).mtimeMs >= startedAt)
+  .toSorted();
+for (const file of written) console.log(file);

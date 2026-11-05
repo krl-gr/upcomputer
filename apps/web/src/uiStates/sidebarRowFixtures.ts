@@ -60,6 +60,8 @@ export const PROJECT = project("upcomputer", "UpComputer", {
 const SITE = project("site", "Marketing site", { kind: "monogram", text: "MS", color: "green" });
 const DOCS = project("docs", "Docs", { kind: "monogram", text: "D", color: "orange" });
 export const SCRATCH = project("scratch", "No project", null, SCRATCH_ROOT);
+/** A project without an icon of its own: it shows its raster favicon (see icon-sizes). */
+export const FAVICON_PROJECT = project("favicon", "Raster favicon", null);
 /** What `useProjects` returns while the sheet renders. */
 export const PROJECTS: ReadonlyArray<EnvironmentProject> = [PROJECT, SITE, DOCS, SCRATCH];
 export const LINKED_PROJECT_IDS = { site: SITE.id, docs: DOCS.id };
