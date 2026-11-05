@@ -118,6 +118,24 @@ shown there apply only to the route marked **In use**; other routes are not
 checked. Direct pairing and UpComputer Connect have separate sessions and may grant
 different permissions.
 
+### Switch between computers
+
+Once a second computer is connected, the sidebar shows a **Computers** section above
+Projects. Select **All computers**, **This Mac** or another computer: Projects, Bots,
+Threads, Tasks and Workers then show only that computer, and a new chat without a
+project starts there. Each computer's row shows how many runs are working, waiting
+for you or failed since you last looked, so nothing on another computer goes
+unnoticed. When the section is collapsed, its title names the computer the sidebar
+shows. Opening a thread from another computer switches the sidebar to it.
+
+The dot on a computer's icon shows whether it is online, offline or needs an update.
+Hover its row and select the info button for its version and status, and for
+**Update** or **Connections**. An offline computer still shows what it had when it
+was last connected, dimmed.
+
+On a Mac, press **Ctrl+1** to **Ctrl+9** to pick a computer and **Ctrl+0** for All
+computers; on Windows and Linux, add **Alt**.
+
 ### Balance new threads across machines
 
 Auto balance is off by default. On web and desktop, enable it in

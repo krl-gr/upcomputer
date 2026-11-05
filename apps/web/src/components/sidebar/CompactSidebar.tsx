@@ -23,6 +23,8 @@ import {
   ProductCompactSidebarSections,
 } from "../../product/ProductSlots";
 import { productSurface } from "../../product/productFlags";
+import { CompactSidebarComputers } from "../../sidebarComputers/SidebarComputersSection";
+import { sidebarComputerScratchTarget } from "../../sidebarComputers/sidebarComputerSelection";
 import { SidebarProjectsMore } from "../../sidebarProjects/SidebarProjectsSection";
 import { newThreadStartsWithoutProject } from "../../sidebarProjects/SidebarThreadsSection";
 import {
@@ -75,6 +77,7 @@ function CompactSidebarContent() {
       <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto py-2 [scrollbar-width:none]">
         <CompactSearch />
         <ProductCompactSidebarNavigation />
+        <CompactSidebarComputers />
         {productSurface("sidebarProjects") === "upcomputer" ? <CompactProjects /> : null}
         <ProductCompactSidebarSections />
         <CompactThreads />
@@ -111,7 +114,7 @@ function CompactSearch() {
 function CompactProjects() {
   const navigate = useNavigate();
   const { setOpen } = useSidebar();
-  const projectGroups = useSidebarProjectGroups();
+  const projectGroups = useSidebarProjectGroups(true);
   // Our Projects section scopes to one project; upstream's scope can hold several.
   const scopeKey = useUiStateStore((store) => store.sidebarProjectScopeKeys[0] ?? null);
   const setScopeKeys = useUiStateStore((store) => store.setSidebarProjectScopeKeys);
@@ -184,21 +187,22 @@ function CompactProjects() {
 function CompactThreads() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const boringSidebarEnabled = useBoringSidebarEnabled();
-  const projectGroups = useSidebarProjectGroups();
+  const projectGroups = useSidebarProjectGroups(true);
   const newThreadContext = useHandleNewThread();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  const scratch = useScratchProject();
   const shortcutLabel = shortcutLabelForCommand(keybindings, "chat.new");
   const startNewThread = (event: ReactMouseEvent) => {
     const scratchTarget = newThreadStartsWithoutProject(boringSidebarEnabled)
-      ? scratchEnvironmentId(
+      ? sidebarComputerScratchTarget(
+          scratch,
           newThreadContext.activeThread?.environmentId ??
             newThreadContext.activeDraftThread?.environmentId ??
             primaryEnvironmentId,
         )
       : null;
     if (!event.shiftKey && scratchTarget !== null) {
-      void startScratchThread(scratchTarget);
+      void scratch.startScratchThread(scratchTarget);
       return;
     }
     if (shouldCreateNewThreadInCurrentProject(event.shiftKey, projectGroups.length)) {

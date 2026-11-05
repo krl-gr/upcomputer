@@ -27,29 +27,19 @@ vi.mock("../environmentApi.ts", () => {
   };
 });
 
-import { botSectionTitle, useBotSectionEnvironmentIds, useBots } from "./botData.tsx";
+import { useBotSectionLists } from "./botData.tsx";
 
 // An older server's RPC layer dies on a method it does not know; the defect reaches the
 // client as this string.
 const unknownMethod = () => Promise.reject("Unknown request tag: upcomputer.bots.v1.list");
 
 async function render(environmentIds: ReadonlyArray<EnvironmentId>) {
-  const seen = {
-    shown: [] as Array<ReadonlyArray<EnvironmentId>>,
-    lists: [] as Array<ReturnType<typeof useBots>>,
-  };
-  function Sections() {
-    const shown = useBotSectionEnvironmentIds(environmentIds);
-    seen.shown.push(shown);
-    return shown.map((environmentId) =>
-      createElement(Section, { key: environmentId, environmentId }),
-    );
-  }
-  function Section({ environmentId }: { readonly environmentId: EnvironmentId }) {
-    seen.lists.push(useBots(environmentId));
+  const seen = [] as Array<ReturnType<typeof useBotSectionLists>>;
+  function Section() {
+    seen.push(useBotSectionLists(environmentIds));
     return null;
   }
-  const view = await act(async () => create(createElement(Sections)));
+  const view = await act(async () => create(createElement(Section)));
   await act(async () => {});
   return { seen, view };
 }
@@ -58,53 +48,47 @@ afterEach(() => {
   servers.lists.clear();
 });
 
-describe("Bots sections per computer", () => {
+describe("Bots section lists", () => {
   it("leaves out a computer whose server predates bots, without an error", async () => {
     const here = EnvironmentId.make("sections-here");
     const older = EnvironmentId.make("sections-older-mac");
     servers.lists.set(here, () => Promise.resolve([]));
     servers.lists.set(older, unknownMethod);
     const { seen, view } = await render([here, older]);
-    expect(seen.shown.at(-1)).toEqual([here]);
-    expect(seen.lists.at(-1)).toMatchObject({ enabled: true, loaded: true, error: "" });
+    expect(seen.at(-1)).toEqual([{ environmentId: here, bots: [], error: "" }]);
     view.unmount();
   });
 
-  it("keeps a section with its error when a server with bots fails", async () => {
+  it("keeps a computer with its error when a server with bots fails", async () => {
     const failing = EnvironmentId.make("sections-failing");
     servers.lists.set(failing, () => Promise.reject(new Error("The database is locked")));
     const { seen, view } = await render([failing]);
-    expect(seen.shown.at(-1)).toEqual([failing]);
-    expect(seen.lists.at(-1)).toMatchObject({
-      enabled: true,
-      error: "The database is locked.",
-    });
+    expect(seen.at(-1)).toEqual([
+      { environmentId: failing, bots: [], error: "The database is locked." },
+    ]);
     view.unmount();
   });
 
-  it("shows no section while a computer's list is still loading", async () => {
+  it("adds nothing while a computer's list is still loading", async () => {
     const slow = EnvironmentId.make("sections-slow");
     servers.lists.set(slow, () => new Promise(() => {}));
     const { seen, view } = await render([slow]);
-    expect(seen.shown.at(-1)).toEqual([]);
+    expect(seen.at(-1)).toEqual([]);
     view.unmount();
   });
 
-  it("lists every computer that has bots, in order", async () => {
+  it("merges every computer's bots, in order", async () => {
     const here = EnvironmentId.make("sections-two-here");
     const other = EnvironmentId.make("sections-two-other");
-    servers.lists.set(here, () => Promise.resolve([]));
-    servers.lists.set(other, () => Promise.resolve([]));
+    const nova = { agent: { id: "nova" } };
+    const atlas = { agent: { id: "atlas" } };
+    servers.lists.set(here, () => Promise.resolve([nova]));
+    servers.lists.set(other, () => Promise.resolve([atlas]));
     const { seen, view } = await render([here, other]);
-    expect(seen.shown.at(-1)).toEqual([here, other]);
+    expect(seen.at(-1)).toEqual([
+      { environmentId: here, bots: [nova], error: "" },
+      { environmentId: other, bots: [atlas], error: "" },
+    ]);
     view.unmount();
-  });
-});
-
-describe("botSectionTitle", () => {
-  it("names the computer only when several computers show bots", () => {
-    expect(botSectionTitle("MacBook Pro", true)).toBe("Bots · MacBook Pro");
-    expect(botSectionTitle("MacBook Pro", false)).toBe("Bots");
-    expect(botSectionTitle(undefined, true)).toBe("Bots");
   });
 });

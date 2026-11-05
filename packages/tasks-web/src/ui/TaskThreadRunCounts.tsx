@@ -38,7 +38,13 @@ import {
 import type { TasksWebRpcClient } from "../rpc/index.ts";
 import { threadRunCountsStore, type ThreadRunCountsStore } from "../state/threadRunCounts.ts";
 import { taskKey } from "./shared.ts";
-import { RunCountNumbers, runCountSummary } from "./RunCountNumbers.tsx";
+import {
+  onLightRunCountGroup,
+  RUN_COUNT_PILL,
+  RUN_COUNT_PILL_SURFACE,
+  RunCountNumbers,
+  runCountSummary,
+} from "../../../../apps/web/src/sidebarThreadRow/runCountBadge.tsx";
 import { attentionRunCountGroups, groupTaskRunCounts } from "./taskRunPresentation.ts";
 
 const THREAD_TASKS_LIMIT = 50;
@@ -282,17 +288,6 @@ export function TaskThreadTasksButton(props: {
   );
 }
 
-/** A status colour as the light theme draws it: the pill stays light in either theme. */
-function onLightPillClassName(className: string) {
-  return className
-    .split(" ")
-    .filter((name) => !name.startsWith("dark:"))
-    .map((name) => (name === "text-muted-foreground" ? "text-neutral-500" : name))
-    .join(" ");
-}
-
-const PILL_SURFACE = "bg-neutral-200 dark:bg-neutral-100";
-
 /**
  * Over the bot's top right in its 60px compact target, with a dot towards its head. The pill
  * starts 16px right of centre and moves left rather than past the 92px column when its counts are wide.
@@ -317,7 +312,7 @@ function RunPill({
     <span className="hidden [[data-sidebar-compact=true]_&]:contents">
       <span
         aria-hidden
-        className={`pointer-events-none absolute top-[10px] left-[calc(50%+13px)] size-[5px] rounded-full ${PILL_SURFACE}`}
+        className={`pointer-events-none absolute top-[10px] left-[calc(50%+13px)] size-[5px] rounded-full ${RUN_COUNT_PILL_SURFACE}`}
       />
       <span className="pointer-events-none absolute -top-[7px] left-[calc(50%-20px)] flex w-16">
         <span className="basis-9" />
@@ -335,7 +330,7 @@ function RunPill({
                         type="button"
                         data-bot-run-pill={threadId}
                         aria-label={`Tasks for ${name}: ${summary}`}
-                        className={`pointer-events-auto flex h-[18px] flex-none cursor-pointer items-center gap-1 rounded-full px-[5.5px] text-[11.5px] leading-[18px] font-semibold tabular-nums outline-none hover:bg-neutral-300 focus-visible:ring-1 focus-visible:ring-ring dark:hover:bg-white ${PILL_SURFACE}`}
+                        className={`pointer-events-auto cursor-pointer outline-none hover:bg-neutral-300 focus-visible:ring-1 focus-visible:ring-ring dark:hover:bg-white ${RUN_COUNT_PILL}`}
                         onPointerDown={stopRowEvent}
                         onClick={stopRowEvent}
                         onKeyDown={stopRowKeyActivation}
@@ -344,12 +339,7 @@ function RunPill({
                   />
                 }
               >
-                <RunCountNumbers
-                  groups={groups.map((group) => ({
-                    ...group,
-                    className: onLightPillClassName(group.className),
-                  }))}
-                />
+                <RunCountNumbers groups={groups.map(onLightRunCountGroup)} />
               </TooltipTrigger>
               <TooltipPopup side="right">{summary}</TooltipPopup>
             </Tooltip>
