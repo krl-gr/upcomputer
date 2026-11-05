@@ -1,0 +1,11 @@
+/*
+ * A picked computer that cannot connect (offline, or too old): the sidebar shows
+ * its last known rows, dimmed, after the Computers section and in the thread
+ * list. Its own Bots section dims its rows itself.
+ */
+[data-sidebar-computers][data-stale="true"]
+  ~ *
+  :is([data-sidebar="menu-button"], [data-sidebar-list-row]),
+[data-app-sidebar]:has([data-sidebar-computers][data-stale="true"]) [data-slot="sidebar-content"] {
+  opacity: 0.55;
+}

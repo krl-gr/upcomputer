@@ -5,6 +5,7 @@ import type { TaskRunCount } from "@t3tools/tasks-contracts/v1";
 
 import { useServerConfigs } from "../../../../apps/web/src/state/entities.ts";
 import { useEnvironments } from "../../../../apps/web/src/state/environments.ts";
+import { useSidebarComputerScope } from "../../../../apps/web/src/sidebarComputers/sidebarComputerSelection.ts";
 import {
   readTasksWebAccess,
   readTasksWebClient,
@@ -45,7 +46,7 @@ export function WorkingRunCount({ counts }: { counts: readonly TaskRunCount[] })
     <span
       className={`tabular-nums opacity-80 ${WORKING_CLASS_NAME}`}
       aria-label={summary}
-      title={`${summary}\nAll connected environments`}
+      title={summary}
     >
       {working}
     </span>
@@ -57,17 +58,20 @@ export function TaskNavigationRunCounts() {
   const { environments } = useEnvironments();
   const serverConfigs = useServerConfigs();
   const accessRevision = useTasksWebAccessRevision();
+  // The sidebar's Computers section scopes the count, as it scopes the Tasks page.
+  const computerScope = useSidebarComputerScope();
   const clients = useMemo(() => {
     const result: Array<{ environmentId: EnvironmentId; client: TasksWebRpcClient }> = [];
     for (const { environmentId } of environments) {
       if (!serverConfigs.has(environmentId)) continue;
+      if (computerScope !== null && !computerScope.has(environmentId)) continue;
       if (readTasksWebAccess(environmentId).canReadTasks) {
         result.push({ environmentId, client: readTasksWebClient(environmentId) });
       }
     }
     return result;
     // Environments are checked once connected; access changes re-run this.
-  }, [environments, serverConfigs, accessRevision]);
+  }, [environments, serverConfigs, accessRevision, computerScope]);
   const [byEnvironment, setByEnvironment] = useState<
     ReadonlyMap<EnvironmentId, readonly TaskRunCount[]>
   >(new Map());

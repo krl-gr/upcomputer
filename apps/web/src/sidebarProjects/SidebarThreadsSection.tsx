@@ -8,6 +8,7 @@ import { SidebarCompactNewThread } from "../adaptiveSidebar/adaptiveSidebar";
 import { SidebarMenu, useSidebar } from "../components/ui/sidebar";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { sidebarComputerScratchTarget } from "../sidebarComputers/sidebarComputerSelection";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { productSurface } from "../product/productFlags";
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
@@ -58,18 +59,23 @@ interface NewThreadProps {
 function useNewThreadWithoutProject({ onNewThread, currentEnvironmentId }: NewThreadProps) {
   const { isMobile, setOpenMobile } = useSidebar();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  const scratch = useScratchProject();
   // The same target as the command palette's "No project" item.
-  const scratchTarget = scratchEnvironmentId(currentEnvironmentId ?? primaryEnvironmentId);
+  const scratchTarget = scratch.scratchEnvironmentId(currentEnvironmentId ?? primaryEnvironmentId);
   const start = (event?: ReactMouseEvent) => {
+    // The computer the sidebar shows, if it offers a chat without a project.
+    const target = sidebarComputerScratchTarget(
+      scratch,
+      currentEnvironmentId ?? primaryEnvironmentId,
+    );
     // Shift+click runs upstream's plain click: the "New thread in..." picker
     // with several projects, the one project otherwise.
-    if (event?.shiftKey || scratchTarget === null) {
+    if (event?.shiftKey || target === null) {
       onNewThread();
       return;
     }
     if (isMobile) setOpenMobile(false);
-    void startScratchThread(scratchTarget);
+    void scratch.startScratchThread(target);
   };
   return { start, available: scratchTarget !== null };
 }

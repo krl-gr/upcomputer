@@ -254,6 +254,14 @@ import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { ProductSidebarNavigation, ProductSidebarSections } from "../product/ProductSlots";
+import { SidebarComputersSection } from "../sidebarComputers/SidebarComputersSection";
+import { useSidebarComputerScope } from "../sidebarComputers/sidebarComputerSelection";
+import {
+  filterIdsToComputerScope,
+  filterMapToComputerScope,
+  filterToComputerScope,
+  projectKeysInComputerScope,
+} from "../sidebarComputers/sidebarComputers.logic";
 import { productThreadActions } from "../product/threadActions";
 import { useClaimedSidebarThreadKeys } from "../product/sidebarThreadClaims";
 import { useDraftFirstSendPending } from "../draftFirstSend";
@@ -842,7 +850,7 @@ function useSidebarLookups() {
   const environments = useEnvironmentIdentities();
   const serverConfigs = useServerConfigs();
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
-  const projectGroups = useSidebarProjectGroups();
+  const projectGroups = useSidebarProjectGroups(true);
   const environmentLabelById = new Map(
     environments.map((environment) => [environment.environmentId, environment.label] as const),
   );
@@ -1054,7 +1062,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const [searchHighlightKey, setSearchHighlightKey] = useState<string | null>(null);
-  const searchEnvironmentIds = useConnectedEnvironmentIds();
+  const computerScope = useSidebarComputerScope();
+  const searchEnvironmentIds = filterIdsToComputerScope(
+    useConnectedEnvironmentIds(),
+    computerScope,
+  );
   const queuePendingFileDrop = useSidebarPendingFileDropStore((s) => s.queuePendingFileDrop);
   const clearPendingFileDrop = useSidebarPendingFileDropStore((s) => s.clearPendingFileDrop);
   const [renamingThreadRef, setRenamingThreadRef] = useState<ScopedThreadRef | null>(null);
@@ -1122,7 +1134,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             ),
           ),
         );
-  const threads = useQuietThreadShells();
+  const threads = filterToComputerScope(useQuietThreadShells(), computerScope);
   const routeRowThreadKey =
     routeThreadRef === null
       ? null
@@ -1208,6 +1220,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const routeDraftIdForRows = routeTarget?.kind === "draft" ? routeTarget.draftId : null;
   // UpComputer: the open draft's first message is on screen; its thread row follows.
   const routeDraftFirstSendPending = useDraftFirstSendPending(routeDraftIdForRows);
+  const draftProjectKeys = projectKeysInComputerScope({
+    scopedProjectKeys,
+    projects,
+    scope: computerScope,
+  });
   const visibleDraftSessionCount = useComposerDraftStore((store) => {
     let count = 0;
     for (const [draftKey, session] of Object.entries(store.draftThreadsByThreadKey)) {
@@ -1218,8 +1235,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         continue;
       }
       if (
-        scopedProjectKeys !== null &&
-        !scopedProjectKeys.has(`${session.environmentId}:${session.projectId}`)
+        draftProjectKeys !== null &&
+        !draftProjectKeys.has(`${session.environmentId}:${session.projectId}`)
       ) {
         continue;
       }
@@ -1332,7 +1349,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   } = useSidebarThreads({
     projectScopeKey,
     scopedProjectKeys,
-    serverConfigs,
+    serverConfigs: filterMapToComputerScope(serverConfigs, computerScope),
     optimisticDrop,
     threads,
     delegatedUnderParent,
@@ -3148,6 +3165,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               onClearSearch={clearThreadSearch}
             />
             <ProductSidebarNavigation />
+            <SidebarComputersSection />
             {productSurface("sidebarProjects") === "upcomputer" ? (
               <>
                 <SidebarProjectsSection
@@ -3397,7 +3415,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           key="draft-sessions"
                           projectByKey={projectByKey}
                           projectDisplayNameByKey={projectDisplayNameByKey}
-                          scopedProjectKeys={scopedProjectKeys}
+                          scopedProjectKeys={draftProjectKeys}
                           routeDraftId={routeDraftIdForRows}
                           onNavigateToDraft={navigateToDraft}
                           onDraftContextMenu={handleDraftContextMenu}
