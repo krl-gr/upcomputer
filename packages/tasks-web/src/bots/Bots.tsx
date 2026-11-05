@@ -379,7 +379,7 @@ function BotListError({
  * but no counts offers its tasks menu from an icon next to settings. Double-click renames it.
  * A right-click offers settings and tasks, which the compact sidebar shows no button for.
  */
-function BotRow({
+export function BotRow({
   environmentId,
   bot,
   active,

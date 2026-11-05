@@ -74,3 +74,19 @@ that calls no hook. Lint misses some bailouts, notably `try` with `finally` and
 compiles every file and fails on any skip. Async handlers rarely need `try`: an
 atom command settles into a result, so cleanup can follow the `await`. `useStableCallback` still
 marks handlers that leave a large component, as described above.
+
+## UI state sheets
+
+To see a component in every state without a dev server, run `vp run ui-states [sheet]`. It renders
+the real components in headless Chromium with the app's CSS and theme, and writes
+`.ui-states/<sheet>-dark.png` and `<sheet>-light.png` (gitignored), one labelled row per state.
+A sheet is `apps/web/src/uiStates/<sheet>.states.tsx`; the `ui-states` vitest project runs only
+those files and only from this command, never in `vp run test` or CI.
+
+To add a state, add an entry to the sheet's list: a name and a `render` that mounts the real
+component with typed props, so a prop change breaks typecheck instead of leaving the sheet stale.
+Build data in the server's shapes, as `sidebarRowFixtures.ts` does, so labels come from the app's
+own derivation. A state that needs app-wide store state sets it in `setup` and is frozen to static
+markup before the undo. `hover` marks elements as hovered by copying every `:hover` rule to a data
+attribute, so several rows show hover at once. Mock only data sources (`vi.mock` at the top of the
+sheet), never the component being shown.
