@@ -1,0 +1,134 @@
+import "../index.css";
+
+import type { ReactNode } from "react";
+import { commands } from "vite-plus/test/browser";
+
+import { act, render, type Screen } from "../../test/render";
+import { DEFAULT_THEME_PREFERENCE, applyThemePalette } from "../themePalette";
+
+declare module "vite-plus/test/browser" {
+  interface BrowserCommands {
+    /** Defined in vite.config.ts. Writes the sheet element to `<fileName>.png`. */
+    writeUiStatesSheet: (fileName: string) => Promise<void>;
+  }
+}
+
+export interface UiState {
+  readonly name: string;
+  readonly render: () => ReactNode;
+  /**
+   * Sets app-wide state (a store) the state needs and returns its undo. The state is
+   * frozen to static markup before the undo, so other states never see it.
+   */
+  readonly setup?: () => () => void;
+  /** Runs once the state is mounted: waits for async data or dispatches events. */
+  readonly settle?: (cell: HTMLElement) => Promise<void> | void;
+  /** Elements under the pointer, emulated: CSS `:hover` rules apply to them. */
+  readonly hover?: string;
+}
+
+export interface UiStateGroup {
+  readonly title: string;
+  readonly states: ReadonlyArray<UiState>;
+}
+
+const HOVER_ATTRIBUTE = "data-ui-state-hover";
+const THEMES = ["dark", "light"] as const;
+
+/**
+ * Copies every `:hover` rule to also match `[data-ui-state-hover]`, so several rows can
+ * show hover at once. Tailwind nests its hover rules, so nested rules are rewritten too.
+ */
+function emulateHover(rules: CSSRuleList) {
+  for (const rule of rules) {
+    if (
+      rule instanceof CSSStyleRule &&
+      rule.selectorText.includes(":hover") &&
+      !rule.selectorText.includes(HOVER_ATTRIBUTE)
+    ) {
+      rule.selectorText = `${rule.selectorText}, ${rule.selectorText.replaceAll(":hover", `[${HOVER_ATTRIBUTE}]`)}`;
+    }
+    if ("cssRules" in rule && rule.cssRules instanceof CSSRuleList) emulateHover(rule.cssRules);
+  }
+}
+
+function emulateHoverInStyleSheets() {
+  for (const sheet of document.styleSheets) {
+    emulateHover(sheet.cssRules);
+  }
+}
+
+function applyTheme(theme: (typeof THEMES)[number]) {
+  applyThemePalette(DEFAULT_THEME_PREFERENCE, theme);
+  document.documentElement.classList.toggle("dark", theme === "dark");
+}
+
+function element<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className: string,
+  text?: string,
+): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+async function renderState(state: UiState, cell: HTMLElement, stack: AsyncDisposableStack) {
+  const undo = state.setup?.();
+  try {
+    const host = document.createElement("div");
+    cell.append(host);
+    const screen: Screen = await render(state.render(), { container: host });
+    stack.use(screen);
+    await state.settle?.(host);
+    if (undo) {
+      const frozen = host.cloneNode(true);
+      await screen.unmount();
+      host.replaceWith(frozen);
+    }
+  } finally {
+    if (undo) await act(undo);
+  }
+  if (state.hover) {
+    for (const hovered of cell.querySelectorAll(state.hover)) {
+      hovered.setAttribute(HOVER_ATTRIBUTE, "");
+    }
+  }
+}
+
+/**
+ * Renders each state's real component next to its name, once per theme, and writes
+ * `<name>-dark.png` and `<name>-light.png` (see `scripts/ui-states.ts`).
+ */
+export async function captureUiStateSheet(name: string, groups: ReadonlyArray<UiStateGroup>) {
+  for (const theme of THEMES) {
+    applyTheme(theme);
+    await using stack = new AsyncDisposableStack();
+    const sheet = element("div", "inline-flex flex-col gap-6 bg-background p-6 text-foreground");
+    sheet.dataset.uiStatesSheet = "";
+    document.body.append(sheet);
+    stack.defer(() => sheet.remove());
+    sheet.append(element("div", "text-base font-semibold", `${name} · ${theme}`));
+    for (const group of groups) {
+      const section = element("section", "flex flex-col gap-1.5");
+      section.append(
+        element("h2", "pb-1 text-xs font-semibold text-muted-foreground uppercase", group.title),
+      );
+      sheet.append(section);
+      for (const state of group.states) {
+        const row = element("div", "flex items-center gap-4");
+        const cell = element(
+          "div",
+          "w-64 shrink-0 bg-sidebar px-(--sidebar-content-inset) py-1 text-sidebar-foreground",
+        );
+        row.append(cell, element("div", "w-72 text-xs text-muted-foreground", state.name));
+        section.append(row);
+        await renderState(state, cell, stack);
+      }
+    }
+    emulateHoverInStyleSheets();
+    await document.fonts.ready;
+    await commands.writeUiStatesSheet(`${name}-${theme}`);
+  }
+}

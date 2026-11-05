@@ -19,6 +19,10 @@
       "types": "./src/feature.tsx",
       "import": "./src/feature.tsx"
     },
+    "./bots": {
+      "types": "./src/bots/Bots.tsx",
+      "import": "./src/bots/Bots.tsx"
+    },
     "./planner": {
       "types": "./src/planner/index.ts",
       "import": "./src/planner/index.ts"
