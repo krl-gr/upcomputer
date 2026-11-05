@@ -51,7 +51,7 @@ export function NoProjectIcon(props: { readonly className?: string }) {
       )}
     >
       <svg viewBox="0 0 16 16" data-icon="no-project" className="size-full">
-        <rect width="16" height="16" rx="4" fill="currentColor" fillOpacity={0.28} />
+        <rect width="16" height="16" rx="4" fill="currentColor" fillOpacity={0.14} />
       </svg>
     </span>
   );
