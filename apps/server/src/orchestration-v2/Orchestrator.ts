@@ -92,6 +92,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as ProjectStore from "./ProjectStore.ts";
+import { threadProjectMoveRefusal } from "./ThreadProjectMoveGate.ts";
 import {
   isOnlyThreadProjectLinksUpdate,
   projectMoveNotification,
@@ -2963,6 +2964,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           cause: "Only an idle chat without a worktree can change its working project.",
         });
       }
+      const refusal = yield* threadProjectMoveRefusal({
+        threadId: command.threadId,
+        projectId: command.projectId,
+      }).pipe(mapDispatchError(command));
+      if (refusal !== null)
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: refusal,
+        });
       const source = yield* projects
         .get(thread.projectId, { includeDeleted: true })
         .pipe(mapDispatchError(command));
