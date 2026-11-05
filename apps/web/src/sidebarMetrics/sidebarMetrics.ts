@@ -58,6 +58,14 @@ export const SIDEBAR_LIST_ROW_INTRINSIC_SIZE = "[contain-intrinsic-size:auto_--s
  */
 export const SIDEBAR_SECTION_GAP = "pt-(--sidebar-content-inset)";
 
+/**
+ * On a thread list row: scrolled into view, it stays below a stuck Pinned or
+ * Threads header (`SidebarListSectionMarker`), which with its gaps is the
+ * height of a row plus `--sidebar-content-inset` and `SIDEBAR_LIST_ROW_SPACING`.
+ */
+export const SIDEBAR_STICKY_HEADER_SCROLL_MARGIN =
+  "[&_[role=treeitem]]:scroll-mt-[calc(var(--sidebar-content-inset)+var(--spacing)*8.75)]";
+
 /** From a section header to its first row: the row gap, as if the header were a row. */
 export const SIDEBAR_SECTION_HEADER_GAP = "pt-1";
 
@@ -68,9 +76,9 @@ export const SIDEBAR_SECTION_HEADER_GAP = "pt-1";
 export const SIDEBAR_AFTER_SEARCH_GAP = "pt-1";
 
 /**
- * The Threads header closes upstream's fixed sidebar header, whose bottom
- * inset (`--sidebar-content-inset`) separates it from the thread list. This
- * pulls the list up to `SIDEBAR_SECTION_HEADER_GAP` (`--spacing(1)`) instead.
+ * The icon column's Threads header copy closes the sidebar's header group, and
+ * this pulls what follows it up by `--sidebar-content-inset` less the row gap;
+ * `adaptiveSidebar.css` sizes the gap to the footer with it.
  */
 export const SIDEBAR_FIXED_HEADER_END_GAP =
   "-mb-[calc(var(--sidebar-content-inset)-var(--spacing))]";

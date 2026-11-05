@@ -93,7 +93,7 @@ settles it, and dragging a settled thread into the active list un-settles it. A 
 can be dragged out of the snoozed shelf, which wakes it, but threads cannot be dragged into the
 shelf because snoozing needs a wake time. Dragging a pinned thread out of the pinned section does
 not ask for unpin confirmation. The other rows slide aside to show where the thread will land.
-When there are no pins, drag to the top edge to pin a thread. The shelf the thread is over takes
+When there are no pins, drag a thread above the **Threads** header to pin it. The shelf the thread is over takes
 the accent color, and shelf labels also identify empty sections and a collapsed settled shelf.
 
 Drag within the pinned or active section to change its order. Other rows slide aside to show the

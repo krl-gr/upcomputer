@@ -353,23 +353,37 @@ describe("sidebar drag projection", () => {
     },
   );
 
-  // UpComputer: Pinned and Threads are real 32px headers, and new-chat drafts sit
-  // below the Threads header, outside the sortable list.
+  // UpComputer: Threads is a real 32px header, and so is Pinned once something is
+  // pinned (before that, an empty drag boundary). New-chat drafts sit below the
+  // Threads header, outside the sortable list.
   it.each([
-    ["pins a thread dropped into the Pinned section", "a1", "p2", { p2: 33, divider: 33, a2: 0 }],
+    [
+      "pins a thread dropped into the Pinned section",
+      ["p1", "p2"],
+      "a1",
+      "p2",
+      { p2: 33, divider: 33, a2: 0 },
+    ],
     [
       "unpins a thread dropped into the Threads section",
+      ["p1", "p2"],
       "p2",
       "a1",
       { a1: -33, divider: -33, a2: 0 },
     ],
+    [
+      "pins the first thread dropped above the Threads header",
+      [],
+      "a1",
+      sidebarMarkerId("pinned-header"),
+      { divider: 33, a2: 0 },
+    ],
   ] as const)(
     "%s, keeping the drafts' space below the Threads header",
-    (_, active, over, offsets) => {
+    (_, pins, active, over, offsets) => {
       const items = [
         pinnedHeader,
-        thread("p1", "pinned"),
-        thread("p2", "pinned"),
+        ...pins.map((key) => thread(key, "pinned")),
         divider,
         marker("active-placeholder"),
         thread("a1", "active"),
@@ -378,10 +392,16 @@ describe("sidebar drag projection", () => {
       const draftSpace = 66;
       let top = 100;
       const rects = items.map((item) => {
-        const height = item.kind === "marker" && item.marker === "active-placeholder" ? 0 : 32;
+        const height =
+          item.kind === "marker" &&
+          (item.marker === "active-placeholder" ||
+            (item.marker === "pinned-header" && pins.length === 0))
+            ? 0
+            : 32;
         const rect = { top, height, bottom: top + height, left: 0, right: 260, width: 260 };
-        // The placeholder's negative margin takes back the list gap.
-        top += height === 0 ? 0 : height + 1;
+        // The placeholder's negative margin takes back the list gap. The projection
+        // counts one for an empty Pinned boundary, as upstream's labels need.
+        top += height === 0 && item !== pinnedHeader ? 0 : height + 1;
         if (item === divider) top += draftSpace;
         return rect;
       });

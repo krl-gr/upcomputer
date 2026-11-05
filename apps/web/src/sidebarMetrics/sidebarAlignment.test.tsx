@@ -147,6 +147,10 @@ const { SidebarThreadHeader } = await import("../components/sidebar/SidebarThrea
 const { ProductSidebarNavigation } = await import("../product/ProductSlots");
 const { SidebarProjectsSection } = await import("../sidebarProjects/SidebarProjectsSection");
 const { SidebarThreadsSectionHeader } = await import("../sidebarProjects/SidebarThreadsSection");
+const { SidebarDragBoundary, SidebarListSectionMarker } =
+  await import("../components/sidebar/SidebarListMarkers");
+const { DndContext } = await import("@dnd-kit/core");
+const { SortableContext } = await import("@dnd-kit/sortable");
 const { SidebarCompactThreadRow } = await import("../sidebarThreadRow/SidebarCompactThreadRow");
 const { WorkspaceViewLayout } = await import("@t3tools/tasks-web");
 const { getThemeColorsForMode, getThemeColorVariable, UPCOMPUTER_THEME } =
@@ -214,54 +218,63 @@ function threadRow(title: string, index: number): SidebarCompactThreadRowProps {
 }
 
 /**
- * The thread sidebar's composition (`components/Sidebar.tsx`): upstream's
- * chrome header, its fixed header group with the Search row and our sections
- * after it, then the thread list group with upstream's list classes, holding
- * our compact rows. Upstream's layout around it adds the sidebar toggle.
+ * The thread sidebar's composition (`components/Sidebar.tsx`): the chrome header,
+ * then one scroll with the Search row and our sections, and the thread list
+ * opening with the Threads header. Upstream's layout adds the sidebar toggle.
  */
 function ThreadSidebarUnderTest() {
   const noop = () => undefined;
   return (
     <>
       <SidebarChromeHeader isElectron={false} />
-      <SidebarContent
-        fixedHeader={
-          <SidebarGroup className="z-[1]">
-            <SidebarThreadHeader
-              hasProjects
-              projectScope={null}
-              onNewProject={noop}
-              onNewThread={noop}
-              newThreadDisabled={false}
-              newThreadShortcutLabel={null}
-              newThreadInProjectShortcutLabel={null}
-              showNewThreadInProjectHint={false}
-              searchInputRef={{ current: null }}
-              searchQuery=""
-              onSearchQueryChange={noop}
-              onSearchKeyDown={noop}
-              isSearching={false}
-              searchResultCount={0}
-              activeSearchResultIndex={0}
-              onClearSearch={noop}
-            />
-            <ProductSidebarNavigation />
-            <SidebarProjectsSection projectGroups={PROJECTS} onAddProject={noop} loaded />
-            <SidebarThreadsSectionHeader
-              onNewThread={noop}
-              currentEnvironmentId={null}
-              newThreadDisabled={false}
-              newThreadShortcutLabel={null}
-            />
-          </SidebarGroup>
-        }
-      >
+      <SidebarContent>
+        <SidebarGroup className="z-[1] -mb-(--sidebar-content-inset)">
+          <SidebarThreadHeader
+            hasProjects
+            projectScope={null}
+            onNewProject={noop}
+            onNewThread={noop}
+            newThreadDisabled={false}
+            newThreadShortcutLabel={null}
+            newThreadInProjectShortcutLabel={null}
+            showNewThreadInProjectHint={false}
+            searchInputRef={{ current: null }}
+            searchQuery=""
+            onSearchQueryChange={noop}
+            onSearchKeyDown={noop}
+            isSearching={false}
+            searchResultCount={0}
+            activeSearchResultIndex={0}
+            onClearSearch={noop}
+          />
+          <ProductSidebarNavigation />
+          <SidebarProjectsSection projectGroups={PROJECTS} onAddProject={noop} loaded />
+        </SidebarGroup>
         <SidebarGroup className="flex-1" role="presentation">
-          <ul role="presentation" className="relative flex flex-1 flex-col gap-px">
-            {THREAD_TITLES.map((title, index) => (
-              <SidebarCompactThreadRow key={title} {...threadRow(title, index)} />
-            ))}
-          </ul>
+          <DndContext>
+            <SortableContext items={[]}>
+              <ul role="presentation" className="relative flex flex-1 flex-col gap-px">
+                <SidebarDragBoundary
+                  marker="pinned-header"
+                  label="Pinned"
+                  visible={false}
+                  isDropTarget={false}
+                />
+                <SidebarListSectionMarker marker="pinned-divider" sticky>
+                  <SidebarThreadsSectionHeader
+                    onNewThread={noop}
+                    currentEnvironmentId={null}
+                    newThreadDisabled={false}
+                    newThreadShortcutLabel={null}
+                    placement="list"
+                  />
+                </SidebarListSectionMarker>
+                {THREAD_TITLES.map((title, index) => (
+                  <SidebarCompactThreadRow key={title} {...threadRow(title, index)} />
+                ))}
+              </ul>
+            </SortableContext>
+          </DndContext>
         </SidebarGroup>
       </SidebarContent>
     </>
