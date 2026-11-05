@@ -107,6 +107,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --control-radius: 0.5rem;
   --sidebar-content-inset: 0.5rem;
   --sidebar-control-gap: 0.5rem;
+  /* Every sidebar icon's size (Tailwind's size-4); see sidebarMetrics.ts. */
+  --sidebar-icon-size: 1rem;
   --sidebar-icon-color: color-mix(
     in srgb,
     var(--contrast-sidebar-muted-foreground) 85%,

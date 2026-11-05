@@ -24,8 +24,23 @@ export const SIDEBAR_ROW_INSET = "px-2";
 /** The end side of `SIDEBAR_ROW_INSET`, for a row whose action sits at its end. */
 export const SIDEBAR_ROW_INSET_END = "pe-2";
 
-/** Icon size: the Search icon's `size-4`, also `SidebarMenuButton`'s default icon size. */
-export const SIDEBAR_ICON_SIZE = "size-4";
+/**
+ * Icon size: `--sidebar-icon-size` (16px, upstream's `size-4` on the Search
+ * icon). `SidebarMenuButton`'s icons, the sidebar toggle and the Search icon
+ * read the variable too, so changing it resizes every sidebar icon.
+ */
+export const SIDEBAR_ICON_SIZE = "size-(--sidebar-icon-size)";
+
+/** A section header's chevron: 14px at the 16px icon size, scaling with it. */
+export const SIDEBAR_SECTION_CHEVRON_SIZE = "size-[calc(var(--sidebar-icon-size)*0.875)]";
+
+/**
+ * A bot's face slot in a sidebar row: the icon size, so names line up with other
+ * labels. The face overflows it at 1.25 times the icon size, a shape character at
+ * 1.5 (`BotAvatar` draws it a fifth larger). Its pixel `size` still picks its detail.
+ */
+export const SIDEBAR_BOT_FACE_SLOT =
+  "flex size-(--sidebar-icon-size) shrink-0 items-center justify-center [&>.bot-portrait]:size-[calc(var(--sidebar-icon-size)*1.25)]! [&>svg.cbc]:size-[calc(var(--sidebar-icon-size)*1.5)] [&_.bot-portrait-status]:size-full";
 
 /** Gap from icon to text: the Search row's `gap-2`, the value of `--sidebar-control-gap`. */
 export const SIDEBAR_ICON_GAP = "gap-2";
@@ -80,7 +95,7 @@ export const SIDEBAR_FIXED_HEADER_END_GAP =
  * toggle (`SidebarControl` in `AppSidebarLayout.tsx`, and the phone sheet's
  * own toggle in `SidebarChromeHeader`) so its icon starts where the row icons
  * do. The toggle sits at `--workspace-controls-left` plus its own
- * `ml-px`, and centres a `size-4` icon in a `--workspace-titlebar-control-size`
+ * `ml-px`, and centres a `--sidebar-icon-size` icon in a `--workspace-titlebar-control-size`
  * button; a row icon starts at `--sidebar-content-inset` plus
  * `SIDEBAR_ROW_INSET`. The macOS desktop app sets the variable after this, to
  * clear the traffic lights. Collapsed page titles follow the toggle through
@@ -88,7 +103,7 @@ export const SIDEBAR_FIXED_HEADER_END_GAP =
  */
 export const SIDEBAR_TOGGLE_ALIGNMENT = {
   "--workspace-controls-left":
-    "calc(env(safe-area-inset-left) + var(--sidebar-content-inset) + var(--spacing) * 2 - (var(--workspace-titlebar-control-size) - var(--spacing) * 4) / 2 - 1px)",
+    "calc(env(safe-area-inset-left) + var(--sidebar-content-inset) + var(--spacing) * 2 - (var(--workspace-titlebar-control-size) - var(--sidebar-icon-size)) / 2 - 1px)",
 } as const;
 
 /**
@@ -115,4 +130,4 @@ export const SIDEBAR_DIM_TEXT = "text-sidebar-muted-foreground/80";
  * its own reveal rule (hidden until its row or header is hovered or focused).
  * Its icon is `SIDEBAR_ICON_SIZE`, set here so every action's icon matches.
  */
-export const SIDEBAR_ACTION_BUTTON = `inline-flex size-5 shrink-0 [&>svg]:size-4 cursor-pointer items-center justify-center rounded-md ${SIDEBAR_DIM_TEXT} outline-none hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;
+export const SIDEBAR_ACTION_BUTTON = `inline-flex size-5 shrink-0 [&>svg]:size-(--sidebar-icon-size) cursor-pointer items-center justify-center rounded-md ${SIDEBAR_DIM_TEXT} outline-none hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;
