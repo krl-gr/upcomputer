@@ -25,14 +25,13 @@ export const SIDEBAR_ROW_INSET = "px-2";
 export const SIDEBAR_ROW_INSET_END = "pe-2";
 
 /**
- * Icon size: `--sidebar-icon-size` (16px, upstream's `size-4` on the Search
- * icon). `SidebarMenuButton`'s icons, the sidebar toggle and the Search icon
+ * Icon size: `--sidebar-icon-size` (18px; upstream's Search icon was `size-4`). `SidebarMenuButton`'s icons, the sidebar toggle and the Search icon
  * read the variable too, so changing it resizes every sidebar icon.
  */
 export const SIDEBAR_ICON_SIZE = "size-(--sidebar-icon-size)";
 
-/** A section header's chevron: 14px at the 16px icon size, scaling with it. */
-export const SIDEBAR_SECTION_CHEVRON_SIZE = "size-[calc(var(--sidebar-icon-size)*0.875)]";
+/** A section header's chevron: a fixed 14px, not a row icon. */
+export const SIDEBAR_SECTION_CHEVRON_SIZE = "size-3.5";
 
 /**
  * A bot's face slot in a sidebar row: the icon size, so names line up with other
@@ -128,6 +127,6 @@ export const SIDEBAR_DIM_TEXT = "text-sidebar-muted-foreground/80";
  * Add project, a row's "…"). Dim like a section title, bright only while the
  * pointer is on the button itself or it has keyboard focus. Each place keeps
  * its own reveal rule (hidden until its row or header is hovered or focused).
- * Its icon is `SIDEBAR_ICON_SIZE`, set here so every action's icon matches.
+ * Its icon is a fixed 16px, smaller than the row icons, set here so every action's icon matches.
  */
-export const SIDEBAR_ACTION_BUTTON = `inline-flex size-5 shrink-0 [&>svg]:size-(--sidebar-icon-size) cursor-pointer items-center justify-center rounded-md ${SIDEBAR_DIM_TEXT} outline-none hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;
+export const SIDEBAR_ACTION_BUTTON = `inline-flex size-5 shrink-0 [&>svg]:size-4 cursor-pointer items-center justify-center rounded-md ${SIDEBAR_DIM_TEXT} outline-none hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;
