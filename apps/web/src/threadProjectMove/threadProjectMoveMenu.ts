@@ -1,4 +1,5 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { isBotChatThread } from "@t3tools/tasks-web/feature";
 
 import type {
   ExperimentalWebThreadAccessoryProps,
@@ -12,13 +13,12 @@ import {
 } from "./threadProjectMove.logic";
 
 /** "Move to project" in a thread's action menu, with the other projects as its submenu. */
-export function threadProjectMoveActions({
-  environmentId,
-  threadId,
-}: ExperimentalWebThreadAccessoryProps): ReadonlyArray<ExperimentalWebThreadAction> {
-  const threadRef = scopeThreadRef(environmentId, threadId);
+export function threadProjectMoveActions(
+  props: ExperimentalWebThreadAccessoryProps,
+): ReadonlyArray<ExperimentalWebThreadAction> {
+  const threadRef = scopeThreadRef(props.environmentId, props.threadId);
   const thread = readThreadShell(threadRef);
-  if (thread === null || thread.archivedAt !== null) return [];
+  if (thread === null || thread.archivedAt !== null || isBotChatThread(props)) return [];
   const targets = threadProjectMoveTargets(readProjects(), thread);
   const unavailableReason = threadProjectMoveUnavailableReason(thread, targets);
   return [

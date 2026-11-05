@@ -30,6 +30,11 @@ export function canBecomeBotChat(
   );
 }
 
+/** Whether the thread is a bot's own chat, by the bot list as last shown. */
+export function isBotChat({ environmentId, threadId }: ExperimentalWebThreadAccessoryProps) {
+  return readShownBots(environmentId)?.some((bot) => bot.threadId === threadId) ?? false;
+}
+
 /** Uses the list the Bots sidebar section keeps, so the menu needs no request. */
 export function botThreadActions({
   environmentId,

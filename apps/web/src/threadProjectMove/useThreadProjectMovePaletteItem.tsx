@@ -1,4 +1,5 @@
 import { AuthOrchestrationOperateScope, type ScopedThreadRef } from "@t3tools/contracts";
+import { isBotChatThread } from "@t3tools/tasks-web/feature";
 import { FolderIcon, FolderInputIcon, MessageSquareDashedIcon } from "lucide-react";
 
 import {
@@ -27,7 +28,13 @@ export function useThreadProjectMovePaletteItem(
     threadRef?.environmentId ?? null,
     AuthOrchestrationOperateScope,
   );
-  if (threadRef === null || thread === null || thread.archivedAt !== null) return null;
+  if (
+    threadRef === null ||
+    thread === null ||
+    thread.archivedAt !== null ||
+    isBotChatThread(threadRef)
+  )
+    return null;
   const targets = threadProjectMoveTargets(projects, thread);
   const unavailableReason = canOperate
     ? threadProjectMoveUnavailableReason(thread, targets)
