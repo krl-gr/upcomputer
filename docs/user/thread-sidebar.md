@@ -340,14 +340,14 @@ the conversation. Under **Memory** on the bot's page, click a fact to edit it
 you saved or edited.
 
 A new model conversation receives up to 12,000 characters of current memory, your
-facts first, then the newest, from at most 200 stored entries. Facts that do not
-fit are marked **Not in context**; the bot can still look them up. It receives
-memory again after a provider change, a handoff, a restart that cannot resume the
-earlier session, or a compaction the provider reports. Later turns receive only
-what changed, and nothing when memory is unchanged. The full conversation stays
-searchable, while the provider's context remains bounded. **Remove bot** at the
-bottom of its page deletes its memory and returns its conversation to **Threads**
-as an ordinary chat.
+facts first, then the newest, from at most 200 stored entries. The bot's page dims
+the facts that do not fit and says how many there are; the bot can still look them
+up. It receives memory again after a provider change, a handoff, a restart that
+cannot resume the earlier session, or a compaction the provider reports. Later
+turns receive only what changed, and nothing when memory is unchanged. The full
+conversation stays searchable, while the provider's context remains bounded.
+**Remove bot** at the bottom of its page deletes its memory and returns its
+conversation to **Threads** as an ordinary chat.
 
 To give the bot a background task, ask for it in the bot's chat. The task runs in
 Tasks and returns progress and results to the bot's conversation. Background tasks
