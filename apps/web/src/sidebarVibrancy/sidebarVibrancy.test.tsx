@@ -231,7 +231,8 @@ function expectV1Sidebar(painted: Painted, mode: "light" | "dark"): void {
   expectColor(painted.row, [r, g, b, mode === "light" ? 0.05 : 0.07]);
   expectColor(painted.edge, [r, g, b, mode === "light" ? 0.04 : 0.03]);
   expectColor(painted.border, [r, g, b, 0.1]);
-  expectColor(painted.text, rgbaOf(getThemeColorsForMode(UPCOMPUTER_THEME, mode)!.text));
+  // Row text is the sidebar ink (theme.upcomputer.css), not the theme foreground.
+  expectColor(painted.text, [r, g, b, mode === "light" ? 0.88 : 0.95]);
   expect(painted.pulseAnimation).toBe("none");
 }
 
