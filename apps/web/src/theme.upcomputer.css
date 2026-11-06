@@ -77,8 +77,8 @@ html[data-theme-id="upcomputer"] {
 
   @variant dark {
     --sidebar-foreground: rgb(255 255 255 / 95%);
-    --sidebar-muted-foreground: rgb(255 255 255 / 78%);
-    --sidebar-icon-color: rgb(255 255 255 / 70%);
+    --sidebar-muted-foreground: rgb(255 255 255 / 85%);
+    --sidebar-icon-color: rgb(255 255 255 / 80%);
   }
 }
 
