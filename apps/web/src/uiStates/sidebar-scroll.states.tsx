@@ -158,18 +158,50 @@ function threadRow(thread: SidebarCompactThreadRowProps["thread"], isActive = fa
   );
 }
 
-function WholeSidebar(props: { readonly height: number; readonly compact?: boolean }) {
+/** macOS draws its window buttons over the titlebar row; the sheet draws stand-ins. */
+function TrafficLights() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute top-[calc(var(--workspace-topbar-height)/2-6px)] left-5 z-10 flex gap-2"
+    >
+      {["#ff5f57", "#febc2e", "#28c840"].map((color) => (
+        <span key={color} className="size-3 rounded-full" style={{ backgroundColor: color }} />
+      ))}
+    </div>
+  );
+}
+
+function WholeSidebar(props: {
+  readonly height: number;
+  readonly compact?: boolean;
+  /** The desktop's translucent sidebar over a picture, as vibrancy shows it. */
+  readonly translucent?: boolean;
+}) {
   return (
     <SidebarProvider className="min-h-0" data-sidebar-compact={props.compact ? "true" : "false"}>
       <div
         data-app-sidebar=""
         className="relative -mx-(--sidebar-content-inset) -my-1 w-64"
-        style={{ height: props.height, ...(props.compact ? { width: SIDEBAR_COMPACT_WIDTH } : {}) }}
+        style={{
+          height: props.height,
+          ...(props.compact ? { width: SIDEBAR_COMPACT_WIDTH } : {}),
+          ...(props.translucent
+            ? {
+                backgroundImage:
+                  "repeating-linear-gradient(135deg, #3b6fd8 0 18px, #3f9a5b 18px 36px, #c9a43a 36px 54px)",
+              }
+            : {}),
+        }}
       >
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex h-full w-full flex-col bg-sidebar surface-grain"
+          className={
+            props.translucent
+              ? "flex h-full w-full flex-col bg-white/25 dark:bg-background/35"
+              : "flex h-full w-full flex-col bg-sidebar surface-grain"
+          }
         >
           <SidebarChromeHeader isElectron={false} />
           <SidebarContent className="min-h-full">
@@ -261,59 +293,101 @@ function WholeSidebar(props: { readonly height: number; readonly compact?: boole
           </SidebarContent>
           <SidebarChromeFooter />
         </div>
+        <TrafficLights />
       </div>
     </SidebarProvider>
   );
 }
 
-/** Scrolls the sidebar so `rowsAbove` rows of a section have passed under its header. */
-function scrollInto(marker: "pinned-header" | "pinned-divider", rowsAbove: number) {
+function scroller(cell: HTMLElement) {
+  return cell.querySelector<HTMLElement>(
+    cell.querySelector("[data-sidebar-compact=true]")
+      ? "[data-sidebar=sidebar]"
+      : "[data-slot=scroll-area-viewport]",
+  )!;
+}
+
+/** Scrolls until the row's middle is at the middle of the titlebar row: half faded. */
+function scrollRowUnderTitlebar(row: (cell: HTMLElement) => HTMLElement) {
   return async (cell: HTMLElement) => {
-    const viewport = cell.querySelector<HTMLElement>("[data-slot=scroll-area-viewport]")!;
-    const header = cell.querySelector<HTMLElement>(`[data-testid=sidebar-${marker}]`)!;
-    const firstRow = header.nextElementSibling as HTMLElement;
+    const scroll = scroller(cell);
+    const target = row(cell);
+    const titlebar = cell.querySelector<HTMLElement>("[data-sidebar-chrome-header]")!;
     const offset =
-      header.getBoundingClientRect().top -
-      viewport.getBoundingClientRect().top +
-      viewport.scrollTop;
+      target.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop;
     await act(() => {
-      viewport.scrollTop = offset + rowsAbove * (firstRow.offsetHeight + 1) + 14;
+      scroll.scrollTop = offset + target.offsetHeight / 2 - titlebar.offsetHeight / 2;
     });
   };
 }
 
+const threadRowTitled = (title: string) => (cell: HTMLElement) =>
+  [...cell.querySelectorAll<HTMLElement>("[data-thread-item]")].find((row) =>
+    row.textContent?.includes(title),
+  )!;
+
+const nthListRow = (index: number) => (cell: HTMLElement) =>
+  cell.querySelectorAll<HTMLElement>("[data-sidebar-list-row]")[index]!;
+
+async function scrollToEnd(cell: HTMLElement) {
+  const scroll = scroller(cell);
+  await act(() => {
+    scroll.scrollTop = scroll.scrollHeight;
+  });
+}
+
 const STATES: ReadonlyArray<UiState> = [
-  { name: "700px tall, at the top", render: () => <WholeSidebar height={700} /> },
   {
-    name: "700px tall, scrolled into Pinned: its header stays",
+    name: "700px tall, at the top: nothing under the titlebar row, so no fade",
     render: () => <WholeSidebar height={700} />,
-    settle: scrollInto("pinned-header", 1),
   },
   {
-    name: "700px tall, scrolled into Threads: its header covers Pinned's",
+    name: "700px tall, scrolled to the middle: a row half faded under the titlebar row, rows fading under the footer",
     render: () => <WholeSidebar height={700} />,
-    settle: scrollInto("pinned-divider", 3),
+    settle: scrollRowUnderTitlebar(threadRowTitled("Port the sidebar")),
   },
   {
-    name: "420px tall: the footer keeps its full height",
+    name: "700px tall, at the end: nothing under the footer, so no fade",
+    render: () => <WholeSidebar height={700} />,
+    settle: scrollToEnd,
+  },
+  {
+    name: "translucent over a picture, scrolled to the middle: the fade shows the picture, no slab",
+    render: () => <WholeSidebar height={420} translucent />,
+    settle: scrollRowUnderTitlebar(threadRowTitled("Port the sidebar")),
+  },
+  {
+    name: "420px tall, at the top: the footer keeps its full height",
     render: () => <WholeSidebar height={420} />,
   },
   {
-    name: "icon column, 700px tall: scrolls as one with its footer, list left out",
+    name: "420px tall, scrolled to the middle",
+    render: () => <WholeSidebar height={420} />,
+    settle: scrollRowUnderTitlebar(threadRowTitled("Release checklist")),
+  },
+];
+
+const COMPACT_STATES: ReadonlyArray<UiState> = [
+  {
+    name: "icon column, 700px tall, at the top: no fade",
     render: () => <WholeSidebar height={700} compact />,
+  },
+  {
+    name: "icon column, 420px tall, scrolled: a bot half faded under the titlebar row",
+    render: () => <WholeSidebar height={420} compact />,
+    settle: scrollRowUnderTitlebar(nthListRow(1)),
   },
   {
     name: "icon column, scrolled to the end: New thread, then the footer",
     render: () => <WholeSidebar height={700} compact />,
-    settle: async (cell) => {
-      const column = cell.querySelector<HTMLElement>("[data-sidebar=sidebar]")!;
-      await act(() => {
-        column.scrollTop = column.scrollHeight;
-      });
-    },
+    settle: scrollToEnd,
   },
 ];
 
 it("sidebar-scroll", async () => {
+  // Two sheets: a taller capture comes out blank past about 4000px.
   await captureUiStateSheet("sidebar-scroll", [{ title: "Whole sidebar", states: STATES }]);
+  await captureUiStateSheet("sidebar-scroll-compact", [
+    { title: "Icon column", states: COMPACT_STATES },
+  ]);
 });
