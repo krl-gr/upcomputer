@@ -14,11 +14,7 @@ import { productSurface } from "../product/productFlags";
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { cn } from "../lib/utils";
-import {
-  SIDEBAR_FIXED_HEADER_END_GAP,
-  SIDEBAR_MENU_SCOPE,
-  SIDEBAR_SECTION_GAP,
-} from "../sidebarMetrics/sidebarMetrics";
+import { SIDEBAR_AFTER_SEARCH_GAP, SIDEBAR_MENU_SCOPE } from "../sidebarMetrics/sidebarMetrics";
 import { SidebarEmptyRow } from "./SidebarEmptyRow";
 import { SidebarSectionHeader, SidebarSectionHeaderAction } from "./SidebarSectionHeader";
 import { useIsScratchProjectGroup } from "./sidebarProjectIcons";
@@ -106,7 +102,7 @@ function useNewThreadWithoutProject({ onNewThread, currentEnvironmentId }: NewTh
  * The header of the sidebar's Threads section, over upstream's thread list. It
  * collapses the list (see `useSidebarThreadListShown`) and carries New thread.
  * The full sidebar draws it in the list, below Pinned; the icon column, which
- * leaves the list out, keeps the compact-only copy for its New thread.
+ * leaves the list out, keeps only its New thread, under the nav rows.
  */
 export function SidebarThreadsSectionHeader(
   props: NewThreadProps & {
@@ -145,11 +141,7 @@ export function SidebarThreadsSectionHeader(
   );
   if (placement === "list") return header;
   return (
-    <div
-      data-sidebar-threads-section=""
-      className={cn("hidden", SIDEBAR_SECTION_GAP, SIDEBAR_FIXED_HEADER_END_GAP)}
-    >
-      {header}
+    <div data-sidebar-threads-section="" className={cn("hidden", SIDEBAR_AFTER_SEARCH_GAP)}>
       {newThreadShown ? (
         <SidebarCompactNewThread tooltip={newThreadTooltip} onClick={newThread.start} />
       ) : null}

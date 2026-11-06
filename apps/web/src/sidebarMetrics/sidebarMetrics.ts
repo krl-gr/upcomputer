@@ -82,14 +82,6 @@ export const SIDEBAR_SECTION_HEADER_GAP = "pt-1";
 export const SIDEBAR_AFTER_SEARCH_GAP = "pt-1";
 
 /**
- * The icon column's Threads header copy closes the sidebar's header group, and
- * this pulls what follows it up by `--sidebar-content-inset` less the row gap;
- * `adaptiveSidebar.css` sizes the gap to the footer with it.
- */
-export const SIDEBAR_FIXED_HEADER_END_GAP =
-  "-mb-[calc(var(--sidebar-content-inset)-var(--spacing))]";
-
-/**
  * In `SidebarProvider`'s and the sidebar's style: moves upstream's sidebar
  * toggle (`SidebarControl` in `AppSidebarLayout.tsx`, and the phone sheet's
  * own toggle in `SidebarChromeHeader`) so its icon starts where the row icons

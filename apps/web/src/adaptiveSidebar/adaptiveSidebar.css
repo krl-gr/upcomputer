@@ -42,13 +42,6 @@
   border-radius: 0.875rem;
   overflow: visible;
 }
-/* Equal 28px between groups: New thread gets the 4px the other sections' menus add. */
-[data-sidebar-compact="true"]
-  [data-app-sidebar]
-  [data-sidebar-threads-section]
-  > [data-sidebar-section-header] {
-  margin-bottom: 12px;
-}
 /* The footer's last button sits as far from the bottom as the bots' targets from the sides. */
 [data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar="footer"] {
   padding-bottom: 1rem;

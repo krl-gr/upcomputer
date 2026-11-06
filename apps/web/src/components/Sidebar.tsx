@@ -3194,6 +3194,20 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             onClearSearch={clearThreadSearch}
           />
           <ProductSidebarNavigation />
+          {/* The icon column's New thread, under Tasks. */}
+          {productSurface("sidebarProjects") === "upcomputer" && sidebarProjectRowsShown ? (
+            <SidebarThreadsSectionHeader
+              onNewThread={handleNewThreadClick}
+              currentEnvironmentId={
+                newThreadContext.activeThread?.environmentId ??
+                newThreadContext.activeDraftThread?.environmentId ??
+                null
+              }
+              newThreadDisabled={projects.length === 0}
+              newThreadShortcutLabel={newThreadShortcutLabel}
+              placement="compact-only"
+            />
+          ) : null}
           <SidebarComputersSection />
           {productSurface("sidebarProjects") === "upcomputer" ? (
             <>
@@ -3203,20 +3217,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 loaded={sidebarProjectRowsShown}
               />
               <ProductSidebarSections />
-              {/* Below the Projects rows, so it appears with them rather than moving down. */}
-              {sidebarProjectRowsShown ? (
-                <SidebarThreadsSectionHeader
-                  onNewThread={handleNewThreadClick}
-                  currentEnvironmentId={
-                    newThreadContext.activeThread?.environmentId ??
-                    newThreadContext.activeDraftThread?.environmentId ??
-                    null
-                  }
-                  newThreadDisabled={projects.length === 0}
-                  newThreadShortcutLabel={newThreadShortcutLabel}
-                  placement="compact-only"
-                />
-              ) : null}
             </>
           ) : null}
         </SidebarGroup>

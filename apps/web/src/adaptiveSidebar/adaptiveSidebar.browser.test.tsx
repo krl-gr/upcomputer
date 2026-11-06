@@ -30,7 +30,7 @@ const SECTIONS = [
 
 /**
  * The sidebar as it renders: sections with a header in its gap wrapper and a
- * row, the column's Threads header with its compact New thread, then the
+ * row, the column's compact New thread, then the
  * thread list group.
  */
 function SidebarSections(props: { readonly compact: boolean; readonly threadsOpen: boolean }) {
@@ -56,7 +56,6 @@ function SidebarSections(props: { readonly compact: boolean; readonly threadsOpe
           </div>
         ))}
         <div data-sidebar-threads-section="">
-          <SidebarSectionHeader title="Threads" open={props.threadsOpen} onToggle={() => {}} />
           <button type="button" data-sidebar-compact-new-thread="">
             New thread
           </button>
