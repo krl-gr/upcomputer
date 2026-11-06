@@ -58,7 +58,7 @@ without a project on that computer. The conversation, title, pin and settled sta
 the thread, and a note in the thread says where it came from.
 
 Only an idle thread that works in its project's folder can move; a thread in its own worktree
-stays where it is. A bot's chat moves with the bot's working project, which you change on the
+stays where it is. A bot's chat moves with the bot's project, which you change on the
 bot's page. Moving clears what belonged to the old project: the branch, linked projects
 and pull requests, and the agent's session there. Your next message starts a new session in the
 new folder that picks up the conversation. Diffs of earlier turns still come from the old
@@ -322,36 +322,34 @@ while any task started from the conversation, the bot's own or a worker's,
 waits for you. Hover the bot's name for the cause.
 
 Hover the row and click the settings button to open the bot's page. There you
-change its name, appearance, role, instructions, model, working project, and
-available projects. Changes save automatically and apply from the bot's next turn.
-Changing the working project or provider waits until the bot is idle. Project
-choices filter the bot's memory and tasks; filesystem access still follows the
-selected provider's existing runtime permissions.
+change its name, appearance, instructions, model, and project. Changes save
+automatically and apply from the bot's next turn. Changing the project or provider
+waits until the bot is idle. To tell a bot about other projects, write it in its
+instructions. Filesystem access still follows the selected provider's existing
+runtime permissions.
 
 Pick the bot's shape, color, and accessories from the pictures on its page. The
 appearance follows the bot across projects, models, and restarts.
 
-Memory belongs to the bot, independently of its model. Under **Memory** on the
-bot's page, click a fact to edit it (Enter saves, Escape cancels), choose
-**Add memory** to add one, or start a message in the conversation with
-**Remember:** followed by the fact. The colon is required, and only your own
-messages save this way, not messages agents post into the conversation.
-The bot can also save useful facts during its ordinary turns. **Extract from chat
-history** asks it to review an existing conversation without replacing its
-messages.
+Memory belongs to the bot, independently of its model and project. The bot saves
+useful facts during its turns in its own conversation. To have it remember
+something, start a message with **Remember:** followed by the fact. The colon is
+required, and only your own messages save this way, not messages agents post into
+the conversation. Under **Memory** on the bot's page, click a fact to edit it
+(Enter saves, Escape cancels) or delete it. The bot cannot change or forget a fact
+you saved or edited.
 
-Global facts apply across projects. Project facts are supplied only for the current
-available project. A new model conversation receives up to 12,000 characters of
-current memory, from at most 200 stored entries. It receives them again after a
-provider change, a handoff, a restart that cannot resume the earlier session, or a
-compaction the provider reports. Later turns receive only what changed, and nothing
-when memory is unchanged. The full conversation stays searchable, while the
-provider's context remains bounded. **Remove bot** at the bottom of its page deletes
-its memory and returns its conversation to **Threads** as an ordinary chat.
+A new model conversation receives up to 12,000 characters of current memory, your
+facts first, then the newest, from at most 200 stored entries. The bot's page dims
+the facts that do not fit and says how many there are; the bot can still look them
+up. It receives memory again after a provider change, a handoff, a restart that
+cannot resume the earlier session, or a compaction the provider reports. Later
+turns receive only what changed, and nothing when memory is unchanged. The full
+conversation stays searchable, while the provider's context remains bounded.
+**Remove bot** at the bottom of its page deletes its memory and returns its
+conversation to **Threads** as an ordinary chat.
 
-To give the bot a task, choose **Assign task** under **Background work** on its page.
-The task runs in Tasks and returns progress and results to the bot's conversation. Background tasks can read untrusted pages
-and files, so a fact a bot saves while working on a task becomes a suggestion
-instead of memory. Review them under **Suggestions** on the bot's page: **Accept**
-adds a fact to memory for the bot's next turn; **Reject** discards it. Facts saved
-in the bot's own conversation, including **Remember: ...**, apply at once.
+To give the bot a background task, ask for it in the bot's chat. The task runs in
+Tasks and returns progress and results to the bot's conversation. Background tasks
+can read untrusted pages and files, so they cannot save memory: what a task found
+comes back in its result, and the bot decides in its conversation what to remember.

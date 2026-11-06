@@ -35,7 +35,10 @@ import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { APP_BASE_NAME } from "~/branding";
 import { observeResize } from "~/lib/observeResize";
 import { ProductSidebarFooterNavigation } from "~/product/ProductSlots";
-import { useSidebarFooterTooltipSide } from "~/adaptiveSidebar/adaptiveSidebar";
+import {
+  observeSidebarFooterHeight,
+  useSidebarFooterTooltipSide,
+} from "~/adaptiveSidebar/adaptiveSidebar";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -56,6 +59,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
 
   return (
     <div
+      data-sidebar-chrome-header=""
       className={cn(
         "relative flex h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center gap-2 pr-3",
         isElectron && "drag-region",
@@ -253,7 +257,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter({
   showUndoNotice?: boolean;
 }) {
   return (
-    <SidebarFooter>
+    <SidebarFooter ref={observeSidebarFooterHeight}>
       {showUndoNotice ? <SidebarThreadUndoNotice /> : null}
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />

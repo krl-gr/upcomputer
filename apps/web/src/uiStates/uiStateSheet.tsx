@@ -126,9 +126,11 @@ export async function captureUiStateSheet(
   options: {
     readonly columns?: ReadonlyArray<UiStateColumn>;
     readonly densities?: ReadonlyArray<UiStateDensity>;
+    /** Cell width in px, for states wider than a sidebar (default 256). */
+    readonly cellWidth?: number;
   } = {},
 ) {
-  const { columns, densities } = options;
+  const { columns, densities, cellWidth } = options;
   for (const theme of THEMES) {
     applyTheme(theme);
     await using stack = new AsyncDisposableStack();
@@ -157,6 +159,7 @@ export async function captureUiStateSheet(
             "div",
             "w-64 shrink-0 bg-sidebar px-(--sidebar-content-inset) py-1 text-sidebar-foreground",
           );
+          if (cellWidth !== undefined) cell.style.width = `${cellWidth}px`;
           for (const [variable, value] of Object.entries(column?.variables ?? {})) {
             cell.style.setProperty(variable, value);
           }

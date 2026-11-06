@@ -1,5 +1,5 @@
 /* oxlint-disable shadcn/no-unknown-classes, shadcn/no-raw-colors -- SVG artwork uses colocated CSS and fixed illustration colors independent of UI tokens. */
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { BotCharacterState } from "./catalog";
 import "./BotStatusProps.css";
 
@@ -36,11 +36,29 @@ export function usePausedWhenHidden() {
 }
 
 /**
- * The props that show a bot's state, drawn in the 128 box: a laptop, a clock, done and
- * failed badges, attention strokes and the provider limit dome. The `.cbc` root's
- * `data-state` shows the one that applies.
+ * True once the state changed after mount. One-shot flourishes (a sign's wave, the clock's
+ * ring) play only then, so a list that remounts its rows does not replay them.
  */
-export function BotStatusProps() {
+export function useStateChanged(state: BotCharacterState) {
+  const [first] = useState(state);
+  const [changed, setChanged] = useState(false);
+  if (!changed && state !== first) setChanged(true);
+  return changed;
+}
+
+/** The hand that holds a sign takes the body's colors; a portrait overlay has no body. */
+export interface BotHandColors {
+  readonly fill: string;
+  readonly shade: string;
+}
+const NEUTRAL_HAND: BotHandColors = { fill: "#c9d3df", shade: "#9aa8b8" };
+
+/**
+ * The props that show a bot's state, drawn in the 128 box: a laptop, a clock, a sign for
+ * needs-you, done and failed, and the provider limit cage. The `.cbc` root's `data-state`
+ * shows the one that applies.
+ */
+export function BotStatusProps({ hand = NEUTRAL_HAND }: { readonly hand?: BotHandColors }) {
   return (
     <>
       <g className="cbc-prop cbc-laptop">
@@ -55,38 +73,52 @@ export function BotStatusProps() {
           className="cbc-typing cbc-detail"
         />
       </g>
-      <StatusBadge name="clock">
+      <g className="cbc-prop cbc-clock">
+        <g className="cbc-ring">
+          <g transform="translate(102 59) scale(1.2) translate(-102 -58)">
+            <circle cx="102" cy="58" r="18" className="cbc-rimmed cbc-clock-rim" />
+            <circle cx="102" cy="58" r="13.5" fill="#f8fafc" />
+            <path
+              d="M102 49V58L96 64"
+              fill="none"
+              stroke="#607b9b"
+              strokeWidth="3.6"
+              strokeLinecap="round"
+            />
+            <circle cx="102" cy="58" r="2.2" fill="#607b9b" />
+          </g>
+        </g>
+      </g>
+      <StatusSign name="attention" color="#f59e0b" hand={hand}>
         <path
-          d="M64 93V104L57 111"
+          d="M94.5 56.5Q95 51 100.5 51Q106.5 51 106.5 56.3Q106.5 59.8 102.2 61.6Q100.5 62.4 100.5 65"
           fill="none"
-          stroke="#607b9b"
-          strokeWidth="4"
-          strokeLinecap="round"
-        />
-        <circle cx="64" cy="104" r="2.6" fill="#607b9b" />
-      </StatusBadge>
-      <StatusBadge name="done" rim="#1fa463">
-        <path
-          d="M55 104.5L61.5 111L73.5 98"
-          fill="none"
-          stroke="#1fa463"
-          strokeWidth="5"
+          stroke="#fff"
+          strokeWidth="5.5"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
-      </StatusBadge>
-      <StatusBadge name="failed" rim="#e5484d">
+        <circle cx="100.5" cy="71.5" r="3.3" fill="#fff" />
+      </StatusSign>
+      <StatusSign name="done" color="#1fa463" hand={hand}>
         <path
-          d="M57 97L71 111M71 97L57 111"
+          d="M90.5 62.5L97 69L109.5 55.5"
           fill="none"
-          stroke="#e5484d"
-          strokeWidth="5"
+          stroke="#fff"
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </StatusSign>
+      <StatusSign name="failed" color="#e5484d" hand={hand}>
+        <path
+          d="M93 54.5L107 68.5M107 54.5L93 68.5"
+          fill="none"
+          stroke="#fff"
+          strokeWidth="6"
           strokeLinecap="round"
         />
-      </StatusBadge>
-      <g className="cbc-prop cbc-attention" fill="none" strokeWidth="4" strokeLinecap="round">
-        <path d="M104 43L107 37M111 51L117 47M113 60L120 59" />
-      </g>
+      </StatusSign>
       <g className="cbc-prop cbc-dome">
         <path d="M10 112V58C10 0 118 0 118 58V112Z" fill="#ffd54a" fillOpacity=".08" />
         <path
@@ -123,42 +155,35 @@ export function BotStatusProps() {
   );
 }
 
-/** Waiting, done and failed share one size and place, so the slot reads the same on every body. */
-function StatusBadge({ name, rim, children }: { name: string; rim?: string; children: ReactNode }) {
-  return (
-    <g className={`cbc-prop cbc-${name}`}>
-      <circle cx="64" cy="104" r="22" className="cbc-badge" fill={rim} />
-      <circle cx="64" cy="104" r="16.5" fill="#f8fafc" />
-      {children}
-    </g>
-  );
-}
-
-/** The status props alone, to lay over a picture that fills the same square. */
-export function BotStatusOverlay({
-  state,
-  size,
-  className,
+/** A sign on a stick in the bot's hand, at eye level beside the body; every sign shares the spot. */
+function StatusSign({
+  name,
+  color,
+  hand,
+  children,
 }: {
-  readonly state: BotCharacterState;
-  readonly size: number;
-  readonly className?: string;
+  name: string;
+  color: string;
+  hand: BotHandColors;
+  children: ReactNode;
 }) {
-  const root = usePausedWhenHidden();
   return (
-    <svg
-      ref={root}
-      className={`cbc${className ? ` ${className}` : ""}`}
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 128 128"
-      width={size}
-      height={size}
-      data-state={state}
-      data-detail={botStatusDetail(size)}
-      aria-hidden
-      focusable="false"
-    >
-      <BotStatusProps />
-    </svg>
+    <g className={`cbc-prop cbc-sign cbc-${name}`}>
+      <g className="cbc-wave">
+        <g transform="rotate(8 100 70)">
+          <rect x="97.5" y="74" width="5.5" height="34" rx="2.75" fill="#9a6a3a" />
+          <rect x="80" y="45" width="41" height="33" rx="7.5" fill={color} className="cbc-rimmed" />
+          {children}
+          <circle
+            cx="100.2"
+            cy="93"
+            r="6.6"
+            fill={hand.fill}
+            stroke={hand.shade}
+            strokeWidth="1.2"
+          />
+        </g>
+      </g>
+    </g>
   );
 }

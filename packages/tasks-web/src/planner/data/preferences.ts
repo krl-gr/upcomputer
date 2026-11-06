@@ -108,7 +108,7 @@ export function usePlannerViewState() {
         stored.startDate && /^\d{4}-\d{2}-\d{2}$/.test(stored.startDate)
           ? stored.startDate
           : todayKey(),
-      dayCount: stored.dayCount ?? 7,
+      dayCount: stored.dayCount ?? 2,
       listWidth: Math.max(MIN_LIST_WIDTH, stored.listWidth ?? DEFAULT_LIST_WIDTH),
       rightPaneHidden: stored.rightPaneHidden ?? false,
     }),

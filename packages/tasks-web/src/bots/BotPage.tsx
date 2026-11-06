@@ -7,15 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
-import {
-  ArrowLeftIcon,
-  BanIcon,
-  InfoIcon,
-  LockIcon,
-  PencilIcon,
-  PlusIcon,
-  Trash2Icon,
-} from "lucide-react";
+import { ArrowLeftIcon, BanIcon, InfoIcon, XIcon } from "lucide-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { describeError } from "@t3tools/client-runtime/errors";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
@@ -29,17 +21,14 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import {
-  BOT_MEMORY_CONTEXT_BUDGET,
   BOTS_RPC_METHODS,
   botMemoryContext,
   TaskAgentId,
   type Bot,
   type BotAppearance,
   type BotMemory,
-  type BotMemoryProposal,
   type BotWriteInput,
   defaultBotAppearance,
-  defaultBotPortrait,
 } from "@t3tools/tasks-contracts/v1";
 import {
   useProjects,
@@ -83,11 +72,9 @@ import {
   AlertDialogPopup,
   AlertDialogTitle,
 } from "../../../../apps/web/src/components/ui/alert-dialog.tsx";
-import { Badge } from "../../../../apps/web/src/components/ui/badge.tsx";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { Input } from "../../../../apps/web/src/components/ui/input.tsx";
 import { Textarea } from "../../../../apps/web/src/components/ui/textarea.tsx";
-import { Switch } from "../../../../apps/web/src/components/ui/switch.tsx";
 import {
   Select,
   SelectItem,
@@ -101,7 +88,6 @@ import {
   TooltipTrigger,
 } from "../../../../apps/web/src/components/ui/tooltip.tsx";
 import { toastManager } from "../../../../apps/web/src/components/ui/toast.tsx";
-import { Toggle, ToggleGroup } from "../../../../apps/web/src/components/ui/toggle-group.tsx";
 import {
   BotAccessoryIcon,
   ConfigurableBotCharacter,
@@ -110,10 +96,8 @@ import {
 import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/extensionApi.ts";
 import { formatRelativeTimeLabel } from "../../../../apps/web/src/timestampFormat.ts";
 import { ensureLocalApi } from "../../../../apps/web/src/localApi.ts";
-import { ThreadStatusLabel } from "../../../../apps/web/src/sidebarThreadRow/ThreadStatusLabel.tsx";
 import { cn, randomUUID } from "../../../../apps/web/src/lib/utils.ts";
 import { readTasksWebClient } from "../environmentApi.ts";
-import { TaskThreadRunCounts } from "../ui/TaskThreadRunCounts.tsx";
 import { WorkspaceViewLayout } from "../ui/WorkspaceViewLayout.tsx";
 import { useAutosave } from "./botAutosave.ts";
 import {
@@ -123,10 +107,8 @@ import {
   errorText,
   useBots,
   useBotStatus,
-  useBotTaskRunRequest,
 } from "./botData.tsx";
-import { botStatus, type BotCharacterState } from "./botStatus.ts";
-import { BotPortraitPicker } from "./portraits/BotPortraitPicker.tsx";
+import { type BotCharacterState } from "./botStatus.ts";
 
 const NO_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [];
 
@@ -233,9 +215,6 @@ function BotForm({
   );
   const initialProject = bot?.projectId ?? source?.projectId ?? projects[0]?.id ?? null;
   const [projectId, setProjectId] = useState<ProjectId | null>(initialProject);
-  const [allowed, setAllowed] = useState<ReadonlyArray<ProjectId>>(
-    bot?.allowedProjectIds ?? (initialProject ? [initialProject] : []),
-  );
   const [selectedOverride, setSelection] = useState<ModelSelection | undefined>(
     bot?.agent.config.modelSelection ??
       source?.modelSelection ??
@@ -289,13 +268,13 @@ function BotForm({
     name.trim() !== "" &&
     instructions.trim() !== "" &&
     selection !== undefined &&
-    projectId !== null &&
-    allowed.includes(projectId)
+    projectId !== null
       ? {
           id,
           ...(threadId ? { threadId } : {}),
           projectId,
-          allowedProjectIds: allowed,
+          // The bot lives in one project; its memory is global or that project's.
+          allowedProjectIds: [projectId],
           name,
           appearance,
           config: {
@@ -335,7 +314,7 @@ function BotForm({
     retrySave.current = () => autosave.schedule(0);
   }, [autosave]);
   const textKey = JSON.stringify([name, instructions]);
-  const choiceKey = JSON.stringify([appearance, selection, runtimeMode, projectId, allowed]);
+  const choiceKey = JSON.stringify([appearance, selection, runtimeMode, projectId]);
   // Text saves after a pause in typing or when the field loses focus; a pick saves at once.
   useEffect(() => {
     autosave.schedule(800);
@@ -395,12 +374,6 @@ function BotForm({
       });
     });
   };
-  const toggleProject = (project: ProjectId, on: boolean) => {
-    const next = on ? [...allowed, project] : allowed.filter((value) => value !== project);
-    setAllowed(next);
-    if (on && (projectId === null || !allowed.includes(projectId))) setProjectId(project);
-    if (!on && project === projectId) setProjectId(next[0] ?? null);
-  };
 
   return (
     <WorkspaceViewLayout
@@ -457,61 +430,35 @@ function BotForm({
           </SettingsSection>
         ) : null}
         <SettingsSection title="Appearance">
-          <div className="flex items-center gap-3 px-3 py-3 sm:px-4">
-            {appearance.style === "character" ? (
-              <CharacterPreview appearance={appearance} state={status.state} />
-            ) : (
-              <BotPortraitPicker
-                value={appearance.portrait ?? defaultBotPortrait(id)}
-                state={status.state}
-                disabled={!editable}
-                onChange={(portrait) => setAppearance({ ...appearance, portrait })}
-              />
-            )}
-            <label className="grid min-w-0 flex-1 gap-1.5 text-sm font-medium">
-              Name
+          <div className="flex flex-col items-center gap-2 px-3 pt-6 pb-4 sm:px-4">
+            <CharacterPreview appearance={appearance} state={status.state} />
+            <div className="w-full max-w-sm text-lg font-semibold [&_input]:text-center">
               <Input
+                unstyled
+                aria-label="Name"
+                placeholder="Name"
                 value={name}
                 disabled={!editable}
                 aria-invalid={name.trim() === ""}
                 onChange={(event) => setName(event.target.value)}
                 onBlur={saveNow}
               />
-            </label>
+            </div>
           </div>
-          <SettingsRow
-            title="Style"
-            control={
-              <ToggleGroup
-                aria-label="Style"
-                variant="segmented"
-                disabled={!editable}
-                value={[appearance.style ?? "portrait"]}
-                onValueChange={(next) => {
-                  const style = next[0];
-                  if (style === "portrait" || style === "character")
-                    setAppearance({ ...appearance, style });
-                }}
-              >
-                <Toggle value="portrait">Portrait</Toggle>
-                <Toggle value="character">Character</Toggle>
-              </ToggleGroup>
-            }
+          <AppearancePicker
+            appearance={appearance}
+            disabled={!editable}
+            onAppearanceChange={setAppearance}
           />
-          {appearance.style === "character" ? (
-            <AppearancePicker
-              appearance={appearance}
-              disabled={!editable}
-              onAppearanceChange={setAppearance}
-            />
-          ) : null}
         </SettingsSection>
 
         <SettingsSection title="Instructions" hideTitle>
           <SettingsRow title="Instructions">
-            <div className="pt-2 pb-2">
+            <div className="pt-1 pb-2 text-sm text-foreground [&_textarea]:resize-none [&_textarea]:px-0">
               <Textarea
+                unstyled
                 aria-label="Instructions"
+                placeholder="What the bot does and how"
                 value={instructions}
                 disabled={!editable}
                 aria-invalid={instructions.trim() === ""}
@@ -604,28 +551,20 @@ function BotForm({
           />
         </SettingsSection>
 
-        <SettingsSection
-          id={PROJECTS_SECTION_ID}
-          title="Projects"
-          titleAction={
-            <InfoTip label="About projects">
-              The bot works in the working project and can use memory and tasks of the available
-              ones.
-            </InfoTip>
-          }
-        >
+        <SettingsSection id={PROJECTS_SECTION_ID} title="Project" hideTitle>
           <SettingsRow
-            title="Working project"
+            title="Project"
+            description="Where the bot works. Its chat moves with it, and its memory stays the same."
             control={
               <Select
                 value={projectId ?? ""}
-                disabled={!editable || allowed.length === 0}
+                disabled={!editable || projects.length === 0}
                 onValueChange={(value) => {
-                  const next = allowed.find((candidate) => candidate === value);
-                  if (next) setProjectId(next);
+                  const next = projects.find((project) => project.id === value);
+                  if (next) setProjectId(next.id);
                 }}
               >
-                <SelectTrigger aria-label="Working project" className="min-w-48">
+                <SelectTrigger aria-label="Project" className="min-w-48">
                   <SelectValue>
                     {(() => {
                       const project = projects.find((item) => item.id === projectId);
@@ -634,37 +573,20 @@ function BotForm({
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
-                  {projects
-                    .filter((project) => allowed.includes(project.id))
-                    .map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        <ProjectLabel project={project} />
-                      </SelectItem>
-                    ))}
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      <ProjectLabel project={project} />
+                    </SelectItem>
+                  ))}
                 </SelectPopup>
               </Select>
             }
           />
-          {projects.map((project) => (
-            <SettingsRow
-              key={project.id}
-              title={<ProjectLabel project={project} />}
-              control={
-                <Switch
-                  aria-label={`Available: ${project.title}`}
-                  checked={allowed.includes(project.id)}
-                  disabled={!editable}
-                  onCheckedChange={(checked) => toggleProject(project.id, checked)}
-                />
-              }
-            />
-          ))}
         </SettingsSection>
 
         {bot ? (
           <>
-            <MemorySections bot={bot} environmentId={environmentId} projects={projects} />
-            <BackgroundWork bot={bot} environmentId={environmentId} />
+            <MemorySections bot={bot} environmentId={environmentId} />
             <SettingsSection title="Remove">
               <SettingsRow
                 title="Remove bot"
@@ -783,17 +705,10 @@ function CharacterPreview({
   readonly appearance: BotAppearance;
   readonly state: BotCharacterState;
 }) {
-  const shape = botAppearanceCatalog.shapes.find((entry) => entry.id === appearance.shape);
-  const color = botAppearanceCatalog.colors.find((entry) => entry.id === appearance.color);
   return (
-    <div className="flex w-24 shrink-0 flex-col items-center gap-0.5">
-      <span className="flex size-20 items-center justify-center">
-        <ConfigurableBotCharacter appearance={appearance} state={state} size={80} decorative />
-      </span>
-      <span className="w-full truncate text-center text-xs text-muted-foreground">
-        {color && shape ? `${color.label} ${shape.label.toLowerCase()}` : "Character"}
-      </span>
-    </div>
+    <span className="flex size-30 shrink-0 items-center justify-center">
+      <ConfigurableBotCharacter appearance={appearance} state={state} size={120} decorative />
+    </span>
   );
 }
 
@@ -912,40 +827,24 @@ function AppearancePicker({
   );
 }
 
-function sourceLabel(source: string) {
-  if (source === "user") return "Added by you";
-  if (source.startsWith("chat:")) return "From chat";
-  if (source.startsWith("task:")) return "From a background task";
-  return source;
-}
-
 function MemorySections({
   bot,
   environmentId,
-  projects,
 }: {
   readonly bot: Bot;
   readonly environmentId: EnvironmentId;
-  readonly projects: ReadonlyArray<EnvironmentProject>;
 }) {
   const client = readTasksWebClient(environmentId).bots;
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.remember);
   const thread = useThreadShell(scopeThreadRef(environmentId, bot.threadId));
-  const [entries, setEntries] = useState<ReadonlyArray<BotMemory>>([]);
-  const [proposals, setProposals] = useState<ReadonlyArray<BotMemoryProposal>>([]);
-  const [adding, setAdding] = useState(false);
+  // Null until the first read returns, so the empty line does not flash before it.
+  const [entries, setEntries] = useState<ReadonlyArray<BotMemory> | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [busy, setBusy] = useState(false);
   useEffect(() => {
     let disposed = false;
-    Promise.all([
-      client.memory({ agentId: bot.agent.id }),
-      client.proposals({ agentId: bot.agent.id }),
-    ]).then(
-      ([memory, suggested]) => {
-        if (disposed) return;
-        setEntries(memory);
-        setProposals(suggested);
+    client.memory({ agentId: bot.agent.id }).then(
+      (memory) => {
+        if (!disposed) setEntries(memory);
       },
       (cause: unknown) => {
         if (!disposed) setError(cause);
@@ -960,253 +859,63 @@ function MemorySections({
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Run changes refresh facts saved through MCP while this page stays open.
     thread?.latestRun?.runId,
     thread?.latestRun?.status,
-    bot.latestTaskRun?.threadId,
-    bot.latestTaskRun?.status,
   ]);
   const mutate = async (run: () => Promise<unknown>) => {
-    setBusy(true);
     setError(null);
     try {
       await run();
-      const [memory, suggested] = await Promise.all([
-        client.memory({ agentId: bot.agent.id }),
-        client.proposals({ agentId: bot.agent.id }),
-      ]);
-      setEntries(memory);
-      setProposals(suggested);
+      setEntries(await client.memory({ agentId: bot.agent.id }));
     } catch (cause) {
-      if (errorCode(cause) === "bot_memory_project_unavailable")
-        toastManager.add({
-          type: "error",
-          title: "Memory belongs to another project",
-          description: errorToastDescription(cause, undefined, errorText(cause)),
-          actionProps: {
-            children: "Open settings",
-            onClick: () =>
-              document
-                .getElementById(PROJECTS_SECTION_ID)
-                ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-          },
-        });
-      else setError(cause);
-    } finally {
-      setBusy(false);
+      setError(cause);
     }
   };
-  const scopeName = (projectId: ProjectId | null) =>
-    projectId === null
-      ? "Global"
-      : (projects.find((project) => project.id === projectId)?.title ?? "Unavailable project");
-  const meta = (entry: BotMemory) =>
-    `${scopeName(entry.projectId)} · ${sourceLabel(entry.source)} · ${formatRelativeTimeLabel(entry.updatedAt)}`;
-  const disabled = busy || !canWrite;
   // The same selection the server makes for the bot's chat, so the marks match its context.
-  const context = botMemoryContext(entries, bot.projectId);
+  const context = botMemoryContext(entries ?? []);
   const inContext = new Set(context.selected.map((entry) => entry.id));
-  const inScope = new Set(context.entries.map((entry) => entry.id));
-  const ordered = [...context.entries, ...entries.filter((entry) => !inScope.has(entry.id))];
   return (
-    <>
-      {proposals.length > 0 ? (
-        <SettingsSection
-          title="Suggestions"
-          titleAction={
-            <InfoTip label="About suggestions">
-              Facts a background task saved. Tasks can read untrusted pages and files, so they wait
-              for your review.
-            </InfoTip>
-          }
-        >
-          {proposals.map((proposal) => (
-            <MemoryRow
-              key={proposal.id}
-              meta={meta(proposal)}
-              actions={
-                <>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={disabled}
-                    onClick={() => {
-                      void mutate(() =>
-                        client.acceptProposal({ agentId: bot.agent.id, id: proposal.id }),
-                      );
-                    }}
-                  >
-                    Accept
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    disabled={disabled}
-                    onClick={() => {
-                      void mutate(() =>
-                        client.rejectProposal({ agentId: bot.agent.id, id: proposal.id }),
-                      );
-                    }}
-                  >
-                    Reject
-                  </Button>
-                </>
-              }
-            >
-              <p className="whitespace-pre-wrap break-words text-sm">{proposal.text}</p>
-            </MemoryRow>
-          ))}
-        </SettingsSection>
+    <SettingsSection
+      title="Memory"
+      titleAction={
+        <InfoTip label="About memory">
+          Up to 200 facts the bot saves in its chat. The chat's context holds what fits the budget,
+          your facts first, and the bot reads the rest when needed. The bot cannot change or forget
+          facts you edited.
+        </InfoTip>
+      }
+    >
+      {context.selected.length < context.entries.length ? (
+        <p className="px-3 pt-3 pb-1 text-xs text-muted-foreground sm:px-4">
+          {context.entries.length - context.selected.length} of {context.entries.length} facts
+          don&apos;t fit the chat&apos;s context. The bot can still look them up.
+        </p>
       ) : null}
-      <SettingsSection
-        title="Memory"
-        titleAction={
-          <InfoTip label="About memory">
-            Up to 200 facts. Global facts apply everywhere, project facts only in that project. The
-            chat's context holds what fits the budget, your facts first, and the bot reads the rest
-            when needed. The bot cannot change or forget facts you wrote.
-          </InfoTip>
-        }
-        headerAction={
-          <Button
-            size="xs"
-            variant="ghost-muted"
-            disabled={disabled}
-            onClick={() => {
-              void mutate(() => client.extract({ agentId: bot.agent.id, requestId: randomUUID() }));
-            }}
-          >
-            Extract from chat history
-          </Button>
-        }
-      >
-        {adding ? (
-          <NewMemory
-            bot={bot}
-            scopeName={scopeName}
-            busy={busy}
-            disabled={!canWrite}
-            onCancel={() => setAdding(false)}
-            onAdd={(text, projectId) => {
-              setAdding(false);
-              void mutate(() =>
-                client.remember({
-                  agentId: bot.agent.id,
-                  id: randomUUID(),
-                  projectId,
-                  text,
-                  source: "user",
-                }),
-              );
-            }}
-          />
-        ) : (
-          <div className="px-3 py-2 sm:px-4">
-            <Button size="sm" variant="ghost" disabled={!canWrite} onClick={() => setAdding(true)}>
-              <PlusIcon />
-              Add memory
-            </Button>
-          </div>
-        )}
-        {entries.length > 0 ? (
-          <MemoryBudget
-            used={context.used}
-            shown={context.selected.length}
-            total={context.entries.length}
-          />
-        ) : null}
-        {ordered.map((entry) => (
-          <MemoryEntry
-            key={`${entry.id}:${entry.updatedAt}`}
-            entry={entry}
-            meta={meta(entry)}
-            // Entries of other projects reach the bot only in task runs there.
-            inContext={inScope.has(entry.id) ? inContext.has(entry.id) : null}
-            disabled={!canWrite}
-            onSave={(value) => {
-              void mutate(() => client.remember({ ...entry, text: value }));
-            }}
-            onDelete={() => {
-              const text = entry.text.length > 200 ? `${entry.text.slice(0, 199)}…` : entry.text;
-              void ensureLocalApi()
-                .dialogs.confirm(`Delete this memory?\n${text}`, { variant: "destructive" })
-                .then((confirmed) => {
-                  if (confirmed)
-                    void mutate(() => client.forget({ agentId: bot.agent.id, id: entry.id }));
-                });
-            }}
-          />
-        ))}
-        {entries.length === 0 ? (
-          <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-            No memories yet. Say “Remember: …” in the chat.
-          </p>
-        ) : null}
-        <BotError error={error} className="px-3 py-3 sm:px-4" />
-      </SettingsSection>
-    </>
-  );
-}
-
-/** How much of the context budget the chat's memory snapshot uses. */
-function MemoryBudget({
-  used,
-  shown,
-  total,
-}: {
-  readonly used: number;
-  readonly shown: number;
-  readonly total: number;
-}) {
-  return (
-    <div className="grid gap-1.5 px-3 py-2.5 sm:px-4">
-      <div className="flex items-baseline justify-between gap-3 text-xs text-muted-foreground">
-        <span>
-          {shown === total
-            ? `All ${total} ${total === 1 ? "memory is" : "memories are"} in the chat's context`
-            : `${shown} of ${total} memories are in the chat's context`}
-        </span>
-        <span className="shrink-0 tabular-nums">
-          {used.toLocaleString()} / {BOT_MEMORY_CONTEXT_BUDGET.toLocaleString()} characters
-        </span>
-      </div>
-      <div
-        className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60"
-        role="progressbar"
-        aria-label="Memory in the chat's context"
-        aria-valuemin={0}
-        aria-valuemax={BOT_MEMORY_CONTEXT_BUDGET}
-        aria-valuenow={used}
-      >
-        <div
-          className="h-full rounded-full bg-primary"
-          style={{ width: `${Math.min(100, (used / BOT_MEMORY_CONTEXT_BUDGET) * 100)}%` }}
+      {context.entries.map((entry) => (
+        <MemoryEntry
+          key={`${entry.id}:${entry.updatedAt}`}
+          entry={entry}
+          inContext={inContext.has(entry.id)}
+          disabled={!canWrite}
+          onSave={(value) => {
+            void mutate(() => client.remember({ ...entry, text: value }));
+          }}
+          onDelete={() => {
+            const text = entry.text.length > 200 ? `${entry.text.slice(0, 199)}…` : entry.text;
+            void ensureLocalApi()
+              .dialogs.confirm(`Delete this memory?\n${text}`, { variant: "destructive" })
+              .then((confirmed) => {
+                if (confirmed)
+                  void mutate(() => client.forget({ agentId: bot.agent.id, id: entry.id }));
+              });
+          }}
         />
-      </div>
-    </div>
-  );
-}
-
-/** One fact as text with its scope, source and age, and its actions at the end. */
-function MemoryRow({
-  meta,
-  marks,
-  actions,
-  children,
-}: {
-  readonly meta: string;
-  readonly marks?: ReactNode;
-  readonly actions: ReactNode;
-  readonly children: ReactNode;
-}) {
-  return (
-    <div className="group/memory flex items-start gap-3 px-3 py-2.5 sm:px-4">
-      <div className="grid min-w-0 flex-1 gap-0.5">
-        {children}
-        <div className="flex min-w-0 items-center gap-1.5">
-          {marks}
-          <p className="truncate text-xs text-muted-foreground">{meta}</p>
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-1">{actions}</div>
-    </div>
+      ))}
+      {entries?.length === 0 ? (
+        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
+          No memories yet. Say “Remember: …” in the chat.
+        </p>
+      ) : null}
+      <BotError error={error} className="px-3 py-3 sm:px-4" />
+    </SettingsSection>
   );
 }
 
@@ -1226,18 +935,17 @@ function handleMemoryKey(
   }
 }
 
+/** One fact: click the text to edit it in place; delete shows on hover. */
 function MemoryEntry({
   entry,
-  meta,
   inContext,
   disabled,
   onSave,
   onDelete,
 }: {
   readonly entry: BotMemory;
-  readonly meta: string;
-  /** Null for entries outside the chat's working project. */
-  readonly inContext: boolean | null;
+  /** Facts past the context budget reach the bot only when it looks them up. */
+  readonly inContext: boolean;
   readonly disabled: boolean;
   readonly onSave: (text: string) => void;
   readonly onDelete: () => void;
@@ -1245,6 +953,7 @@ function MemoryEntry({
   const [text, setText] = useState<string | null>(null);
   // Saving or cancelling removes the field, which can blur it once more.
   const open = useRef(false);
+  const editing = text !== null;
   const edit = () => {
     open.current = true;
     setText(entry.text);
@@ -1257,295 +966,68 @@ function MemoryEntry({
     if (save && value !== "" && value !== entry.text) onSave(value);
   };
   return (
-    <MemoryRow
-      meta={meta}
-      marks={
-        <>
-          {entry.owner === "user" ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span
-                    aria-label="Locked: written by you"
-                    className="inline-flex text-muted-foreground"
-                  >
-                    <LockIcon className="size-3" />
-                  </span>
-                }
-              />
-              <TooltipPopup side="top">
-                You wrote this, so the bot cannot change or forget it. You can.
-              </TooltipPopup>
-            </Tooltip>
-          ) : null}
-          {inContext === null ? null : (
-            <Badge size="sm" variant={inContext ? "secondary" : "warning"}>
-              {inContext ? "In context" : "Not in context"}
-            </Badge>
-          )}
-        </>
-      }
-      actions={
-        text === null ? (
-          <span className="flex gap-0.5 opacity-0 group-focus-within/memory:opacity-100 group-any-hover/memory:opacity-100 pointer-coarse:opacity-100">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    aria-label="Edit memory"
-                    disabled={disabled}
-                    onClick={edit}
-                  >
-                    <PencilIcon />
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">Edit memory</TooltipPopup>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon-xs"
-                    variant="ghost-destructive"
-                    aria-label="Delete memory"
-                    disabled={disabled}
-                    onClick={onDelete}
-                  >
-                    <Trash2Icon />
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">Delete memory</TooltipPopup>
-            </Tooltip>
-          </span>
-        ) : null
-      }
-    >
-      {text === null ? (
-        <button
-          type="button"
-          disabled={disabled}
-          className="cursor-text whitespace-pre-wrap break-words rounded-sm text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={edit}
-        >
-          {entry.text}
-        </button>
-      ) : (
-        <Textarea
-          aria-label="Memory text"
-          size="sm"
-          autoFocus
-          maxLength={2000}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          onBlur={() => close(true)}
-          onKeyDown={(event) =>
-            handleMemoryKey(
-              event,
-              () => close(true),
-              () => close(false),
-            )
-          }
-        />
+    <div
+      className={cn(
+        "group/memory flex items-start gap-3 px-3 py-2.5 sm:px-4",
+        editing && "bg-muted/40",
       )}
-    </MemoryRow>
-  );
-}
-
-function NewMemory({
-  bot,
-  scopeName,
-  busy,
-  disabled,
-  onAdd,
-  onCancel,
-}: {
-  readonly bot: Bot;
-  readonly scopeName: (projectId: ProjectId | null) => string;
-  readonly busy: boolean;
-  readonly disabled: boolean;
-  readonly onAdd: (text: string, projectId: ProjectId | null) => void;
-  readonly onCancel: () => void;
-}) {
-  const [text, setText] = useState("");
-  const [scope, setScope] = useState<string>(bot.projectId);
-  const add = () => {
-    if (busy || text.trim() === "") return;
-    onAdd(text.trim(), scope === "global" ? null : ProjectId.make(scope));
-  };
-  return (
-    <div className="grid gap-2 px-3 py-2.5 sm:px-4">
-      <Textarea
-        aria-label="New memory"
-        size="sm"
-        placeholder="Something the bot should remember"
-        autoFocus
-        maxLength={2000}
-        value={text}
-        disabled={disabled}
-        onChange={(event) => setText(event.target.value)}
-        onKeyDown={(event) => handleMemoryKey(event, add, onCancel)}
-      />
-      <div className="flex items-center justify-end gap-2">
-        <Select
-          value={scope}
-          disabled={disabled}
-          onValueChange={(value) => {
-            if (typeof value === "string") setScope(value);
-          }}
-        >
-          <SelectTrigger aria-label="Memory scope" size="sm" className="w-auto min-w-40">
-            <SelectValue>
-              {scope === "global"
-                ? "Global"
-                : scopeName(bot.allowedProjectIds.find((id) => id === scope) ?? null)}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectPopup>
-            <SelectItem value="global">Global</SelectItem>
-            {bot.allowedProjectIds.map((projectId) => (
-              <SelectItem key={projectId} value={projectId}>
-                {scopeName(projectId)}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-        <Button size="sm" variant="ghost" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button size="sm" disabled={disabled || busy || text.trim() === ""} onClick={add}>
-          Add
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function BackgroundWork({
-  bot,
-  environmentId,
-}: {
-  readonly bot: Bot;
-  readonly environmentId: EnvironmentId;
-}) {
-  const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.assign);
-  const request = botStatus(useBotTaskRunRequest(environmentId, bot));
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  // Retrying the same assignment after a lost reply must not create a second task.
-  const [requestId, setRequestId] = useState(() => randomUUID());
-  const [error, setError] = useState<unknown>(null);
-  const [busy, setBusy] = useState(false);
-  const disabled = busy || !canWrite;
-  const cancel = () => {
-    setOpen(false);
-    setError(null);
-  };
-  const assign = () => {
-    if (disabled || title.trim() === "") return;
-    setBusy(true);
-    setError(null);
-    void readTasksWebClient(environmentId)
-      .bots.assign({ agentId: bot.agent.id, requestId, title, description })
-      .then(
-        () => {
-          setOpen(false);
-          setTitle("");
-          setDescription("");
-          setRequestId(randomUUID());
-          toastManager.add({ type: "success", title: "Task assigned" });
-        },
-        (cause: unknown) => setError(cause),
-      )
-      .finally(() => setBusy(false));
-  };
-  const onKey = (event: ReactKeyboardEvent<HTMLElement>, submitsOnEnter: boolean) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      cancel();
-    } else if (
-      event.key === "Enter" &&
-      (submitsOnEnter || event.metaKey || event.ctrlKey) &&
-      !event.nativeEvent.isComposing
-    ) {
-      event.preventDefault();
-      assign();
-    }
-  };
-  return (
-    <SettingsSection
-      title="Tasks"
-      titleAction={
-        <InfoTip label="About tasks">
-          Tasks the bot delegates from its chat, and tasks assigned to the bot itself. Their
-          progress and results return to the bot's chat.
-        </InfoTip>
-      }
     >
-      <SettingsRow
-        title="Task runs"
-        control={
-          <span className="flex items-center gap-2 text-sm">
-            {request.label ? (
-              <Tooltip>
-                <TooltipTrigger render={<span className="flex items-center" />}>
-                  <ThreadStatusLabel status={request.label} />
-                </TooltipTrigger>
-                <TooltipPopup side="top">{request.detail}</TooltipPopup>
-              </Tooltip>
-            ) : null}
-            <TaskThreadRunCounts
-              environmentId={environmentId}
-              threadId={bot.threadId}
-              fallback={<span className="text-muted-foreground">Nothing new</span>}
+      <div className="grid min-w-0 flex-1 gap-0.5">
+        {editing ? (
+          <div className="text-sm text-foreground [&_textarea]:min-h-0 [&_textarea]:resize-none [&_textarea]:p-0">
+            <Textarea
+              unstyled
+              aria-label="Memory text"
+              autoFocus
+              maxLength={2000}
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              onBlur={() => close(true)}
+              onKeyDown={(event) =>
+                handleMemoryKey(
+                  event,
+                  () => close(true),
+                  () => close(false),
+                )
+              }
             />
-          </span>
-        }
-      />
-      {open ? (
-        <div className="grid gap-2 px-3 py-2.5 sm:px-4">
-          <Input
-            aria-label="Task title"
-            size="sm"
-            placeholder="Task title"
-            autoFocus
-            value={title}
-            disabled={disabled}
-            onChange={(event) => setTitle(event.target.value)}
-            onKeyDown={(event) => onKey(event, true)}
-          />
-          <Textarea
-            aria-label="Task details"
-            size="sm"
-            placeholder="Details"
-            value={description}
-            disabled={disabled}
-            onChange={(event) => setDescription(event.target.value)}
-            onKeyDown={(event) => onKey(event, false)}
-          />
-          <div className="flex items-center justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={cancel}>
-              Cancel
-            </Button>
-            <Button size="sm" disabled={disabled || title.trim() === ""} onClick={assign}>
-              {busy ? "Assigning…" : "Assign"}
-            </Button>
           </div>
-        </div>
-      ) : (
-        <div className="px-3 py-2 sm:px-4">
-          <Button size="sm" variant="ghost" disabled={!canWrite} onClick={() => setOpen(true)}>
-            <PlusIcon />
-            Assign task
-          </Button>
-        </div>
+        ) : (
+          <button
+            type="button"
+            disabled={disabled}
+            className={cn(
+              "cursor-text whitespace-pre-wrap break-words text-left text-sm outline-none",
+              !inContext && "text-muted-foreground",
+            )}
+            onClick={edit}
+          >
+            {entry.text}
+          </button>
+        )}
+        <p className="truncate text-xs text-muted-foreground">
+          {editing ? "Enter to save · Esc to cancel" : formatRelativeTimeLabel(entry.updatedAt)}
+        </p>
+      </div>
+      {editing ? null : (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="icon-xs"
+                variant="ghost-muted"
+                aria-label="Delete memory"
+                disabled={disabled}
+                className="opacity-0 group-focus-within/memory:opacity-100 group-any-hover/memory:opacity-100 pointer-coarse:opacity-100"
+                onClick={onDelete}
+              >
+                <XIcon />
+              </Button>
+            }
+          />
+          <TooltipPopup side="top">Delete memory</TooltipPopup>
+        </Tooltip>
       )}
-      <BotError error={error} className="px-3 py-3 sm:px-4" />
-    </SettingsSection>
+    </div>
   );
 }

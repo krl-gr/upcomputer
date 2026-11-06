@@ -3,6 +3,8 @@ import { useDroppable } from "@dnd-kit/core";
 import type { TaskAutomationListItem } from "@t3tools/tasks-contracts/v1";
 
 import { MenuItem, MenuSeparator } from "../../../../../apps/web/src/components/ui/menu.tsx";
+import { cn } from "../../../../../apps/web/src/lib/utils.ts";
+import { ListEmptyState } from "../../ui/ListEmptyState.tsx";
 import type { AutomationSnapshot } from "../data/automationStore.ts";
 import { AutomationRow } from "./AutomationRow.tsx";
 import { usePlanner } from "./plannerContext.ts";
@@ -31,16 +33,20 @@ export function AutomationList(props: {
   });
   const rows = props.snapshot.automations;
   return (
-    <div className="mx-auto w-full max-w-3xl py-2">
+    <div
+      className={cn("mx-auto w-full max-w-3xl py-2", rows.length === 0 && "flex h-full flex-col")}
+    >
       {props.snapshot.error ? (
         <p className="px-6 py-2 text-sm text-destructive-foreground">{props.snapshot.error}</p>
       ) : null}
       {rows.length === 0 ? (
-        <p className="px-6 py-10 text-center text-sm text-muted-foreground">
-          {props.snapshot.status === "loading"
-            ? "Loading…"
-            : "No automations yet. An automation creates a task for workers on a schedule."}
-        </p>
+        // Blank while the first page loads; it arrives within a moment.
+        props.snapshot.status === "loading" ? null : (
+          <ListEmptyState
+            title="No automations yet"
+            hint="An automation creates a task for workers on a schedule. Click + to add one."
+          />
+        )
       ) : (
         rows.map((automation) => (
           <AutomationRow

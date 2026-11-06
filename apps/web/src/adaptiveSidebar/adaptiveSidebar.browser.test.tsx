@@ -1,15 +1,26 @@
+import "../index.css";
 import "./adaptiveSidebar.css";
 
 import { ArrowLeftIcon } from "lucide-react";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
-import { render } from "../../test/render";
-import { SidebarMenu, SidebarMenuButton, SidebarProvider } from "../components/ui/sidebar";
+import { act, render } from "../../test/render";
+import {
+  SidebarContent,
+  SidebarFooter,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarProvider,
+} from "../components/ui/sidebar";
 import { SidebarEmptyRow } from "../sidebarProjects/SidebarEmptyRow";
 import { SidebarProjectRow } from "../sidebarProjects/SidebarProjectRow";
 import { SidebarSectionHeader } from "../sidebarProjects/SidebarSectionHeader";
-import { SidebarCompactNewThread, SidebarCompactTooltip } from "./adaptiveSidebar";
+import {
+  SidebarCompactNewThread,
+  SidebarCompactTooltip,
+  observeSidebarFooterHeight,
+} from "./adaptiveSidebar";
 import { SIDEBAR_COMPACT_WIDTH } from "./sidebarWidthMode";
 
 const SECTIONS = [
@@ -19,7 +30,7 @@ const SECTIONS = [
 
 /**
  * The sidebar as it renders: sections with a header in its gap wrapper and a
- * row, the column's Threads header with its compact New thread, then the
+ * row, the column's compact New thread, then the
  * thread list group.
  */
 function SidebarSections(props: { readonly compact: boolean; readonly threadsOpen: boolean }) {
@@ -45,7 +56,6 @@ function SidebarSections(props: { readonly compact: boolean; readonly threadsOpe
           </div>
         ))}
         <div data-sidebar-threads-section="">
-          <SidebarSectionHeader title="Threads" open={props.threadsOpen} onToggle={() => {}} />
           <button type="button" data-sidebar-compact-new-thread="">
             New thread
           </button>
@@ -152,5 +162,88 @@ describe("compact sidebar sections", () => {
     ]) {
       await expect.element(screen.getByRole("button", { name, exact: true })).toBeVisible();
     }
+  });
+});
+
+/** The sidebar's frame: the titlebar row, its one scroll of rows, then the footer. */
+function SidebarFrame(props: { readonly compact: boolean }) {
+  return (
+    <SidebarProvider className="min-h-0" data-sidebar-compact={String(props.compact)}>
+      <div data-app-sidebar="" style={{ width: props.compact ? SIDEBAR_COMPACT_WIDTH : 256 }}>
+        <div data-sidebar="sidebar" data-slot="sidebar-inner" className="flex h-80 flex-col">
+          <div data-sidebar-chrome-header="" className="relative h-(--workspace-topbar-height)" />
+          <SidebarContent>
+            {Array.from({ length: 30 }, (_, index) => (
+              <button key={index} type="button" className="h-8 shrink-0">
+                {`Row ${index}`}
+              </button>
+            ))}
+          </SidebarContent>
+          <SidebarFooter ref={observeSidebarFooterHeight}>
+            <button type="button" className="h-8">
+              Settings
+            </button>
+          </SidebarFooter>
+        </div>
+      </div>
+    </SidebarProvider>
+  );
+}
+
+describe("sidebar scroll under the titlebar row and footer", () => {
+  const hitAt = (x: number, y: number) => document.elementFromPoint(x, y);
+
+  it.each([false, true])(
+    "keeps the pointer on the titlebar row over a row scrolled under it (compact %s)",
+    async (compact) => {
+      await using screen = await render(<SidebarFrame compact={compact} />);
+      const header = screen.container.querySelector<HTMLElement>("[data-sidebar-chrome-header]")!;
+      const firstRow = screen.getByRole("button", { name: "Row 0" }).element();
+      const rest = header.getBoundingClientRect();
+      expect(firstRow.getBoundingClientRect().top).toBeGreaterThanOrEqual(rest.bottom);
+      const scroller = compact
+        ? screen.container.querySelector<HTMLElement>("[data-sidebar=sidebar]")!
+        : screen.container.querySelector<HTMLElement>("[data-slot=scroll-area-viewport]")!;
+      await act(() => {
+        scroller.scrollTop = 200;
+      });
+      const box = header.getBoundingClientRect();
+      expect([box.top, box.bottom]).toEqual([rest.top, rest.bottom]);
+      const x = box.left + 20;
+      const y = (box.top + box.bottom) / 2;
+      const under = screen.container.querySelectorAll("[data-slot=sidebar-content] button");
+      expect(
+        [...under].some((row) => {
+          const rect = row.getBoundingClientRect();
+          return rect.top <= y && y <= rect.bottom;
+        }),
+      ).toBe(true);
+      expect(hitAt(x, y)).toBe(header);
+    },
+  );
+
+  it("keeps the pointer on the footer over the rows under it, and pads the end by its height", async () => {
+    await using screen = await render(<SidebarFrame compact={false} />);
+    const footer = screen.container.querySelector<HTMLElement>("[data-sidebar=footer]")!;
+    const settings = screen.getByRole("button", { name: "Settings" }).element();
+    const box = settings.getBoundingClientRect();
+    expect(hitAt(box.left + 4, box.top + 4)).toBe(settings);
+    const edge = footer.getBoundingClientRect();
+    await vi.waitFor(() =>
+      expect(footer.parentElement!.style.getPropertyValue("--sidebar-footer-height")).toBe(
+        `${edge.height}px`,
+      ),
+    );
+    expect(hitAt(edge.left + 20, edge.top + 2)).toBe(footer);
+    const viewport = screen.container.querySelector<HTMLElement>(
+      "[data-slot=scroll-area-viewport]",
+    )!;
+    await act(() => {
+      viewport.scrollTop = viewport.scrollHeight;
+    });
+    const lastRow = screen.getByRole("button", { name: "Row 29" }).element();
+    expect(lastRow.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      footer.getBoundingClientRect().top,
+    );
   });
 });

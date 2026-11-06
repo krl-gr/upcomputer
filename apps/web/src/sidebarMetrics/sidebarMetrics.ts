@@ -39,7 +39,7 @@ export const SIDEBAR_SECTION_CHEVRON_SIZE = "size-3.5";
  * 1.5 (`BotAvatar` draws it a fifth larger). Its pixel `size` still picks its detail.
  */
 export const SIDEBAR_BOT_FACE_SLOT =
-  "flex size-(--sidebar-icon-size) shrink-0 items-center justify-center [&>.bot-portrait]:size-[calc(var(--sidebar-icon-size)*1.25)]! [&>svg.cbc]:size-[calc(var(--sidebar-icon-size)*1.5)] [&_.bot-portrait-status]:size-full";
+  "flex size-(--sidebar-icon-size) shrink-0 items-center justify-center [&>svg.cbc]:size-[calc(var(--sidebar-icon-size)*1.5)]";
 
 /** Gap from icon to text: the Search row's `gap-2`, the value of `--sidebar-control-gap`. */
 export const SIDEBAR_ICON_GAP = "gap-2";
@@ -80,14 +80,6 @@ export const SIDEBAR_SECTION_HEADER_GAP = "pt-1";
  * which ends its header container without spacing of its own.
  */
 export const SIDEBAR_AFTER_SEARCH_GAP = "pt-1";
-
-/**
- * The icon column's Threads header copy closes the sidebar's header group, and
- * this pulls what follows it up by `--sidebar-content-inset` less the row gap;
- * `adaptiveSidebar.css` sizes the gap to the footer with it.
- */
-export const SIDEBAR_FIXED_HEADER_END_GAP =
-  "-mb-[calc(var(--sidebar-content-inset)-var(--spacing))]";
 
 /**
  * In `SidebarProvider`'s and the sidebar's style: moves upstream's sidebar

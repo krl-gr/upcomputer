@@ -712,7 +712,7 @@ interface MeasuredText {
  * Search row's placeholder for "Search", and V1's row tone (`text-foreground`
  * at `alpha`), each painted on the sidebar background.
  */
-function measureText(input: { readonly names: ReadonlyArray<string>; readonly alpha: number }) {
+function measureText(input: { readonly names: ReadonlyArray<string>; readonly ink: string }) {
   const sidebar = document.querySelector('[data-slot="sidebar-inner"]')!;
   const background = getComputedStyle(sidebar).backgroundColor;
   const context = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
@@ -744,11 +744,7 @@ function measureText(input: { readonly names: ReadonlyArray<string>; readonly al
   const leaves = [...document.querySelectorAll("span")].filter(
     (element) => element.childElementCount === 0,
   );
-  const probe = document.createElement("span");
-  probe.className = "text-foreground";
-  sidebar.append(probe);
-  const v1Row = paint(getComputedStyle(probe).color, input.alpha);
-  probe.remove();
+  const inkRow = paint(input.ink);
   const text = Object.fromEntries(
     input.names.map((name) => {
       if (name === "Search") {
@@ -760,7 +756,7 @@ function measureText(input: { readonly names: ReadonlyArray<string>; readonly al
       return [name, measure(getComputedStyle(label))];
     }),
   );
-  return { text, v1Row };
+  return { text, inkRow };
 }
 
 // Inactive rows of each kind; "Tasks", "All projects" and the first thread are active.
@@ -768,13 +764,13 @@ const RESTING_ROWS = ["Workers", "UpComputer", "No project", "More"];
 const RESTING_THREADS = THREAD_TITLES.slice(1);
 
 describe.skipIf(browser === null)("sidebar text under the Up.computer theme (Chromium)", () => {
-  // V1's row text: `text-foreground/72`, and `/82` in dark.
+  // Row text is ink with alpha (theme.upcomputer.css): black 70%, and white 85% in dark.
   it.each([
-    ["light", 0.72],
-    ["dark", 0.82],
+    ["light", "rgb(0 0 0 / 70%)"],
+    ["dark", "rgb(255 255 255 / 85%)"],
   ] as const)(
     "gives Search and every resting row one tone and weight, in %s",
-    async (mode, alpha) => {
+    async (mode, ink) => {
       const [markup, css] = await Promise.all([
         renderMarkup(<SidebarUnderTest />),
         compiledAppCss(),
@@ -785,9 +781,9 @@ describe.skipIf(browser === null)("sidebar text under the Up.computer theme (Chr
           `<!doctype html><html ${upcomputerThemeRoot(mode)}><head><style>${css}</style></head><body>${markup}</body></html>`,
         );
         await page.mouse.move(1100, 800);
-        const { text, v1Row } = await page.evaluate(measureText, {
+        const { text, inkRow } = await page.evaluate(measureText, {
           names: ["Search", ...RESTING_ROWS, ...RESTING_THREADS, "Projects", "Threads"],
-          alpha,
+          ink,
         });
         const search = text.Search!;
         for (const name of [...RESTING_ROWS, ...RESTING_THREADS]) {
@@ -795,9 +791,9 @@ describe.skipIf(browser === null)("sidebar text under the Up.computer theme (Chr
           expect(text[name]!.weight, `${name} weight`).toBe(search.weight);
         }
         expect(search.weight).toBe("400");
-        // The theme's sidebar muted foreground is V1's row tone.
+        // The sidebar's muted foreground is the row ink.
         search.painted.forEach((channel, index) =>
-          expect(Math.abs(channel - v1Row[index]!), `channel ${index}`).toBeLessThanOrEqual(2),
+          expect(Math.abs(channel - inkRow[index]!), `channel ${index}`).toBeLessThanOrEqual(2),
         );
         // Section titles stay a step dimmer than the rows, at their weight.
         for (const title of ["Projects", "Threads"]) {

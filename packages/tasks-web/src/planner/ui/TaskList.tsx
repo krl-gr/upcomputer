@@ -3,10 +3,11 @@ import { useDroppable } from "@dnd-kit/core";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
 import { MenuItem, MenuSeparator } from "../../../../../apps/web/src/components/ui/menu.tsx";
+import { cn } from "../../../../../apps/web/src/lib/utils.ts";
+import { ListEmptyState } from "../../ui/ListEmptyState.tsx";
 import type { PaginatedTasks } from "../data/hooks.ts";
 import type { PlannerTask } from "../data/pendingOps.ts";
 import { scrollMemory } from "../data/preferences.ts";
-import { StartThreadEmptyState } from "../../ui/StartThreadEmptyState.tsx";
 import type { ScheduleProgressCount } from "../logic/progress.ts";
 import { usePlanner } from "./plannerContext.ts";
 import { PointMenu, type MenuPoint } from "./PointMenu.tsx";
@@ -87,24 +88,32 @@ export function TaskList(props: {
   // Blank, no text: the planner's own "Loading the planner…" comes just before
   // and the first page within a moment, so a second loading text would flash.
   const firstPageLoading = status === "LoadingFirstPage" && results.length === 0;
+  const empty = !firstPageLoading && results.length === 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div ref={scrollRef} className={LIST_SCROLL_CLASS}>
-        <div className={props.centered ? `mx-auto max-w-3xl ${LIST_CLASS}` : LIST_CLASS}>
-          {firstPageLoading ? null : results.length === 0 &&
-            !props.showArchived &&
-            kind === "task" ? (
-            <div className="px-6 py-10">
-              <StartThreadEmptyState
-                title="No tasks yet"
-                body="Click + to add one, or ask any thread to plan the work for you."
+        <div
+          className={cn(
+            props.centered ? `mx-auto max-w-3xl ${LIST_CLASS}` : LIST_CLASS,
+            // The empty list's note sits in the middle of the pane.
+            empty && "flex h-full flex-col",
+          )}
+        >
+          {firstPageLoading ? null : empty ? (
+            props.showArchived ? (
+              <ListEmptyState title={`No done or archived ${noun}s`} />
+            ) : kind === "routine" ? (
+              <ListEmptyState
+                title="No routines yet"
+                hint="Click + to add a habit or chore that repeats on a schedule."
               />
-            </div>
-          ) : results.length === 0 ? (
-            <p className="px-6 py-10 text-center text-sm text-muted-foreground">
-              {props.showArchived ? `No done or archived ${noun}s.` : `No active ${noun}s yet.`}
-            </p>
+            ) : (
+              <ListEmptyState
+                title="No tasks yet"
+                hint="Click + to add one, or ask any thread to plan the work for you."
+              />
+            )
           ) : (
             results.map((task) => (
               <TaskRow

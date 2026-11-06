@@ -37,47 +37,43 @@
 .cbc[data-state="working"] .cbc-pose {
   transform: translateY(-2px) rotate(-2deg);
 }
+/* Steps aside for the clock or a sign beside it. */
 .cbc[data-state="waiting"] .cbc-pose {
-  transform: rotate(3deg);
+  transform: translateX(-7px);
+}
+.cbc:is([data-state="attention"], [data-state="done"], [data-state="failed"]) .cbc-pose {
+  transform: translate(-6px, -2px);
 }
 /* Lifted inside the cage so the lock clears a camera and the cage clears tall hats. */
 .cbc[data-state="limited"] .cbc-pose {
   transform: translateY(-7px) scale(0.85);
+  transition-delay: 180ms;
 }
-.cbc[data-state="attention"] .cbc-pose {
-  transform: translateY(-3px) rotate(-4deg);
+/* Every shape rests with the same upright eyes; a state moves the pair as one. */
+.cbc-eyes {
+  transform-origin: 64px 73px;
+  transition: transform 360ms cubic-bezier(0.22, 0.8, 0.3, 1);
 }
-.cbc[data-state="done"] .cbc-pose {
-  transform: translateY(-2px);
+.cbc[data-state="working"] .cbc-eyes {
+  transform: translateY(7.5px);
 }
-.cbc[data-state="failed"] .cbc-pose {
-  transform: translateY(1px) rotate(3deg) scale(0.96);
+.cbc[data-state="waiting"] .cbc-eyes {
+  transform: translate(3px, -2px);
 }
-.cbc-eye {
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: transform 360ms ease;
+.cbc:is([data-state="attention"], [data-state="done"], [data-state="failed"]) .cbc-eyes {
+  transform: rotate(-14deg);
+  transition-delay: 120ms;
 }
-.cbc[data-state="working"] .cbc-eye {
-  transform: scaleY(0.8) translateY(2px);
+.cbc[data-state="limited"] .cbc-eyes {
+  transform: translateY(2px);
 }
-.cbc[data-state="waiting"] .cbc-eye {
-  transform: scaleY(0.65);
+.cbc-lid {
+  transform: translateY(-40px);
+  transition: transform 420ms ease;
 }
-.cbc[data-state="limited"] .cbc-eye {
-  transform: scaleY(0.78);
-}
-.cbc[data-state="attention"] .cbc-eye-right {
-  transform: translateY(-3px) scaleY(1.08);
-}
-.cbc[data-state="done"] .cbc-eye {
-  transform: translateY(-3px) scaleY(0.55);
-}
-.cbc[data-state="failed"] .cbc-eye-left {
-  transform: rotate(16deg) scaleY(0.7);
-}
-.cbc[data-state="failed"] .cbc-eye-right {
-  transform: rotate(-16deg) scaleY(0.7);
+.cbc[data-state="limited"] .cbc-lid {
+  transform: none;
+  transition-delay: 520ms;
 }
 .cbc-blink {
   transform-origin: 64px 73px;

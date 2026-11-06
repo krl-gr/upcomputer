@@ -2,7 +2,6 @@ import { createElement, lazy, Suspense, type ComponentType, type ReactNode } fro
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { BlankWorkspacePage } from "../components/BlankWorkspacePage";
-import { CompactSidebarButton, CompactSidebarPill } from "../components/sidebar/CompactSidebarPill";
 import {
   SidebarMenu,
   SidebarMenuButton,
@@ -132,31 +131,6 @@ export function ProductSidebarFooterNavigation() {
   });
 }
 
-/** The primary navigation's pill in the compact sidebar. */
-export function ProductCompactSidebarNavigation() {
-  const navigate = useNavigate();
-  const pathname = useLocation({ select: (location) => location.pathname });
-  if (WEB_PRODUCT.navigation.length === 0) return null;
-  return (
-    <CompactSidebarPill label="Navigation">
-      {WEB_PRODUCT.navigation.map((item) => {
-        const Icon = item.icon;
-        return (
-          <CompactSidebarButton
-            key={item.id}
-            data-track={`nav.${item.id}`}
-            label={item.label}
-            isActive={isExperimentalWebNavigationActive(item, pathname)}
-            onClick={() => void navigate({ to: "/$", params: { _splat: item.path.slice(1) } })}
-          >
-            {Icon ? <Icon /> : null}
-          </CompactSidebarButton>
-        );
-      })}
-    </CompactSidebarPill>
-  );
-}
-
 /** Feature settings sections, after core's in the settings navigation. */
 export function ProductSettingsNavItems(props: { readonly pathname: string }) {
   const navigate = useNavigate();
@@ -198,14 +172,6 @@ export function ProductChatHeaderAccessory(props: ExperimentalWebThreadAccessory
 export function ProductSidebarSections() {
   return WEB_PRODUCT.features.flatMap((feature) =>
     feature.sidebarSection ? [createElement(feature.sidebarSection, { key: feature.id })] : [],
-  );
-}
-
-export function ProductCompactSidebarSections() {
-  return WEB_PRODUCT.features.flatMap((feature) =>
-    feature.compactSidebarSection
-      ? [createElement(feature.compactSidebarSection, { key: feature.id })]
-      : [],
   );
 }
 

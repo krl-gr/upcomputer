@@ -30,8 +30,8 @@ describe("botsInProjectScope", () => {
     expect(names([{ environmentId: here, projectId: research }])).toEqual(["writer"]);
   });
 
-  it("shows a bot that may use a selected project", () => {
-    expect(names([{ environmentId: here, projectId: atlas }])).toEqual(["developer", "writer"]);
+  it("ignores the extra projects an older bot still lists", () => {
+    expect(names([{ environmentId: here, projectId: atlas }])).toEqual(["developer"]);
   });
 
   it("shows no bot for No project, which leaves the scope without projects", () => {
@@ -40,9 +40,6 @@ describe("botsInProjectScope", () => {
 
   it("matches projects only on the bot's own environment", () => {
     expect(names([{ environmentId: there, projectId: atlas }])).toEqual([]);
-    expect(names([{ environmentId: there, projectId: atlas }], there)).toEqual([
-      "developer",
-      "writer",
-    ]);
+    expect(names([{ environmentId: there, projectId: atlas }], there)).toEqual(["developer"]);
   });
 });

@@ -810,7 +810,6 @@ export default defineConfig({
           "packages/tasks-web/src/bots/BotPage.tsx",
           "packages/tasks-web/src/bots/Bots.tsx",
           "packages/tasks-web/src/bots/botAutosave.ts",
-          "packages/tasks-web/src/bots/portraits/BotPortrait.tsx",
           "packages/tasks-web/src/bots/portraits/botPortraits.ts",
           "packages/tasks-web/src/markdown/MarkdownEditor.tsx",
           "packages/tasks-web/src/planner/data/hooks.ts",

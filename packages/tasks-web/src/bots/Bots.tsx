@@ -46,10 +46,6 @@ import {
   SidebarSectionHeaderAction,
 } from "../../../../apps/web/src/sidebarProjects/SidebarSectionHeader.tsx";
 import {
-  CompactSidebarButton,
-  CompactSidebarPill,
-} from "../../../../apps/web/src/components/sidebar/CompactSidebarPill.tsx";
-import {
   SIDEBAR_BOT_FACE_SLOT,
   SIDEBAR_MENU_SCOPE,
   SIDEBAR_SECTION_GAP,
@@ -217,71 +213,8 @@ function UnavailableComputerBots({ environmentId }: { readonly environmentId: En
   );
 }
 
-/** Every shown computer's bots as avatars in one pill, like the one Bots section. */
-export function CompactSidebarBots() {
-  const lists = useBotLists();
-  const shown = useShownBots(lists);
-  const scope = useSidebarProjectScope();
-  // New bots go to the first computer shown: this one in All computers.
-  const createOn = lists[0]?.environmentId ?? null;
-  const canWrite = useExperimentalFeatureRpcPermission(createOn, BOTS_RPC_METHODS.save);
-  const navigate = useNavigate();
-  const isActive = useIsBotActive();
-  if (createOn === null || (scope !== null && shown.length === 0)) return null;
-  return (
-    <CompactSidebarPill label="Bots">
-      {shown.map(({ environmentId, bot }) => (
-        <CompactBotButton
-          key={`${environmentId}:${bot.agent.id}`}
-          environmentId={environmentId}
-          bot={bot}
-          active={isActive(environmentId, bot)}
-          onOpen={() => openBotChat(navigate, environmentId, bot)}
-        />
-      ))}
-      {lists.every((list) => list.bots.length === 0) ? (
-        <CompactSidebarButton
-          label="Create your first bot"
-          disabled={!canWrite}
-          onClick={() => void navigate(botPage(createOn))}
-        >
-          <PlusIcon />
-        </CompactSidebarButton>
-      ) : null}
-    </CompactSidebarPill>
-  );
-}
-
-function CompactBotButton({
-  environmentId,
-  bot,
-  active,
-  onOpen,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly bot: Bot;
-  readonly active: boolean;
-  readonly onOpen: () => void;
-}) {
-  const status = useBotStatus(environmentId, bot);
-  return (
-    <CompactSidebarButton
-      label={bot.agent.name}
-      tooltip={status.detail ? `${bot.agent.name}: ${status.detail}` : bot.agent.name}
-      isActive={active}
-      onClick={onOpen}
-    >
-      <span className="flex size-6 items-center justify-center">
-        <BotAvatar id={bot.agent.id} appearance={bot.appearance} state={status.state} size={24} />
-      </span>
-    </CompactSidebarButton>
-  );
-}
-
-/** One Bots section for every computer the sidebar shows, its bots merged like Threads. */
 function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> }) {
   const shown = useShownBots(lists);
-  const scope = useSidebarProjectScope();
   // New bots go to the first computer shown: this one in All computers.
   const createOn = lists[0]!.environmentId;
   const canWrite = useExperimentalFeatureRpcPermission(createOn, BOTS_RPC_METHODS.save);
@@ -298,8 +231,6 @@ function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the claims registry entry while mounted
   useEffect(() => claimSidebarThreads("bots", chatKeys ? chatKeys.split("\n") : []), [chatKeys]);
   const errors = lists.filter((list) => list.error !== "");
-  // A filter no bot matches hides the section; a bot chat it hides stays open.
-  if (scope !== null && shown.length === 0 && errors.length === 0) return null;
   const create = () => {
     if (canWrite) void navigate(botPage(createOn));
   };
@@ -311,7 +242,7 @@ function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> 
           open={open}
           onToggle={() => setOpen(!open)}
           action={
-            <SidebarSectionHeaderAction label="Create bot" track="bots.create" onClick={create}>
+            <SidebarSectionHeaderAction label="New bot" track="bots.create" onClick={create}>
               <PlusIcon />
             </SidebarSectionHeaderAction>
           }
@@ -334,13 +265,14 @@ function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> 
                 />
               </SidebarMenuItem>
             ))}
-            {lists.every((list) => list.bots.length === 0) ? (
-              <SidebarEmptyRow
-                label="Create your first bot"
-                disabled={!canWrite}
-                onClick={create}
-              />
-            ) : null}
+            {/* The section always shows; the Projects filter only picks its rows. */}
+            {shown.length > 0 ? null : lists.some((list) => list.bots.length > 0) ? (
+              <li className="px-3 py-1 text-xs text-sidebar-muted-foreground [[data-sidebar-compact=true]_&]:hidden">
+                No bots in this project
+              </li>
+            ) : (
+              <SidebarEmptyRow label="New bot" disabled={!canWrite} onClick={create} />
+            )}
           </SidebarMenu>
           {errors.map((list) => (
             <BotListError

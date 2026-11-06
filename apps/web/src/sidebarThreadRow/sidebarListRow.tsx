@@ -16,7 +16,7 @@ import {
  * unless it has a state of its own.
  */
 export const SIDEBAR_LIST_ROW = cn(
-  "group/sidebar-row relative flex w-full cursor-pointer items-center overflow-hidden rounded-md text-left text-sm outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+  "group/sidebar-row relative flex w-full cursor-pointer items-center overflow-hidden rounded-lg text-left text-sm outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
   SIDEBAR_ROW_HEIGHT,
   SIDEBAR_ICON_GAP,
   SIDEBAR_ROW_INSET,

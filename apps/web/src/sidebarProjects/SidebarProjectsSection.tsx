@@ -21,7 +21,6 @@ import {
   filterSidebarProjectScopeItems,
   reduceSidebarProjectScopeMenuState,
 } from "../components/Sidebar.logic";
-import { CompactSidebarButton } from "../components/sidebar/CompactSidebarPill";
 import { Collapsible, CollapsiblePanel } from "../components/ui/collapsible";
 import {
   Combobox,
@@ -55,7 +54,12 @@ import { SidebarCompactTooltip } from "../adaptiveSidebar/adaptiveSidebar";
 import { SidebarEmptyRow } from "./SidebarEmptyRow";
 import { SidebarProjectRow } from "./SidebarProjectRow";
 import { SidebarSectionHeader, SidebarSectionHeaderAction } from "./SidebarSectionHeader";
-import { AllProjectsIcon, NoProjectIcon, ProjectRowIcon } from "./sidebarProjectIcons";
+import {
+  AllProjectsIcon,
+  NoProjectIcon,
+  ProjectRowIcon,
+  useIsScratchProjectGroup,
+} from "./sidebarProjectIcons";
 import { useSidebarProjectsList, type SidebarProjectsListRow } from "./useSidebarProjectsList";
 import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
@@ -88,6 +92,7 @@ export function SidebarProjectsSection(props: {
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const handleNewThread = useNewThreadHandler();
+  const isScratchGroup = useIsScratchProjectGroup();
   const [open, setOpen] = useLocalStorage(SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, true, Schema.Boolean);
   const { rows, selectedKey, select, holdSurface, sortable, moveRow } =
     useSidebarProjectsList(projectGroups);
@@ -229,8 +234,9 @@ export function SidebarProjectsSection(props: {
                   />
                 </SidebarMenuItem>
               ) : null}
-              {projectGroups.length === 0 ? (
-                <SidebarEmptyRow label="Add project" onClick={onAddProject} />
+              {/* "No project" alone is still an empty list of projects. */}
+              {projectGroups.every(isScratchGroup) ? (
+                <SidebarEmptyRow label="New project" onClick={onAddProject} />
               ) : null}
             </SidebarMenu>
           </div>
@@ -273,17 +279,15 @@ function SortableProjectsItem(props: { readonly id: string; readonly children: R
 /**
  * "More": upstream's scope menu shape (search, then rows) over the remaining
  * rows, All projects and No project among them. As in upstream's menu,
- * right-click opens a project's settings. The compact sidebar shows it as an
- * icon button that opens the menu to its right.
+ * right-click opens a project's settings.
  */
-export function SidebarProjectsMore(props: {
+function SidebarProjectsMore(props: {
   readonly rows: ReadonlyArray<SidebarProjectsListRow>;
   /** A row key: a project key, or `ALL_PROJECTS_ROW_KEY`. */
   readonly onSelect: (key: string) => void;
   readonly onOpenProjectSettings: (project: SidebarProjectSnapshot) => void;
-  readonly compact?: boolean;
 }) {
-  const { rows, onSelect, onOpenProjectSettings, compact = false } = props;
+  const { rows, onSelect, onOpenProjectSettings } = props;
   const [menuState, dispatchMenu] = useReducer(reduceSidebarProjectScopeMenuState, {
     open: false,
     query: "",
@@ -310,20 +314,14 @@ export function SidebarProjectsMore(props: {
         if (item) onSelect(item.value);
       }}
     >
-      {compact ? (
-        <ComboboxTrigger render={<CompactSidebarButton label="More projects" />}>
+      <SidebarCompactTooltip label="More projects">
+        <ComboboxTrigger render={<SidebarMenuButton />}>
           <EllipsisIcon />
+          <span className="flex-1 truncate">More</span>
         </ComboboxTrigger>
-      ) : (
-        <SidebarCompactTooltip label="More projects">
-          <ComboboxTrigger render={<SidebarMenuButton />}>
-            <EllipsisIcon />
-            <span className="flex-1 truncate">More</span>
-          </ComboboxTrigger>
-        </SidebarCompactTooltip>
-      )}
+      </SidebarCompactTooltip>
       <ComboboxPopup
-        side={compact ? "right" : "bottom"}
+        side="bottom"
         className="max-w-[min(18rem,var(--available-width))] overflow-hidden"
       >
         <ComboboxSearchInput

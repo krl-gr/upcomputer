@@ -40,7 +40,6 @@ import {
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
 import ThreadSidebar from "./Sidebar";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
-import { CompactSidebar } from "./sidebar/CompactSidebar";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
 import type { SidebarRouteReveal } from "./sidebar/routeReveal";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
@@ -73,7 +72,6 @@ import { registerCommands, registerMenuAction } from "../shortcuts/dispatcher";
 import { resolveThreadRouteRef } from "../threadRoutes";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "var(--desktop-window-controls-inset, 90px)";
-const COMPACT_SIDEBAR_WIDTH = "3.5rem";
 
 function subscribeToViewportWidth(onChange: () => void): () => void {
   window.addEventListener("resize", onChange);
@@ -463,7 +461,6 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       adaptiveSidebar?.cssWidth ??
       `${clampThreadSidebarWidth(sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}px`,
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
-    "--compact-sidebar-width": COMPACT_SIDEBAR_WIDTH,
     ...sidebarToggleStyle,
   } as CSSProperties;
 
@@ -499,7 +496,6 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           <ThreadSidebar routeReveal={sidebarRouteReveal} />
           <SidebarRail onDoubleClick={adaptiveSidebar?.reset ?? resetSidebarWidth} />
         </Sidebar>
-        {adaptiveSidebar ? null : <CompactSidebar />}
         {children}
         <BackgroundThreadAnnouncer />
         <SidebarControl />

@@ -1,0 +1,36 @@
+/* A task that shows up while the list is open: its card opens in place, then a tint fades. */
+div[data-task-arrival] {
+  animation: task-arrival-open 320ms cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+div[data-task-arrival] > *,
+tr[data-task-arrival] {
+  animation: task-arrival-tint 1600ms ease-out;
+}
+div[data-task-arrival] > * {
+  border-radius: var(--radius);
+}
+@keyframes task-arrival-open {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes task-arrival-tint {
+  from {
+    background-color: color-mix(in srgb, var(--primary) 16%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  div[data-task-arrival] {
+    animation: none;
+  }
+}
