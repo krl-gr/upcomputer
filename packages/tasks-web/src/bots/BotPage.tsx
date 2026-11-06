@@ -554,7 +554,7 @@ function BotForm({
         <SettingsSection id={PROJECTS_SECTION_ID} title="Project" hideTitle>
           <SettingsRow
             title="Project"
-            description="Where the bot works. Its chat and project memory follow it."
+            description="Where the bot works. Its chat moves with it, and its memory stays the same."
             control={
               <Select
                 value={projectId ?? ""}
@@ -837,7 +837,8 @@ function MemorySections({
   const client = readTasksWebClient(environmentId).bots;
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.remember);
   const thread = useThreadShell(scopeThreadRef(environmentId, bot.threadId));
-  const [entries, setEntries] = useState<ReadonlyArray<BotMemory>>([]);
+  // Null until the first read returns, so the empty line does not flash before it.
+  const [entries, setEntries] = useState<ReadonlyArray<BotMemory> | null>(null);
   const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     let disposed = false;
@@ -869,7 +870,7 @@ function MemorySections({
     }
   };
   // The same selection the server makes for the bot's chat, so the marks match its context.
-  const context = botMemoryContext(entries);
+  const context = botMemoryContext(entries ?? []);
   const inContext = new Set(context.selected.map((entry) => entry.id));
   return (
     <SettingsSection
@@ -908,7 +909,7 @@ function MemorySections({
           }}
         />
       ))}
-      {entries.length === 0 ? (
+      {entries?.length === 0 ? (
         <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
           No memories yet. Say “Remember: …” in the chat.
         </p>
@@ -918,7 +919,6 @@ function MemorySections({
   );
 }
 
-/** How much of the context budget the chat's memory snapshot uses. */
 /** Enter or leaving the field saves; Shift+Enter starts a new line; Escape cancels. */
 function handleMemoryKey(
   event: ReactKeyboardEvent<HTMLTextAreaElement>,

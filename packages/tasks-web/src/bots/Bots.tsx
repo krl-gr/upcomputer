@@ -266,9 +266,13 @@ function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> 
               </SidebarMenuItem>
             ))}
             {/* The section always shows; the Projects filter only picks its rows. */}
-            {shown.length === 0 ? (
+            {shown.length > 0 ? null : lists.some((list) => list.bots.length > 0) ? (
+              <li className="px-3 py-1 text-xs text-sidebar-muted-foreground [[data-sidebar-compact=true]_&]:hidden">
+                No bots in this project
+              </li>
+            ) : (
               <SidebarEmptyRow label="New bot" disabled={!canWrite} onClick={create} />
-            ) : null}
+            )}
           </SidebarMenu>
           {errors.map((list) => (
             <BotListError
