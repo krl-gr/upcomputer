@@ -373,10 +373,12 @@ export function TasksView(props: TasksViewProps) {
     () => optimisticTasks.filter((task) => matchesLastRunFilter(task, filters.lastRun)),
     [filters.lastRun, optimisticTasks],
   );
-  const arrivals = useTaskArrivals(
-    filteredTasks.map(taskKey),
-    JSON.stringify(filters),
+  // The loaded rows, not the optimistic copy, which trails a page by a render.
+  const { arrivals, settle: settleArrival } = useTaskArrivals(
+    props.tasks.map(taskKey),
+    JSON.stringify([projectFilter?.key ?? null, filters]),
     props.status === "ready",
+    props.loadingMore,
   );
   const triggerTags = useMemo(() => agentTriggerTags(props.agents), [props.agents]);
   const tagOptions = useMemo(
@@ -1440,6 +1442,10 @@ export function TasksView(props: TasksViewProps) {
                       key={taskKey(task)}
                       className="grid"
                       data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
+                      onAnimationEnd={(event) => {
+                        if (event.animationName === "task-arrival-tint")
+                          settleArrival(taskKey(task));
+                      }}
                     >
                       <div className="min-h-0 overflow-hidden">
                         <TaskCard
@@ -1498,6 +1504,10 @@ export function TasksView(props: TasksViewProps) {
                           <tr
                             key={taskKey(task)}
                             data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
+                            onAnimationEnd={(event) => {
+                              if (event.animationName === "task-arrival-tint")
+                                settleArrival(taskKey(task));
+                            }}
                             className={`cursor-pointer border-b border-border transition-colors hover:bg-muted/20 ${
                               draggedTaskKey === taskKey(task) ? "opacity-50" : ""
                             }`}
