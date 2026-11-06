@@ -14,7 +14,6 @@ import {
 import { APP_VERSION } from "../branding";
 import { EnvironmentMachineIcon } from "../components/EnvironmentMachineIcon";
 import { OutdatedServerUpdateAction, ServerUpdateAction } from "../components/ServerUpdateAction";
-import { CompactSidebarButton, CompactSidebarPill } from "../components/sidebar/CompactSidebarPill";
 import { Button } from "../components/ui/button";
 import { Collapsible, CollapsiblePanel } from "../components/ui/collapsible";
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
@@ -33,7 +32,6 @@ import { SidebarSectionHeader } from "../sidebarProjects/SidebarSectionHeader";
 import { AllProjectsIcon } from "../sidebarProjects/sidebarProjectIcons";
 import {
   RUN_COUNT_PILL,
-  RUN_COUNT_PILL_SURFACE,
   RunCountNumbers,
   onLightRunCountGroup,
   runCountSummary,
@@ -57,7 +55,6 @@ import {
   computerRunCountGroups,
   computerShortcutChoice,
   computerShortcutLabel,
-  type ComputerChoice,
 } from "./sidebarComputers.logic";
 import {
   useSidebarComputers,
@@ -156,28 +153,6 @@ function ComputerCountPill(props: { readonly computer: SidebarComputer }) {
       className={cn("pointer-events-none", RUN_COUNT_PILL)}
     >
       <RunCountNumbers groups={groups.map(onLightRunCountGroup)} />
-    </span>
-  );
-}
-
-/**
- * The hidden sidebar's column has no room beside a computer's 32px button, so its corner shows
- * one number: the most urgent kind's, approvals before input before failures.
- */
-function ComputerCountBadge(props: { readonly computer: SidebarComputer }) {
-  const [urgent] = computerRunCountGroups({ ...props.computer.counts, working: 0 });
-  if (urgent === undefined) return null;
-  return (
-    <span
-      aria-hidden
-      data-computer-count-pill={props.computer.environmentId}
-      className={cn(
-        "pointer-events-none absolute top-0 right-0 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-3xs leading-none font-semibold tabular-nums",
-        RUN_COUNT_PILL_SURFACE,
-        onLightRunCountGroup(urgent).className,
-      )}
-    >
-      {urgent.count}
     </span>
   );
 }
@@ -415,41 +390,5 @@ function InfoLine(props: { readonly label: string; readonly children: ReactNode 
       <span>{props.label}</span>
       <span className="min-w-0 truncate text-muted-foreground">{props.children}</span>
     </div>
-  );
-}
-
-/** The section as the compact sidebar's pill: All computers, then each computer with its counts. */
-export function CompactSidebarComputers() {
-  const { shown, choice, computers } = useComputers();
-  if (!shown) return null;
-  const select = (next: ComputerChoice) => () => selectSidebarComputer(next);
-  return (
-    <CompactSidebarPill label="Computers">
-      <CompactSidebarButton
-        label="All computers"
-        isActive={choice === "all"}
-        data-computer="all"
-        data-track="sidebar.computer"
-        onClick={select("all")}
-      >
-        <AllProjectsIcon />
-      </CompactSidebarButton>
-      {computers.map((computer) => (
-        // The round button clips what leaves it, so the pill is its sibling.
-        <span key={computer.environmentId} className="relative flex">
-          <CompactSidebarButton
-            label={computer.name}
-            tooltip={<span className="whitespace-pre-line">{compactLabel(computer)}</span>}
-            isActive={choice === computer.environmentId}
-            data-computer={computer.environmentId}
-            data-track="sidebar.computer"
-            onClick={select(computer.environmentId)}
-          >
-            <ComputerIcon computer={computer} />
-          </CompactSidebarButton>
-          <ComputerCountBadge computer={computer} />
-        </span>
-      ))}
-    </CompactSidebarPill>
   );
 }

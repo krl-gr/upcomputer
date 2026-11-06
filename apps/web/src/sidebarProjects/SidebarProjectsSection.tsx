@@ -21,7 +21,6 @@ import {
   filterSidebarProjectScopeItems,
   reduceSidebarProjectScopeMenuState,
 } from "../components/Sidebar.logic";
-import { CompactSidebarButton } from "../components/sidebar/CompactSidebarPill";
 import { Collapsible, CollapsiblePanel } from "../components/ui/collapsible";
 import {
   Combobox,
@@ -273,17 +272,15 @@ function SortableProjectsItem(props: { readonly id: string; readonly children: R
 /**
  * "More": upstream's scope menu shape (search, then rows) over the remaining
  * rows, All projects and No project among them. As in upstream's menu,
- * right-click opens a project's settings. The compact sidebar shows it as an
- * icon button that opens the menu to its right.
+ * right-click opens a project's settings.
  */
-export function SidebarProjectsMore(props: {
+function SidebarProjectsMore(props: {
   readonly rows: ReadonlyArray<SidebarProjectsListRow>;
   /** A row key: a project key, or `ALL_PROJECTS_ROW_KEY`. */
   readonly onSelect: (key: string) => void;
   readonly onOpenProjectSettings: (project: SidebarProjectSnapshot) => void;
-  readonly compact?: boolean;
 }) {
-  const { rows, onSelect, onOpenProjectSettings, compact = false } = props;
+  const { rows, onSelect, onOpenProjectSettings } = props;
   const [menuState, dispatchMenu] = useReducer(reduceSidebarProjectScopeMenuState, {
     open: false,
     query: "",
@@ -310,20 +307,14 @@ export function SidebarProjectsMore(props: {
         if (item) onSelect(item.value);
       }}
     >
-      {compact ? (
-        <ComboboxTrigger render={<CompactSidebarButton label="More projects" />}>
+      <SidebarCompactTooltip label="More projects">
+        <ComboboxTrigger render={<SidebarMenuButton />}>
           <EllipsisIcon />
+          <span className="flex-1 truncate">More</span>
         </ComboboxTrigger>
-      ) : (
-        <SidebarCompactTooltip label="More projects">
-          <ComboboxTrigger render={<SidebarMenuButton />}>
-            <EllipsisIcon />
-            <span className="flex-1 truncate">More</span>
-          </ComboboxTrigger>
-        </SidebarCompactTooltip>
-      )}
+      </SidebarCompactTooltip>
       <ComboboxPopup
-        side={compact ? "right" : "bottom"}
+        side="bottom"
         className="max-w-[min(18rem,var(--available-width))] overflow-hidden"
       >
         <ComboboxSearchInput

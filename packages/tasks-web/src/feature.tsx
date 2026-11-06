@@ -46,9 +46,6 @@ const LazySidebarBots = lazy(() =>
  */
 export const isBotChatThread = (thread: ExperimentalWebThreadAccessoryProps) =>
   botMenu?.isBotChat(thread) ?? false;
-const LazyCompactSidebarBots = lazy(() =>
-  import("./bots/Bots.tsx").then((module) => ({ default: module.CompactSidebarBots })),
-);
 const LazyBotHeader = lazy(() =>
   import("./bots/Bots.tsx").then((module) => ({ default: module.BotHeader })),
 );
@@ -57,14 +54,6 @@ function SidebarBots() {
   return (
     <Suspense fallback={null}>
       <LazySidebarBots />
-    </Suspense>
-  );
-}
-
-function CompactSidebarBots() {
-  return (
-    <Suspense fallback={null}>
-      <LazyCompactSidebarBots />
     </Suspense>
   );
 }
@@ -120,7 +109,6 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   chatHeaderAccessory: ChatHeaderRunCounts,
   threadActions: (thread) => botMenu?.botThreadActions(thread) ?? [],
   sidebarSection: SidebarBots,
-  compactSidebarSection: CompactSidebarBots,
   coordinator: TaskReminders,
   settings: [
     {

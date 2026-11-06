@@ -26,7 +26,7 @@ const PICKED_AT_SCHEMA = Schema.NullOr(Schema.String);
 const NEVER_PICKED = "9999-12-31T23:59:59.999Z";
 
 /** The sidebar elements a pointer stays in while the Projects rows hold still. */
-const SIDEBAR_SURFACES = "[data-sidebar='sidebar'], [data-compact-sidebar]";
+const SIDEBAR_SURFACES = "[data-sidebar='sidebar']";
 
 export type SidebarProjectsListRow = SidebarProjectsRow<SidebarProjectSnapshot>;
 
