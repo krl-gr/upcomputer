@@ -3,7 +3,7 @@ import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environ
 import { describeError } from "@t3tools/client-runtime/errors";
 import { ThreadId, type EnvironmentId } from "@t3tools/contracts";
 import {
-  defaultBotPortrait,
+  defaultBotAppearance,
   type Bot,
   type BotAppearance,
   type TaskAgent,
@@ -29,7 +29,6 @@ import {
   botTaskStatus,
   type BotCharacterState,
 } from "./botStatus.ts";
-import { BotPortrait } from "./portraits/BotPortrait.tsx";
 
 interface BotList {
   readonly bots: ReadonlyArray<Bot>;
@@ -274,8 +273,8 @@ export const isBotAgent = (agent: Pick<TaskAgent, "id" | "startTags">) =>
   agent.startTags.length === 1 && agent.startTags[0] === `bot:${agent.id}`;
 
 /**
- * The face the bot's style picks: its shape character, or its picked portrait, or for bots
- * that never picked one the portrait its id derives.
+ * The bot's shape character. Portraits are hidden for now, so every bot draws its character,
+ * and a bot that never chose a look draws the one its id derives.
  */
 export function BotAvatar({
   id,
@@ -288,22 +287,14 @@ export function BotAvatar({
   readonly state: BotCharacterState;
   readonly size: number;
 }) {
-  if (appearance?.style === "character")
-    return (
-      <ConfigurableBotCharacter
-        appearance={appearance}
-        state={state}
-        // The character leaves more room around its body than a portrait does, so it is
-        // drawn a fifth larger to look the same size.
-        size={Math.round(size * 1.2)}
-        decorative
-      />
-    );
   return (
-    <BotPortrait
-      portrait={appearance?.portrait ?? defaultBotPortrait(id)}
+    <ConfigurableBotCharacter
+      appearance={appearance ?? defaultBotAppearance(id)}
       state={state}
-      size={size}
+      // The character leaves more room around its body than a portrait does, so it is
+      // drawn a fifth larger to look the same size.
+      size={Math.round(size * 1.2)}
+      decorative
     />
   );
 }
@@ -314,7 +305,7 @@ const noRequest = () => null;
  * Whether a run of a task from the bot's chat waits for an approval or an answer. Reads only
  * the shells of the runs the bot list names, and re-renders only when the answer changes.
  */
-export function useBotTaskRunRequest(environmentId: EnvironmentId, bot: Bot | undefined) {
+function useBotTaskRunRequest(environmentId: EnvironmentId, bot: Bot | undefined) {
   const key = (bot?.activeTaskRunThreadIds ?? []).join("\n");
   const atoms = useMemo(
     () =>

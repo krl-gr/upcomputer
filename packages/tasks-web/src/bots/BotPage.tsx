@@ -39,7 +39,6 @@ import {
   type BotMemoryProposal,
   type BotWriteInput,
   defaultBotAppearance,
-  defaultBotPortrait,
 } from "@t3tools/tasks-contracts/v1";
 import {
   useProjects,
@@ -101,7 +100,6 @@ import {
   TooltipTrigger,
 } from "../../../../apps/web/src/components/ui/tooltip.tsx";
 import { toastManager } from "../../../../apps/web/src/components/ui/toast.tsx";
-import { Toggle, ToggleGroup } from "../../../../apps/web/src/components/ui/toggle-group.tsx";
 import {
   BotAccessoryIcon,
   ConfigurableBotCharacter,
@@ -123,7 +121,6 @@ import {
   useBotStatus,
 } from "./botData.tsx";
 import { type BotCharacterState } from "./botStatus.ts";
-import { BotPortraitPicker } from "./portraits/BotPortraitPicker.tsx";
 
 const NO_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [];
 
@@ -455,16 +452,7 @@ function BotForm({
         ) : null}
         <SettingsSection title="Appearance">
           <div className="flex items-center gap-3 px-3 py-3 sm:px-4">
-            {appearance.style === "character" ? (
-              <CharacterPreview appearance={appearance} state={status.state} />
-            ) : (
-              <BotPortraitPicker
-                value={appearance.portrait ?? defaultBotPortrait(id)}
-                state={status.state}
-                disabled={!editable}
-                onChange={(portrait) => setAppearance({ ...appearance, portrait })}
-              />
-            )}
+            <CharacterPreview appearance={appearance} state={status.state} />
             <label className="grid min-w-0 flex-1 gap-1.5 text-sm font-medium">
               Name
               <Input
@@ -476,32 +464,11 @@ function BotForm({
               />
             </label>
           </div>
-          <SettingsRow
-            title="Style"
-            control={
-              <ToggleGroup
-                aria-label="Style"
-                variant="segmented"
-                disabled={!editable}
-                value={[appearance.style ?? "portrait"]}
-                onValueChange={(next) => {
-                  const style = next[0];
-                  if (style === "portrait" || style === "character")
-                    setAppearance({ ...appearance, style });
-                }}
-              >
-                <Toggle value="portrait">Portrait</Toggle>
-                <Toggle value="character">Character</Toggle>
-              </ToggleGroup>
-            }
+          <AppearancePicker
+            appearance={appearance}
+            disabled={!editable}
+            onAppearanceChange={setAppearance}
           />
-          {appearance.style === "character" ? (
-            <AppearancePicker
-              appearance={appearance}
-              disabled={!editable}
-              onAppearanceChange={setAppearance}
-            />
-          ) : null}
         </SettingsSection>
 
         <SettingsSection title="Instructions" hideTitle>
@@ -779,17 +746,10 @@ function CharacterPreview({
   readonly appearance: BotAppearance;
   readonly state: BotCharacterState;
 }) {
-  const shape = botAppearanceCatalog.shapes.find((entry) => entry.id === appearance.shape);
-  const color = botAppearanceCatalog.colors.find((entry) => entry.id === appearance.color);
   return (
-    <div className="flex w-24 shrink-0 flex-col items-center gap-0.5">
-      <span className="flex size-20 items-center justify-center">
-        <ConfigurableBotCharacter appearance={appearance} state={state} size={80} decorative />
-      </span>
-      <span className="w-full truncate text-center text-xs text-muted-foreground">
-        {color && shape ? `${color.label} ${shape.label.toLowerCase()}` : "Character"}
-      </span>
-    </div>
+    <span className="flex size-20 shrink-0 items-center justify-center">
+      <ConfigurableBotCharacter appearance={appearance} state={state} size={80} decorative />
+    </span>
   );
 }
 
