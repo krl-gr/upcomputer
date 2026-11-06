@@ -57,15 +57,16 @@ test("the Tasks header keeps its project, status, last-run and tag filters", () 
   NodeAssert.match(filters, /<TagFilterCombobox/);
 });
 
-test("Tasks and Agents share one project select, apart from the sidebar's scope", () => {
-  for (const route of ["TasksRoute.tsx", "AgentsRoute.tsx"]) {
-    const routeSource = NodeFS.readFileSync(new URL(`./${route}`, import.meta.url), "utf8");
-    NodeAssert.match(routeSource, /usePagesProjectFilter\(\)/);
-    NodeAssert.match(routeSource, /<ProjectFilterSelect/);
-  }
-  for (const view of ["AgentsView.tsx"]) {
-    const viewSource = NodeFS.readFileSync(new URL(`./${view}`, import.meta.url), "utf8");
-    NodeAssert.match(viewSource, /\{props\.projectSelect\}/);
+test("Tasks has a project select apart from the sidebar's scope, and Agents has none", () => {
+  const tasksRoute = NodeFS.readFileSync(new URL("./TasksRoute.tsx", import.meta.url), "utf8");
+  NodeAssert.match(tasksRoute, /usePagesProjectFilter\(\)/);
+  NodeAssert.match(tasksRoute, /<ProjectFilterSelect/);
+  for (const file of ["AgentsRoute.tsx", "AgentsView.tsx"]) {
+    const agentsSource = NodeFS.readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
+    NodeAssert.doesNotMatch(
+      agentsSource,
+      /usePagesProjectFilter|ProjectFilterSelect|projectSelect/,
+    );
   }
   // The pages neither read nor change the sidebar's project filter.
   for (const file of sourceFiles(new URL("../", import.meta.url))) {
