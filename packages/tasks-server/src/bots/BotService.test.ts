@@ -358,6 +358,33 @@ it.effect("a bot chat in another project stops the turn, and moves only to its b
         message:
           "Seeded bot's chat is in a project it isn't set up for. Open the bot's settings and choose its working project again.",
       });
+      // A bot saved before it had one project may still list others; its runs stay in its own.
+      const sql = yield* SqlClient.SqlClient;
+      const repository = yield* TaskRepository;
+      yield* sql`UPDATE bots SET allowed_projects_json = ${JSON.stringify([project, other])}`;
+      const task = yield* bots.assign({
+        agentId: botId,
+        requestId: "request-1",
+        title: "Background",
+        description: "",
+      });
+      yield* repository.createAgentRun({
+        id: TaskAgentRunId.make("run-bot"),
+        taskId: task.id,
+        agentId: botId,
+        threadId: taskThread,
+        modelSelection,
+        status: "running",
+        startedAt: timestamp,
+        completedAt: null,
+        triggerRunId: null,
+        continuesRunId: null,
+      });
+      const elsewhere = yield* Effect.flip(
+        bots.context({ ...turn(taskThread, "Work"), projectId: other }),
+      );
+      assert.equal(elsewhere._tag, "TurnContextRefusal");
+      assert.equal(elsewhere.code, "bot_project_unavailable");
     }),
   ),
 );
@@ -905,7 +932,7 @@ it.effect("a memory change the chat cannot show goes to notifications instead", 
   ),
 );
 
-it.effect("memory of a project the bot no longer has says how to fix it", () =>
+it.effect("a suggestion filed under another project says how to fix it", () =>
   run(
     Effect.gen(function* () {
       const bots = yield* BotService;
@@ -917,7 +944,7 @@ it.effect("memory of a project the bot no longer has says how to fix it", () =>
         assert.equal(error.code, "bot_memory_project_unavailable");
         assert.equal(
           error.message,
-          "This memory belongs to a project Seeded bot can't use anymore. Add the project back in the bot's settings, or make the memory global.",
+          "This suggestion is filed under a project Seeded bot doesn't work in. A bot keeps one memory list, not one per project: ask it to remember the fact in its chat.",
         );
       }
     }),

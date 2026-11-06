@@ -3323,10 +3323,12 @@ it.live("bot tools answer invalid arguments with what is wrong and what is allow
           ),
         ),
       );
-      // A bot has one memory: what it saves belongs to no project.
+      // A bot has one memory: what it saves belongs to no project. Sessions started with the
+      // older tool may still send a scope, which is ignored.
       const saved = yield* callTaskTool(bot.threadId, "bot_remember", {
         id: "fact",
         text: "A fact",
+        scope: "project",
       });
       assert.isFalse(saved.isError, saved.text);
       assert.equal((yield* bots.memory(bot.agent.id))[0]?.projectId, null);

@@ -93,12 +93,11 @@ const handlers = McpToolAccess.toLayer(
         return yield* new TaskError({
           message: "Memory and task writes are unavailable in plan mode.",
         });
-      const projectId = bot.threadId === threadId ? bot.projectId : thread.projectId;
-      if (!bot.allowedProjectIds.includes(projectId))
+      if (bot.threadId !== threadId && thread.projectId !== bot.projectId)
         return yield* new TaskError({
           message: `This chat is in a project ${bot.agent.name} isn't set up for, so its memory and tasks are unavailable here. Ask the user to open the bot's settings and choose its working project again.`,
         });
-      return { bot, projectId, thread };
+      return { bot, thread };
     });
     const result = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       effect.pipe(
