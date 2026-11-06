@@ -45,9 +45,11 @@ import {
   describeAppUpdateCard,
   describeSidebarNotificationsButton,
   describeUpdateRun,
+  hasFailedUpdate,
   type NotificationRank,
   orderNotificationCards,
   type SidebarNotificationsDot,
+  updateRunFailed,
   visibleBackgroundNotices,
 } from "./sidebarNotifications.logic";
 import { type SidebarUpdates, useSidebarUpdates } from "./useSidebarUpdates";
@@ -97,6 +99,11 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
   const { dot, label } = describeSidebarNotificationsButton({
     severities: notices.map((notice) => notice.severity),
     update: updates.signal,
+    updateFailed: hasFailedUpdate({
+      app: updates.state ? describeAppUpdateCard(updates.state, updates.action) : null,
+      providerStatuses: updates.providers.map((card) => card.provider.updateState?.status),
+      run: updates.run,
+    }),
   });
   const tooltipSide = useSidebarFooterTooltipSide();
 
@@ -118,7 +125,7 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
                       <BadgedIcon icon={BellIcon} dotClassName={dot ? DOT_CLASS[dot] : null} />
                       {updates.signal.kind === "downloading" ? (
                         <DownloadRing percent={updates.signal.percent} />
-                      ) : updates.run !== null ? (
+                      ) : updates.run !== null && !updateRunFailed(updates.run) ? (
                         <DownloadRing percent={null} />
                       ) : null}
                     </SidebarMenuButton>
@@ -408,9 +415,11 @@ function NotificationsPanel({
             }
             action={
               // Update everything is the one way to update a server from here.
-              <NotificationButton tone="secondary" disabled={pending} onClick={confirmEverything}>
-                Update
-              </NotificationButton>
+              updates.runsEverything ? (
+                <NotificationButton tone="secondary" disabled={pending} onClick={confirmEverything}>
+                  Update
+                </NotificationButton>
+              ) : null
             }
           />
         ),

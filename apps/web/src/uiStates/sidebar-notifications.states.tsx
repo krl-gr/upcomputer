@@ -406,6 +406,10 @@ const APP_UPDATE_STATES_2: ReadonlyArray<UiState> = [
 const EVERYTHING_STATES: ReadonlyArray<UiState> = [
   bell("one provider behind: Update, no Update all", { providers: [CLAUDE] }),
   bell("a server behind: Update opens Update everything", { servers: SERVERS }),
+  bell("a server behind while the app downloads: no Update", {
+    update: DOWNLOADING,
+    servers: SERVERS,
+  }),
   bell("several updates: Update all", {
     update: DOWNLOADED,
     providers: PROVIDERS,

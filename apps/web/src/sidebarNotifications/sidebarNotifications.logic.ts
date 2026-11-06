@@ -68,21 +68,26 @@ export type SidebarNotificationsDot = "error" | "warning" | "neutral";
 export function describeSidebarNotificationsButton({
   severities,
   update,
+  updateFailed = false,
 }: {
   readonly severities: ReadonlyArray<BackgroundNotice["severity"]>;
   readonly update: SidebarUpdateSignal;
+  /** An update card shows a failure: see `hasFailedUpdate`. */
+  readonly updateFailed?: boolean;
 }): { readonly dot: SidebarNotificationsDot | null; readonly label: string } {
-  const dot: SidebarNotificationsDot | null = severities.includes("error")
-    ? "error"
-    : severities.includes("warning")
-      ? "warning"
-      : severities.length > 0 || update.kind === "available" || update.kind === "ready"
-        ? "neutral"
-        : null;
+  const dot: SidebarNotificationsDot | null =
+    severities.includes("error") || updateFailed
+      ? "error"
+      : severities.includes("warning")
+        ? "warning"
+        : severities.length > 0 || update.kind === "available" || update.kind === "ready"
+          ? "neutral"
+          : null;
   const parts = [
     severities.length > 0
       ? `${severities.length} notification${severities.length === 1 ? "" : "s"}`
       : null,
+    updateFailed ? "update failed" : null,
     update.kind === "available"
       ? "update available"
       : update.kind === "ready"
@@ -175,6 +180,31 @@ export function orderNotificationCards<
   );
 }
 
+/** Whether a card would show a failed update: the app's own, a provider's, or Update everything. */
+export function hasFailedUpdate({
+  app,
+  providerStatuses,
+  run,
+}: {
+  readonly app: AppUpdateCard | null;
+  readonly providerStatuses: ReadonlyArray<string | undefined>;
+  readonly run: UpdateEverythingRun | null;
+}): boolean {
+  // A run's card stands in for the app and provider cards.
+  if (run !== null) return updateRunFailed(run);
+  return app?.kind === "failed" || providerStatuses.includes("failed");
+}
+
+/** Update everything has stopped with a failure; until then it is running. */
+export function updateRunFailed(run: UpdateEverythingRun): boolean {
+  return (
+    run.phase !== "countdown" &&
+    run.phase !== "installing" &&
+    run.machines.every((machine) => machine.result !== null) &&
+    run.machines.some((machine) => machine.result === "failed")
+  );
+}
+
 /** The Update everything card's words; upstream's capsule below them carries the count. */
 export function describeUpdateRun(run: UpdateEverythingRun): {
   readonly title: string;
@@ -183,13 +213,13 @@ export function describeUpdateRun(run: UpdateEverythingRun): {
   const running = (detail: string) => ({ title: "Updating everything", detail });
   if (run.phase === "countdown") return running(`${APP_BASE_NAME} restarts to finish updating.`);
   if (run.phase === "installing") return running(`Restarting ${APP_BASE_NAME}.`);
+  if (updateRunFailed(run)) {
+    return { title: "Update everything failed", detail: "Some updates did not finish." };
+  }
   if (run.machines.some((machine) => machine.result === null)) {
     return running(
       run.phase === "providers" ? "Updating provider CLIs first." : "Updating servers.",
     );
-  }
-  if (run.machines.some((machine) => machine.result === "failed")) {
-    return { title: "Update everything failed", detail: "Some updates did not finish." };
   }
   return running(run.localVersion === null ? "Finishing up." : "Downloading the app update.");
 }
