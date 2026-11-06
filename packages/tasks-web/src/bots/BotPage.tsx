@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
-import { ArrowLeftIcon, BanIcon, InfoIcon, LockIcon, PencilIcon, Trash2Icon } from "lucide-react";
+import { ArrowLeftIcon, BanIcon, InfoIcon, XIcon } from "lucide-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { describeError } from "@t3tools/client-runtime/errors";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
@@ -21,7 +21,6 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import {
-  BOT_MEMORY_CONTEXT_BUDGET,
   BOTS_RPC_METHODS,
   botMemoryContext,
   TaskAgentId,
@@ -73,7 +72,6 @@ import {
   AlertDialogPopup,
   AlertDialogTitle,
 } from "../../../../apps/web/src/components/ui/alert-dialog.tsx";
-import { Badge } from "../../../../apps/web/src/components/ui/badge.tsx";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { Input } from "../../../../apps/web/src/components/ui/input.tsx";
 import { Textarea } from "../../../../apps/web/src/components/ui/textarea.tsx";
@@ -884,18 +882,16 @@ function MemorySections({
         </InfoTip>
       }
     >
-      {entries.length > 0 ? (
-        <MemoryBudget
-          used={context.used}
-          shown={context.selected.length}
-          total={context.entries.length}
-        />
+      {context.selected.length < context.entries.length ? (
+        <p className="px-3 pt-3 pb-1 text-xs text-muted-foreground sm:px-4">
+          {context.entries.length - context.selected.length} of {context.entries.length} facts
+          don&apos;t fit the chat&apos;s context. The bot can still look them up.
+        </p>
       ) : null}
       {context.entries.map((entry) => (
         <MemoryEntry
           key={`${entry.id}:${entry.updatedAt}`}
           entry={entry}
-          meta={formatRelativeTimeLabel(entry.updatedAt)}
           inContext={inContext.has(entry.id)}
           disabled={!canWrite}
           onSave={(value) => {
@@ -923,70 +919,6 @@ function MemorySections({
 }
 
 /** How much of the context budget the chat's memory snapshot uses. */
-function MemoryBudget({
-  used,
-  shown,
-  total,
-}: {
-  readonly used: number;
-  readonly shown: number;
-  readonly total: number;
-}) {
-  return (
-    <div className="grid gap-1.5 px-3 py-2.5 sm:px-4">
-      <div className="flex items-baseline justify-between gap-3 text-xs text-muted-foreground">
-        <span>
-          {shown === total
-            ? `All ${total} ${total === 1 ? "memory is" : "memories are"} in the chat's context`
-            : `${shown} of ${total} memories are in the chat's context`}
-        </span>
-        <span className="shrink-0 tabular-nums">
-          {used.toLocaleString()} / {BOT_MEMORY_CONTEXT_BUDGET.toLocaleString()} characters
-        </span>
-      </div>
-      <div
-        className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60"
-        role="progressbar"
-        aria-label="Memory in the chat's context"
-        aria-valuemin={0}
-        aria-valuemax={BOT_MEMORY_CONTEXT_BUDGET}
-        aria-valuenow={used}
-      >
-        <div
-          className="h-full rounded-full bg-primary"
-          style={{ width: `${Math.min(100, (used / BOT_MEMORY_CONTEXT_BUDGET) * 100)}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-/** One fact as text with its scope, source and age, and its actions at the end. */
-function MemoryRow({
-  meta,
-  marks,
-  actions,
-  children,
-}: {
-  readonly meta: string;
-  readonly marks?: ReactNode;
-  readonly actions: ReactNode;
-  readonly children: ReactNode;
-}) {
-  return (
-    <div className="group/memory flex items-start gap-3 px-3 py-2.5 sm:px-4">
-      <div className="grid min-w-0 flex-1 gap-0.5">
-        {children}
-        <div className="flex min-w-0 items-center gap-1.5">
-          {marks}
-          <p className="truncate text-xs text-muted-foreground">{meta}</p>
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-1">{actions}</div>
-    </div>
-  );
-}
-
 /** Enter or leaving the field saves; Shift+Enter starts a new line; Escape cancels. */
 function handleMemoryKey(
   event: ReactKeyboardEvent<HTMLTextAreaElement>,
@@ -1003,17 +935,16 @@ function handleMemoryKey(
   }
 }
 
+/** One fact: click the text to edit it in place; delete shows on hover. */
 function MemoryEntry({
   entry,
-  meta,
   inContext,
   disabled,
   onSave,
   onDelete,
 }: {
   readonly entry: BotMemory;
-  readonly meta: string;
-  /** Null for entries outside the chat's working project. */
+  /** Facts past the context budget reach the bot only when it looks them up. */
   readonly inContext: boolean;
   readonly disabled: boolean;
   readonly onSave: (text: string) => void;
@@ -1022,6 +953,7 @@ function MemoryEntry({
   const [text, setText] = useState<string | null>(null);
   // Saving or cancelling removes the field, which can blur it once more.
   const open = useRef(false);
+  const editing = text !== null;
   const edit = () => {
     open.current = true;
     setText(entry.text);
@@ -1034,100 +966,68 @@ function MemoryEntry({
     if (save && value !== "" && value !== entry.text) onSave(value);
   };
   return (
-    <MemoryRow
-      meta={meta}
-      marks={
-        <>
-          {entry.owner === "user" ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span
-                    aria-label="Locked: written by you"
-                    className="inline-flex text-muted-foreground"
-                  >
-                    <LockIcon className="size-3" />
-                  </span>
-                }
-              />
-              <TooltipPopup side="top">
-                You wrote this, so the bot cannot change or forget it. You can.
-              </TooltipPopup>
-            </Tooltip>
-          ) : null}
-          {inContext ? null : (
-            <Badge size="sm" variant="warning">
-              Not in context
-            </Badge>
-          )}
-        </>
-      }
-      actions={
-        text === null ? (
-          <span className="flex gap-0.5 opacity-0 group-focus-within/memory:opacity-100 group-any-hover/memory:opacity-100 pointer-coarse:opacity-100">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    aria-label="Edit memory"
-                    disabled={disabled}
-                    onClick={edit}
-                  >
-                    <PencilIcon />
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">Edit memory</TooltipPopup>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon-xs"
-                    variant="ghost-destructive"
-                    aria-label="Delete memory"
-                    disabled={disabled}
-                    onClick={onDelete}
-                  >
-                    <Trash2Icon />
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">Delete memory</TooltipPopup>
-            </Tooltip>
-          </span>
-        ) : null
-      }
-    >
-      {text === null ? (
-        <button
-          type="button"
-          disabled={disabled}
-          className="cursor-text whitespace-pre-wrap break-words rounded-sm text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={edit}
-        >
-          {entry.text}
-        </button>
-      ) : (
-        <Textarea
-          aria-label="Memory text"
-          size="sm"
-          autoFocus
-          maxLength={2000}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          onBlur={() => close(true)}
-          onKeyDown={(event) =>
-            handleMemoryKey(
-              event,
-              () => close(true),
-              () => close(false),
-            )
-          }
-        />
+    <div
+      className={cn(
+        "group/memory flex items-start gap-3 px-3 py-2.5 sm:px-4",
+        editing && "bg-muted/40",
       )}
-    </MemoryRow>
+    >
+      <div className="grid min-w-0 flex-1 gap-0.5">
+        {editing ? (
+          <div className="text-sm text-foreground [&_textarea]:min-h-0 [&_textarea]:resize-none [&_textarea]:p-0">
+            <Textarea
+              unstyled
+              aria-label="Memory text"
+              autoFocus
+              maxLength={2000}
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              onBlur={() => close(true)}
+              onKeyDown={(event) =>
+                handleMemoryKey(
+                  event,
+                  () => close(true),
+                  () => close(false),
+                )
+              }
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={disabled}
+            className={cn(
+              "cursor-text whitespace-pre-wrap break-words text-left text-sm outline-none",
+              !inContext && "text-muted-foreground",
+            )}
+            onClick={edit}
+          >
+            {entry.text}
+          </button>
+        )}
+        <p className="truncate text-xs text-muted-foreground">
+          {editing ? "Enter to save · Esc to cancel" : formatRelativeTimeLabel(entry.updatedAt)}
+        </p>
+      </div>
+      {editing ? null : (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="icon-xs"
+                variant="ghost-muted"
+                aria-label="Delete memory"
+                disabled={disabled}
+                className="opacity-0 group-focus-within/memory:opacity-100 group-any-hover/memory:opacity-100 pointer-coarse:opacity-100"
+                onClick={onDelete}
+              >
+                <XIcon />
+              </Button>
+            }
+          />
+          <TooltipPopup side="top">Delete memory</TooltipPopup>
+        </Tooltip>
+      )}
+    </div>
   );
 }
