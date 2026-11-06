@@ -46,15 +46,6 @@
 [data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar="footer"] {
   padding-bottom: 1rem;
 }
-/* The status badge keeps about 16px instead of growing with the face. */
-[data-sidebar-compact="true"]
-  [data-app-sidebar]
-  [data-sidebar-list-row]
-  g.cbc-prop:has(> .cbc-badge) {
-  transform-box: fill-box;
-  transform-origin: center;
-  scale: 0.9;
-}
 
 /*
  * The sidebar's scroll runs under the titlebar row and the footer (the compact

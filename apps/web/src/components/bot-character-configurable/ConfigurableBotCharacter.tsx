@@ -1,7 +1,12 @@
 /* oxlint-disable shadcn/no-unknown-classes, shadcn/no-raw-colors -- SVG artwork uses colocated CSS and fixed illustration colors independent of UI tokens. */
 import { useId, useLayoutEffect, useRef } from "react";
 import { EyeAccessories, FaceAccessories, Headwear } from "./Accessories";
-import { BotStatusProps, botStatusDetail, usePausedWhenHidden } from "./BotStatusProps";
+import {
+  BotStatusProps,
+  botStatusDetail,
+  usePausedWhenHidden,
+  useStateChanged,
+} from "./BotStatusProps";
 import {
   botColors,
   botShapes,
@@ -34,6 +39,7 @@ export function ConfigurableBotCharacter({
 }: ConfigurableBotCharacterProps) {
   const id = `cbc-${useId().replace(/:/g, "")}`;
   const root = usePausedWhenHidden();
+  const changed = useStateChanged(state);
   const shape = botShapes.find((entry) => entry.id === appearance.shape) ?? botShapes[4];
   const color = botColors.find((entry) => entry.id === appearance.color) ?? botColors[4];
   const stateLabel = botStates.find((entry) => entry.id === state)?.label ?? botStates[0].label;
@@ -51,6 +57,7 @@ export function ConfigurableBotCharacter({
       width={pixels}
       height={pixels}
       data-state={state}
+      data-changed={changed ? "" : undefined}
       data-detail={botStatusDetail(pixels)}
       data-shape={appearance.shape}
       data-color={appearance.color}
@@ -68,13 +75,17 @@ export function ConfigurableBotCharacter({
           <stop stopColor={color.fill} />
           <stop offset="1" stopColor={color.shade} />
         </linearGradient>
+        {/* Open, it clears both eyes; the limit state slides it down to tired, half-shut lids. */}
+        <clipPath id={`${id}-lid`}>
+          <rect className="cbc-lid" x="40" y="73" width="50" height="80" />
+        </clipPath>
       </defs>
       <g aria-hidden="true">
         <ellipse className="cbc-shadow" cx="64" cy="119" rx="39" ry="3" />
         <g className="cbc-pose">
           <path className="cbc-body" d={shape.path} fill={`url(#${id}-body)`} />
-          <g className="cbc-eyes" transform={`rotate(${shape.eyeTilt} 64 72)`}>
-            <g className="cbc-blink">
+          <g className="cbc-eyes">
+            <g className="cbc-blink" clipPath={`url(#${id}-lid)`}>
               <rect
                 className="cbc-eye cbc-eye-left"
                 x="49"
@@ -103,7 +114,7 @@ export function ConfigurableBotCharacter({
             <FaceAccessories accessory={appearance.accessory} />
           </g>
         </g>
-        <BotStatusProps />
+        <BotStatusProps hand={color} />
       </g>
     </svg>
   );

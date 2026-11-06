@@ -27,10 +27,6 @@
   inset: 0;
   overflow: visible;
 }
-/* Strokes that stand beside the character land on the painting's hair or hat here. */
-.bot-portrait-status .cbc-attention {
-  filter: drop-shadow(0 0 0.8px #0009);
-}
 .bot-portrait :is(.bot-body, .bot-eye) {
   transform-box: fill-box;
 }
