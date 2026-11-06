@@ -5,15 +5,10 @@ import {
   OrchestrationV2StoredEvent,
   type OrchestrationV2PlanArtifact,
   type OrchestrationV2Run,
-  type OrchestrationV2ProviderTurn,
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
   type ModelSelection,
-  type OrchestrationV2Actor,
-  type OrchestrationV2CreationSource,
-  type RuntimeMode,
-  type ProviderInteractionMode,
   ProviderInstanceId,
   ProviderSessionId,
   ProviderThreadId,
@@ -32,9 +27,15 @@ import * as SqlError from "effect/sql/SqlError";
 
 import { AgentScope } from "@t3tools/shared/AgentScope";
 import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
-import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@t3tools/shared/model";
-import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import { modelSelectionsEqual } from "@t3tools/shared/model";
+import {
+  ProviderTurnAnalytics,
+  type ProviderTurnAnalyticsContext,
+  type ProviderTurnFailureAnalytics,
+  type ProviderTurnReport,
+} from "../telemetry/ProviderUsageAnalytics.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -88,106 +89,6 @@ export const ProviderEventIngestorV2Error = Schema.Union([
 ]);
 export type ProviderEventIngestorV2Error = typeof ProviderEventIngestorV2Error.Type;
 
-export interface ProviderTurnAnalyticsContext {
-  readonly modelSelection: ModelSelection;
-  readonly runtimeMode?: RuntimeMode;
-  readonly interactionMode?: ProviderInteractionMode;
-  readonly origin?: ProviderTurnOrigin;
-}
-
-/**
- * Where the run's starting message came from. Most turns start without a
- * person (provider continuations, agent sends, delegated subagents), so
- * reports need this to tell user turns apart.
- */
-export interface ProviderTurnOrigin {
-  readonly createdBy: OrchestrationV2Actor;
-  readonly creationSource: OrchestrationV2CreationSource;
-  readonly scheduled: boolean;
-  readonly subagent: boolean;
-}
-
-export class ProviderTurnAnalytics extends Context.Reference<{
-  readonly record: (properties: Readonly<Record<string, unknown>>) => Effect.Effect<void>;
-}>("t3/orchestration-v2/ProviderTurnAnalytics", {
-  defaultValue: () => ({ record: () => Effect.void }),
-}) {}
-
-export const layerAnalytics = Layer.effect(
-  ProviderTurnAnalytics,
-  Effect.gen(function* () {
-    const analytics = yield* AnalyticsService.AnalyticsService;
-    return {
-      record: Effect.fn("ProviderTurnAnalytics.record")(function (
-        properties: Readonly<Record<string, unknown>>,
-      ) {
-        return analytics.record("provider.turn.completed", properties).pipe(
-          Effect.andThen(
-            properties.terminalStatus === "completed"
-              ? analytics.recordMilestone("app.first_turn_completed", {
-                  provider: properties.provider,
-                })
-              : Effect.void,
-          ),
-        );
-      }),
-    };
-  }),
-);
-
-function providerTurnAnalyticsProperties(input: {
-  readonly driver: ProviderAdapter.ProviderAdapterV2Event["driver"];
-  readonly providerTurn: OrchestrationV2ProviderTurn;
-  readonly context?: ProviderTurnAnalyticsContext;
-  readonly firstOutputAt?: DateTime.Utc;
-}): Readonly<Record<string, unknown>> {
-  const usage = input.providerTurn.turnTokenUsage;
-  const modelSelection = input.context?.modelSelection;
-  const effort = modelSelection
-    ? (getModelSelectionStringOptionValue(modelSelection, "reasoningEffort") ??
-      getModelSelectionStringOptionValue(modelSelection, "effort"))
-    : undefined;
-  return {
-    provider: input.driver,
-    terminalStatus: input.providerTurn.status,
-    usageStatus: usage?.usageStatus ?? "unavailable",
-    usageScope: usage?.usageScope ?? "main_agent",
-    ...(usage ? { hasSubagents: usage.hasSubagents } : {}),
-    ...(usage?.inputTokens === undefined ? {} : { inputTokens: usage.inputTokens }),
-    ...(usage?.cachedInputTokens === undefined
-      ? {}
-      : { cachedInputTokens: usage.cachedInputTokens }),
-    ...(usage?.cacheCreationTokens === undefined
-      ? {}
-      : { cacheCreationTokens: usage.cacheCreationTokens }),
-    ...(usage?.outputTokens === undefined ? {} : { outputTokens: usage.outputTokens }),
-    ...(usage?.reasoningTokens === undefined ? {} : { reasoningTokens: usage.reasoningTokens }),
-    ...(modelSelection ? { model: modelSelection.model, mixedModels: false } : {}),
-    ...(effort ? { effort } : {}),
-    ...(input.context?.runtimeMode ? { runtimeMode: input.context.runtimeMode } : {}),
-    ...(input.context?.interactionMode ? { interactionMode: input.context.interactionMode } : {}),
-    ...input.context?.origin,
-    ...(input.providerTurn.startedAt && input.providerTurn.completedAt
-      ? {
-          durationMs: Math.max(
-            0,
-            DateTime.toEpochMillis(input.providerTurn.completedAt) -
-              DateTime.toEpochMillis(input.providerTurn.startedAt),
-          ),
-        }
-      : {}),
-    ...(input.providerTurn.startedAt && input.firstOutputAt
-      ? {
-          ttftMs: Math.max(
-            0,
-            DateTime.toEpochMillis(input.firstOutputAt) -
-              DateTime.toEpochMillis(input.providerTurn.startedAt),
-          ),
-        }
-      : {}),
-  };
-}
-
 /** Items the model produced, as opposed to the prompt or the app's own notices. */
 const MODEL_OUTPUT_ITEM_TYPES: ReadonlySet<OrchestrationV2TurnItem["type"]> = new Set([
   "assistant_message",
@@ -213,7 +114,7 @@ type ProviderTurnTerminal = Extract<
  */
 function providerTurnFailureAnalytics(
   terminal: ProviderTurnTerminal,
-): Readonly<Record<string, unknown>> | undefined {
+): ProviderTurnFailureAnalytics | undefined {
   if (terminal.status === "failed") {
     return {
       failureClass: terminal.failure.class,
@@ -398,6 +299,7 @@ export const layer: Layer.Layer<
   | IdAllocator.IdAllocatorV2
   | ProjectionStore.ProjectionStoreV2
   | ThreadCommandExecutor.ThreadCommandExecutor
+  | ProviderInstanceRegistry.ProviderInstanceRegistry
 > = Layer.effect(
   ProviderEventIngestorV2,
   Effect.gen(function* () {
@@ -408,13 +310,15 @@ export const layer: Layer.Layer<
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
     const analytics = yield* ProviderTurnAnalytics;
     const agentScope = yield* AgentScope;
+    const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+    const scope = yield* Effect.scope;
     const completedTurnAnalytics = new Set<string>();
     // When each running turn's first model output arrived, for its time to first token.
     const turnFirstOutputAt = new Map<string, DateTime.Utc>();
     // `provider_turn.updated` carries the turn's usage and `turn.terminal` its failure, in
     // either order, so a failed or interrupted turn is recorded once both have arrived.
-    const turnsAwaitingTerminal = new Map<string, Readonly<Record<string, unknown>>>();
-    const terminalsAwaitingTurn = new Map<string, Readonly<Record<string, unknown>>>();
+    const turnsAwaitingTerminal = new Map<string, ProviderTurnReport>();
+    const terminalsAwaitingTurn = new Map<string, ProviderTurnFailureAnalytics>();
     const recordTurnTerminal = Effect.fn("ProviderEventIngestor.recordTurnTerminal")(function* (
       key: string,
       terminal: ProviderTurnTerminal,
@@ -427,13 +331,13 @@ export const layer: Layer.Layer<
         return;
       }
       turnsAwaitingTerminal.delete(key);
-      yield* analytics.record({ ...turn, ...failure });
+      yield* analytics.turnCompleted({ ...turn, failure });
     });
-    const recordUnfinishedTurn = (key: string, turn: Readonly<Record<string, unknown>>) => {
+    const recordUnfinishedTurn = (key: string, turn: ProviderTurnReport) => {
       const failure = terminalsAwaitingTurn.get(key);
       if (failure !== undefined) {
         terminalsAwaitingTurn.delete(key);
-        return analytics.record({ ...turn, ...failure });
+        return analytics.turnCompleted({ ...turn, failure });
       }
       rememberBounded(turnsAwaitingTerminal, key, turn);
       return Effect.sleep(TURN_TERMINAL_WAIT).pipe(
@@ -441,7 +345,7 @@ export const layer: Layer.Layer<
           Effect.suspend(() => {
             if (turnsAwaitingTerminal.get(key) !== turn) return Effect.void;
             turnsAwaitingTerminal.delete(key);
-            return analytics.record(turn);
+            return analytics.turnCompleted(turn);
           }),
         ),
         Effect.forkDetach,
@@ -807,6 +711,8 @@ export const layer: Layer.Layer<
                 }),
               ];
             }
+            case "background_work.updated":
+              return [];
             case "command_output.delta":
               // Live output is routed to the command output hub before ingestion.
               return [];
@@ -910,6 +816,23 @@ export const layer: Layer.Layer<
           },
           (effect, input) =>
             effect.pipe(
+              Effect.tap((storedEvents) =>
+                Effect.gen(function* () {
+                  if (
+                    storedEvents.length === 0 ||
+                    input.event.type !== "turn.terminal" ||
+                    input.event.status !== "failed" ||
+                    input.event.failure.class !== "usage_limit"
+                  )
+                    return;
+                  const instance = yield* instances.getInstance(input.providerInstanceId);
+                  if (!instance?.snapshot.refreshUsage) return;
+                  yield* instance.snapshot.refreshUsage.pipe(
+                    Effect.ignoreCause({ log: true }),
+                    Effect.forkIn(scope, { startImmediately: true }),
+                  );
+                }),
+              ),
               Effect.flatMap((storedEvents) =>
                 Effect.gen(function* () {
                   if (input.event.type !== "app_thread.created") return storedEvents;
@@ -1002,17 +925,17 @@ export const layer: Layer.Layer<
                   }
                   const firstOutputAt = turnFirstOutputAt.get(key);
                   turnFirstOutputAt.delete(key);
-                  const properties = providerTurnAnalyticsProperties({
+                  const report: ProviderTurnReport = {
                     driver: input.event.driver,
                     providerTurn,
                     ...(input.analyticsContext === undefined
                       ? {}
                       : { context: input.analyticsContext }),
                     ...(firstOutputAt === undefined ? {} : { firstOutputAt }),
-                  });
+                  };
                   yield* providerTurn.status === "failed" || providerTurn.status === "interrupted"
-                    ? recordUnfinishedTurn(key, properties)
-                    : analytics.record(properties);
+                    ? recordUnfinishedTurn(key, report)
+                    : analytics.turnCompleted(report);
                 }),
               ),
               (effect) =>

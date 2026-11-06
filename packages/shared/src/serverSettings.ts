@@ -16,7 +16,7 @@ import {
   type ModelSelection,
   type ProjectId,
   type ProjectScopedServerSettingKey,
-  type ProjectSettingsOverrides,
+  ProjectSettingsOverrides,
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
@@ -25,6 +25,7 @@ import {
   withIdleCompaction,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { deepMerge } from "./Struct.ts";
 import { fromLenientJson } from "./schemaJson.ts";
@@ -36,8 +37,13 @@ import {
   resolveBackgroundActivitySettings,
 } from "./backgroundActivitySettings.ts";
 
-const ServerSettingsJson = fromLenientJson(ServerSettings);
-const decodeServerSettingsJson = Schema.decodeUnknownOption(ServerSettingsJson);
+// Only observability: a value the server migrates on load elsewhere in the file must not drop it.
+const ServerObservabilitySettingsJson = fromLenientJson(
+  Schema.Struct({ observability: ServerSettings.fields.observability }),
+);
+const decodeServerObservabilitySettingsJson = Schema.decodeUnknownOption(
+  ServerObservabilitySettingsJson,
+);
 
 export function isModelSelectionProviderEnabled(
   settings: ServerSettings,
@@ -94,13 +100,15 @@ export function fallbackTextGenerationModelSelection(
   ) {
     return threadDefault;
   }
-  return {
-    instanceId,
-    model:
-      DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[driver] ??
-      DEFAULT_MODEL_BY_PROVIDER[driver] ??
-      DEFAULT_TEXT_GENERATION_MODEL,
-  };
+  return { instanceId, model: defaultTextGenerationModel(driver) };
+}
+
+export function defaultTextGenerationModel(driver: ProviderDriverKind): string {
+  return (
+    DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[driver] ??
+    DEFAULT_MODEL_BY_PROVIDER[driver] ??
+    DEFAULT_TEXT_GENERATION_MODEL
+  );
 }
 
 /**
@@ -195,6 +203,24 @@ export function resolveReviewGuideModelSelection(
   return resolveSourceControlWriterModelSelection(settings, providers, projectId);
 }
 
+/** Transcript cleanup follows the text generation model unless its own usable model is set. */
+export function resolveSpeechPostProcessingModelSelection(
+  settings: ServerSettings,
+  providers?: ReadonlyArray<ServerProvider>,
+): ModelSelection {
+  const selection = settings.speechPostProcessingModelSelection;
+  if (!selection || !isModelSelectionProviderEnabled(settings, selection)) {
+    return settings.textGenerationModelSelection;
+  }
+  if (providers === undefined) return selection;
+  const provider = providers.find((candidate) => candidate.instanceId === selection.instanceId);
+  return provider?.enabled === true &&
+    isProviderAvailable(provider) &&
+    isProviderTextGenerationCapable(provider)
+    ? selection
+    : settings.textGenerationModelSelection;
+}
+
 export interface PersistedServerObservabilitySettings {
   readonly otlpTracesUrl: string | undefined;
   readonly otlpMetricsUrl: string | undefined;
@@ -225,7 +251,7 @@ function extractPersistedServerObservabilitySettings(input: {
 export function parsePersistedServerObservabilitySettings(
   raw: string,
 ): PersistedServerObservabilitySettings {
-  const decoded = decodeServerSettingsJson(raw);
+  const decoded = decodeServerObservabilitySettingsJson(raw);
   if (Option.isSome(decoded)) {
     return extractPersistedServerObservabilitySettings(decoded.value);
   }
@@ -271,6 +297,25 @@ function mergeSettingsEntries<Value>(
   return Object.fromEntries(next);
 }
 
+// Secret persistence keys tokens by trimmed, lowercased host, so merge on the same key.
+const byHost = (tokens: unknown) =>
+  Object.fromEntries(
+    Object.entries(Predicate.isObject(tokens) ? tokens : {}).map(([host, token]) => [
+      host.trim().toLowerCase(),
+      token,
+    ]),
+  );
+
+const knownProjectOverrideKeys = new Set(Object.keys(ProjectSettingsOverrides.fields));
+
+function pickOverrideKeys(entry: ProjectSettingsOverrides | undefined, known: boolean) {
+  return Object.fromEntries(
+    Object.entries<unknown>(entry ?? {}).filter(
+      ([key]) => knownProjectOverrideKeys.has(key) === known,
+    ),
+  );
+}
+
 // Older clients omit providerInstances during whole-entry replacement; preserve it to avoid wiping overrides.
 function mergeProjectSettingsOverridesPatch(
   current: Readonly<Record<string, ProjectSettingsOverrides>>,
@@ -284,7 +329,9 @@ function mergeProjectSettingsOverridesPatch(
     }
     const storedProviderInstances = current[projectId]?.providerInstances;
     next.set(projectId, {
-      ...entry,
+      // Preserve downgraded storage, but reject new unknown writes so clients can detect unsupported settings.
+      ...pickOverrideKeys(current[projectId], false),
+      ...pickOverrideKeys(entry, true),
       ...(Object.hasOwn(entry, "providerInstances") || storedProviderInstances === undefined
         ? {}
         : { providerInstances: storedProviderInstances }),
@@ -402,6 +449,7 @@ export function applyServerSettingsPatch(
     worktreeCleanup: worktreeCleanupPatch,
     // Merged per entry below; its `null` removals must not reach deepMerge.
     usageLimitSources: usageLimitSourcesPatch,
+    secretProviders: secretProvidersPatch,
     sourceControlHosts: sourceControlHostsPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
     usageModelAliases: usageModelAliasesPatch,
@@ -562,10 +610,26 @@ export function applyServerSettingsPatch(
           sourceControlHosts: {
             ...current.sourceControlHosts,
             ...Object.fromEntries(
-              Object.entries(sourceControlHostsPatch).map(([kind, fields]) => [
-                kind,
-                { ...current.sourceControlHosts[kind], ...fields },
-              ]),
+              Object.entries(sourceControlHostsPatch).map(([kind, fields]) => {
+                const saved = current.sourceControlHosts[kind];
+                return [
+                  kind,
+                  {
+                    ...saved,
+                    ...fields,
+                    // Older clients send the whole token map; a host missing from it keeps its saved
+                    // token. An empty map still clears them all.
+                    ...(Predicate.isObject(fields.tokens) && Object.keys(fields.tokens).length > 0
+                      ? {
+                          tokens: {
+                            ...byHost(saved?.tokens),
+                            ...byHost(fields.tokens),
+                          },
+                        }
+                      : {}),
+                  },
+                ];
+              }),
             ),
           },
         }
@@ -585,6 +649,12 @@ export function applyServerSettingsPatch(
     ...(patch.defaultModelSelection !== undefined
       ? { defaultModelSelection: patch.defaultModelSelection }
       : {}),
+    ...(patch.fallbackModelSelection !== undefined
+      ? { fallbackModelSelection: patch.fallbackModelSelection }
+      : {}),
+    ...(patch.speechPostProcessingModelSelection !== undefined
+      ? { speechPostProcessingModelSelection: patch.speechPostProcessingModelSelection }
+      : {}),
     ...(patch.defaultProjectScripts !== undefined
       ? { defaultProjectScripts: patch.defaultProjectScripts }
       : {}),
@@ -595,6 +665,9 @@ export function applyServerSettingsPatch(
             usageLimitSourcesPatch,
           ),
         }
+      : {}),
+    ...(secretProvidersPatch !== undefined
+      ? { secretProviders: mergeSettingsEntries(current.secretProviders, secretProvidersPatch) }
       : {}),
     ...(usagePriceOverridesPatch !== undefined
       ? {

@@ -82,6 +82,8 @@ interface DescribedCause {
   readonly code: string | undefined;
   readonly retryable: boolean | undefined;
   readonly detail: string | undefined;
+  /** Set when the message comes from a domain error Up.computer raised itself. */
+  readonly known?: true;
 }
 
 function firstLine(value: string): string {
@@ -120,6 +122,10 @@ const PROPER_NOUNS = new Set([
   "Qwen",
 ]);
 
+// codex_protocol::protocol::validate_thread_goal_objective
+const CODEX_GOAL_VALIDATION_MESSAGE =
+  /^goal objective must (?:not be empty|be at most \d{1,6} characters)$/u;
+
 /**
  * Typed fields our own code writes for the user. Free-form `message` and defect
  * text are never promoted to the main message; they only go to the detail.
@@ -138,7 +144,6 @@ function safeReason(record: Record<string, unknown>): string | undefined {
       )
         return PROVIDER_FAILURE_REASONS[record.reason as ProviderAdapterFailureReason];
       return typeof record.detail === "string" ? record.detail : undefined;
-    case "ProviderSetupError":
     case "OpenCodeRuntimeError":
     case "AcpTransportError":
       return typeof record.detail === "string" ? record.detail : undefined;
@@ -153,7 +158,11 @@ function safeReason(record: Record<string, unknown>): string | undefined {
       return typeof record.errorMessage === "string" ? record.errorMessage : undefined;
     }
     case "AcpProcessExitedError":
-      return typeof record.code === "number"
+      // Only the structured status; stderr and the spawner cause can carry provider output.
+      if (typeof record.signal === "string" && /^SIG[A-Z0-9]{1,16}$/u.test(record.signal)) {
+        return `it quit after signal ${record.signal}`;
+      }
+      return typeof record.code === "number" && Number.isSafeInteger(record.code)
         ? `it quit with exit code ${record.code}`
         : "it quit unexpectedly";
     default:
@@ -194,6 +203,7 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
             code: ProviderFailureCode.contextTooLong,
             retryable: false,
             detail: undefined,
+            known: true,
           };
         case "ContextHandoffBackgroundWorkError":
           return {
@@ -201,6 +211,7 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
             code: undefined,
             retryable: true,
             detail: undefined,
+            known: true,
           };
         case "AcpModelSelectionError":
         case "ClaudeBackgroundWorkBlocksQueryReplacementError":
@@ -208,19 +219,46 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
         case "ClaudeAppendSystemPromptMissingValueError":
         case "ClaudeSettingsLaunchArgError":
         case "ClaudeMcpRegistrationTimeoutError":
+        case "ClaudeCodeRootRefusalError":
         case "CursorModelUnavailableError":
+        case "CodexGoalObjectiveTooLongError":
+        case "ProviderSetupError":
+        case "ProviderAdapterThreadInUseError":
           return {
             message: stringField(cause, "message") ?? "",
             code: undefined,
             retryable: undefined,
             detail: undefined,
+            known: true,
           };
+        case "CodexAppServerRequestError": {
+          // Only Codex's fixed-shape goal validation text is actionable and
+          // safe to show; other request error text stays hidden.
+          const rejection = stringField(cause, "message");
+          if (
+            record.method === "thread/goal/set" &&
+            rejection !== undefined &&
+            CODEX_GOAL_VALIDATION_MESSAGE.test(rejection)
+          ) {
+            return {
+              message: `Codex rejected the goal: ${rejection}.`,
+              code: undefined,
+              retryable: undefined,
+              detail: undefined,
+              known: true,
+            };
+          }
+          const text = rawText(record);
+          if (text !== undefined) raw.push(text);
+          break;
+        }
         case "ContextHandoffDeliveryUncertainError":
           return {
             message: `Up.computer couldn't confirm that ${provider} received the earlier conversation. Send the message again to resend it.`,
             code: ProviderFailureCode.handoffUncertain,
             retryable: true,
             detail: undefined,
+            known: true,
           };
         case "ProviderAdapterTurnStartError":
           wrapper = "turn_start";
@@ -244,6 +282,7 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
             code: ProviderFailureCode.workspaceMissing,
             retryable: false,
             detail: undefined,
+            known: true,
           };
         case "ProviderInstanceNotFoundError":
           return {
@@ -252,6 +291,7 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
             code: ProviderFailureCode.instanceMissing,
             retryable: false,
             detail: stringField(record, "instanceId"),
+            known: true,
           };
         case "ProviderAdapterResumeThreadError":
         case "ProviderAdapterEnsureThreadError":
@@ -339,6 +379,19 @@ function unexplained(provider: string, detail: string | undefined): DescribedCau
   };
 }
 
+/**
+ * The message of a domain error Up.computer raised itself in a failure's cause
+ * chain, if any. Callers that pass their own `message` to `makeProviderFailure`
+ * check it first, so a known reason is not hidden behind a wrapper's text.
+ */
+export function knownProviderFailureMessage(
+  cause: unknown,
+  driver?: ProviderDriverKind | string,
+): string | undefined {
+  const described = describeCauseSafely(cause, providerFailureName(driver));
+  return described?.known === true ? described.message : undefined;
+}
+
 function stringField(
   value: unknown,
   key: "message" | "code" | "cwd" | "instanceId",
@@ -388,11 +441,11 @@ function redactProviderFailureText(value: string): string {
     .replace(/\bhttps?:\/\/[^\s<>"']+/giu, redactUrl)
     .replace(/\b(Bearer|Basic)\s+[^\s,;]+/giu, "$1 [REDACTED]")
     .replace(
-      /(["'](?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)["']\s*:\s*["'])[^"']*(["'])/giu,
+      /(["'][\w-]*(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)["']\s*:\s*["'])[^"']*(["'])/giu,
       "$1[REDACTED]$2",
     )
     .replace(
-      /(\b(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu,
+      /((?<![\w-])[\w-]*(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu,
       "$1[REDACTED]",
     )
     .replace(/\bsk-[A-Za-z0-9_-]{16,}\b/gu, "[REDACTED]")

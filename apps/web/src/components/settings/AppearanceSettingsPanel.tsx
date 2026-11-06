@@ -19,6 +19,7 @@ import {
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
 import { useCustomThemes } from "../../hooks/useCustomThemes";
+import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -35,6 +36,7 @@ import { AdvancedSettings } from "./AdvancedSettings";
 import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
 import { TypographySection } from "./TypographySettings";
 import { ThreadListSettingsRow } from "../../sidebarThreadRow/ThreadListSettingsRow";
+import { ThreadDetailsItemsRow } from "./ThreadDetailsItemsRow";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: "Artwork",
@@ -106,6 +108,20 @@ export function AppearanceSettingsPanel() {
     environmentIdentificationOptionList.find(
       ([value]) => value === settings.environmentIdentificationMode,
     )?.[1] ?? ENVIRONMENT_IDENTIFICATION_LABELS[settings.environmentIdentificationMode];
+  const effectiveEnvironmentIdentificationMode = useEnvironmentIdentificationMode();
+  const themeHidesEnvironmentArtwork =
+    effectiveEnvironmentIdentificationMode === "pill" &&
+    resolveSidebarStageBackdropVariant(
+      environmentStageLabel,
+      settings.environmentIdentificationMode,
+    ) !== null;
+  const environmentIdentificationDescription = themeHidesEnvironmentArtwork
+    ? environmentStageVariant
+      ? "Only built-in themes show artwork, so this theme shows the version pill."
+      : "Only built-in themes show artwork."
+    : environmentStageVariant
+      ? "Choose how Dev and Nightly environments are identified."
+      : "Show Dev or Nightly artwork in the sidebar header.";
   const glassOpacityRatio =
     (settings.glassOpacity - MIN_GLASS_OPACITY) / (MAX_GLASS_OPACITY - MIN_GLASS_OPACITY);
   const glassOpacitySliderStyle = {
@@ -301,6 +317,7 @@ export function AppearanceSettingsPanel() {
           }
         />
         <ThreadListSettingsRow />
+        <ThreadDetailsItemsRow />
         <SettingsRow
           {...searchableSetting("effort-display")}
           description="Show reasoning effort in the composer as its name, such as High, or as bars."
@@ -421,11 +438,7 @@ export function AppearanceSettingsPanel() {
           />
           <SettingsRow
             {...searchableSetting("environment-identification")}
-            description={
-              environmentStageVariant
-                ? "Choose how Dev and Nightly environments are identified."
-                : "Show Dev or Nightly artwork in the sidebar header."
-            }
+            description={environmentIdentificationDescription}
             resetAction={
               settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
                 <SettingResetButton

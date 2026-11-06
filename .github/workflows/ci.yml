@@ -219,7 +219,14 @@ jobs:
           exit "$(cat "$RUNNER_TEMP/apt-status")"
 
       - name: Test
-        run: vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test
+        run: |
+          set -o pipefail
+          # The runner's trace writer can crash on surrogate pairs in test output.
+          vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test 2>&1 | python3 -u -c '
+          import sys
+          for line in sys.stdin:
+              sys.stdout.write(line.encode("ascii", "backslashreplace").decode("ascii"))
+          '
 
   # The web suite is the largest outside the server. In the shared Test job it
   # started last and ran alone for about 40s after everything else finished.

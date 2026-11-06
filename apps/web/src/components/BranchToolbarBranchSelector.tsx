@@ -18,7 +18,6 @@ import {
 } from "@t3tools/contracts";
 import { GitBranchIcon } from "lucide-react";
 import {
-  useDeferredValue,
   useEffect,
   useImperativeHandle,
   useOptimistic,
@@ -220,7 +219,6 @@ export function BranchToolbarBranchSelector({
 
   const [isBranchMenuOpen, setIsBranchMenuOpen] = useState(false);
   const [branchQuery, setBranchQuery] = useState("");
-  const deferredBranchQuery = useDeferredValue(branchQuery);
 
   const branchStatusQuery = useEnvironmentQuery(
     branchCwd === null
@@ -230,18 +228,23 @@ export function BranchToolbarBranchSelector({
           input: { cwd: branchCwd },
         }),
   );
+  const projectStatusQuery = useEnvironmentQuery(
+    activeProjectCwd === null
+      ? null
+      : vcsEnvironment.status({ environmentId, input: { cwd: activeProjectCwd } }),
+  );
+  const activeProjectCheckoutRoot = projectStatusQuery.data?.workingTree.rootPath;
+  const trimmedBranchQuery = branchQuery.trim();
   const branchRefState = usePaginatedBranches({
     environmentId,
     cwd: branchCwd,
     // Substring search needs sanitized names to detect new-branch collisions; refs cannot contain ASCII
     // spaces.
-    query: sanitizeNewRefName(deferredBranchQuery.trim()),
+    query: sanitizeNewRefName(trimmedBranchQuery),
   });
-  const trimmedBranchQuery = branchQuery.trim();
-  const deferredTrimmedBranchQuery = deferredBranchQuery.trim();
   const refs = branchRefState.refs;
   const branchByName = new Map(refs.map((refName) => [refName.name, refName] as const));
-  const normalizedDeferredBranchQuery = deferredTrimmedBranchQuery.toLowerCase();
+  const normalizedBranchQuery = trimmedBranchQuery.toLowerCase();
   const prReference = parsePullRequestReference(trimmedBranchQuery);
   const isSelectingWorktreeBase =
     effectiveEnvMode === "worktree" && !envLocked && !activeWorktreePath;
@@ -264,12 +267,12 @@ export function BranchToolbarBranchSelector({
     ...(pickerCreateBranchItemValue ? [pickerCreateBranchItemValue] : []),
   ];
   const filteredBranchPickerItems =
-    normalizedDeferredBranchQuery.length === 0
+    normalizedBranchQuery.length === 0
       ? branchPickerItems
       : branchPickerItems.filter((itemValue) =>
           shouldIncludeBranchPickerItem({
             itemValue,
-            normalizedQuery: normalizedDeferredBranchQuery,
+            normalizedQuery: normalizedBranchQuery,
             createBranchItemValue: pickerCreateBranchItemValue,
             checkoutPullRequestItemValue,
           }),
@@ -400,6 +403,7 @@ export function BranchToolbarBranchSelector({
 
     const selectionTarget = resolveBranchSelectionTarget({
       activeProjectCwd,
+      activeProjectCheckoutRoot,
       activeWorktreePath,
       refName,
     });
@@ -646,6 +650,7 @@ export function BranchToolbarBranchSelector({
             (!activeProjectCwd ||
               !resolveBranchSelectionTarget({
                 activeProjectCwd,
+                activeProjectCheckoutRoot,
                 activeWorktreePath,
                 refName,
               }).reuseExistingWorktree))
@@ -738,11 +743,7 @@ export function BranchToolbarBranchSelector({
               )}
             />
             <ComposerContextLabel displayMode={displayMode}>
-              <MiddleTruncate
-                value={triggerLabel}
-                variant={displayMode === "panel" ? "cap-aligned" : "default"}
-                className="w-full"
-              />
+              <MiddleTruncate value={triggerLabel} variant="cap-aligned" className="w-full" />
             </ComposerContextLabel>
           </ComboboxTrigger>
         </span>

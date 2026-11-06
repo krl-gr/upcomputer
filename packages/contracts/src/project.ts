@@ -10,6 +10,7 @@ import {
   NonNegativeInt,
   PositiveInt,
   ProjectId,
+  ThreadId,
   TrimmedNonEmptyString,
   TrimmedString,
   type UnknownUnionMember,
@@ -37,6 +38,7 @@ export const ProjectScript = Schema.Struct({
   icon: ProjectScriptIcon,
   runOnWorktreeCreate: Schema.Boolean,
   runOnSettle: Schema.optional(Schema.Boolean),
+  stopOnSettle: Schema.optional(Schema.Boolean),
   async: Schema.optional(Schema.Boolean),
   previewUrl: Schema.optional(TrimmedNonEmptyString),
   autoOpenPreview: Schema.optional(Schema.Boolean),
@@ -162,6 +164,8 @@ export const Project = Schema.Struct({
   scripts: Schema.Array(ProjectScript),
   /** Projects every thread of this one also belongs to. */
   linkedProjectIds: Schema.optional(Schema.Array(ProjectId)),
+  pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -194,6 +198,12 @@ export const ProjectUpdatePayload = Schema.Struct({
   scripts: Schema.optional(Schema.Array(ProjectScript)),
   /** The complete new list of linked projects; the project itself is dropped. */
   linkedProjectIds: Schema.optional(Schema.Array(ProjectId)),
+  pinned: Schema.optional(Schema.Boolean),
+  archived: Schema.optional(
+    Schema.Boolean.annotate({
+      description: "Threads and files are kept.",
+    }),
+  ),
 });
 export type ProjectUpdatePayload = typeof ProjectUpdatePayload.Type;
 
@@ -530,6 +540,16 @@ export const ProjectCreateNewResult = Schema.Struct({
   commitError: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type ProjectCreateNewResult = typeof ProjectCreateNewResult.Type;
+
+export const ProjectCreateFromThreadInput = Schema.Struct({
+  threadId: ThreadId,
+});
+export type ProjectCreateFromThreadInput = typeof ProjectCreateFromThreadInput.Type;
+
+export const ProjectCreateFromThreadResult = Schema.Struct({
+  projectId: ProjectId,
+});
+export type ProjectCreateFromThreadResult = typeof ProjectCreateFromThreadResult.Type;
 
 export class ProjectWriteFileError extends Schema.TaggedError<ProjectWriteFileError>()(
   "ProjectWriteFileError",

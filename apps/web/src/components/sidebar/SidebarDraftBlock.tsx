@@ -8,6 +8,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import { useShallow } from "zustand/react/shallow";
 import { cn } from "~/lib/utils";
 import { resolveSidebarRowAccessibility } from "../Sidebar.logic";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
@@ -83,8 +84,8 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   return (
     <li className="list-none py-0.5">
       <div
-        role="treeitem"
-        tabIndex={-1}
+        role="button"
+        tabIndex={0}
         data-sidebar-row={`draft:${draftId}`}
         aria-label={accessibility.label}
         aria-current={accessibility.current}
@@ -149,7 +150,15 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   onDraftContextMenu: (draftId: DraftId, position: { x: number; y: number }) => void;
 }) {
   const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
-  const draftsByThreadKey = useComposerDraftStore((store) => store.draftsByThreadKey);
+  const draftsByThreadKey = useComposerDraftStore(
+    useShallow((store) =>
+      Object.fromEntries(
+        Object.keys(store.draftThreadsByThreadKey).map(
+          (key) => [key, store.draftsByThreadKey[key]] as const,
+        ),
+      ),
+    ),
+  );
   // UpComputer: the compact list draws drafts as its rows, with no divider.
   const compact = useSidebarThreadRowSurface() === "upcomputer";
   const [frozenActive, setFrozenActive] = useState<{
