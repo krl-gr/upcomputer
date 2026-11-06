@@ -427,6 +427,7 @@ function renderThreads(
           currentEnvironmentId={(props.currentEnvironmentId ?? null) as never}
           newThreadDisabled={props.newThreadDisabled ?? false}
           newThreadShortcutLabel="⇧⌘O"
+          placement="list"
         />
         <ThreadList />
       </SidebarProvider>,

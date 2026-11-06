@@ -19,7 +19,8 @@ const SECTIONS = [
 
 /**
  * The sidebar as it renders: sections with a header in its gap wrapper and a
- * row, the Threads header with its compact New thread, then the thread list.
+ * row, the column's Threads header with its compact New thread, then the
+ * thread list group.
  */
 function SidebarSections(props: { readonly compact: boolean; readonly threadsOpen: boolean }) {
   return (
@@ -49,7 +50,9 @@ function SidebarSections(props: { readonly compact: boolean; readonly threadsOpe
             New thread
           </button>
         </div>
-        <div data-slot="sidebar-content">Thread list</div>
+        <div data-sidebar-thread-list="">
+          <div>Thread list</div>
+        </div>
       </div>
     </div>
   );

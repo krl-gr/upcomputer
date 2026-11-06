@@ -82,9 +82,9 @@ export const SIDEBAR_SECTION_HEADER_GAP = "pt-1";
 export const SIDEBAR_AFTER_SEARCH_GAP = "pt-1";
 
 /**
- * The Threads header closes upstream's fixed sidebar header, whose bottom
- * inset (`--sidebar-content-inset`) separates it from the thread list. This
- * pulls the list up to `SIDEBAR_SECTION_HEADER_GAP` (`--spacing(1)`) instead.
+ * The icon column's Threads header copy closes the sidebar's header group, and
+ * this pulls what follows it up by `--sidebar-content-inset` less the row gap;
+ * `adaptiveSidebar.css` sizes the gap to the footer with it.
  */
 export const SIDEBAR_FIXED_HEADER_END_GAP =
   "-mb-[calc(var(--sidebar-content-inset)-var(--spacing))]";

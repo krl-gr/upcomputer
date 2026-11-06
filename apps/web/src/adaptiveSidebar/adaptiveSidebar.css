@@ -63,15 +63,17 @@
   scale: 0.9;
 }
 
-/* The thread list is left out; the Threads section keeps only New thread. */
-[data-sidebar-compact="true"] [data-app-sidebar] [data-slot="sidebar-content"] {
+/*
+ * The thread list is left out; the Threads section keeps only New thread. The
+ * full sidebar draws Threads in the list, so the column shows its own copy.
+ */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-thread-list] > * {
   display: none;
 }
 [data-sidebar-compact-new-thread] {
   display: none;
 }
-/* With a Pinned section the full sidebar draws Threads in the list; the column keeps this copy. */
-[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-threads-section="compact-only"] {
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-threads-section] {
   display: block;
 }
 [data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-compact-new-thread] {
@@ -96,12 +98,16 @@
   position: absolute;
   inset: 0 0 auto;
 }
-/* At the end of the scroll the footer keeps the 28px gap below New thread. */
+/* The full sidebar's scroll grows with its content here instead of scrolling itself. */
 [data-sidebar-compact="true"]
   [data-app-sidebar]
   [data-sidebar="sidebar"]
   > :has(> [data-slot="scroll-area-viewport"] > [data-slot="sidebar-content"]) {
-  min-height: 1.25rem;
+  flex: 1 0 auto;
+}
+/* At the end of the scroll the footer keeps the 28px gap below New thread. */
+[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-thread-list] {
+  min-height: 1.75rem;
 }
 
 /* Search opens the command palette: the field needs the full width. */

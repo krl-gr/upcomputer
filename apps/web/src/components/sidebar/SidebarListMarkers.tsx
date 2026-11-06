@@ -3,6 +3,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { type ReactNode } from "react";
 import { cn } from "~/lib/utils";
+import { SIDEBAR_LIST_ROW_SPACING, SIDEBAR_SECTION_GAP } from "~/sidebarMetrics/sidebarMetrics";
 import {
   animateSidebarLayoutChanges,
   sidebarMarkerId,
@@ -106,14 +107,13 @@ export function SidebarDragBoundary(props: {
  */
 export function SidebarListSectionMarker(props: {
   marker: "pinned-header" | "pinned-divider";
-  className?: string;
   children: ReactNode;
 }) {
   return (
     <SortableSidebarMarker
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
-      className={cn("relative", props.className)}
+      className={cn("relative", SIDEBAR_SECTION_GAP, SIDEBAR_LIST_ROW_SPACING)}
     >
       {props.children}
     </SortableSidebarMarker>

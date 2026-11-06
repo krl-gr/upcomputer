@@ -105,17 +105,18 @@ function useNewThreadWithoutProject({ onNewThread, currentEnvironmentId }: NewTh
 /**
  * The header of the sidebar's Threads section, over upstream's thread list. It
  * collapses the list (see `useSidebarThreadListShown`) and carries New thread.
- * With a Pinned section it moves into the list; the fixed copy serves the icon column.
+ * The full sidebar draws it in the list, below Pinned; the icon column, which
+ * leaves the list out, keeps the compact-only copy for its New thread.
  */
 export function SidebarThreadsSectionHeader(
   props: NewThreadProps & {
     /** Upstream's disabled state (no projects); a chat without a project needs none. */
     readonly newThreadDisabled: boolean;
     readonly newThreadShortcutLabel: string | null | undefined;
-    readonly placement?: "fixed" | "list" | "compact-only";
+    readonly placement: "list" | "compact-only";
   },
 ) {
-  const { newThreadDisabled, newThreadShortcutLabel, placement = "fixed" } = props;
+  const { newThreadDisabled, newThreadShortcutLabel, placement } = props;
   const [open, setOpen] = useSidebarThreadsOpen();
   const newThread = useNewThreadWithoutProject(props);
   const newThreadTooltip = newThreadShortcutLabel
@@ -145,12 +146,8 @@ export function SidebarThreadsSectionHeader(
   if (placement === "list") return header;
   return (
     <div
-      data-sidebar-threads-section={placement === "compact-only" ? "compact-only" : ""}
-      className={cn(
-        SIDEBAR_SECTION_GAP,
-        SIDEBAR_FIXED_HEADER_END_GAP,
-        placement === "compact-only" && "hidden",
-      )}
+      data-sidebar-threads-section=""
+      className={cn("hidden", SIDEBAR_SECTION_GAP, SIDEBAR_FIXED_HEADER_END_GAP)}
     >
       {header}
       {newThreadShown ? (
