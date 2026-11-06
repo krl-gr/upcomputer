@@ -812,7 +812,7 @@ export function TasksView(props: TasksViewProps) {
   return (
     <WorkspaceViewLayout
       variant={props.layout}
-      title={selectedTask ? "" : createModeOpen ? "New task" : panel ? "" : "Tasks"}
+      title={selectedTask || !createModeOpen ? "" : "New task"}
       action={
         selectedTask
           ? props.canMutateEnvironment(selectedTask.environmentId)
