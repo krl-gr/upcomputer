@@ -54,7 +54,12 @@ import { SidebarCompactTooltip } from "../adaptiveSidebar/adaptiveSidebar";
 import { SidebarEmptyRow } from "./SidebarEmptyRow";
 import { SidebarProjectRow } from "./SidebarProjectRow";
 import { SidebarSectionHeader, SidebarSectionHeaderAction } from "./SidebarSectionHeader";
-import { AllProjectsIcon, NoProjectIcon, ProjectRowIcon } from "./sidebarProjectIcons";
+import {
+  AllProjectsIcon,
+  NoProjectIcon,
+  ProjectRowIcon,
+  useIsScratchProjectGroup,
+} from "./sidebarProjectIcons";
 import { useSidebarProjectsList, type SidebarProjectsListRow } from "./useSidebarProjectsList";
 import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
@@ -87,6 +92,7 @@ export function SidebarProjectsSection(props: {
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const handleNewThread = useNewThreadHandler();
+  const isScratchGroup = useIsScratchProjectGroup();
   const [open, setOpen] = useLocalStorage(SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, true, Schema.Boolean);
   const { rows, selectedKey, select, holdSurface, sortable, moveRow } =
     useSidebarProjectsList(projectGroups);
@@ -228,8 +234,9 @@ export function SidebarProjectsSection(props: {
                   />
                 </SidebarMenuItem>
               ) : null}
-              {projectGroups.length === 0 ? (
-                <SidebarEmptyRow label="Add project" onClick={onAddProject} />
+              {/* "No project" alone is still an empty list of projects. */}
+              {projectGroups.every(isScratchGroup) ? (
+                <SidebarEmptyRow label="New project" onClick={onAddProject} />
               ) : null}
             </SidebarMenu>
           </div>

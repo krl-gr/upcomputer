@@ -442,7 +442,7 @@ describe("SidebarSectionHeader", () => {
     expect(header.action("Add project")).not.toBeNull();
   });
 
-  it("offers Add project as its only row with no projects, once loaded", async () => {
+  it("offers New project as its only row with no projects, once loaded", async () => {
     await render([], false);
     const header = sectionHeader("sidebar-projects-toggle");
     expect(header.title()).toBe("Projects");
@@ -451,7 +451,7 @@ describe("SidebarSectionHeader", () => {
     expect(spies.addProject).toHaveBeenCalledOnce();
 
     await render([]);
-    expect(rowLabels()).toEqual(["Add project"]);
+    expect(rowLabels()).toEqual(["New project"]);
     await click(container.querySelector<HTMLElement>("[data-sidebar='menu-button']")!);
     expect(spies.addProject).toHaveBeenCalledTimes(2);
   });

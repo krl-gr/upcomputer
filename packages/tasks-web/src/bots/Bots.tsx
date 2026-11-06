@@ -215,7 +215,6 @@ function UnavailableComputerBots({ environmentId }: { readonly environmentId: En
 
 function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> }) {
   const shown = useShownBots(lists);
-  const scope = useSidebarProjectScope();
   // New bots go to the first computer shown: this one in All computers.
   const createOn = lists[0]!.environmentId;
   const canWrite = useExperimentalFeatureRpcPermission(createOn, BOTS_RPC_METHODS.save);
@@ -232,8 +231,6 @@ function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the claims registry entry while mounted
   useEffect(() => claimSidebarThreads("bots", chatKeys ? chatKeys.split("\n") : []), [chatKeys]);
   const errors = lists.filter((list) => list.error !== "");
-  // A filter no bot matches hides the section; a bot chat it hides stays open.
-  if (scope !== null && shown.length === 0 && errors.length === 0) return null;
   const create = () => {
     if (canWrite) void navigate(botPage(createOn));
   };
@@ -245,7 +242,7 @@ function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> 
           open={open}
           onToggle={() => setOpen(!open)}
           action={
-            <SidebarSectionHeaderAction label="Create bot" track="bots.create" onClick={create}>
+            <SidebarSectionHeaderAction label="New bot" track="bots.create" onClick={create}>
               <PlusIcon />
             </SidebarSectionHeaderAction>
           }
@@ -268,12 +265,9 @@ function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> 
                 />
               </SidebarMenuItem>
             ))}
-            {lists.every((list) => list.bots.length === 0) ? (
-              <SidebarEmptyRow
-                label="Create your first bot"
-                disabled={!canWrite}
-                onClick={create}
-              />
+            {/* The section always shows; the Projects filter only picks its rows. */}
+            {shown.length === 0 ? (
+              <SidebarEmptyRow label="New bot" disabled={!canWrite} onClick={create} />
             ) : null}
           </SidebarMenu>
           {errors.map((list) => (
