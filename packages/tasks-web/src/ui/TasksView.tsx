@@ -72,6 +72,9 @@ import { TagChipsField } from "./TagChipsField.tsx";
 import { tagSuggestions } from "./tagSuggestions.ts";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import { splitListInput, taskKey, taskMetadataLabel, type TasksWebProject } from "./shared.ts";
+import { ListEmptyState } from "./ListEmptyState.tsx";
+import { useTaskArrivals } from "./taskArrivals.ts";
+import "./taskArrival.css";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 
 const STATUS_ORDER = [
@@ -369,6 +372,11 @@ export function TasksView(props: TasksViewProps) {
   const filteredTasks = useMemo(
     () => optimisticTasks.filter((task) => matchesLastRunFilter(task, filters.lastRun)),
     [filters.lastRun, optimisticTasks],
+  );
+  const arrivals = useTaskArrivals(
+    filteredTasks.map(taskKey),
+    JSON.stringify(filters),
+    props.status === "ready",
   );
   const triggerTags = useMemo(() => agentTriggerTags(props.agents), [props.agents]);
   const tagOptions = useMemo(
@@ -1372,7 +1380,7 @@ export function TasksView(props: TasksViewProps) {
                 : `flex w-full min-w-0 flex-col ${panel ? "gap-3 py-3" : "gap-5 py-6"}`
             }
           >
-            <div className={cards ? `flex flex-col ${LIST_CLASS}` : "contents"}>
+            <div className={cards ? `flex min-h-full flex-col ${LIST_CLASS}` : "contents"}>
               <div
                 className={
                   cards
@@ -1409,55 +1417,59 @@ export function TasksView(props: TasksViewProps) {
                 ) : null}
               </div>
 
-              {props.tasks.length === 0 ? (
-                <div
-                  className={`${cards ? "mr-(--workspace-gutter-end) ml-(--workspace-gutter-start) " : ""}rounded-lg border border-dashed border-border px-4 py-16 text-center text-sm text-muted-foreground`}
-                >
-                  {props.status === "loading"
-                    ? "Loading tasks..."
-                    : props.status === "offline"
-                      ? TASKS_OFFLINE_TEXT
-                      : projectFilter !== null ||
-                          statusFilter !== ALL_FILTER ||
-                          filters.tags.length > 0 ||
-                          archiveFilter !== "active"
-                        ? "No tasks match the current filters."
-                        : "No tasks yet"}
-                </div>
-              ) : filteredTasks.length === 0 ? (
-                <div
-                  className={`${cards ? "mr-(--workspace-gutter-end) ml-(--workspace-gutter-start) " : ""}rounded-lg border border-dashed border-border px-4 py-16 text-center text-sm text-muted-foreground`}
-                >
-                  No tasks match the current filters.
-                </div>
+              {props.tasks.length === 0 || filteredTasks.length === 0 ? (
+                // Blank while the list loads: it arrives within a moment.
+                props.status === "loading" ? null : props.status === "offline" ? (
+                  <ListEmptyState title="Tasks unavailable" hint={TASKS_OFFLINE_TEXT} />
+                ) : props.tasks.length > 0 ||
+                  projectFilter !== null ||
+                  statusFilter !== ALL_FILTER ||
+                  filters.tags.length > 0 ||
+                  archiveFilter !== "active" ? (
+                  <ListEmptyState title="No tasks match the current filters" />
+                ) : (
+                  <ListEmptyState
+                    title="No tasks yet"
+                    hint="Click + to add one, or ask any thread to plan the work for you."
+                  />
+                )
               ) : cards ? (
                 <div className="flex min-w-0 flex-col">
                   {filteredTasks.map((task) => (
-                    <TaskCard
+                    <div
                       key={taskKey(task)}
-                      task={task}
-                      projects={plannerProjectsByEnvironment.get(task.environmentId) ?? []}
-                      statuses={
-                        statusOptions.includes(task.status)
-                          ? statusOptions
-                          : [...statusOptions, task.status].sort(compareStatuses)
-                      }
-                      canMutate={props.canMutateEnvironment(task.environmentId)}
-                      dragged={draggedTaskKey === taskKey(task)}
-                      reorderable={props.canMutateEnvironment(task.environmentId)}
-                      onDragStart={() => setDraggedTaskKey(taskKey(task))}
-                      onDragEnd={() => setDraggedTaskKey(null)}
-                      onMove={(direction) => void persistVisibleMove(task, direction)}
-                      onOpen={() => openTask(task)}
-                      onProjectChange={(projectId) =>
-                        void updateTaskInline(task, "project", {
-                          projectId: projectId as ProjectId,
-                        })
-                      }
-                      onStatusChange={(status) => void updateTaskInline(task, "status", { status })}
-                      onArchivedChange={(archived) => void setTaskArchived(task, archived)}
-                      onDrop={() => dropOn(task)}
-                    />
+                      className="grid"
+                      data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
+                    >
+                      <div className="min-h-0 overflow-hidden">
+                        <TaskCard
+                          task={task}
+                          projects={plannerProjectsByEnvironment.get(task.environmentId) ?? []}
+                          statuses={
+                            statusOptions.includes(task.status)
+                              ? statusOptions
+                              : [...statusOptions, task.status].sort(compareStatuses)
+                          }
+                          canMutate={props.canMutateEnvironment(task.environmentId)}
+                          dragged={draggedTaskKey === taskKey(task)}
+                          reorderable={props.canMutateEnvironment(task.environmentId)}
+                          onDragStart={() => setDraggedTaskKey(taskKey(task))}
+                          onDragEnd={() => setDraggedTaskKey(null)}
+                          onMove={(direction) => void persistVisibleMove(task, direction)}
+                          onOpen={() => openTask(task)}
+                          onProjectChange={(projectId) =>
+                            void updateTaskInline(task, "project", {
+                              projectId: projectId as ProjectId,
+                            })
+                          }
+                          onStatusChange={(status) =>
+                            void updateTaskInline(task, "status", { status })
+                          }
+                          onArchivedChange={(archived) => void setTaskArchived(task, archived)}
+                          onDrop={() => dropOn(task)}
+                        />
+                      </div>
+                    </div>
                   ))}
                 </div>
               ) : (
@@ -1485,6 +1497,7 @@ export function TasksView(props: TasksViewProps) {
                         return (
                           <tr
                             key={taskKey(task)}
+                            data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
                             className={`cursor-pointer border-b border-border transition-colors hover:bg-muted/20 ${
                               draggedTaskKey === taskKey(task) ? "opacity-50" : ""
                             }`}

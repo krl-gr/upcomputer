@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
-  type ReactNode,
 } from "react";
 import { ArrowLeftIcon } from "lucide-react";
 import type {
@@ -55,15 +54,10 @@ import {
 } from "./DetailSidebar.tsx";
 import { WorkspaceViewLayout } from "./WorkspaceViewLayout.tsx";
 import { SHOW_MANUAL_CREATE_ACTIONS } from "./manualCreation.ts";
-import {
-  filterByProjectFilter,
-  orderedProjectFilterKeys,
-  preferredProject,
-  type ViewProjectFilter,
-} from "./projectFilter.ts";
+import { preferredProject } from "./projectFilter.ts";
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { splitListInput, type TasksWebProject } from "./shared.ts";
-import { StartThreadEmptyState } from "./StartThreadEmptyState.tsx";
+import { ListEmptyState } from "./ListEmptyState.tsx";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import { isBotAgent } from "../bots/botData.tsx";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
@@ -86,13 +80,6 @@ export interface AgentsViewProps {
   /** Every project, for the project icon of agents whose project has no default model. */
   readonly allProjects?: readonly TasksWebProject[];
   readonly agents: readonly ScopedTaskAgent[];
-  /**
-   * The header's shared project choice: the list shows that project's agents
-   * plus global agents. Deep links still resolve agents outside the filter.
-   */
-  readonly projectFilter?: ViewProjectFilter | null;
-  /** The shared project select, shown at the right of the header. */
-  readonly projectSelect?: ReactNode;
   readonly tasks: readonly ScopedTask[];
   readonly runs: readonly ScopedTaskAgentRun[];
   readonly status: "loading" | "ready" | "error" | "offline";
@@ -327,16 +314,11 @@ export function AgentsView(props: AgentsViewProps) {
       ) ?? editTarget)
     : null;
   const isCreateMode = viewMode?.kind === "create";
-  const projectFilter = props.projectFilter ?? null;
   // Bots have their own sidebar section and settings page. Deep links still
   // resolve against `props.agents`.
   const listedAgents = useMemo(
     () => props.agents.filter((agent) => !isBotAgent(agent)),
     [props.agents],
-  );
-  const visibleAgents = useMemo(
-    () => filterByProjectFilter(listedAgents, projectFilter, { includeGlobal: true }),
-    [listedAgents, projectFilter],
   );
   const projectsByKey = useMemo(
     () => new Map(props.projects.map((project) => [projectKey(project), project] as const)),
@@ -483,9 +465,9 @@ export function AgentsView(props: AgentsViewProps) {
     detailRequestRef.current += 1;
     setDetailRuns([]);
     setDetailRunsStatus("idle");
-    setForm(emptyForm(preferredProject(mutableProjects, orderedProjectFilterKeys(projectFilter))));
+    setForm(emptyForm(preferredProject(mutableProjects, null)));
     setViewMode({ kind: "create" });
-  }, [mutableProjects, projectFilter]);
+  }, [mutableProjects]);
 
   const showAgent = useCallback(
     (agent: ScopedTaskAgent) => {
@@ -765,12 +747,7 @@ export function AgentsView(props: AgentsViewProps) {
               />
             </span>
           </>
-        ) : isCreateMode ? undefined : (
-          <>
-            <span className="min-w-0 flex-1" />
-            {props.projectSelect}
-          </>
-        )
+        ) : undefined
       }
       onNavigateBack={
         editingAgent
@@ -1366,27 +1343,21 @@ export function AgentsView(props: AgentsViewProps) {
               The environment with Tasks is not reachable right now. Workers show when it connects.
             </div>
           ) : null}
-          {props.status === "error" ? null : visibleAgents.length === 0 ? (
+          {props.status === "error" ? null : listedAgents.length === 0 ? (
             // Blank while the list loads: it arrives within a moment of the page,
             // and a loading text would only flash before it.
             props.status === "loading" || props.status === "offline" ? null : (
-              <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                {projectFilter && listedAgents.length > 0 ? (
-                  `No workers for ${projectFilter.label}`
-                ) : (
-                  <StartThreadEmptyState
-                    title="No workers yet"
-                    body="You don't need to set them up by hand. Ask any thread for something big, and it creates the workers and tasks it needs. New tasks start their workers automatically."
-                  />
-                )}
-              </div>
+              <ListEmptyState
+                title="No workers yet"
+                hint="You don't need to set them up by hand. Ask any thread for something big, and it creates the workers and tasks it needs."
+              />
             )
           ) : (
             <div className="min-w-0 overflow-x-auto">
               <table className="w-full min-w-[1000px] table-fixed border-collapse text-left text-sm">
                 <thead className="border-b border-border text-muted-foreground">
                   <tr>
-                    {projectFilter === null ? <ProjectIconHeader /> : null}
+                    <ProjectIconHeader />
                     <th className="w-[22%] py-3 pr-4 font-medium">Name</th>
                     <th className="w-[25%] px-4 py-3 font-medium">Model</th>
                     <th className="px-4 py-3 font-medium">Triggers</th>
@@ -1394,7 +1365,7 @@ export function AgentsView(props: AgentsViewProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleAgents.map((agent) => {
+                  {listedAgents.map((agent) => {
                     const editable = props.canMutateEnvironment(agent.environmentId);
                     const agentProject = agent.projectId
                       ? (iconProjectsByKey.get(`${agent.environmentId}:${agent.projectId}`) ?? null)
@@ -1413,7 +1384,7 @@ export function AgentsView(props: AgentsViewProps) {
                         key={`${agent.environmentId}:${agent.id}`}
                         agent={agent}
                         agentProject={agentProject}
-                        showProject={projectFilter === null}
+                        showProject
                         editable={editable}
                         saving={savingKey !== null}
                         triggerLabel={triggerLabel}

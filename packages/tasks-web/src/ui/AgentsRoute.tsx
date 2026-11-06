@@ -15,8 +15,6 @@ import { useEnvironmentProviders } from "../../../../apps/web/src/state/environm
 
 import { AgentsView } from "./AgentsView.tsx";
 import { useTasksWorkspaceData } from "./useWorkspaceData.ts";
-import { usePagesProjectFilter } from "./usePagesProjectFilter.ts";
-import { ProjectFilterSelect } from "./ProjectFilterSelect.tsx";
 
 export default function AgentsRoute() {
   const navigate = useNavigate();
@@ -28,7 +26,6 @@ export default function AgentsRoute() {
     },
   });
   const data = useTasksWorkspaceData();
-  const { projectFilter, projectGroups, setProjectKey } = usePagesProjectFilter();
   const providersByEnvironment = useEnvironmentProviders();
   const settings = usePrimarySettings();
   const providerCatalogByEnvironment = useMemo(() => {
@@ -74,14 +71,6 @@ export default function AgentsRoute() {
       projects={data.agentProjects}
       allProjects={data.projects}
       agents={data.agents.agents}
-      projectFilter={projectFilter}
-      projectSelect={
-        <ProjectFilterSelect
-          projectGroups={projectGroups}
-          value={projectFilter?.key ?? null}
-          onChange={setProjectKey}
-        />
-      }
       tasks={data.tasks.tasks}
       runs={data.agents.runs}
       status={data.agentsStatus}
