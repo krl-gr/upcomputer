@@ -20,6 +20,7 @@ import {
   setLocalStorageItem,
 } from "../hooks/useLocalStorage";
 import { shortcutLabelForCommand } from "../keybindings";
+import { observeResize } from "../lib/observeResize";
 import { productSurface } from "../product/productFlags";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import "./adaptiveSidebar.css";
@@ -247,6 +248,23 @@ export function useSidebarToggle(toggleSidebar: () => void): () => void {
 /** Whether the layout shows upstream's sidebar toggle: always on phones, never on desktop here. */
 export function sidebarTriggerShown(isMobile: boolean): boolean {
   return isMobile || !isAdaptive();
+}
+
+/**
+ * The full sidebar's footer overlays its scroll, which pads its end and fades out
+ * under the footer by this height (`adaptiveSidebar.css`). A footer ref.
+ */
+export function observeSidebarFooterHeight(footer: HTMLElement | null) {
+  const sidebar = footer?.parentElement;
+  if (!footer || !sidebar) return;
+  const stop = observeResize(footer, ([entry]) => {
+    const height = entry?.borderBoxSize[0]?.blockSize ?? footer.offsetHeight;
+    sidebar.style.setProperty("--sidebar-footer-height", `${height}px`);
+  });
+  return () => {
+    stop();
+    sidebar.style.removeProperty("--sidebar-footer-height");
+  };
 }
 
 /** Footer buttons stack in the compact sidebar, so their tooltips move beside them. */

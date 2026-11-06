@@ -64,6 +64,70 @@
 }
 
 /*
+ * The sidebar's scroll runs under the titlebar row and the footer (the compact
+ * column's footer scrolls along), which stay above it and keep the pointer: the
+ * row is the window's drag region, and no click or hover reaches a row under
+ * either. The stage art stays under the scroll. Nothing paints a background: the
+ * content is padded by their heights, so at rest nothing is under them, and a
+ * mask fixed to the scroll's box fades rows out as they pass under.
+ */
+[data-sidebar-compact] [data-app-sidebar] [data-sidebar="sidebar"] {
+  isolation: isolate;
+}
+[data-sidebar-compact]
+  [data-app-sidebar]
+  [data-sidebar="sidebar"]
+  > :has(> [data-slot="scroll-area-viewport"] > [data-slot="sidebar-content"]) {
+  z-index: -1;
+}
+[data-sidebar-compact]
+  [data-app-sidebar]
+  [data-sidebar="sidebar"]
+  > [data-sidebar-chrome-header]
+  > .sidebar-stage-backdrop {
+  z-index: -2;
+}
+[data-sidebar-compact="false"] [data-app-sidebar] [data-sidebar="sidebar"] {
+  position: relative;
+  --sidebar-scroll-top: var(--workspace-topbar-height);
+  /* Measured by `observeSidebarFooterHeight`. */
+  --sidebar-scroll-bottom: var(--sidebar-footer-height, 0px);
+}
+[data-sidebar-compact="false"]
+  [data-app-sidebar]
+  [data-sidebar="sidebar"]
+  > [data-sidebar-chrome-header] {
+  position: absolute;
+  inset: 0 0 auto;
+}
+[data-sidebar-compact="false"]
+  [data-app-sidebar]
+  [data-sidebar="sidebar"]
+  > [data-sidebar="footer"] {
+  position: absolute;
+  inset: auto 0 0;
+}
+[data-sidebar-compact="false"]
+  [data-app-sidebar]
+  [data-slot="scroll-area-viewport"]:has(> [data-slot="sidebar-content"]) {
+  scroll-padding-block: var(--sidebar-scroll-top) var(--sidebar-scroll-bottom);
+  /*
+   * Upstream's edge fade drops while a row has focus; this one stays, rows keep
+   * clear of it. Rows are gone by the footer's middle, so its icons stay legible.
+   */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--sidebar-scroll-top),
+    black calc(100% - var(--sidebar-scroll-bottom)),
+    transparent calc(100% - var(--sidebar-scroll-bottom) / 2)
+  );
+}
+[data-sidebar-compact="false"] [data-app-sidebar] [data-slot="sidebar-content"] {
+  padding-block: var(--sidebar-scroll-top) var(--sidebar-scroll-bottom);
+}
+
+/*
  * The thread list is left out; the Threads section keeps only New thread. The
  * full sidebar draws Threads in the list, so the column shows its own copy.
  */
@@ -81,20 +145,24 @@
 }
 
 /*
- * Below the traffic lights the column scrolls as one, footer included, without
- * a scrollbar. The transparent top border keeps the sidebar's background and
- * clips the scrolled content under the titlebar row, which is positioned
- * against the container so it stays in place. When everything fits, the empty
- * thread list still pushes the footer to the bottom of the window.
+ * The column scrolls as one, footer included, without a scrollbar. It runs under
+ * the titlebar row, which is positioned against the container so it stays in
+ * place, and fades out there like the full sidebar's scroll. When everything
+ * fits, the empty thread list still pushes the footer to the bottom of the window.
  */
 [data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar="sidebar"] {
-  border-top: var(--workspace-topbar-height) solid transparent;
+  padding-top: var(--workspace-topbar-height);
+  scroll-padding-top: var(--workspace-topbar-height);
+  mask-image: linear-gradient(to bottom, transparent, black var(--workspace-topbar-height));
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
 }
-[data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar="sidebar"] > :first-child {
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-sidebar="sidebar"]
+  > [data-sidebar-chrome-header] {
   position: absolute;
   inset: 0 0 auto;
 }
