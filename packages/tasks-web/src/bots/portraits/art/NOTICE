@@ -13,9 +13,7 @@ The NOTICE file of that work includes:
 
   This product includes software developed at Zeabur Inc.
 
-The portrait catalog and motion next to this directory (../botPortraits.ts,
-../BotPortrait.tsx and ../botPortrait.css) are adapted from
-apps/desktop/src/lib/botAvatars.ts, apps/desktop/src/lib/botAvatarMotion.ts and
-apps/desktop/src/components/agent/BotAvatarImage.tsx of the same work, and were
-changed for Up.computer: portraits render inline, blink on a timer, and play
-the motion loop only while a bot works. Each of those files says so at its top.
+The portrait catalog next to this directory (../botPortraits.ts) is adapted from
+apps/desktop/src/lib/botAvatars.ts and apps/desktop/src/lib/botAvatarMotion.ts of
+the same work, and was changed for Up.computer: hand-written labels, and the
+artwork loads as markup to draw inline. The file says so at its top.

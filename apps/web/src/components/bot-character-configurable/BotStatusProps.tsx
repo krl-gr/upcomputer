@@ -187,34 +187,3 @@ function StatusSign({
     </g>
   );
 }
-
-/** The status props alone, to lay over a picture that fills the same square. */
-export function BotStatusOverlay({
-  state,
-  size,
-  className,
-}: {
-  readonly state: BotCharacterState;
-  readonly size: number;
-  readonly className?: string;
-}) {
-  const root = usePausedWhenHidden();
-  const changed = useStateChanged(state);
-  return (
-    <svg
-      ref={root}
-      className={`cbc${className ? ` ${className}` : ""}`}
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 128 128"
-      width={size}
-      height={size}
-      data-state={state}
-      data-changed={changed ? "" : undefined}
-      data-detail={botStatusDetail(size)}
-      aria-hidden
-      focusable="false"
-    >
-      <BotStatusProps />
-    </svg>
-  );
-}

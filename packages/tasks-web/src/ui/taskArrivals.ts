@@ -14,6 +14,7 @@ export function useTaskArrivals(keys: ReadonlyArray<string>, scope: string, read
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Compares the rows with the ones the list already painted; a layout effect marks an arrival before its first paint.
   useLayoutEffect(() => {
     if (!ready) return;
+    const keys = signature === "" ? [] : signature.split("\n");
     const current = seen.current;
     if (current === null || current.scope !== scope) {
       seen.current = { scope, keys: new Set(keys) };
@@ -24,7 +25,6 @@ export function useTaskArrivals(keys: ReadonlyArray<string>, scope: string, read
     if (fresh.length === 0) return;
     for (const key of fresh) current.keys.add(key);
     setArrivals((previous) => new Set([...previous, ...fresh]));
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The joined keys stand for the list.
   }, [signature, scope, ready]);
   return arrivals;
 }
