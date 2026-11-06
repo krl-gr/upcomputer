@@ -5,6 +5,7 @@ import { EnvironmentId, type BackgroundNotice } from "@t3tools/contracts";
 import {
   backgroundNoticeHref,
   describeSidebarNotificationsButton,
+  orderNotificationCards,
   resolveSidebarUpdateSignal,
   visibleBackgroundNotices,
 } from "./sidebarNotifications.logic";
@@ -88,5 +89,28 @@ describe("resolveSidebarUpdateSignal", () => {
     [{ state: idle, action: "install", hasOtherUpdates: true, running: true }, { kind: "none" }],
   ] as const)("%j", (input, signal) => {
     expect(resolveSidebarUpdateSignal(input)).toEqual(signal);
+  });
+});
+
+describe("orderNotificationCards", () => {
+  it("puts errors, warnings, updates, then info first, newest first, untimed cards in order", () => {
+    const cards = [
+      { key: "info", rank: "info", occurredAt: "2026-10-28T10:00:00.000Z" },
+      { key: "app", rank: "update", occurredAt: null },
+      { key: "provider", rank: "update", occurredAt: null },
+      { key: "old-error", rank: "error", occurredAt: "2026-10-28T08:00:00.000Z" },
+      { key: "failed-update", rank: "error", occurredAt: null },
+      { key: "warning", rank: "warning", occurredAt: "2026-10-28T07:00:00.000Z" },
+      { key: "new-error", rank: "error", occurredAt: "2026-10-28T09:00:00.000Z" },
+    ] as const;
+    expect(orderNotificationCards(cards).map((card) => card.key)).toEqual([
+      "new-error",
+      "old-error",
+      "failed-update",
+      "warning",
+      "app",
+      "provider",
+      "info",
+    ]);
   });
 });
