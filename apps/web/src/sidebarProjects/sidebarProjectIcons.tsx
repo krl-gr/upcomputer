@@ -7,7 +7,7 @@ import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 import { SIDEBAR_ICON_SIZE } from "../sidebarMetrics/sidebarMetrics";
 import { useServerConfigs } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
-import { buildSidebarProjectsRows } from "./sidebarProjects.logic";
+import { primaryScratchProject } from "./sidebarProjects.logic";
 
 /*
  * Rows and icons of the sidebar's Projects section, shared with the project
@@ -75,20 +75,18 @@ export function useIsScratchProjectGroup() {
     );
 }
 
-/** The Projects section's rows for the sidebar's ordered project groups. */
-export function useSidebarProjectsRows(
-  projectGroups: ReadonlyArray<SidebarProjectSnapshot>,
-  selectedProjectKey: string | null,
-  limit?: number,
-) {
-  const isScratch = useIsScratchProjectGroup();
+/** Whether a project group is in the primary environment. */
+export function useIsPrimaryProjectGroup() {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  return buildSidebarProjectsRows({
-    projects: projectGroups,
-    selectedProjectKey,
-    isScratch,
-    isPrimary: (group) =>
-      group.memberProjects.some((member) => member.environmentId === primaryEnvironmentId),
-    ...(limit === undefined ? {} : { limit }),
-  });
+  return (group: Pick<SidebarProjectSnapshot, "memberProjects">) =>
+    group.memberProjects.some((member) => member.environmentId === primaryEnvironmentId);
+}
+
+/** The project group "No project" stands for, among the sidebar's project groups. */
+export function useSidebarScratchProject(
+  projectGroups: ReadonlyArray<SidebarProjectSnapshot>,
+): SidebarProjectSnapshot | null {
+  const isScratch = useIsScratchProjectGroup();
+  const isPrimary = useIsPrimaryProjectGroup();
+  return primaryScratchProject({ projects: projectGroups, isScratch, isPrimary });
 }

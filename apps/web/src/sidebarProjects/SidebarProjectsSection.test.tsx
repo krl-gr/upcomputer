@@ -44,6 +44,8 @@ const spies = vi.hoisted(() => ({
 vi.mock("../components/ProjectFavicon", () => ({ ProjectFavicon: () => null }));
 vi.mock("../state/entities", () => ({
   useServerConfigs: () => new Map([[environmentId, { scratchWorkspaceRoot: "/home/scratch" }]]),
+  useQuietThreadShells: () => [],
+  useDelegatedUnderParent: () => new Set(),
 }));
 vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => environmentId }));
 vi.mock("../hooks/useHandleNewThread", () => ({ useNewThreadHandler: () => spies.newThread }));
@@ -70,16 +72,26 @@ import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 const { filterSidebarV2VisibleThreads, shouldCreateNewThreadInCurrentProject } =
   await import("../components/Sidebar.logic");
 const { SidebarProvider } = await import("../components/ui/sidebar");
+const { DEFAULT_CLIENT_SETTINGS } = await import("@t3tools/contracts/settings");
+const { __setClientSettingsForTests } = await import("../hooks/useSettings");
+const { ALL_PROJECTS_ROW_KEY } = await import("./sidebarProjects.logic");
+const { SIDEBAR_ALL_PROJECTS_SELECTED_AT_STORAGE_KEY } = await import("./useSidebarProjectsList");
 const { useUiStateStore } = await import("../uiStateStore");
 const { SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, SidebarProjectsSection } =
   await import("./SidebarProjectsSection");
 const { SIDEBAR_THREADS_OPEN_STORAGE_KEY, SidebarThreadsSectionHeader, useSidebarThreadListShown } =
   await import("./SidebarThreadsSection");
 
-function group(id: string, title: string, workspaceRoot = `/work/${id}`): SidebarProjectSnapshot {
-  const member = { environmentId, id, workspaceRoot, title };
+function group(
+  id: string,
+  title: string,
+  workspaceRoot = `/work/${id}`,
+  updatedAt?: string,
+): SidebarProjectSnapshot {
+  const member = { environmentId, id, workspaceRoot, title, physicalProjectKey: `physical-${id}` };
   return {
     ...member,
+    ...(updatedAt === undefined ? {} : { createdAt: updatedAt, updatedAt }),
     projectKey: `key-${id}`,
     displayName: title,
     memberProjects: [member],
@@ -132,15 +144,33 @@ function render(projectGroups = PROJECTS, loaded = true) {
   return act(async () => {
     root.render(
       <SidebarProvider>
-        <SidebarProjectsSection
-          projectGroups={projectGroups}
-          onAddProject={spies.addProject}
-          loaded={loaded}
-        />
+        {/* The sidebar's surface, which the rows hold still under the pointer in. */}
+        <div data-sidebar="sidebar" data-testid="sidebar-surface">
+          <SidebarProjectsSection
+            projectGroups={projectGroups}
+            onAddProject={spies.addProject}
+            loaded={loaded}
+          />
+        </div>
       </SidebarProvider>,
     );
   });
 }
+
+const pointer = (type: "pointerenter" | "pointerleave") =>
+  act(async () => {
+    container
+      .querySelector("[data-testid='sidebar-surface']")!
+      .dispatchEvent(new Event(type, { bubbles: false }));
+  });
+
+const moreOption = (label: string) => {
+  const option = [...document.querySelectorAll<HTMLElement>("[role='option']")].find(
+    (candidate) => candidate.textContent === label,
+  );
+  if (!option) throw new Error(`No "${label}" option`);
+  return option;
+};
 
 function rowLabels() {
   return [...container.querySelectorAll("[data-sidebar='menu-button']")].map(
@@ -194,7 +224,8 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   window.localStorage.clear();
-  useUiStateStore.setState({ sidebarProjectScopeKeys: [] });
+  __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+  useUiStateStore.setState({ sidebarProjectScopeKeys: [], projectOrder: [] });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -207,16 +238,46 @@ afterEach(async () => {
 });
 
 describe("SidebarProjectsSection", () => {
-  it("lists All projects, the first projects, No project and More", async () => {
+  it("lists the first three rows of one order, All projects first on a fresh install, then More", async () => {
     await render();
-    expect(rowLabels()).toEqual([
-      "All projects",
-      "UpComputer",
-      "Site",
-      "Docs",
-      "No project",
-      "More",
-    ]);
+    expect(rowLabels()).toEqual(["All projects", "UpComputer", "No project", "More"]);
+  });
+
+  it("sorts All projects by when it was last picked, and lists it under More", async () => {
+    window.localStorage.setItem(
+      SIDEBAR_ALL_PROJECTS_SELECTED_AT_STORAGE_KEY,
+      JSON.stringify("2026-01-01T00:00:00.000Z"),
+    );
+    const recent = (id: string, title: string, day: number) =>
+      group(id, title, undefined, `2026-02-${String(day).padStart(2, "0")}T00:00:00.000Z`);
+    const projects = [recent("upcomputer", "UpComputer", 9), recent("site", "Site", 8)];
+    const older = [recent("docs", "Docs", 7), group("infra", "Infra")];
+    useUiStateStore.setState({ sidebarProjectScopeKeys: ["key-upcomputer"] });
+    await render([...projects, ...older]);
+    expect(rowLabels()).toEqual(["UpComputer", "Site", "Docs", "More"]);
+    await click(rowButton("More"));
+    expect(
+      [...document.querySelectorAll<HTMLElement>("[role='option']")].map((o) => o.textContent),
+    ).toEqual(["All projects", "Infra"]);
+
+    // Picked with the pointer in the sidebar, it takes the last slot and moves up only once the pointer leaves.
+    await pointer("pointerenter");
+    await click(moreOption("All projects"));
+    expect(useUiStateStore.getState().sidebarProjectScopeKeys).toEqual([]);
+    expect(rowLabels()).toEqual(["UpComputer", "Site", "All projects", "More"]);
+    await click(rowButton("UpComputer"));
+    expect(rowLabels()).toEqual(["UpComputer", "Site", "All projects", "More"]);
+    await pointer("pointerleave");
+    expect(rowLabels()).toEqual(["All projects", "UpComputer", "Site", "More"]);
+  });
+
+  it("places All projects at its entry in the manual order", async () => {
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, sidebarProjectSortOrder: "manual" });
+    useUiStateStore.setState({
+      projectOrder: ["physical-upcomputer", "physical-scratch", ALL_PROJECTS_ROW_KEY],
+    });
+    await render();
+    expect(rowLabels()).toEqual(["UpComputer", "No project", "All projects", "More"]);
   });
 
   it("filters the thread list through upstream's project scope", async () => {
@@ -238,22 +299,20 @@ describe("SidebarProjectsSection", () => {
     expect(visibleThreadIds()).toEqual(["scratch-linked-to-upcomputer", "in-scratch"]);
   });
 
-  it("lists the remaining projects under More and keeps a chosen one visible", async () => {
+  it("lists the remaining rows under More and keeps a chosen one visible", async () => {
     await render();
     await click(rowButton("More"));
     const options = [...document.querySelectorAll<HTMLElement>("[role='option']")];
-    expect(options.map((option) => option.textContent)).toEqual(["Infra", "Design"]);
-
-    await click(options[1]!);
-    expect(useUiStateStore.getState().sidebarProjectScopeKeys[0] ?? null).toBe("key-design");
-    expect(rowLabels()).toEqual([
-      "All projects",
-      "UpComputer",
+    expect(options.map((option) => option.textContent)).toEqual([
       "Site",
+      "Docs",
+      "Infra",
       "Design",
-      "No project",
-      "More",
     ]);
+
+    await click(moreOption("Design"));
+    expect(useUiStateStore.getState().sidebarProjectScopeKeys[0] ?? null).toBe("key-design");
+    expect(rowLabels()).toEqual(["All projects", "UpComputer", "Design", "More"]);
   });
 
   it("remembers that the section is collapsed", async () => {
@@ -280,7 +339,6 @@ describe("SidebarProjectsSection", () => {
       "Project actions for UpComputer",
       "New chat in UpComputer",
     ]);
-    expect(actionLabels("Docs")).toEqual(["Project actions for Docs", "New chat in Docs"]);
     expect(actionLabels("No project")).toEqual(["New chat without a project"]);
     expect(actionLabels("All projects")).toEqual([]);
     expect(actionLabels("More")).toEqual([]);
@@ -295,9 +353,14 @@ describe("SidebarProjectsSection", () => {
 
   it("starts a new thread in the row's project without changing the filter", async () => {
     await render();
-    const pencil = rowButton("Site").querySelector<HTMLElement>("[aria-label='New chat in Site']")!;
+    const pencil = rowButton("UpComputer").querySelector<HTMLElement>(
+      "[aria-label='New chat in UpComputer']",
+    )!;
     await click(pencil);
-    expect(spies.newThread).toHaveBeenCalledExactlyOnceWith({ environmentId, projectId: "site" });
+    expect(spies.newThread).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      projectId: "upcomputer",
+    });
     expect(useUiStateStore.getState().sidebarProjectScopeKeys[0] ?? null).toBeNull();
 
     await click(
@@ -334,7 +397,7 @@ describe("SidebarProjectsSection", () => {
 
   it("opens the same menu on right-click instead of a native one", async () => {
     await render();
-    expect(await rightClick(rowButton("Site"))).toBe(true);
+    expect(await rightClick(rowButton("UpComputer"))).toBe(true);
     expect(menuItemLabels()).toEqual(["Project settings", "Copy path"]);
     expect(spies.nativeContextMenu).not.toHaveBeenCalled();
 

@@ -12,7 +12,7 @@ import {
   AllProjectsIcon,
   NoProjectIcon,
   ProjectRowIcon,
-  useSidebarProjectsRows,
+  useSidebarScratchProject,
 } from "../../../../apps/web/src/sidebarProjects/sidebarProjectIcons.tsx";
 import { ALL_FILTER } from "./pageFilters.ts";
 
@@ -23,23 +23,26 @@ interface ProjectOption {
 }
 
 /**
- * Options in the sidebar Projects section's order and icons: All projects,
- * No project (the primary Scratch project), then every other project.
+ * Options with the sidebar Projects section's icons: All projects, No project
+ * (the primary Scratch project), then the other projects in the sidebar's order.
  */
-export function projectFilterOptions(rows: {
-  readonly preview: ReadonlyArray<SidebarProjectSnapshot>;
+export function projectFilterOptions(input: {
+  readonly projectGroups: ReadonlyArray<SidebarProjectSnapshot>;
   readonly scratch: SidebarProjectSnapshot | null;
 }): ProjectOption[] {
+  const { scratch } = input;
   return [
     { value: ALL_FILTER, label: "All projects", icon: <AllProjectsIcon /> },
-    ...(rows.scratch
-      ? [{ value: rows.scratch.projectKey, label: "No project", icon: <NoProjectIcon /> }]
+    ...(scratch
+      ? [{ value: scratch.projectKey, label: "No project", icon: <NoProjectIcon /> }]
       : []),
-    ...rows.preview.map((project) => ({
-      value: project.projectKey,
-      label: project.displayName,
-      icon: <ProjectRowIcon project={project} />,
-    })),
+    ...input.projectGroups
+      .filter((project) => project !== scratch)
+      .map((project) => ({
+        value: project.projectKey,
+        label: project.displayName,
+        icon: <ProjectRowIcon project={project} />,
+      })),
   ];
 }
 
@@ -59,8 +62,8 @@ export function ProjectFilterSelect(props: {
   readonly value: string | null;
   readonly onChange: (projectKey: string | null) => void;
 }) {
-  const rows = useSidebarProjectsRows(props.projectGroups, null, Number.POSITIVE_INFINITY);
-  const options = projectFilterOptions(rows);
+  const scratch = useSidebarScratchProject(props.projectGroups);
+  const options = projectFilterOptions({ projectGroups: props.projectGroups, scratch });
   const value = options.some((option) => option.value === props.value)
     ? (props.value ?? ALL_FILTER)
     : ALL_FILTER;

@@ -113,6 +113,7 @@ vi.mock("../state/entities", () => ({
   useServerConfigs: () => new Map([["env-local", { scratchWorkspaceRoot: "/home/scratch" }]]),
   useProjects: () => [],
   useQuietThreadShells: () => [],
+  useDelegatedUnderParent: () => new Set(),
 }));
 vi.mock("../hooks/useThreadVisitedMigration", () => ({
   useThreadVisitedMigration: () => undefined,
@@ -165,7 +166,7 @@ function project(id: string, title: string, workspaceRoot = `/work/${id}`) {
   } as unknown as SidebarProjectSnapshot;
 }
 
-// Three preview rows, the scratch project as "No project", and one under "More".
+// All projects first (a fresh install), UpComputer, the scratch project as "No project", the rest under "More".
 const PROJECTS = [
   project("upcomputer", "UpComputer"),
   project("scratch", "scratch", "/home/scratch"),
@@ -430,7 +431,7 @@ function measureHeader(): MeasuredHeader {
 }
 
 const NAV = ["Tasks", "Workers"];
-const PROJECT_ROWS = ["All projects", "UpComputer", "Site", "Docs", "No project", "More"];
+const PROJECT_ROWS = ["All projects", "UpComputer", "No project", "More"];
 const ROWS = ["Search", ...NAV, "Projects", ...PROJECT_ROWS, "Threads", ...THREAD_TITLES];
 
 /** The space between each row and the next, rounded to 0.1px. */
@@ -750,7 +751,7 @@ function measureText(input: { readonly names: ReadonlyArray<string>; readonly al
 }
 
 // Inactive rows of each kind; "Tasks", "All projects" and the first thread are active.
-const RESTING_ROWS = ["Workers", "UpComputer", "Site", "No project", "More"];
+const RESTING_ROWS = ["Workers", "UpComputer", "No project", "More"];
 const RESTING_THREADS = THREAD_TITLES.slice(1);
 
 describe.skipIf(browser === null)("sidebar text under the Up.computer theme (Chromium)", () => {
