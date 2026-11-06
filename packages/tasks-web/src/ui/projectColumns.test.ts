@@ -147,15 +147,13 @@ test("the project select lists each project once, in the sidebar's order and ico
     group("scratch", "Scratch", "SC"),
     group("upcomputer", "UpComputer", "UC"),
   ];
-  // The rows the select builds: the sidebar's own split, without a preview cap.
-  const rows = sidebarRows.buildSidebarProjectsRows({
+  // The select's No project: the sidebar's own pick of the Scratch project.
+  const scratch = sidebarRows.primaryScratchProject({
     projects: groups as ReadonlyArray<{ projectKey: string }>,
-    selectedProjectKey: null,
     isScratch: (project) => project.projectKey === "scratch",
     isPrimary: () => true,
-    limit: Number.POSITIVE_INFINITY,
   });
-  const options = select.projectFilterOptions(rows as never);
+  const options = select.projectFilterOptions({ projectGroups: groups, scratch } as never);
   NodeAssert.deepEqual(
     options.map((option) => option.label),
     ["All projects", "No project", "pingdotgg/t3code", "UpComputer"],

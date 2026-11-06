@@ -31,12 +31,11 @@ import {
   AllProjectsIcon,
   NoProjectIcon,
   ProjectRowIcon,
-  useSidebarProjectsRows,
 } from "../../sidebarProjects/sidebarProjectIcons";
+import { useSidebarProjectsList } from "../../sidebarProjects/useSidebarProjectsList";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { usePrimaryEnvironmentId, usePullRequestsSupported } from "../../state/environments";
-import { useUiStateStore } from "../../uiStateStore";
 import { shouldCreateNewThreadInCurrentProject } from "../Sidebar.logic";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
@@ -115,14 +114,9 @@ function CompactProjects() {
   const navigate = useNavigate();
   const { setOpen } = useSidebar();
   const projectGroups = useSidebarProjectGroups(true);
-  // Our Projects section scopes to one project; upstream's scope can hold several.
-  const scopeKey = useUiStateStore((store) => store.sidebarProjectScopeKeys[0] ?? null);
-  const setScopeKeys = useUiStateStore((store) => store.setSidebarProjectScopeKeys);
-  const setScopeKey = (projectKey: string | null) =>
-    setScopeKeys(projectKey === null ? [] : [projectKey]);
-  const rows = useSidebarProjectsRows(projectGroups, scopeKey);
-  const selectScope = (projectKey: string | null) => {
-    setScopeKey(projectKey);
+  const { rows, selectedKey, select, holdSurface } = useSidebarProjectsList(projectGroups);
+  const selectScope = (key: string) => {
+    select(key);
     void setOpen(true);
   };
   const openProjectSettings = (project: SidebarProjectSnapshot) => {
@@ -130,44 +124,38 @@ function CompactProjects() {
   };
   return (
     <CompactSidebarPill label="Projects">
-      {projectGroups.length > 0 ? (
-        <>
+      <span ref={holdSurface} className="contents">
+        {rows.preview.map((row) => (
           <CompactSidebarButton
-            label="All projects"
-            isActive={scopeKey === null}
-            onClick={() => selectScope(null)}
+            key={row.key}
+            label={
+              row.kind === "all"
+                ? "All projects"
+                : row.kind === "scratch"
+                  ? "No project"
+                  : row.project.displayName
+            }
+            isActive={selectedKey === row.key}
+            onClick={() => selectScope(row.key)}
           >
-            <AllProjectsIcon />
-          </CompactSidebarButton>
-          {rows.preview.map((project) => (
-            <CompactSidebarButton
-              key={project.projectKey}
-              label={project.displayName}
-              isActive={scopeKey === project.projectKey}
-              onClick={() => selectScope(project.projectKey)}
-            >
-              <ProjectRowIcon project={project} />
-            </CompactSidebarButton>
-          ))}
-          {rows.scratch ? (
-            <CompactSidebarButton
-              label="No project"
-              isActive={scopeKey === rows.scratch.projectKey}
-              onClick={() => selectScope(rows.scratch?.projectKey ?? null)}
-            >
+            {row.kind === "all" ? (
+              <AllProjectsIcon />
+            ) : row.kind === "scratch" ? (
               <NoProjectIcon />
-            </CompactSidebarButton>
-          ) : null}
-          {rows.overflow.length > 0 ? (
-            <SidebarProjectsMore
-              compact
-              projects={rows.overflow}
-              onSelect={selectScope}
-              onOpenProjectSettings={openProjectSettings}
-            />
-          ) : null}
-        </>
-      ) : null}
+            ) : (
+              <ProjectRowIcon project={row.project} />
+            )}
+          </CompactSidebarButton>
+        ))}
+        {rows.overflow.length > 0 ? (
+          <SidebarProjectsMore
+            compact
+            rows={rows.overflow}
+            onSelect={selectScope}
+            onOpenProjectSettings={openProjectSettings}
+          />
+        ) : null}
+      </span>
       <CompactSidebarButton
         label="Add project"
         data-track="sidebar.add_project"

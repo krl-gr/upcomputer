@@ -112,6 +112,11 @@ const project: OrchestrationProjectShell = {
   updatedAt: "2026-03-17T19:12:28.000Z",
 };
 
+/** Another project in the environment, for `installFakeEnvironment`'s `projects`. */
+export function fakeProject(name: string): OrchestrationProjectShell {
+  return { ...project, id: ProjectId.make(name), title: name, workspaceRoot: `/workspace/${name}` };
+}
+
 const base = (threadId: ThreadId, runId: RunId, id: string, ordinal: number) => ({
   id: TurnItemId.make(id),
   threadId,
@@ -182,6 +187,8 @@ function run(threadId: ThreadId, id: RunId, ordinal: number, userMessageId: stri
 
 export interface FakeThread {
   readonly id: ThreadId;
+  /** The project of `fakeProject`'s name; without it, the environment's own project. */
+  readonly projectId?: ProjectId;
   readonly title: string;
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
   readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
@@ -214,7 +221,7 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
   const latest = thread.runs.at(-1);
   return {
     id: thread.id,
-    projectId: PROJECT_ID,
+    projectId: thread.projectId ?? PROJECT_ID,
     title: thread.title,
     providerInstanceId: CODEX,
     modelSelection: MODEL,
@@ -308,6 +315,7 @@ const json = (body: unknown, status = 200) =>
 // Keyed by thread id: a live thread subscription's queue, for pushing events to it.
 const threadSubscribers = new Map<string, Queue.Queue<OrchestrationV2ThreadStreamItem>>();
 let threads: ReadonlyArray<FakeThread> = [];
+let extraProjects: ReadonlyArray<OrchestrationProjectShell> = [];
 let sequence = 1;
 
 const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>) => () => void) =>
@@ -331,7 +339,7 @@ const handlers: Record<string, (input: never) => unknown> = {
         snapshot: {
           schemaVersion: 1,
           snapshotSequence: sequence,
-          projects: [project],
+          projects: [project, ...extraProjects],
           threads: threads.map(shellOf),
           archivedThreads: [],
         },
@@ -408,8 +416,12 @@ const encodedDescriptor = Schema.encodeSync(ExecutionEnvironmentDescriptor)(
 );
 
 /** Serves the environment's HTTP API and these threads until disposed. */
-export function installFakeEnvironment(fixtures: ReadonlyArray<FakeThread>): Disposable {
+export function installFakeEnvironment(
+  fixtures: ReadonlyArray<FakeThread>,
+  options: { readonly projects?: ReadonlyArray<OrchestrationProjectShell> } = {},
+): Disposable {
   threads = fixtures;
+  extraProjects = options.projects ?? [];
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.origin !== window.location.origin) return realFetch(input, init);
@@ -431,6 +443,7 @@ export function installFakeEnvironment(fixtures: ReadonlyArray<FakeThread>): Dis
     [Symbol.dispose]: () => {
       globalThis.fetch = realFetch;
       threads = [];
+      extraProjects = [];
     },
   };
 }
