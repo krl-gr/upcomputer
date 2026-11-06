@@ -31,13 +31,13 @@ export function ProjectMonogram({
       >
         <text
           x="8"
-          y="11.55"
+          y="10.75"
           textAnchor="middle"
           fill="currentColor"
           className="font-mono"
-          fontSize="9.5"
+          fontSize="7.35"
           fontWeight="700"
-          textLength={Array.from(monogramSegmenter.segment(text)).length === 1 ? 7 : 13}
+          textLength={Array.from(monogramSegmenter.segment(text)).length === 1 ? 5.5 : 11}
           lengthAdjust="spacingAndGlyphs"
           textRendering="geometricPrecision"
         >
