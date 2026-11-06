@@ -65,9 +65,21 @@ html[data-theme-id="upcomputer"] {
 html[data-theme-id="upcomputer"] {
   /* The Up.computer look has no fractal-noise grain on its surfaces. */
   --surface-grain: none;
-  /* Sidebar icons keep 60% of the sidebar foreground. Upstream mixes them from
-   * the muted foreground, which this palette dims to the row text tone. */
-  --sidebar-icon-color: color-mix(in srgb, var(--contrast-sidebar-foreground) 60%, var(--sidebar));
+}
+
+/* Sidebar text and icons are black or white ink with alpha, not greys, so over
+ * the translucent desktop sidebar they take the material's tint. `:root` outranks
+ * index.css's `html[data-theme-id] [data-app-sidebar]`, which is declared later. */
+:root[data-theme-id="upcomputer"] [data-app-sidebar] {
+  --sidebar-foreground: rgb(0 0 0 / 88%);
+  --sidebar-muted-foreground: rgb(0 0 0 / 70%);
+  --sidebar-icon-color: rgb(0 0 0 / 60%);
+
+  @variant dark {
+    --sidebar-foreground: rgb(255 255 255 / 95%);
+    --sidebar-muted-foreground: rgb(255 255 255 / 78%);
+    --sidebar-icon-color: rgb(255 255 255 / 70%);
+  }
 }
 
 /* Sidebar vibrancy, with V1's values. The macOS desktop window paints native
@@ -78,8 +90,8 @@ html[data-theme-id="upcomputer"] {
  * and the theme set it inline, hence `!important`), and the sidebar wears V1's
  * tint: white 25% in light, the #131313 canvas at 34% in dark. Rows and
  * borders are V1's black or white ink with alpha: the sidebar border token at
- * 10%, and the outer edge at V1's fainter 4% (light) and 3% (dark). Text stays
- * the theme's foreground. Legibility leans on the native material, as it did in V1. The
+ * 10%, and the outer edge at V1's fainter 4% (light) and 3% (dark). Text is the
+ * sidebar's ink above. Legibility leans on the native material, as it did in V1. The
  * chat area and every other surface keep their own opaque backgrounds. Another
  * theme drops the whole block, so the page paints opaque again at once, and
  * coming back restores it. */
@@ -90,7 +102,6 @@ html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]:has(
 }
 
 html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"] [data-app-sidebar] {
-  --sidebar-foreground: var(--foreground);
   --sidebar-border: rgb(0 0 0 / 10%);
   --sidebar-row-hover: rgb(0 0 0 / 5%);
   --sidebar-row-active: var(--sidebar-row-hover);
