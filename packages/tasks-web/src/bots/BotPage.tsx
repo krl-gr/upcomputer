@@ -110,10 +110,8 @@ import {
 import { useExperimentalFeatureRpcPermission } from "../../../../apps/web/src/extensionApi.ts";
 import { formatRelativeTimeLabel } from "../../../../apps/web/src/timestampFormat.ts";
 import { ensureLocalApi } from "../../../../apps/web/src/localApi.ts";
-import { ThreadStatusLabel } from "../../../../apps/web/src/sidebarThreadRow/ThreadStatusLabel.tsx";
 import { cn, randomUUID } from "../../../../apps/web/src/lib/utils.ts";
 import { readTasksWebClient } from "../environmentApi.ts";
-import { TaskThreadRunCounts } from "../ui/TaskThreadRunCounts.tsx";
 import { WorkspaceViewLayout } from "../ui/WorkspaceViewLayout.tsx";
 import { useAutosave } from "./botAutosave.ts";
 import {
@@ -123,9 +121,8 @@ import {
   errorText,
   useBots,
   useBotStatus,
-  useBotTaskRunRequest,
 } from "./botData.tsx";
-import { botStatus, type BotCharacterState } from "./botStatus.ts";
+import { type BotCharacterState } from "./botStatus.ts";
 import { BotPortraitPicker } from "./portraits/BotPortraitPicker.tsx";
 
 const NO_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [];
@@ -664,7 +661,6 @@ function BotForm({
         {bot ? (
           <>
             <MemorySections bot={bot} environmentId={environmentId} projects={projects} />
-            <BackgroundWork bot={bot} environmentId={environmentId} />
             <SettingsSection title="Remove">
               <SettingsRow
                 title="Remove bot"
@@ -1421,131 +1417,5 @@ function NewMemory({
         </Button>
       </div>
     </div>
-  );
-}
-
-function BackgroundWork({
-  bot,
-  environmentId,
-}: {
-  readonly bot: Bot;
-  readonly environmentId: EnvironmentId;
-}) {
-  const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.assign);
-  const request = botStatus(useBotTaskRunRequest(environmentId, bot));
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  // Retrying the same assignment after a lost reply must not create a second task.
-  const [requestId, setRequestId] = useState(() => randomUUID());
-  const [error, setError] = useState<unknown>(null);
-  const [busy, setBusy] = useState(false);
-  const disabled = busy || !canWrite;
-  const cancel = () => {
-    setOpen(false);
-    setError(null);
-  };
-  const assign = () => {
-    if (disabled || title.trim() === "") return;
-    setBusy(true);
-    setError(null);
-    void readTasksWebClient(environmentId)
-      .bots.assign({ agentId: bot.agent.id, requestId, title, description })
-      .then(
-        () => {
-          setOpen(false);
-          setTitle("");
-          setDescription("");
-          setRequestId(randomUUID());
-          toastManager.add({ type: "success", title: "Task assigned" });
-        },
-        (cause: unknown) => setError(cause),
-      )
-      .finally(() => setBusy(false));
-  };
-  const onKey = (event: ReactKeyboardEvent<HTMLElement>, submitsOnEnter: boolean) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      cancel();
-    } else if (
-      event.key === "Enter" &&
-      (submitsOnEnter || event.metaKey || event.ctrlKey) &&
-      !event.nativeEvent.isComposing
-    ) {
-      event.preventDefault();
-      assign();
-    }
-  };
-  return (
-    <SettingsSection
-      title="Tasks"
-      titleAction={
-        <InfoTip label="About tasks">
-          Tasks the bot delegates from its chat, and tasks assigned to the bot itself. Their
-          progress and results return to the bot's chat.
-        </InfoTip>
-      }
-    >
-      <SettingsRow
-        title="Task runs"
-        control={
-          <span className="flex items-center gap-2 text-sm">
-            {request.label ? (
-              <Tooltip>
-                <TooltipTrigger render={<span className="flex items-center" />}>
-                  <ThreadStatusLabel status={request.label} />
-                </TooltipTrigger>
-                <TooltipPopup side="top">{request.detail}</TooltipPopup>
-              </Tooltip>
-            ) : null}
-            <TaskThreadRunCounts
-              environmentId={environmentId}
-              threadId={bot.threadId}
-              fallback={<span className="text-muted-foreground">Nothing new</span>}
-            />
-          </span>
-        }
-      />
-      {open ? (
-        <div className="grid gap-2 px-3 py-2.5 sm:px-4">
-          <Input
-            aria-label="Task title"
-            size="sm"
-            placeholder="Task title"
-            autoFocus
-            value={title}
-            disabled={disabled}
-            onChange={(event) => setTitle(event.target.value)}
-            onKeyDown={(event) => onKey(event, true)}
-          />
-          <Textarea
-            aria-label="Task details"
-            size="sm"
-            placeholder="Details"
-            value={description}
-            disabled={disabled}
-            onChange={(event) => setDescription(event.target.value)}
-            onKeyDown={(event) => onKey(event, false)}
-          />
-          <div className="flex items-center justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={cancel}>
-              Cancel
-            </Button>
-            <Button size="sm" disabled={disabled || title.trim() === ""} onClick={assign}>
-              {busy ? "Assigning…" : "Assign"}
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="px-3 py-2 sm:px-4">
-          <Button size="sm" variant="ghost" disabled={!canWrite} onClick={() => setOpen(true)}>
-            <PlusIcon />
-            Assign task
-          </Button>
-        </div>
-      )}
-      <BotError error={error} className="px-3 py-3 sm:px-4" />
-    </SettingsSection>
   );
 }

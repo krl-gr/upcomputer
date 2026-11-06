@@ -349,7 +349,7 @@ when memory is unchanged. The full conversation stays searchable, while the
 provider's context remains bounded. **Remove bot** at the bottom of its page deletes
 its memory and returns its conversation to **Threads** as an ordinary chat.
 
-To give the bot a task, choose **Assign task** under **Background work** on its page.
+To give the bot a background task, ask for it in the bot's chat.
 The task runs in Tasks and returns progress and results to the bot's conversation. Background tasks can read untrusted pages
 and files, so a fact a bot saves while working on a task becomes a suggestion
 instead of memory. Review them under **Suggestions** on the bot's page: **Accept**
