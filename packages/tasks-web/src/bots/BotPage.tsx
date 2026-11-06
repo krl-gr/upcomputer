@@ -7,15 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
-import {
-  ArrowLeftIcon,
-  BanIcon,
-  InfoIcon,
-  LockIcon,
-  PencilIcon,
-  PlusIcon,
-  Trash2Icon,
-} from "lucide-react";
+import { ArrowLeftIcon, BanIcon, InfoIcon, LockIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { describeError } from "@t3tools/client-runtime/errors";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
@@ -36,7 +28,6 @@ import {
   type Bot,
   type BotAppearance,
   type BotMemory,
-  type BotMemoryProposal,
   type BotWriteInput,
   defaultBotAppearance,
 } from "@t3tools/tasks-contracts/v1";
@@ -86,7 +77,6 @@ import { Badge } from "../../../../apps/web/src/components/ui/badge.tsx";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { Input } from "../../../../apps/web/src/components/ui/input.tsx";
 import { Textarea } from "../../../../apps/web/src/components/ui/textarea.tsx";
-import { Switch } from "../../../../apps/web/src/components/ui/switch.tsx";
 import {
   Select,
   SelectItem,
@@ -227,9 +217,6 @@ function BotForm({
   );
   const initialProject = bot?.projectId ?? source?.projectId ?? projects[0]?.id ?? null;
   const [projectId, setProjectId] = useState<ProjectId | null>(initialProject);
-  const [allowed, setAllowed] = useState<ReadonlyArray<ProjectId>>(
-    bot?.allowedProjectIds ?? (initialProject ? [initialProject] : []),
-  );
   const [selectedOverride, setSelection] = useState<ModelSelection | undefined>(
     bot?.agent.config.modelSelection ??
       source?.modelSelection ??
@@ -283,13 +270,13 @@ function BotForm({
     name.trim() !== "" &&
     instructions.trim() !== "" &&
     selection !== undefined &&
-    projectId !== null &&
-    allowed.includes(projectId)
+    projectId !== null
       ? {
           id,
           ...(threadId ? { threadId } : {}),
           projectId,
-          allowedProjectIds: allowed,
+          // The bot lives in one project; its memory is global or that project's.
+          allowedProjectIds: [projectId],
           name,
           appearance,
           config: {
@@ -329,7 +316,7 @@ function BotForm({
     retrySave.current = () => autosave.schedule(0);
   }, [autosave]);
   const textKey = JSON.stringify([name, instructions]);
-  const choiceKey = JSON.stringify([appearance, selection, runtimeMode, projectId, allowed]);
+  const choiceKey = JSON.stringify([appearance, selection, runtimeMode, projectId]);
   // Text saves after a pause in typing or when the field loses focus; a pick saves at once.
   useEffect(() => {
     autosave.schedule(800);
@@ -389,12 +376,6 @@ function BotForm({
       });
     });
   };
-  const toggleProject = (project: ProjectId, on: boolean) => {
-    const next = on ? [...allowed, project] : allowed.filter((value) => value !== project);
-    setAllowed(next);
-    if (on && (projectId === null || !allowed.includes(projectId))) setProjectId(project);
-    if (!on && project === projectId) setProjectId(next[0] ?? null);
-  };
 
   return (
     <WorkspaceViewLayout
@@ -451,18 +432,20 @@ function BotForm({
           </SettingsSection>
         ) : null}
         <SettingsSection title="Appearance">
-          <div className="flex items-center gap-3 px-3 py-3 sm:px-4">
+          <div className="flex flex-col items-center gap-2 px-3 pt-6 pb-4 sm:px-4">
             <CharacterPreview appearance={appearance} state={status.state} />
-            <label className="grid min-w-0 flex-1 gap-1.5 text-sm font-medium">
-              Name
+            <div className="w-full max-w-sm text-lg font-semibold [&_input]:text-center">
               <Input
+                unstyled
+                aria-label="Name"
+                placeholder="Name"
                 value={name}
                 disabled={!editable}
                 aria-invalid={name.trim() === ""}
                 onChange={(event) => setName(event.target.value)}
                 onBlur={saveNow}
               />
-            </label>
+            </div>
           </div>
           <AppearancePicker
             appearance={appearance}
@@ -473,9 +456,11 @@ function BotForm({
 
         <SettingsSection title="Instructions" hideTitle>
           <SettingsRow title="Instructions">
-            <div className="pt-2 pb-2">
+            <div className="pt-1 pb-2 text-sm text-foreground [&_textarea]:resize-none [&_textarea]:px-0">
               <Textarea
+                unstyled
                 aria-label="Instructions"
+                placeholder="What the bot does and how"
                 value={instructions}
                 disabled={!editable}
                 aria-invalid={instructions.trim() === ""}
@@ -568,28 +553,20 @@ function BotForm({
           />
         </SettingsSection>
 
-        <SettingsSection
-          id={PROJECTS_SECTION_ID}
-          title="Projects"
-          titleAction={
-            <InfoTip label="About projects">
-              The bot works in the working project and can use memory and tasks of the available
-              ones.
-            </InfoTip>
-          }
-        >
+        <SettingsSection id={PROJECTS_SECTION_ID} title="Project" hideTitle>
           <SettingsRow
-            title="Working project"
+            title="Project"
+            description="Where the bot works. Its chat and project memory follow it."
             control={
               <Select
                 value={projectId ?? ""}
-                disabled={!editable || allowed.length === 0}
+                disabled={!editable || projects.length === 0}
                 onValueChange={(value) => {
-                  const next = allowed.find((candidate) => candidate === value);
-                  if (next) setProjectId(next);
+                  const next = projects.find((project) => project.id === value);
+                  if (next) setProjectId(next.id);
                 }}
               >
-                <SelectTrigger aria-label="Working project" className="min-w-48">
+                <SelectTrigger aria-label="Project" className="min-w-48">
                   <SelectValue>
                     {(() => {
                       const project = projects.find((item) => item.id === projectId);
@@ -598,36 +575,20 @@ function BotForm({
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
-                  {projects
-                    .filter((project) => allowed.includes(project.id))
-                    .map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        <ProjectLabel project={project} />
-                      </SelectItem>
-                    ))}
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      <ProjectLabel project={project} />
+                    </SelectItem>
+                  ))}
                 </SelectPopup>
               </Select>
             }
           />
-          {projects.map((project) => (
-            <SettingsRow
-              key={project.id}
-              title={<ProjectLabel project={project} />}
-              control={
-                <Switch
-                  aria-label={`Available: ${project.title}`}
-                  checked={allowed.includes(project.id)}
-                  disabled={!editable}
-                  onCheckedChange={(checked) => toggleProject(project.id, checked)}
-                />
-              }
-            />
-          ))}
         </SettingsSection>
 
         {bot ? (
           <>
-            <MemorySections bot={bot} environmentId={environmentId} projects={projects} />
+            <MemorySections bot={bot} environmentId={environmentId} />
             <SettingsSection title="Remove">
               <SettingsRow
                 title="Remove bot"
@@ -747,8 +708,8 @@ function CharacterPreview({
   readonly state: BotCharacterState;
 }) {
   return (
-    <span className="flex size-20 shrink-0 items-center justify-center">
-      <ConfigurableBotCharacter appearance={appearance} state={state} size={80} decorative />
+    <span className="flex size-30 shrink-0 items-center justify-center">
+      <ConfigurableBotCharacter appearance={appearance} state={state} size={120} decorative />
     </span>
   );
 }
@@ -868,40 +829,23 @@ function AppearancePicker({
   );
 }
 
-function sourceLabel(source: string) {
-  if (source === "user") return "Added by you";
-  if (source.startsWith("chat:")) return "From chat";
-  if (source.startsWith("task:")) return "From a background task";
-  return source;
-}
-
 function MemorySections({
   bot,
   environmentId,
-  projects,
 }: {
   readonly bot: Bot;
   readonly environmentId: EnvironmentId;
-  readonly projects: ReadonlyArray<EnvironmentProject>;
 }) {
   const client = readTasksWebClient(environmentId).bots;
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.remember);
   const thread = useThreadShell(scopeThreadRef(environmentId, bot.threadId));
   const [entries, setEntries] = useState<ReadonlyArray<BotMemory>>([]);
-  const [proposals, setProposals] = useState<ReadonlyArray<BotMemoryProposal>>([]);
-  const [adding, setAdding] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [busy, setBusy] = useState(false);
   useEffect(() => {
     let disposed = false;
-    Promise.all([
-      client.memory({ agentId: bot.agent.id }),
-      client.proposals({ agentId: bot.agent.id }),
-    ]).then(
-      ([memory, suggested]) => {
-        if (disposed) return;
-        setEntries(memory);
-        setProposals(suggested);
+    client.memory({ agentId: bot.agent.id }).then(
+      (memory) => {
+        if (!disposed) setEntries(memory);
       },
       (cause: unknown) => {
         if (!disposed) setError(cause);
@@ -916,188 +860,65 @@ function MemorySections({
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Run changes refresh facts saved through MCP while this page stays open.
     thread?.latestRun?.runId,
     thread?.latestRun?.status,
-    bot.latestTaskRun?.threadId,
-    bot.latestTaskRun?.status,
   ]);
   const mutate = async (run: () => Promise<unknown>) => {
-    setBusy(true);
     setError(null);
     try {
       await run();
-      const [memory, suggested] = await Promise.all([
-        client.memory({ agentId: bot.agent.id }),
-        client.proposals({ agentId: bot.agent.id }),
-      ]);
-      setEntries(memory);
-      setProposals(suggested);
+      setEntries(await client.memory({ agentId: bot.agent.id }));
     } catch (cause) {
-      if (errorCode(cause) === "bot_memory_project_unavailable")
-        toastManager.add({
-          type: "error",
-          title: "Memory belongs to another project",
-          description: errorToastDescription(cause, undefined, errorText(cause)),
-          actionProps: {
-            children: "Open settings",
-            onClick: () =>
-              document
-                .getElementById(PROJECTS_SECTION_ID)
-                ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-          },
-        });
-      else setError(cause);
-    } finally {
-      setBusy(false);
+      setError(cause);
     }
   };
-  const scopeName = (projectId: ProjectId | null) =>
-    projectId === null
-      ? "Global"
-      : (projects.find((project) => project.id === projectId)?.title ?? "Unavailable project");
-  const meta = (entry: BotMemory) =>
-    `${scopeName(entry.projectId)} · ${sourceLabel(entry.source)} · ${formatRelativeTimeLabel(entry.updatedAt)}`;
-  const disabled = busy || !canWrite;
   // The same selection the server makes for the bot's chat, so the marks match its context.
-  const context = botMemoryContext(entries, bot.projectId);
+  const context = botMemoryContext(entries);
   const inContext = new Set(context.selected.map((entry) => entry.id));
-  const inScope = new Set(context.entries.map((entry) => entry.id));
-  const ordered = [...context.entries, ...entries.filter((entry) => !inScope.has(entry.id))];
   return (
-    <>
-      {proposals.length > 0 ? (
-        <SettingsSection
-          title="Suggestions"
-          titleAction={
-            <InfoTip label="About suggestions">
-              Facts a background task saved. Tasks can read untrusted pages and files, so they wait
-              for your review.
-            </InfoTip>
-          }
-        >
-          {proposals.map((proposal) => (
-            <MemoryRow
-              key={proposal.id}
-              meta={meta(proposal)}
-              actions={
-                <>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={disabled}
-                    onClick={() => {
-                      void mutate(() =>
-                        client.acceptProposal({ agentId: bot.agent.id, id: proposal.id }),
-                      );
-                    }}
-                  >
-                    Accept
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    disabled={disabled}
-                    onClick={() => {
-                      void mutate(() =>
-                        client.rejectProposal({ agentId: bot.agent.id, id: proposal.id }),
-                      );
-                    }}
-                  >
-                    Reject
-                  </Button>
-                </>
-              }
-            >
-              <p className="whitespace-pre-wrap break-words text-sm">{proposal.text}</p>
-            </MemoryRow>
-          ))}
-        </SettingsSection>
+    <SettingsSection
+      title="Memory"
+      titleAction={
+        <InfoTip label="About memory">
+          Up to 200 facts the bot saves in its chat. The chat's context holds what fits the budget,
+          your facts first, and the bot reads the rest when needed. The bot cannot change or forget
+          facts you edited.
+        </InfoTip>
+      }
+    >
+      {entries.length > 0 ? (
+        <MemoryBudget
+          used={context.used}
+          shown={context.selected.length}
+          total={context.entries.length}
+        />
       ) : null}
-      <SettingsSection
-        title="Memory"
-        titleAction={
-          <InfoTip label="About memory">
-            Up to 200 facts. Global facts apply everywhere, project facts only in that project. The
-            chat's context holds what fits the budget, your facts first, and the bot reads the rest
-            when needed. The bot cannot change or forget facts you wrote.
-          </InfoTip>
-        }
-        headerAction={
-          <Button
-            size="xs"
-            variant="ghost-muted"
-            disabled={disabled}
-            onClick={() => {
-              void mutate(() => client.extract({ agentId: bot.agent.id, requestId: randomUUID() }));
-            }}
-          >
-            Extract from chat history
-          </Button>
-        }
-      >
-        {adding ? (
-          <NewMemory
-            bot={bot}
-            scopeName={scopeName}
-            busy={busy}
-            disabled={!canWrite}
-            onCancel={() => setAdding(false)}
-            onAdd={(text, projectId) => {
-              setAdding(false);
-              void mutate(() =>
-                client.remember({
-                  agentId: bot.agent.id,
-                  id: randomUUID(),
-                  projectId,
-                  text,
-                  source: "user",
-                }),
-              );
-            }}
-          />
-        ) : (
-          <div className="px-3 py-2 sm:px-4">
-            <Button size="sm" variant="ghost" disabled={!canWrite} onClick={() => setAdding(true)}>
-              <PlusIcon />
-              Add memory
-            </Button>
-          </div>
-        )}
-        {entries.length > 0 ? (
-          <MemoryBudget
-            used={context.used}
-            shown={context.selected.length}
-            total={context.entries.length}
-          />
-        ) : null}
-        {ordered.map((entry) => (
-          <MemoryEntry
-            key={`${entry.id}:${entry.updatedAt}`}
-            entry={entry}
-            meta={meta(entry)}
-            // Entries of other projects reach the bot only in task runs there.
-            inContext={inScope.has(entry.id) ? inContext.has(entry.id) : null}
-            disabled={!canWrite}
-            onSave={(value) => {
-              void mutate(() => client.remember({ ...entry, text: value }));
-            }}
-            onDelete={() => {
-              const text = entry.text.length > 200 ? `${entry.text.slice(0, 199)}…` : entry.text;
-              void ensureLocalApi()
-                .dialogs.confirm(`Delete this memory?\n${text}`, { variant: "destructive" })
-                .then((confirmed) => {
-                  if (confirmed)
-                    void mutate(() => client.forget({ agentId: bot.agent.id, id: entry.id }));
-                });
-            }}
-          />
-        ))}
-        {entries.length === 0 ? (
-          <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-            No memories yet. Say “Remember: …” in the chat.
-          </p>
-        ) : null}
-        <BotError error={error} className="px-3 py-3 sm:px-4" />
-      </SettingsSection>
-    </>
+      {context.entries.map((entry) => (
+        <MemoryEntry
+          key={`${entry.id}:${entry.updatedAt}`}
+          entry={entry}
+          meta={formatRelativeTimeLabel(entry.updatedAt)}
+          inContext={inContext.has(entry.id)}
+          disabled={!canWrite}
+          onSave={(value) => {
+            void mutate(() => client.remember({ ...entry, text: value }));
+          }}
+          onDelete={() => {
+            const text = entry.text.length > 200 ? `${entry.text.slice(0, 199)}…` : entry.text;
+            void ensureLocalApi()
+              .dialogs.confirm(`Delete this memory?\n${text}`, { variant: "destructive" })
+              .then((confirmed) => {
+                if (confirmed)
+                  void mutate(() => client.forget({ agentId: bot.agent.id, id: entry.id }));
+              });
+          }}
+        />
+      ))}
+      {entries.length === 0 ? (
+        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
+          No memories yet. Say “Remember: …” in the chat.
+        </p>
+      ) : null}
+      <BotError error={error} className="px-3 py-3 sm:px-4" />
+    </SettingsSection>
   );
 }
 
@@ -1193,7 +1014,7 @@ function MemoryEntry({
   readonly entry: BotMemory;
   readonly meta: string;
   /** Null for entries outside the chat's working project. */
-  readonly inContext: boolean | null;
+  readonly inContext: boolean;
   readonly disabled: boolean;
   readonly onSave: (text: string) => void;
   readonly onDelete: () => void;
@@ -1234,9 +1055,9 @@ function MemoryEntry({
               </TooltipPopup>
             </Tooltip>
           ) : null}
-          {inContext === null ? null : (
-            <Badge size="sm" variant={inContext ? "secondary" : "warning"}>
-              {inContext ? "In context" : "Not in context"}
+          {inContext ? null : (
+            <Badge size="sm" variant="warning">
+              Not in context
             </Badge>
           )}
         </>
@@ -1308,74 +1129,5 @@ function MemoryEntry({
         />
       )}
     </MemoryRow>
-  );
-}
-
-function NewMemory({
-  bot,
-  scopeName,
-  busy,
-  disabled,
-  onAdd,
-  onCancel,
-}: {
-  readonly bot: Bot;
-  readonly scopeName: (projectId: ProjectId | null) => string;
-  readonly busy: boolean;
-  readonly disabled: boolean;
-  readonly onAdd: (text: string, projectId: ProjectId | null) => void;
-  readonly onCancel: () => void;
-}) {
-  const [text, setText] = useState("");
-  const [scope, setScope] = useState<string>(bot.projectId);
-  const add = () => {
-    if (busy || text.trim() === "") return;
-    onAdd(text.trim(), scope === "global" ? null : ProjectId.make(scope));
-  };
-  return (
-    <div className="grid gap-2 px-3 py-2.5 sm:px-4">
-      <Textarea
-        aria-label="New memory"
-        size="sm"
-        placeholder="Something the bot should remember"
-        autoFocus
-        maxLength={2000}
-        value={text}
-        disabled={disabled}
-        onChange={(event) => setText(event.target.value)}
-        onKeyDown={(event) => handleMemoryKey(event, add, onCancel)}
-      />
-      <div className="flex items-center justify-end gap-2">
-        <Select
-          value={scope}
-          disabled={disabled}
-          onValueChange={(value) => {
-            if (typeof value === "string") setScope(value);
-          }}
-        >
-          <SelectTrigger aria-label="Memory scope" size="sm" className="w-auto min-w-40">
-            <SelectValue>
-              {scope === "global"
-                ? "Global"
-                : scopeName(bot.allowedProjectIds.find((id) => id === scope) ?? null)}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectPopup>
-            <SelectItem value="global">Global</SelectItem>
-            {bot.allowedProjectIds.map((projectId) => (
-              <SelectItem key={projectId} value={projectId}>
-                {scopeName(projectId)}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-        <Button size="sm" variant="ghost" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button size="sm" disabled={disabled || busy || text.trim() === ""} onClick={add}>
-          Add
-        </Button>
-      </div>
-    </div>
   );
 }

@@ -712,32 +712,26 @@ it.effect("the snapshot says how much memory it shows, the user's entries first"
       yield* overfill;
       const { text } = yield* bots.context(turn(botThread, "Hello"));
       const line = dataLine(text, "upcomputer_bot");
-      const shown: ReadonlyArray<{ id: string; owner: string; scope: string }> = JSON.parse(line);
+      const shown: ReadonlyArray<{ id: string; owner: string }> = JSON.parse(line);
       assert.isAtMost(line.length, BOT_MEMORY_CONTEXT_BUDGET);
+      // One memory: an entry filed under another project before counts like any other.
       assert.deepStrictEqual(ids(shown), [
         "user-fact",
+        "elsewhere",
+        "global-fact",
         "big-17",
         "big-16",
         "big-15",
         "big-14",
         "big-13",
-        // The large entries left over do not stop a small one that still fits.
-        "global-fact",
       ]);
-      assert.deepStrictEqual(shown[0], {
-        ...shown[0]!,
-        owner: "user",
-        scope: "project",
-      });
+      assert.deepStrictEqual(shown[0], { ...shown[0]!, owner: "user" });
       assert.include(
         text,
-        `Showing 7 of 10 memories (${line.length} of ${BOT_MEMORY_CONTEXT_BUDGET} characters). The rest is available through bot_memory.`,
+        `Showing 8 of 11 memories (${line.length} of ${BOT_MEMORY_CONTEXT_BUDGET} characters). The rest is available through bot_memory.`,
       );
       // The bot page marks entries with the same selection.
-      assert.deepStrictEqual(
-        ids(botMemoryContext(yield* bots.memory(botId), project).selected),
-        ids(shown),
-      );
+      assert.deepStrictEqual(ids(botMemoryContext(yield* bots.memory(botId)).selected), ids(shown));
     }),
   ),
 );
@@ -760,7 +754,7 @@ it.effect("an entry the budget left out reaches the model once it fits", () =>
         JSON.parse(dataLine(second.update!, "memory_update"));
       assert.deepStrictEqual(changes.removed, ["big-17"]);
       assert.deepStrictEqual(ids(changes.updated), ["big-12"]);
-      assert.include(second.update!, "A fresh snapshot would now show 7 of 9 memories");
+      assert.include(second.update!, "A fresh snapshot would now show 8 of 10 memories");
       yield* TestClock.adjust("1 second");
       const third = yield* bots.context({
         ...turn(botThread, "Again"),
@@ -782,22 +776,19 @@ it.effect("bot_memory pages are bounded and cover every entry once", () =>
       let offset: number | null = 0;
       let pages = 0;
       while (offset !== null) {
-        const page: MemoryPage = yield* bots.memoryPage(botId, project, offset);
-        assert.equal(page.total, 30);
+        const page: MemoryPage = yield* bots.memoryPage(botId, offset);
+        assert.equal(page.total, 31);
         assert.isAtMost(JSON.stringify(page.entries).length, 12000 + 50);
         seen.push(...ids(page.entries));
         offset = page.nextOffset;
         pages += 1;
       }
       assert.isAbove(pages, 1);
-      assert.deepStrictEqual(
-        seen,
-        ids(botMemoryContext(yield* bots.memory(botId), project).entries),
-      );
-      const first = yield* bots.memoryPage(botId, project, 0);
+      assert.deepStrictEqual(seen, ids(botMemoryContext(yield* bots.memory(botId)).entries));
+      const first = yield* bots.memoryPage(botId, 0);
       assert.deepStrictEqual(
         first.entries.filter((entry) => entry.inContext).map((entry) => entry.id),
-        ids(botMemoryContext(yield* bots.memory(botId), project).selected).filter((id) =>
+        ids(botMemoryContext(yield* bots.memory(botId)).selected).filter((id) =>
           ids(first.entries).includes(id),
         ),
       );
@@ -921,10 +912,7 @@ it.effect("memory of a project the bot no longer has says how to fix it", () =>
       yield* seedBot;
       const other = ProjectId.make("project-gone");
       const write = { agentId: botId, id: "fact", projectId: other, text: "x", source: "user" };
-      for (const attempt of [
-        bots.remember(write, "user"),
-        bots.propose({ ...write, runId: "run-1" }),
-      ]) {
+      for (const attempt of [bots.propose({ ...write, runId: "run-1" })]) {
         const error = yield* Effect.flip(attempt);
         assert.equal(error.code, "bot_memory_project_unavailable");
         assert.equal(

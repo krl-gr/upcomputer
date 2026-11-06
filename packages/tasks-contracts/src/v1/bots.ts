@@ -185,7 +185,6 @@ export const BOT_MEMORY_CONTEXT_BUDGET = 11998;
 /** One memory as a bot turn shows it to the model. The budget counts this JSON. */
 export const botMemoryForModel = (entry: BotMemory) => ({
   id: entry.id,
-  scope: entry.projectId === null ? "global" : "project",
   owner: entry.owner ?? "bot",
   text: entry.text,
   updatedAt: entry.updatedAt,
@@ -194,22 +193,19 @@ export const botMemoryForModel = (entry: BotMemory) => ({
 // JSON never needs a raw "<", so escaping it keeps memory text from closing the block's tag.
 export const botMemoryData = (value: unknown) => JSON.stringify(value).replaceAll("<", "\\u003c");
 
-const memoryRank = (entry: BotMemory) =>
-  entry.owner === "user" ? 0 : entry.projectId !== null ? 1 : 2;
+const memoryRank = (entry: BotMemory) => (entry.owner === "user" ? 0 : 1);
 
 /**
- * The memories a bot turn in `projectId` can see: the user's, then the project's, then global
- * ones, each newest first, and the ones that fit the budget. Server and bot page both use it;
- * an entry too large to fit is skipped, not the end of the selection.
+ * The memories a bot turn sees: the user's, then the bot's, each newest first, and the ones
+ * that fit the budget. A bot has one memory; an entry's `projectId` is no longer read. Server
+ * and bot page both use it; an entry too large to fit is skipped, not the end of the selection.
  */
-export function botMemoryContext(memories: ReadonlyArray<BotMemory>, projectId: string) {
-  const entries = memories
-    .filter((entry) => entry.projectId === null || entry.projectId === projectId)
-    .sort(
-      (a, b) =>
-        memoryRank(a) - memoryRank(b) ||
-        (a.updatedAt === b.updatedAt ? (a.id < b.id ? -1 : 1) : a.updatedAt < b.updatedAt ? 1 : -1),
-    );
+export function botMemoryContext(memories: ReadonlyArray<BotMemory>) {
+  const entries = [...memories].sort(
+    (a, b) =>
+      memoryRank(a) - memoryRank(b) ||
+      (a.updatedAt === b.updatedAt ? (a.id < b.id ? -1 : 1) : a.updatedAt < b.updatedAt ? 1 : -1),
+  );
   const selected: Array<BotMemory> = [];
   // The opening bracket, then each entry with the comma or closing bracket after it.
   let size = 1;

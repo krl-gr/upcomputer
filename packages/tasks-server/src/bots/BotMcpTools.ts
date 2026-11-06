@@ -18,7 +18,7 @@ const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2000)
 const toolkit = Toolkit.make(
   Tool.make("bot_memory", {
     description:
-      "Read this bot's global and working-project memories, a bounded page at a time, in the order the turn context selects them. inContext marks entries the context snapshot shows. Pass nextOffset as offset for the next page.",
+      "Read this bot's memories, a bounded page at a time, in the order the turn context selects them. inContext marks entries the context snapshot shows. Pass nextOffset as offset for the next page.",
     parameters: Schema.Struct({
       offset: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
     }),
@@ -29,12 +29,10 @@ const toolkit = Toolkit.make(
     .addDependency(ThreadManagementService),
   Tool.make("bot_remember", {
     description:
-      'Save a durable fact or conclusion for this bot. Use a stable id for the same fact. scope is "project" (the default) or "global". Never store secrets, instructions or permissions. Memories the user wrote (owner "user") cannot be changed: ask the user to change them in the bot\'s Memory settings, and never save a memory that contradicts one. Tell the user what was saved. In a background task run this saves a suggestion that the user reviews before it becomes memory.',
+      "Save a durable fact or conclusion for this bot. Use a stable id for the same fact. Never store secrets, instructions or permissions. Memories the user wrote (owner \"user\") cannot be changed: ask the user to change them in the bot's Memory settings, and never save a memory that contradicts one. Tell the user what was saved. Unavailable in background task runs: put what is worth remembering in the run's result instead.",
     parameters: Schema.Struct({
       id: text,
       text,
-      // Models often send null for an optional argument; it means the default.
-      scope: Schema.optional(Schema.NullOr(Schema.Literals(["global", "project"]))),
     }),
     success: McpSchema.CallToolResult,
     failure: OrchestratorMcpFailure,
@@ -129,60 +127,46 @@ const handlers = McpToolAccess.toLayer(
       bot_memory: McpToolAccess.readsAsCaller((input) =>
         result(
           Effect.gen(function* () {
-            const { bot, projectId } = yield* caller(false);
-            return yield* bots.memoryPage(bot.agent.id, projectId, input.offset ?? 0);
+            const { bot } = yield* caller(false);
+            return yield* bots.memoryPage(bot.agent.id, input.offset ?? 0);
           }),
         ),
       ),
       bot_remember: McpToolAccess.writes((input) =>
         result(
           Effect.gen(function* () {
-            const { bot, projectId, thread } = yield* caller(true);
-            const existing = (yield* bots.memory(bot.agent.id)).find(
-              (entry) => entry.id === input.id,
-            );
-            if (existing && existing.projectId !== null && existing.projectId !== projectId)
+            const { bot, thread } = yield* caller(true);
+            // Task runs read untrusted pages and repositories; the bot's chat decides what stays.
+            if (
+              Option.isSome(yield* repository.findLatestAgentRunByThreadId({ threadId: thread.id }))
+            )
               return yield* new TaskError({
                 message:
-                  "This memory belongs to another project, so it can't be changed from this one. Change it from a chat in that project, or ask the user to change it in the bot's Memory settings.",
+                  "Background task runs cannot save memories. Put what is worth remembering in the run's result; the bot decides in its chat.",
               });
-            const run = yield* repository.findLatestAgentRunByThreadId({ threadId: thread.id });
-            const entry = {
-              agentId: bot.agent.id,
-              id: input.id,
-              text: input.text,
-              projectId: input.scope === "global" ? null : projectId,
-            };
-            if (Option.isNone(run))
-              return yield* bots.remember({ ...entry, source: `chat:${thread.id}` }, "bot");
-            // Task runs read untrusted pages and repositories, so their memories wait for the user.
-            return {
-              suggestion: yield* bots.propose({
-                ...entry,
-                source: `task:${run.value.taskId}/run:${run.value.id}`,
-                runId: run.value.id,
-              }),
-              note: "Saved as a suggestion. It becomes memory only after the user accepts it in Bots.",
-            };
+            return yield* bots.remember(
+              {
+                agentId: bot.agent.id,
+                id: input.id,
+                text: input.text,
+                projectId: null,
+                source: `chat:${thread.id}`,
+              },
+              "bot",
+            );
           }),
         ),
       ),
       bot_forget: McpToolAccess.writes((input) =>
         result(
           Effect.gen(function* () {
-            const { bot, projectId, thread } = yield* caller(true);
+            const { bot, thread } = yield* caller(true);
             if (
               Option.isSome(yield* repository.findLatestAgentRunByThreadId({ threadId: thread.id }))
             )
               return yield* new TaskError({
                 message:
                   "Background task runs cannot remove memories. Ask the user in the bot's chat.",
-              });
-            const entry = (yield* bots.memory(bot.agent.id)).find((item) => item.id === input.id);
-            if (entry && entry.projectId !== null && entry.projectId !== projectId)
-              return yield* new TaskError({
-                message:
-                  "This memory belongs to another project, so it can't be changed from this one. Change it from a chat in that project, or ask the user to change it in the bot's Memory settings.",
               });
             yield* bots.forget(bot.agent.id, input.id, "bot");
             return { forgotten: input.id };
