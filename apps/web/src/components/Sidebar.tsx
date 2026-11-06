@@ -209,7 +209,6 @@ import {
   resolveSidebarRowThreadId,
 } from "./Sidebar.logic";
 import { projectLinksByKey } from "../linkedProjects/projectScope";
-import { SIDEBAR_STICKY_HEADER_SCROLL_MARGIN } from "../sidebarMetrics/sidebarMetrics";
 import { SidebarProjectsSection } from "../sidebarProjects/SidebarProjectsSection";
 import {
   SidebarPinnedSectionHeader,
@@ -1937,7 +1936,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       const listRect = list.getBoundingClientRect();
       const scale = list.offsetWidth > 0 ? listRect.width / list.offsetWidth : 1;
       const headerRect = header.getBoundingClientRect();
-      // The Pinned header opens the list; it may still be stuck lower, so its height is its bottom.
+      // The Pinned header opens the list, so its height is its bottom.
       dragLabelOffsetRef.current = pinnedSectionShown
         ? headerRect.height
         : headerRect.top - listRect.top + SIDEBAR_DRAG_LABEL_HEIGHT * scale;
@@ -3310,8 +3309,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     className={cn(
                       "relative flex flex-col gap-px",
                       !threadListEmpty && "flex-1",
-                      // Leaves room for a stuck section header above a row scrolled into view.
-                      sectionHeadersInList && SIDEBAR_STICKY_HEADER_SCROLL_MARGIN,
                       actionSweep !== null && "**:pointer-events-none",
                     )}
                   >
@@ -3489,7 +3486,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 <SidebarListSectionMarker
                                   key="pinned-header"
                                   marker="pinned-header"
-                                  sticky={dragState === null}
                                 >
                                   <SidebarPinnedSectionHeader />
                                 </SidebarListSectionMarker>
@@ -3510,7 +3506,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 <SidebarListSectionMarker
                                   key="pinned-divider"
                                   marker="pinned-divider"
-                                  sticky={dragState === null}
                                 >
                                   {/* Crossing it moves a drag between the sections (Sidebar.drag.ts). */}
                                   <div className="sidebar-drag-boundary-label">

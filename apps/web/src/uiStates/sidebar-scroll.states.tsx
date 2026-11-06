@@ -25,7 +25,6 @@ import {
   SIDEBAR_MENU_SCOPE,
   SIDEBAR_SECTION_GAP,
   SIDEBAR_SECTION_HEADER_GAP,
-  SIDEBAR_STICKY_HEADER_SCROLL_MARGIN,
 } from "../sidebarMetrics/sidebarMetrics";
 import { SidebarProjectsSection } from "../sidebarProjects/SidebarProjectsSection";
 import { SidebarSectionHeader } from "../sidebarProjects/SidebarSectionHeader";
@@ -224,10 +223,8 @@ function WholeSidebar(props: { readonly height: number; readonly compact?: boole
             <SidebarGroup className="flex-1" role="presentation" data-sidebar-thread-list="">
               <DndContext>
                 <SortableContext items={[]}>
-                  <ul
-                    className={`relative flex flex-1 flex-col gap-px ${SIDEBAR_STICKY_HEADER_SCROLL_MARGIN}`}
-                  >
-                    <SidebarListSectionMarker marker="pinned-header" sticky>
+                  <ul className="relative flex flex-1 flex-col gap-px">
+                    <SidebarListSectionMarker marker="pinned-header">
                       <SidebarPinnedSectionHeader />
                     </SidebarListSectionMarker>
                     {PINNED.map((title, index) =>
@@ -237,7 +234,7 @@ function WholeSidebar(props: { readonly height: number; readonly compact?: boole
                         }),
                       ),
                     )}
-                    <SidebarListSectionMarker marker="pinned-divider" sticky>
+                    <SidebarListSectionMarker marker="pinned-divider">
                       <div className="sidebar-drag-boundary-label">
                         <SidebarThreadsSectionHeader
                           onNewThread={noop}

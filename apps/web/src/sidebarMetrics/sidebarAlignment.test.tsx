@@ -260,7 +260,7 @@ function ThreadSidebarUnderTest() {
                   visible={false}
                   isDropTarget={false}
                 />
-                <SidebarListSectionMarker marker="pinned-divider" sticky>
+                <SidebarListSectionMarker marker="pinned-divider">
                   <SidebarThreadsSectionHeader
                     onNewThread={noop}
                     currentEnvironmentId={null}

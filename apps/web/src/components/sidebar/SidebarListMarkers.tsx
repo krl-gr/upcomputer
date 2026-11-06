@@ -103,25 +103,17 @@ export function SidebarDragBoundary(props: {
 
 /**
  * UpComputer: a sidebar section header in the list (Pinned, Threads), where
- * upstream draws its drag-only Pinned and Active labels. A sticky one stays at
- * the top of the sidebar's scroll while its rows pass under it; drags turn that
- * off, as they measure the headers where the list lays them out.
+ * upstream draws its drag-only Pinned and Active labels.
  */
 export function SidebarListSectionMarker(props: {
   marker: "pinned-header" | "pinned-divider";
-  sticky: boolean;
   children: ReactNode;
 }) {
   return (
     <SortableSidebarMarker
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
-      className={cn(
-        "relative",
-        SIDEBAR_SECTION_GAP,
-        SIDEBAR_LIST_ROW_SPACING,
-        props.sticky && "sticky top-0 z-10 bg-sidebar surface-grain",
-      )}
+      className={cn("relative", SIDEBAR_SECTION_GAP, SIDEBAR_LIST_ROW_SPACING)}
     >
       {props.children}
     </SortableSidebarMarker>
