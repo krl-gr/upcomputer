@@ -42,6 +42,7 @@ import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
+import { getDesktopScheme } from "../electron/ElectronProtocol.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
@@ -1155,9 +1156,11 @@ describe("DesktopWindow", () => {
         if (!willNavigate) {
           return yield* Effect.die("will-navigate listener was not registered");
         }
+        // The app's own dev scheme: upcomputer-dev in Up.computer, t3code-dev upstream.
+        const scheme = getDesktopScheme(true);
         for (const [url, expectedPrevented] of [
-          ["t3code-dev://app/threads?id=1#latest", false],
-          ["t3code-dev://other/", true],
+          [`${scheme}://app/threads?id=1#latest`, false],
+          [`${scheme}://other/`, true],
           ["t3code://app/", true],
         ] as const) {
           const preventDefault = vi.fn();

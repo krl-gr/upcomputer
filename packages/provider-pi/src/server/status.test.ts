@@ -10,6 +10,7 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
+import { VERSION_PROBE_TIMEOUT_MS } from "@t3tools/provider-core/server/snapshotProbe";
 
 import {
   buildInitialPiProviderSnapshot,
@@ -181,7 +182,7 @@ describe("PiProvider", () => {
       versionDelay: "Infinity",
       status: "error",
       version: null,
-      message: "Pi CLI is installed but timed out while running `pi --version`.",
+      message: "Pi is installed but didn't respond in time.",
       probesAfterVersion: false,
     },
   ] as const)("gives `pi --version` 10 s when it $label", (row) =>
@@ -200,7 +201,8 @@ describe("PiProvider", () => {
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.forkChild,
       );
-      yield* TestClock.adjust("10 seconds");
+      // Up.computer gives every CLI version probe the shared 20 s budget.
+      yield* TestClock.adjust(VERSION_PROBE_TIMEOUT_MS);
       const snapshot = yield* Fiber.join(fiber);
       assert.equal(snapshot.status, row.status);
       assert.equal(snapshot.version, row.version);

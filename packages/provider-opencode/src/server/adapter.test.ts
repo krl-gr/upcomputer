@@ -318,8 +318,10 @@ describe("OpenCodeAdapterV2", () => {
       const events = yield* Fiber.join(received);
       const session = events.findLast((event) => event.type === "provider_session.updated");
       const terminal = events.findLast((event) => event.type === "turn.terminal");
-      assert.strictEqual(session?.providerSession.lastError, sample.expected);
-      assert.strictEqual(terminal?.failure?.message, sample.expected);
+      // Up.computer wraps the provider's words in its plain-language sentence.
+      const expected = `OpenCode reported an error: ${sample.expected.replace(/^./u, (first) => first.toLowerCase()).replace(/\.$/u, "")}. Send the message again.`;
+      assert.strictEqual(session?.providerSession.lastError, expected);
+      assert.strictEqual(terminal?.failure?.message, expected);
     }).pipe(
       Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
       Effect.scoped,

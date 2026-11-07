@@ -46,7 +46,19 @@ async function loadHooks(
     NodePath,
     stripFrontmatter: (content: string) => content,
     pi: {
-      on: (name: string, handler: unknown) => handlers.set(name, handler),
+      // Pi runs every handler registered for an event, in order.
+      on: (name: string, handler: (...args: unknown[]) => unknown) => {
+        const previous = handlers.get(name) as typeof handler | undefined;
+        handlers.set(
+          name,
+          previous === undefined
+            ? handler
+            : async (...args: unknown[]) => {
+                await previous(...args);
+                return handler(...args);
+              },
+        );
+      },
       getCommands: () => commands,
     },
   });
