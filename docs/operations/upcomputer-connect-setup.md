@@ -68,8 +68,11 @@ Create the Cloudflare, PlanetScale (Postgres), Axiom and Clerk production accoun
     creates each environment's tunnel, but Cloudflare rejects `cloudflared`'s connection
     (`register_connection` returns `server_error`), the tunnel stays inactive and clients see error 1033.
   - The deploy token needs, besides Workers, Queues, Hyperdrive, DNS and Tunnel access: Account
-    **Secrets Store: Edit** (Alchemy's state store) and Account **Account API Tokens: Edit** (the
-    relay mints the Worker's own tunnel token). **Cloudflare Pages: Read** lets agents read site build logs.
+    **Secrets Store: Edit** (Alchemy's state store), Account **Account API Tokens: Edit** (the
+    relay mints the Worker's own tunnel token and the source maps upload token) and Account
+    **Workers R2 Storage: Edit** (the mobile source maps bucket). Without R2 access the plan fails
+    with `Unauthorized: Authentication error` (code 10000) while it looks up the bucket.
+    **Cloudflare Pages: Read** lets agents read site build logs.
 - **PlanetScale**: organization `gurianovks`. The first deploy creates the database.
 - **Clerk JWT template**: name `t3-relay`, claims `{ "aud": "t3-code-relay" }`.
 - **Clerk desktop redirects**: add `upcomputer://app/` and `upcomputer-dev://app/` to the SSO
