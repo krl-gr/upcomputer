@@ -77,7 +77,7 @@ describe("product flags", () => {
 
   it("filters settings search items and right-panel launchers by flag", () => {
     expect(isProductSettingsSearchItemShown(UPCOMPUTER_PRODUCT_FLAGS, "terminal-font")).toBe(true);
-    for (const id of ["device-hub", "proactive-panels", "keep-threads-with-pull-requests"]) {
+    for (const id of ["device-hub", "keep-threads-with-pull-requests"]) {
       expect(isProductSettingsSearchItemShown(UPCOMPUTER_PRODUCT_FLAGS, id)).toBe(false);
     }
     expect(

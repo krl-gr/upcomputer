@@ -228,7 +228,6 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
       "review-guide-model",
       "review-guide-instructions",
       "pull-request-links-open-in-app",
-      "proactive-panels",
     ],
     rightPanelSurfaces: ["Pull request", "Linked pull requests"],
   },

@@ -706,9 +706,18 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "proactive-panels",
-    title: "Open pull requests and changes panels proactively",
+    // Without pull requests the setting still opens Changes, so it stays under Diffs.
+    get title() {
+      return isProductFeatureShown("pullRequests")
+        ? "Open pull requests and changes panels proactively"
+        : "Open the changes panel after large edits";
+    },
     to: "/settings/diffs",
-    searchTerms: ["proactive automatically open diff pull request pr right panel agent completion"],
+    get searchTerms() {
+      return isProductFeatureShown("pullRequests")
+        ? ["proactive automatically open diff pull request pr right panel agent completion"]
+        : ["proactive automatically open diff changes right panel agent completion"];
+    },
   },
   {
     id: "skills-in-slash-menu",

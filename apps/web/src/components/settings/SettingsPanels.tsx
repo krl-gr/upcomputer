@@ -528,7 +528,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       : []),
     ...(settings.diffLayout !== DEFAULT_UNIFIED_SETTINGS.diffLayout ? ["Diff layout"] : []),
     ...(settings.proactivePanelsEnabled !== DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled
-      ? ["Open pull requests and changes panels proactively"]
+      ? [searchableSetting("proactive-panels").title]
       : []),
     ...(settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu
       ? ["Show skills in slash menu"]
@@ -1334,6 +1334,44 @@ function DiffColorsSettingsRow() {
   );
 }
 
+function ProactivePanelsSettingRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const setting = searchableSetting("proactive-panels");
+
+  return (
+    <SettingsRow
+      {...setting}
+      description={
+        isProductFeatureShown("pullRequests")
+          ? "Open linked pull requests first. Otherwise, open Changes for edits to at least 3 files or 50 lines."
+          : "Open Changes when a turn edits at least 3 files or 50 lines."
+      }
+      resetAction={
+        settings.proactivePanelsEnabled !== DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled ? (
+          <SettingResetButton
+            label="proactive panels"
+            onClick={() =>
+              updateSettings({
+                proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={settings.proactivePanelsEnabled}
+          onCheckedChange={(checked) =>
+            updateSettings({ proactivePanelsEnabled: Boolean(checked) })
+          }
+          aria-label={setting.title}
+        />
+      }
+    />
+  );
+}
+
 export function DiffsSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -1447,36 +1485,12 @@ export function DiffsSettingsPanel() {
           }
         />
         <DiffColorsSettingsRow />
+        {isProductFeatureShown("pullRequests") ? null : <ProactivePanelsSettingRow />}
       </SettingsSection>
 
       {isProductFeatureShown("pullRequests") ? (
         <SettingsSection id="pull-requests" title="Pull requests">
-          <SettingsRow
-            {...searchableSetting("proactive-panels")}
-            description="Open linked pull requests first. Otherwise, open Changes for edits to at least 3 files or 50 lines."
-            resetAction={
-              settings.proactivePanelsEnabled !==
-              DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled ? (
-                <SettingResetButton
-                  label="proactive panels"
-                  onClick={() =>
-                    updateSettings({
-                      proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Switch
-                checked={settings.proactivePanelsEnabled}
-                onCheckedChange={(checked) =>
-                  updateSettings({ proactivePanelsEnabled: Boolean(checked) })
-                }
-                aria-label="Open pull requests and changes panels proactively"
-              />
-            }
-          />
+          <ProactivePanelsSettingRow />
           <PullRequestLinksOpenInAppSetting />
         </SettingsSection>
       ) : null}
