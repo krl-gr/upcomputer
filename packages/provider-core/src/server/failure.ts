@@ -446,7 +446,8 @@ function redactProviderFailureText(value: string): string {
       "$1[REDACTED]$2",
     )
     .replace(
-      /((?<![\w-])[\w-]*(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu,
+      // A sentence's closing period stays outside the redacted value.
+      /((?<![\w-])[\w-]*(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+?(?=\.?(?:[\s,;]|$)))/giu,
       "$1[REDACTED]",
     )
     .replace(/\bsk-[A-Za-z0-9_-]{16,}\b/gu, "[REDACTED]")

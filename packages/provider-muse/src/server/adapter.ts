@@ -991,13 +991,14 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
             ? { nativeConversationHeadRef: nativeRef(turn.nativeId) }
             : {}),
         });
-        yield* updateSession(disposition === "broken" ? "error" : "ready", detail ?? null);
-        active = undefined;
-        if (status === "failed") {
-          const usageLimited =
-            disposition === "reusable" && (quota !== undefined || isMuseUsageLimitFailure(detail));
-          const failure =
-            disposition === "broken"
+        const usageLimited =
+          status === "failed" &&
+          disposition === "reusable" &&
+          (quota !== undefined || isMuseUsageLimitFailure(detail));
+        const failure =
+          status !== "failed"
+            ? undefined
+            : disposition === "broken"
               ? makeProviderCrashFailure({ driver: MUSE_PROVIDER, detail })
               : usageLimited
                 ? makeProviderFailure({
@@ -1012,6 +1013,13 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
                     ),
                   })
                 : makeNativeProviderFailure({ driver: MUSE_PROVIDER, text: detail });
+        // The banner reads the same as the failure item.
+        yield* updateSession(
+          disposition === "broken" ? "error" : "ready",
+          failure?.message ?? detail ?? null,
+        );
+        active = undefined;
+        if (failure !== undefined) {
           const base = baseItem(turn, `failure:${turn.nativeId}`, completedAt);
           yield* emit({
             type: "turn_item.updated",

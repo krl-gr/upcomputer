@@ -774,7 +774,7 @@ describe("MuseAdapterV2", () => {
       assert.strictEqual(terminal.threadDisposition, "reusable");
       assert.strictEqual(
         terminal.failure?.message,
-        "Provider rejected this turn: api_key=[REDACTED]",
+        "Muse Code reported an error: provider rejected this turn: api_key=[REDACTED]. Send the message again.",
       );
       assert.strictEqual(
         harness.allEvents.findLast((event) => event.type === "provider_session.updated")
