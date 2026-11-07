@@ -3311,7 +3311,7 @@ it.effect("ProviderSessionManagerV2 releases sessions when provider event stream
       assert.equal(projection.providerSessions.at(-1)?.status, "error");
       assert.equal(
         projection.providerSessions.at(-1)?.lastError,
-        "The provider event stream closed unexpectedly. Retry the turn; if it keeps failing, check the provider and server logs.",
+        "The connection to the agent dropped while it was working. Send the message again to continue.",
       );
     });
 

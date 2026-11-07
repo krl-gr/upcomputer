@@ -220,7 +220,7 @@ it("does not expose defect text nested inside a known error category", () => {
       ),
     },
   });
-  assert.include(failure.message, "dropped while it was working");
+  assert.include(failure.message, "The connection to the agent dropped while it was working");
   assert.equal(failure.code, "connection_lost");
   assert.notInclude(failure.message, "Session rejected:");
   assert.notInclude(failure.message, "nested-secret");

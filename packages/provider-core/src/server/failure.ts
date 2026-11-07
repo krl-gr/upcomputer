@@ -255,7 +255,7 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
         }
         case "ContextHandoffDeliveryUncertainError":
           return {
-            message: `Up.computer couldn't confirm that ${provider} received the earlier conversation. Send the message again to resend it.`,
+            message: `Up.computer couldn't confirm that ${midSentence(provider)} received the earlier conversation. Send the message again to resend it.`,
             code: ProviderFailureCode.handoffUncertain,
             retryable: true,
             detail: undefined,
@@ -340,7 +340,7 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
       };
     case "event_stream":
       return {
-        message: `The connection to ${provider} dropped while it was working${because}. Send the message again to continue.`,
+        message: `The connection to ${midSentence(provider)} dropped while it was working${because}. Send the message again to continue.`,
         code: ProviderFailureCode.connectionLost,
         retryable: true,
         detail,
