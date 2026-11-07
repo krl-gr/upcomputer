@@ -6,7 +6,7 @@ from upstream stay cheap and upstream clients (such as the Swift iOS client) sta
 
 **Stays upstream:** the `@t3tools/*` package scope, `T3CODE_*` variable names, type, file and
 function names, the `t3` npm package and runtime file names, and the pairing and Connect protocol (`/.well-known/t3/environment`,
-`urn:t3:...`, JWT `typ` values, the `t3-code` MCP server and its `serverInfo`, the Codex
+`urn:t3:...`, JWT `typ` values, the `t3-code` MCP server key (its `serverInfo` name says Up.computer), the Codex
 `clientInfo`, relay stack and resource names).
 
 ## After every upstream merge

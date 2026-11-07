@@ -58,18 +58,22 @@ describe("apply-branding rules", () => {
       'const label = "Open a T3 Code terminal";',
       'const connect = "Sign in to T3 Connect";',
       'const hint = "Run `t3 up --lan`, then `t3 update`.";',
-      '  name: "T3 Code",',
+      'const CODEX_CLIENT_NAME = "T3 Code";',
     ].join("\n");
 
-    expect(rebrandText(source, "apps/server/src/mcp/McpHttpServer.ts")).toBe(
+    expect(rebrandText(source, "apps/server/src/provider/CodexProvider.ts")).toBe(
       [
         "// T3 Code owns this comment.",
         'const title = "Restart Up.computer to finish.";',
         'const label = "Open an Up.computer terminal";',
         'const connect = "Sign in to UpComputer Connect";',
         'const hint = "Run `up remote --lan`, then `up update`.";',
-        '  name: "T3 Code",',
+        'const CODEX_CLIENT_NAME = "T3 Code";',
       ].join("\n"),
+    );
+    // The MCP server introduces itself to agents, so its name is copy.
+    expect(rebrandText('  name: "T3 Code",', "apps/server/src/mcp/McpHttpServer.ts")).toBe(
+      '  name: "Up.computer",',
     );
   });
 
@@ -102,6 +106,23 @@ describe("apply-branding rules", () => {
     );
     expect(rebrandText('it("t3 is not on PATH")', "apps/server/src/cli/update.test.ts")).toBe(
       'it("t3 is not on PATH")',
+    );
+    expect(
+      rebrandText(
+        'const help = "Data directory (equivalent to T3CODE_HOME). Or set T3CODE_PORT."; const note = "T3CODE_HOST=1 in service.env";',
+        "apps/server/src/cli/config.ts",
+      ),
+    ).toBe(
+      'const help = "Data directory (equivalent to UPCOMPUTER_HOME). Or set UPCOMPUTER_PORT."; const note = "T3CODE_HOST=1 in service.env";',
+    );
+    // T3 alone is the app in the CLI's prose; T3 Chat, env names and identifiers stay.
+    expect(
+      rebrandText(
+        'const text = "Start T3, then sign in with your T3 account for T3\'s browser. Link T3 Chat with T3CODE_HOME."; const home = resolveWorktreeT3Home(); const env = "T3_UNINSTALL_RUNTIME";',
+        "apps/server/src/cli/connect.ts",
+      ),
+    ).toBe(
+      'const text = "Start Up.computer, then sign in with your Up.computer account for Up.computer\'s browser. Link T3 Chat with T3CODE_HOME."; const home = resolveWorktreeT3Home(); const env = "T3_UNINSTALL_RUNTIME";',
     );
   });
 

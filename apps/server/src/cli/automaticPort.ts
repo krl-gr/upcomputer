@@ -63,7 +63,7 @@ export const make = Effect.gen(function* () {
     }
     return yield* new CliError.UserError({
       cause:
-        "Windows is already using every port Up.computer tried. Pass --port or set T3CODE_PORT to a port Windows is not using.",
+        "Windows is already using every port Up.computer tried. Pass --port or set UPCOMPUTER_PORT to a port Windows is not using.",
     });
   });
 });

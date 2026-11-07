@@ -10,6 +10,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Command, Flag } from "effect/cli";
+import { UPCOMPUTER_PRODUCT_NAME } from "@t3tools/shared/upcomputerIdentity";
 
 export interface NightlyReleaseMetadata {
   readonly baseVersion: string;
@@ -117,7 +118,7 @@ export const resolveNightlyReleaseMetadata = (
     baseVersion,
     version,
     tag: `v${version}`,
-    name: `T3 Code ${CHANNEL_RELEASE_LABELS[channel]} ${version} (${shortSha})`,
+    name: `${UPCOMPUTER_PRODUCT_NAME} ${CHANNEL_RELEASE_LABELS[channel]} ${version} (${shortSha})`,
     shortSha,
   };
 };
