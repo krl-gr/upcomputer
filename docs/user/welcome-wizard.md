@@ -76,7 +76,7 @@ terminal metadata while the terminal process can use them.
 
 ## Import your projects
 
-T3 Code finds directories that Claude Code, Codex or Pi has used. Git repositories
+Up.computer finds directories that Claude Code, Codex or Pi has used. Git repositories
 are listed first, newest activity on top. When the remote is on GitHub, the
 group shows the repository as `owner/name`. Clones with the same remote share
 one group. Directories that are not git repositories sit under "Other folders".
@@ -92,7 +92,7 @@ A large or malformed history can reach the scan limit. Up.computer keeps the
 projects it found and warns when projects or conversations may be missing.
 
 Imported projects include Claude, Codex and Pi conversations active within the last
-30 days. You can continue those conversations in T3 Code. Pi is off by default:
+30 days. You can continue those conversations in Up.computer. Pi is off by default:
 enable it in Settings, then open `/welcome` to import its sessions. Pi sessions
 are read from each enabled Pi provider's session directory, which follows
 `PI_CODING_AGENT_SESSION_DIR` and `PI_CODING_AGENT_DIR` in its environment. A

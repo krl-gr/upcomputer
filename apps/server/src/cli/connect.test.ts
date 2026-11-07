@@ -130,7 +130,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
       Effect.gen(function* () {
         const { printed, warnings } = yield* runUnlink(deadPid, { portFreed: true });
 
-        assert.include(printed, "T3 Connect is disabled locally.");
+        assert.include(printed, "UpComputer Connect is disabled locally.");
         assert.notInclude(warnings.join("\n"), "Restart that server");
       }),
     );
@@ -156,7 +156,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
         const { requests, printed, warnings } = yield* runUnlink(process.pid);
 
         assert.deepEqual(requests, ["POST /api/connect/unlink"]);
-        assert.include(printed, "T3 Connect is disabled locally.");
+        assert.include(printed, "UpComputer Connect is disabled locally.");
         assert.notInclude(warnings.join("\n"), "cloudflared process");
       }),
     );

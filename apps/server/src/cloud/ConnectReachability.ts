@@ -80,8 +80,8 @@ export function classifyReachability(
     // A running server reads the link `t3 connect` stores only at startup.
     return fail(
       "not_linked",
-      "The server has not set up a T3 Connect tunnel.",
-      "Run `t3 connect`, then restart T3 Code so it applies the link.",
+      "The server has not set up a UpComputer Connect tunnel.",
+      "Run `t3 connect`, then restart Up.computer so it applies the link.",
     );
   }
   if (connector === null) {
@@ -145,7 +145,7 @@ export function classifyReachability(
     const code = cloudflareError === undefined ? "" : ` (Cloudflare error ${cloudflareError})`;
     return fail(
       "unexpected_response",
-      `The T3 Connect address answered with HTTP ${status}${code}.`,
+      `The UpComputer Connect address answered with HTTP ${status}${code}.`,
       restart,
     );
   }

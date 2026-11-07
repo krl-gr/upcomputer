@@ -46,10 +46,10 @@ export function RemoveT3ConnectEnvironmentDialog({
         openAccountPage();
       }}
     >
-      T3 Connect settings
+      UpComputer Connect settings
     </InlineButton>
   ) : (
-    "T3 Connect settings"
+    "UpComputer Connect settings"
   );
 
   return (
@@ -69,14 +69,14 @@ export function RemoveT3ConnectEnvironmentDialog({
             <AlertDialogDescription>
               {shown.registration === "registered" ? (
                 <>
-                  It stays on your T3 Connect account and keeps its host space. Deregister it in{" "}
-                  {accountPageLink} to free it.
+                  It stays on your UpComputer Connect account and keeps its host space. Deregister
+                  it in {accountPageLink} to free it.
                 </>
               ) : shown.registration === "unregistered" ? (
-                "It's no longer on your T3 Connect account."
+                "It's no longer on your UpComputer Connect account."
               ) : (
                 <>
-                  This doesn't change your T3 Connect account. To deregister it there, use{" "}
+                  This doesn't change your UpComputer Connect account. To deregister it there, use{" "}
                   {accountPageLink}.
                 </>
               )}

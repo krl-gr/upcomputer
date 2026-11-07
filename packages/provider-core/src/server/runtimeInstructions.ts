@@ -26,7 +26,7 @@ export function buildRuntimeInstructions(runtime: {
   const effortInfo = effort ? ` with ${effort} reasoning effort` : "";
   const userInstructions =
     runtime.omitUserInstructions === true ? undefined : currentUserInstructionsBlock();
-  const runtimeInfo = `<runtime_info>In case you're asked: you are running in T3 Code through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images, video, and audio in your response using Markdown image syntax with absolute file paths. Link any other file you produce using its absolute path so the user can open it in T3 Code's files viewer.</runtime_info>`;
+  const runtimeInfo = `<runtime_info>In case you're asked: you are running in Up.computer through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images, video, and audio in your response using Markdown image syntax with absolute file paths. Link any other file you produce using its absolute path so the user can open it in Up.computer's files viewer.</runtime_info>`;
   const instructions =
     runtime.pullRequestLinking === false
       ? runtimeInfo

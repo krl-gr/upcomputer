@@ -130,10 +130,10 @@ describe("presentConnectionDiagnosis", () => {
     expect(origin?.hops.map((hop) => hop.hop)).toEqual(["device", "relay", "tunnel", "server"]);
   });
 
-  it("blames this device, not the host, while its own T3 Connect sign-in loads", () => {
+  it("blames this device, not the host, while its own UpComputer Connect sign-in loads", () => {
     const failure = new ConnectionTransientError({
       reason: "session-pending",
-      detail: "Waiting for the T3 Connect sign-in to load.",
+      detail: "Waiting for the UpComputer Connect sign-in to load.",
     });
     const diagnosis = diagnose(backoff(failure));
     expect(diagnosis?.headline).not.toContain("did not answer");

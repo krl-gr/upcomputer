@@ -109,7 +109,7 @@ export const mcpToolSession = (
     if (!response.ok) {
       yield* discardResponseBody(response);
       return yield* new AcpMcpBridgeError({
-        message: `T3 Code MCP endpoint responded with HTTP ${response.status}.`,
+        message: `Up.computer MCP endpoint responded with HTTP ${response.status}.`,
       });
     }
     const payloads = yield* Stream.runCollect(responsePayloads(response, bridgeError));
@@ -128,7 +128,7 @@ export const mcpToolSession = (
     const envelope = asEnvelope(responses.find((entry) => asEnvelope(entry)?.id === id));
     if (envelope === null || envelope.error !== undefined) {
       return yield* new AcpMcpBridgeError({
-        message: `T3 Code MCP ${method} failed${envelope?.error === undefined ? "." : `: ${JSON.stringify(envelope.error)}`}`,
+        message: `Up.computer MCP ${method} failed${envelope?.error === undefined ? "." : `: ${JSON.stringify(envelope.error)}`}`,
       });
     }
     return envelope;

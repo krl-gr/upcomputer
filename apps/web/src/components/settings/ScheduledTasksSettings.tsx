@@ -1392,7 +1392,7 @@ function ScheduledTaskEditorForm({
     if (schedule.type === "once" && !offersOnce) {
       reportFailure(
         "Once is not available here",
-        "This environment runs an older T3 Code. Update it to schedule a one-time prompt, or pick another schedule.",
+        "This environment runs an older Up.computer. Update it to schedule a one-time prompt, or pick another schedule.",
       );
       return;
     }

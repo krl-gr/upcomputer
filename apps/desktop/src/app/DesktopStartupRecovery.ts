@@ -104,7 +104,7 @@ function describeOffer(offer: StartupRecoveryOffer): { text: string; action: str
       };
     case "ManagedPolicy":
       return {
-        text: "Your organization's managed policy stopped T3 Code from starting. Send the details below to your IT administrator.",
+        text: "Your organization's managed policy stopped Up.computer from starting. Send the details below to your IT administrator.",
         action: "",
       };
   }

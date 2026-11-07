@@ -1924,7 +1924,7 @@ describe("EnvironmentSupervisor routes", () => {
   );
 
   it.effect.each(["initial", "late", "withdrawn", "withdrawn-upgrade", "omitted"] as const)(
-    "learns the %s direct endpoint over T3 Connect",
+    "learns the %s direct endpoint over UpComputer Connect",
     (discovery) =>
       Effect.gen(function* () {
         const relayEntry: ConnectionCatalogEntry =

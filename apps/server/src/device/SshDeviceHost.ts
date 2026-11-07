@@ -36,7 +36,7 @@ export class SshWindowsHostError extends Schema.TaggedError<SshWindowsHostError>
   { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run T3 Code on it and connect to that environment.";
+    return "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run Up.computer on it and connect to that environment.";
   }
 }
 export const isSshWindowsHostError = Schema.is(SshWindowsHostError);

@@ -89,7 +89,7 @@ function formatDeviceAuthorizationPrompt(
 ): string {
   const minutes = Math.max(1, Math.round(Duration.toMinutes(prompt.expiresIn)));
   return [
-    "Sign in to T3 Connect. Open on any device:",
+    "Sign in to UpComputer Connect. Open on any device:",
     `  ${prompt.verificationUriComplete ?? prompt.verificationUri}`,
     `Code: ${prompt.userCode}`,
     `Waiting for approval. Expires in ${minutes} min. Ctrl+C cancels.`,
@@ -114,7 +114,9 @@ const authorizeCli = Effect.fn("cloud.cli.authorize")(function* (options: {
   const existing = yield* tokens.getExisting.pipe(
     Effect.catchTags({
       CloudCliCredentialRefreshError: () =>
-        Console.log("T3 Connect sign-in expired. Sign in again.").pipe(Effect.as(Option.none())),
+        Console.log("UpComputer Connect sign-in expired. Sign in again.").pipe(
+          Effect.as(Option.none()),
+        ),
     }),
   );
   if (Option.isSome(existing)) {
@@ -371,14 +373,14 @@ function formatAlertBox(text: string): string {
  * can reach it, so a broken tunnel fails setup instead of looking green.
  */
 export const waitForReachability = Effect.fn("cloud.cli.wait_for_reachability")(function* () {
-  yield* Console.log("Checking T3 Connect...");
+  yield* Console.log("Checking UpComputer Connect...");
   const deadline =
     (yield* Clock.currentTimeMillis) + Duration.toMillis(CLOUD_CLI_REACHABILITY_WAIT);
   let last: EnvironmentConnectReachability | null = null;
   while (true) {
     last = (yield* checkLiveReachability()) ?? last;
     if (last?.status === "reachable") {
-      yield* Console.log("✓ T3 Connect is reachable.");
+      yield* Console.log("✓ UpComputer Connect is reachable.");
       return;
     }
     if ((yield* Clock.currentTimeMillis) >= deadline) break;
@@ -462,11 +464,11 @@ const reportCloudDisconnectResults = Effect.fn("cloud.cli.report_disconnect_resu
         "UpComputer Connect is disabled, but the running server could not stop its tunnel.\nRestart that server to stop the connector.",
       );
     } else {
-      yield* Console.log("T3 Connect is disabled locally.");
+      yield* Console.log("UpComputer Connect is disabled locally.");
       // A killed server cannot stop the connector it started, and nothing adopts it on restart.
       if (input.liveResult.status === "server-gone") {
         yield* Console.warn(
-          "The server that ran T3 Connect is gone, but its cloudflared process may still be running.\nStop that process if it is.",
+          "The server that ran UpComputer Connect is gone, but its cloudflared process may still be running.\nStop that process if it is.",
         );
       }
     }
@@ -592,7 +594,7 @@ const linkEnvironmentForConnect = Effect.fn("cloud.cli.link_environment")(functi
       options.installRelayClient === true
         ? (event) =>
             event.type === "progress" && event.stage === "downloading"
-              ? Console.log("Installing the T3 Connect relay client...")
+              ? Console.log("Installing the UpComputer Connect relay client...")
               : Effect.void
         : reportRelayClientInstallProgress,
     );
@@ -608,7 +610,7 @@ const linkEnvironmentForConnect = Effect.fn("cloud.cli.link_environment")(functi
   const identity = yield* authorizeCli(options);
   yield* CliState.setCliDesiredCloudLink(true, publishOnly ? "publish_only" : "managed");
   if (yield* CliState.dropRevokedCloudLink) {
-    yield* Console.log("Replacing the link T3 Connect revoked.");
+    yield* Console.log("Replacing the link UpComputer Connect revoked.");
   }
   if (publishOnly) {
     const secrets = yield* ServerSecretStore.ServerSecretStore;
@@ -628,7 +630,7 @@ const connectLoginCommand = Command.make("login", {
       flags,
       Effect.gen(function* () {
         yield* requireConnectAllowed;
-        yield* Console.log("T3 Connect\n");
+        yield* Console.log("UpComputer Connect\n");
         const identity = yield* authorizeCli(flags);
         yield* Console.log(`✓ Signed in${connectedAs(identity)}`);
       }),
@@ -652,7 +654,7 @@ const connectLinkCommand = Command.make("link", {
       flags,
       Effect.gen(function* () {
         yield* requireConnectAllowed;
-        yield* Console.log("T3 Connect\n");
+        yield* Console.log("UpComputer Connect\n");
         const linked = yield* linkEnvironmentForConnect(flags);
         if (linked) {
           const serveCommand = yield* resolveCliCommand("serve");

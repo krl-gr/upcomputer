@@ -24,13 +24,13 @@ const none = Option.none<boolean>();
 
 it.each([
   {
-    label: "a new machine starts from T3 Connect and asks",
+    label: "a new machine starts from UpComputer Connect and asks",
     setup: { installed: false, connect: false, lan: false },
     flags: { connect: none, lan: none },
     expected: { routes: { connect: true, lan: false }, ask: ["connect", "lan"] },
   },
   {
-    label: "a build without T3 Connect never offers it",
+    label: "a build without UpComputer Connect never offers it",
     setup: { installed: false, connect: null, lan: false },
     flags: { connect: none, lan: none },
     expected: { routes: { connect: false, lan: false }, ask: ["lan"] },
@@ -114,7 +114,7 @@ it.each([
     revoked: false,
     on: false,
   },
-] as const)("T3 Connect is on for $label: $on", ({ label: _, on, ...link }) => {
+] as const)("UpComputer Connect is on for $label: $on", ({ label: _, on, ...link }) => {
   expect(connectEnabled(link)).toBe(on);
 });
 

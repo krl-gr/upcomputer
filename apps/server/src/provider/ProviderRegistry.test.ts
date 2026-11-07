@@ -2430,7 +2430,7 @@ it.layer(
             status: "unchanged",
             finishedAt: "2026-04-14T00:01:30.000Z",
             message:
-              "Update command completed, but T3 Code still detects an outdated provider version.",
+              "Update command completed, but Up.computer still detects an outdated provider version.",
           } as const;
           yield* registry.setProviderMaintenanceActionState({
             instanceId: claudeInstanceId,

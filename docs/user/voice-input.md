@@ -12,7 +12,7 @@ to a named environment on that phone, open **Settings → Voice → Transcribe o
 
 ## Choose where audio goes
 
-On web and desktop, transcription runs on one of your T3 Code environments.
+On web and desktop, transcription runs on one of your Up.computer environments.
 Nothing is sent until you choose one: open **Settings → Voice** and set
 **Send microphone audio to** the environment that should transcribe for you.
 Microphone audio recorded on this device is sent to that environment over your
@@ -20,12 +20,12 @@ authenticated connection, transcribed there, and discarded. The choice is saved
 on this device only, so every computer and browser you use asks for it once.
 Set it back to **Off** at any time; a recording in progress is discarded.
 
-If the chosen environment goes offline, voice input waits for it. T3 Code never
+If the chosen environment goes offline, voice input waits for it. Up.computer never
 substitutes another environment.
 
 ## Set up a model
 
-The first time you dictate, T3 Code offers to download the recommended English
+The first time you dictate, Up.computer offers to download the recommended English
 model to the chosen environment. In **Settings → Voice → Transcription**, select
 the languages you dictate in to compare models that support all of them.
 Accuracy shows how often the model got words or characters wrong in each
@@ -53,7 +53,7 @@ the other editors, Save, Comment, Reply, Submit review, or Attach works the
 same way, and the shortcut targets the editor that has focus, or the composer
 when none does. In the desktop browser's annotation editor, the microphone and
 the shortcut work while the page has focus; the page you are annotating never
-sees the recording, which runs in T3 Code itself.
+sees the recording, which runs in Up.computer itself.
 
 **Dictation shortcut** in Voice settings picks how the keybinding behaves:
 **Auto** tap-toggles or records while held, **Hold** records only while the keys

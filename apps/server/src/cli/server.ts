@@ -79,9 +79,9 @@ export const startCommand = Command.make("start", { ...sharedServerCommandFlags 
 );
 
 export const serveCommand = Command.make("serve", { ...sharedServerCommandFlags }).pipe(
-  Command.withShortDescription("Run T3 Code in this terminal, with no browser."),
+  Command.withShortDescription("Run Up.computer in this terminal, with no browser."),
   Command.withDescription(
-    "Run T3 Code in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run `t3 up`.",
+    "Run Up.computer in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run `t3 up`.",
   ),
   Command.withHandler((flags) =>
     runServerCommand(flags, {

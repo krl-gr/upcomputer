@@ -24,12 +24,12 @@ OpenCode reads its SQLite database and older JSON history. Antigravity reads loc
 databases, including Up.computer-managed profiles. Set `OPENCODE_DATA_DIR` or `ANTIGRAVITY_DATA_DIR` on the
 server to read a different data directory; comma-separated paths read multiple directories.
 
-Cursor reads account usage from Cursor's API for the account you signed in with in T3 or set as
+Cursor reads account usage from Cursor's API for the account you signed in with in Up.computer or set as
 `CURSOR_API_KEY`, or otherwise the CLI login saved on the server.
-This includes headless T3 sessions and desktop usage across machines; the same account counts
-once across connected environments. Without any of these, T3 shows a
-notice instead of incomplete local totals. T3 does not estimate missing tokens from conversation text.
-On macOS without a T3 sign-in, choose **Enable Cursor usage** on Usage to allow T3 to read your
+This includes headless Up.computer sessions and desktop usage across machines; the same account counts
+once across connected environments. Without any of these, Up.computer shows a
+notice instead of incomplete local totals. Up.computer does not estimate missing tokens from conversation text.
+On macOS without an Up.computer sign-in, choose **Enable Cursor usage** on Usage to allow Up.computer to read your
 existing CLI login from Keychain. You can turn it off in **Settings → Providers → Usage providers**. macOS may ask
 you to allow access on the server Mac.
 
@@ -46,8 +46,8 @@ Use absolute paths or `~/` paths in the account's environment settings; relative
 depend on each project's working directory and cannot be reliably discovered by Usage. Accounts
 sharing a history directory count once.
 
-The server saves its first hostname in `<T3 home>/usage-host-id`, so a recreated container keeps
-its usage identity when T3 home is persisted. Set `T3CODE_HOST_ID` to choose the identity
+The server saves its first hostname in `<Up.computer home>/usage-host-id`, so a recreated container keeps
+its usage identity when Up.computer home is persisted. Set `T3CODE_HOST_ID` to choose the identity
 explicitly.
 
 When your app and server support different providers, usage totals may cover only the providers
@@ -91,7 +91,7 @@ the dialog.
 ## Show only some models
 
 To count only some models, or to leave some out, add `usageModelFilter` to the server's
-`settings.json` in its `userdata` directory, such as `~/.t3/userdata/settings.json`:
+`settings.json` in its `userdata` directory, such as `~/.upcomputer/userdata/settings.json`:
 
 ```json
 {
@@ -161,7 +161,7 @@ in OpenCode with an API key. A Console browser sign-in alone does not report the
 your Go API key as `OPENCODE_API_KEY` in the OpenCode instance's **Environment variables**, then
 refresh provider status. Cursor reports
 its monthly allowance, including separate Auto and API usage, for `CURSOR_AUTH_TOKEN` when it is set,
-otherwise for the account you signed in with in T3 or set as `CURSOR_API_KEY`, otherwise for the CLI
+otherwise for the account you signed in with in Up.computer or set as `CURSOR_API_KEY`, otherwise for the CLI
 login. On macOS, this includes the default Keychain login after you enable Cursor usage. Sign-in, API key,
 and Keychain login report limits only with Cursor's default API endpoint. If you configure a custom
 Cursor endpoint, use an explicit token or file-based CLI login for limits.

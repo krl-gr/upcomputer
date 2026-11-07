@@ -39,18 +39,18 @@ below.
 
 ## Switch between Stable and Nightly
 
-In the desktop app, change **Settings → About → Update track**. T3 Code shows each
+In the desktop app, change **Settings → About → Update track**. Up.computer shows each
 connected machine it will move and each one it skips, then moves them in one
 step. Remote servers install the latest release on the new track. Remote desktop
 apps reinstall on the new track. This app reinstalls last. Your threads,
 settings, and data stay.
 
 A background service cannot move to an older release remotely. When Stable is
-older than its Nightly, run `t3 update --channel stable --allow-downgrade` on
+older than its Nightly, run `up update --channel stable --allow-downgrade` on
 that machine.
 
 A switch is blocked for a machine whose database already has changes the
-target release does not support, or when T3 Code cannot confirm that it does.
+target release does not support, or when Up.computer cannot confirm that it does.
 The dialog says why: update a machine on its current track first when its
 release is too old to check, or wait until the target track includes the
 changes. A Mac running the desktop app must switch on that Mac.
@@ -134,12 +134,12 @@ directory and pair with the running server.
 
 ### macOS app does not reopen after an Alpha update
 
-Updating an older **T3 Code (Alpha)** installation can replace it with
-**T3 Code (Beta)** without reopening the app. Open **T3 Code (Beta)** from
+Updating an older **Up.computer (Alpha)** installation can replace it with
+**Up.computer (Beta)** without reopening the app. Open **Up.computer (Beta)** from
 Applications, or run:
 
 ```sh
-open "/Applications/T3 Code (Beta).app"
+open "/Applications/Up.computer (Beta).app"
 ```
 
 If an old Dock shortcut no longer opens the app, remove it and add the Beta app
@@ -155,12 +155,12 @@ details** to include the error in a bug report.
 
 ## Registries and proxies
 
-Each server checks T3 Code releases, and providers installed with npm, through
+Each server checks Up.computer releases, and providers installed with npm, through
 its own npm, so the checks use npm's configured registry, authentication, and
 proxy settings. Providers installed with Homebrew or pnpm check through those
 tools.
 Configure npm on the server's machine. If that registry cannot be reached, the
-release shows as unavailable; T3 Code does not try the public registry instead.
+release shows as unavailable; Up.computer does not try the public registry instead.
 Machines without npm check the public npm registry directly.
 
 ## Update providers

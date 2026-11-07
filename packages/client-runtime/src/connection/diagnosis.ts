@@ -100,7 +100,7 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
     case "offline":
       return "This device is offline";
     case "session_pending":
-      return "This device is still loading its T3 Connect sign-in";
+      return "This device is still loading its UpComputer Connect sign-in";
     case "outdated":
       return `${host} runs an older Up.computer`;
     case "clock_skew":
@@ -157,11 +157,11 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
   const checkHost = `On ${host}, check Settings > Sharing & access or run \`t3 connect status\`.`;
   switch (located.cause) {
     case "offline":
-      return ["Connect this device to the internet. T3 Code reconnects on its own."];
+      return ["Connect this device to the internet. Up.computer reconnects on its own."];
     case "session_pending":
       return [
-        "Wait a moment. T3 Code retries on its own.",
-        "If it keeps waiting, reload or restart T3 Code on this device.",
+        "Wait a moment. Up.computer retries on its own.",
+        "If it keeps waiting, reload or restart Up.computer on this device.",
       ];
     case "outdated":
       return [`Update Up.computer on ${host}.`];

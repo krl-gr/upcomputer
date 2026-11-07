@@ -99,22 +99,22 @@ Fix:
 
 ## Sign-in, account, or link problems
 
-This device's T3 Connect sign-in is not ready yet, or T3 Connect does not have
+This device's UpComputer Connect sign-in is not ready yet, or UpComputer Connect does not have
 an active link between your account and the host.
 
-- **The host is linked to a different account.** Sign in to the same T3 Connect
-  account on this device and on the host. On the host, run `t3 connect logout`,
-  then `t3 connect`.
-- **T3 Connect is off on the host, or the host only publishes agent activity.**
-  On the host, open **Settings > Sharing & access** and turn **T3 Connect** on, or
-  run `t3 connect`.
+- **The host is linked to a different account.** Sign in to the same UpComputer Connect
+  account on this device and on the host. On the host, run `up connect logout`,
+  then `up connect`.
+- **UpComputer Connect is off on the host, or the host only publishes agent activity.**
+  On the host, open **Settings > Sharing & access** and turn **UpComputer Connect** on, or
+  run `up connect`.
 - **The host was linked, but the server did not apply the link yet.** Restart
-  the server on the host: quit and reopen the T3 Code desktop app, run
-  `t3 service restart`, or stop `t3 serve` and run it again.
+  the server on the host: quit and reopen the Up.computer desktop app, run
+  `up service restart`, or stop `up serve` and run it again.
 - **This device's sign-in expired, or the host no longer accepts this
-  device.** Sign out of T3 Connect and sign in again.
-- **This device is still loading its T3 Connect sign-in.** Wait a moment;
-  T3 Code retries on its own. If it keeps waiting, reload or restart T3 Code on
+  device.** Sign out of UpComputer Connect and sign in again.
+- **This device is still loading its UpComputer Connect sign-in.** Wait a moment;
+  Up.computer retries on its own. If it keeps waiting, reload or restart Up.computer on
   this device.
 - **Your account reached its tunnel limit.** Remove an environment you do not
   use from your Up.computer account's UpComputer Connect page, then restart Up.computer on the host.
@@ -155,6 +155,6 @@ If none of this helps, open an issue on
 - The output of `up connect status` on the host.
 - The trace ID, if one is shown.
 - If the tunnel dropped earlier, the host's tunnel log, `relay-client.ndjson`
-  in the logs folder (`~/.t3/userdata/logs` by default). It records when the
+  in the logs folder (`~/.upcomputer/userdata/logs` by default). It records when the
   tunnel connected, warned, exited, and restarted, with the tunnel token
   removed.

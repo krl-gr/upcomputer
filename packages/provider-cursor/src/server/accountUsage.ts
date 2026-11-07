@@ -148,7 +148,7 @@ export const readCursorAccountUsage = Effect.fn("readCursorAccountUsage")(functi
           : credentialSource.kind === "apiKey"
             ? "Cursor account usage could not be read."
             : CursorKeychain.isCursorKeychainTimeoutError(cause)
-              ? "Allow Keychain access on the Mac running T3 Code, then refresh."
+              ? "Allow Keychain access on the Mac running Up.computer, then refresh."
               : "Cursor Keychain credentials could not be read.",
     };
   }

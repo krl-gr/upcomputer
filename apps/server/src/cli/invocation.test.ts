@@ -56,7 +56,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("keeps the arguments, so root runs setup on the same T3 home", () =>
+  it.effect("keeps the arguments, so root runs setup on the same Up.computer home", () =>
     Effect.gen(function* () {
       const args = ["--base-dir", "/srv/t3 home"];
       expect(

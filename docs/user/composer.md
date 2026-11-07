@@ -54,7 +54,7 @@ before an upload finishes requires you to attach that file again.
 You can drag or paste images into the web or desktop composer. HEIC and HEIF
 photos are converted to JPEG there and when selected from the mobile photo
 library; photos over the image limit are also resized to fit. On mobile, you can
-also send files to T3 Code through another app's system share sheet.
+also send files to Up.computer through another app's system share sheet.
 On Android, you can also drag images from another app into the message input
 in split screen.
 
@@ -203,7 +203,7 @@ choose the environment, and confirm. Finished recordings go only to that environ
 even when a draft belongs to another one. This also works on phones without local
 speech recognition. If the chosen environment disconnects, dictation stops; it never
 switches hosts. Choose **This device** to revoke access and discard pending audio.
-On Android, keep T3 Code open while recording and transcribing.
+On Android, keep Up.computer open while recording and transcribing.
 
 On-device dictation may need a network connection to download a speech model the
 first time. After that it works offline for that language. iPhone dictates in the
@@ -226,7 +226,7 @@ microphone on iOS. Swipe a device left to forget it. Android may use another inp
 when the preferred microphone cannot be routed. Devices with the same name may share
 a saved preference, but simultaneous same-name inputs remain separately selectable.
 
-T3 Code deletes the temporary recording from your phone after transcription or
+Up.computer deletes the temporary recording from your phone after transcription or
 cancellation. The transcript stays in your draft until you send the message to the agent.
 
 ## Queued messages

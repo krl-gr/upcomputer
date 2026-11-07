@@ -335,7 +335,7 @@ describe("t3 pair", () => {
         const rendered = String(
           typeof error === "object" && error !== null && "cause" in error ? error.cause : error,
         );
-        assert.include(rendered, "No running T3 Code server found.");
+        assert.include(rendered, "No running Up.computer server found.");
         for (const subcommand of ["serve", "connect"]) {
           const { command } = yield* resolveHostCliCommand(subcommand, ["--base-dir", baseDir]);
           assert.include(rendered, `\`${command}\``);

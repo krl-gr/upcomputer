@@ -653,18 +653,18 @@ function ConfiguredCloudLinkRow({
             connectDenial !== undefined && !managedTunnelActive
               ? connectDenial
               : signedOut
-                ? "Sign in to make this environment available to your other devices through T3 Connect."
+                ? "Sign in to make this environment available to your other devices through UpComputer Connect."
                 : linkRevoked
-                  ? "This environment was removed from T3 Connect. Turn it on to link it again."
+                  ? "This environment was removed from UpComputer Connect. Turn it on to link it again."
                   : managedTunnelActive
                     ? reachability?.status === "unreachable"
-                      ? "T3 Connect is on, but other devices cannot reach this environment."
+                      ? "UpComputer Connect is on, but other devices cannot reach this environment."
                       : reachability?.status === "reachable"
-                        ? "This environment is available to your other devices through T3 Connect."
-                        : "T3 Connect is on. Reachability has not been checked yet."
+                        ? "This environment is available to your other devices through UpComputer Connect."
+                        : "UpComputer Connect is on. Reachability has not been checked yet."
                     : managedTunnelOutOfSync
-                      ? "T3 Connect is out of sync. This environment is linked only to publish agent activity, so other devices cannot connect. Turn T3 Connect on to repair it."
-                      : "Make this environment available to your other devices through T3 Connect."
+                      ? "UpComputer Connect is out of sync. This environment is linked only to publish agent activity, so other devices cannot connect. Turn UpComputer Connect on to repair it."
+                      : "Make this environment available to your other devices through UpComputer Connect."
           }
           status={operationError ?? cloudLinkState.error ?? reachabilityStatus}
           managed={managedTunnelActive ? undefined : connectDenial}
@@ -718,7 +718,7 @@ function ConfiguredCloudLinkRow({
       {managedTunnelActive && !signedOut && isProductFeatureShown("scheduledTaskWebhooks") ? (
         <SettingsRow
           title={searchableSetting("hold-webhooks-while-offline").title}
-          description="Keep webhook requests for up to 24 hours while this environment is offline, then deliver them. Off: T3 Connect only forwards requests and stores nothing."
+          description="Keep webhook requests for up to 24 hours while this environment is offline, then deliver them. Off: UpComputer Connect only forwards requests and stores nothing."
           managed={connectDenial}
           control={
             <CloudLinkSwitch

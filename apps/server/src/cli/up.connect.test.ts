@@ -58,7 +58,7 @@ vi.mock("./connect.ts", async (importOriginal) => {
 });
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))(
-  "t3 up with T3 Connect",
+  "t3 up with UpComputer Connect",
   (it) => {
     it.effect.each([
       { label: "no link", prior: null, events: ["link", "restart", "unlink", "restart"] },
