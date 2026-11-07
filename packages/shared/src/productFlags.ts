@@ -11,11 +11,13 @@
 import type { ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
 
 export interface ProductFlags {
-  /**
-   * Pull requests: the PR page, panels, badges, PR watch and sync, review guides, the PR agent
-   * tools.
-   */
+  /** Pull requests for users: the PR page, panels, badges, settings and shortcuts, review guides. */
   readonly pullRequests: boolean;
+  /**
+   * Pull requests for agents: the link and watch tools, the jobs that link, sync and watch PRs and
+   * wake the thread, and the runtime instructions that tell agents to use them.
+   */
+  readonly pullRequestAgentTools: boolean;
   /**
    * The terminal as a right-panel surface: its launcher entry, its tab, the
    * shortcuts used while a terminal has focus, and the terminal font setting.
@@ -60,6 +62,7 @@ export type ProductFlag = keyof ProductFlags;
 
 export const UPSTREAM_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   pullRequests: true,
+  pullRequestAgentTools: true,
   terminalSurface: true,
   terminal: true,
   threadSettlement: true,
@@ -77,6 +80,7 @@ export const UPSTREAM_PRODUCT_FLAGS: ProductFlags = Object.freeze({
 
 export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   pullRequests: false,
+  pullRequestAgentTools: true,
   terminalSurface: true,
   terminal: false,
   threadSettlement: false,
@@ -226,6 +230,12 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
       "pull-request-links-open-in-app",
     ],
     rightPanelSurfaces: ["Pull request", "Linked pull requests"],
+  },
+  pullRequestAgentTools: {
+    capabilities: [],
+    keybindingCommands: [],
+    settingsSearchIds: [],
+    rightPanelSurfaces: [],
   },
   terminalSurface: {
     capabilities: [],

@@ -1342,7 +1342,7 @@ export const layerTools = Layer.mergeAll(
   layerEnvironmentToolkit,
   layerPreviewControlsRegistration,
   layerWorktreeToolkitRegistration,
-  whenProductFeature("pullRequests", layerPullRequestsToolkit),
+  whenProductFeature("pullRequestAgentTools", layerPullRequestsToolkit),
   whenProductFeature("devices", layerDeviceToolkit),
   layerHtmlToolkit,
 );
