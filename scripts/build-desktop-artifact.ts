@@ -3047,6 +3047,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   }
 
   if (platform === "win") {
+    // Prepared bytecode adds ~20 loose files and breaks the payload file limit on a Windows
+    // host; upstream cross-builds Windows on Linux, where the hook skips, so it never ships them.
+    delete buildConfig.afterPack;
     buildConfig.npmRebuild = false;
     buildConfig.nsis = {
       differentialPackage: true,
