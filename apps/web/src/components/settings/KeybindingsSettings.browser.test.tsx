@@ -4,6 +4,10 @@ import { page, userEvent, type Locator } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
 
+// Upstream's cases use the terminal shortcuts, which the UpComputer product hides.
+vi.mock(import("../../product/productEntry"), async () => ({
+  WEB_PRODUCT: (await import("../../product/WebProduct")).composeExperimentalWebFeatures([]),
+}));
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
   useEnvironmentScope: () => true,

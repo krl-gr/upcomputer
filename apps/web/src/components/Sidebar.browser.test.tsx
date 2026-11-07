@@ -11,6 +11,10 @@ import type { Project } from "../types";
 import Sidebar from "./Sidebar";
 import { SidebarProvider } from "./ui/sidebar";
 
+// Upstream's header click; the UpComputer surface's New thread has its own tests in sidebarProjects.
+vi.mock(import("../product/productEntry"), async () => ({
+  WEB_PRODUCT: (await import("../product/WebProduct")).composeExperimentalWebFeatures([]),
+}));
 vi.mock("../state/entities", { spy: true });
 vi.mock("../hooks/useHandleNewThread", { spy: true });
 vi.mock("../commandPaletteBus", () => ({

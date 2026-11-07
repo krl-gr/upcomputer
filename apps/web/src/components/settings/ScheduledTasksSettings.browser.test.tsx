@@ -157,7 +157,7 @@ describe("ScheduledTasksSettings", () => {
         <ScheduledTasksSettings />
       </RegistryContext.Provider>,
     );
-    const create = screen.getByRole("button", { name: "New task" });
+    const create = screen.getByRole("button", { name: "New prompt" });
     await expect.element(create).toBeEnabled();
     await act(() => registry.set(permissions.get(secondaryId)!, false));
     await expect.element(create).toBeDisabled();
@@ -171,7 +171,7 @@ describe("ScheduledTasksSettings", () => {
     setup();
     state.secondary = true;
     await using screen = await render(<ScheduledTasksSettings />);
-    await screen.getByRole("button", { name: "New task" }).click();
+    await screen.getByRole("button", { name: "New prompt" }).click();
     await expect.element(page.getByLabelText("Runs on")).toHaveTextContent("Laptop");
   });
 
@@ -179,7 +179,7 @@ describe("ScheduledTasksSettings", () => {
     setup();
     state.connected = false;
     await using screen = await render(<ScheduledTasksSettings />);
-    await expect.element(screen.getByRole("button", { name: "New task" })).toBeDisabled();
+    await expect.element(screen.getByRole("button", { name: "New prompt" })).toBeDisabled();
   });
 
   it("keeps a linked task's unsaved edits across a disconnect and reconnect", async () => {
