@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
-import { expect, it } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { act, render } from "../../../test/render";
 import { selectThreadPanelOpen, useRightPanelStore } from "../../rightPanelStore";
@@ -8,6 +8,11 @@ import { PopoverCreateHandle } from "../ui/popover";
 import { ChatCanvasContext } from "./ChatCanvasContext";
 import { resolveChatCanvasLayout } from "./chatCanvasLayout";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
+
+// Upstream's card opens wherever it fits; Up.computer's starts closed.
+vi.mock(import("../../threadDetailsCard/threadDetailsCard"), () => ({
+  threadDetailsCardOpenByDefault: () => true,
+}));
 
 const threadA: ScopedThreadRef = {
   environmentId: EnvironmentId.make("environment"),

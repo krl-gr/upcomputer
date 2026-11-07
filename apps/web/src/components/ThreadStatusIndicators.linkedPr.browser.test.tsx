@@ -17,6 +17,15 @@ vi.mock(import("../state/entities"), async (original) => ({
     ])) as never,
 }));
 
+// Upstream's world shows pull requests; Up.computer hides them.
+vi.mock(import("../product/productFlags"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    isProductFeatureShown: (flag) => flag === "pullRequests" || actual.isProductFeatureShown(flag),
+  };
+});
+
 it("updates palette PR status from linked snapshots without a legacy link or branch PR", async () => {
   const link: ThreadPullRequestLink = {
     host: "github.com",
