@@ -4892,7 +4892,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const results = yield* Ref.get(finished);
         assert.lengthOf(results, 1);
         assert.isFalse(results[0]!.ok);
-        assert.include(results[0]!.detail, "GitVcsDriver.createWorktree.updateSubmodules");
+        assert.include(results[0]!.detail, "Git couldn't check out the submodules");
       }),
     );
 
