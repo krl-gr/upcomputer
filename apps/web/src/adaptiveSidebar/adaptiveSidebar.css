@@ -44,13 +44,17 @@
 }
 /*
  * The full sidebar's footer icon buttons share its width equally, unless a labelled button
- * (Back on utility pages) is there. Checks buttons only: an open popover adds hidden spans.
+ * (Back on utility pages) or the undo notice, which takes the free space, is there. Checks
+ * buttons only: an open popover adds hidden spans.
  */
 [data-sidebar-compact="false"]
   [data-app-sidebar]
   [data-sidebar="footer"]
   [data-sidebar="menu"]:not(
-    :has(> [data-sidebar="menu-item"] > [data-sidebar="menu-button"]:not([data-size="icon"]))
+    :has(
+      > [data-sidebar="menu-item"] > [data-sidebar="menu-button"]:not([data-size="icon"]),
+      > [data-sidebar-undo-notice]
+    )
   )
   > [data-sidebar="menu-item"] {
   flex: 1 1 0;
@@ -219,7 +223,11 @@
 [data-sidebar-compact="true"]
   [data-app-sidebar]
   [data-sidebar="footer"]
-  > :not([data-sidebar="menu"]) {
+  > :not([data-sidebar="menu"]),
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-sidebar="footer"]
+  [data-sidebar-undo-notice] {
   display: none;
 }
 [data-sidebar-compact="true"] [data-app-sidebar] [data-track="sidebar.back"] {

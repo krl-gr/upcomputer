@@ -3,10 +3,7 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { reconcileV2PreviewMigration } from "./reconcileV2PreviewMigration.ts";
 import { reconcileUpComputerV1Migrations } from "./reconcileUpComputerV1Migrations.ts";
-import {
-  FeatureMigrationError,
-  runExperimentalFeatureMigrations,
-} from "../product/FeatureMigrations.ts";
+import { runExperimentalFeatureMigrations } from "../product/FeatureMigrations.ts";
 import { CORE_FEATURE_MIGRATIONS } from "./CoreFeatureMigrations.ts";
 
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -81,6 +78,14 @@ import Migration0069 from "./Migrations/069_ThreadMessageSearch.ts";
 import Migration0070 from "./Migrations/070_PeerLinks.ts";
 import Migration0071 from "./Migrations/071_PeerLinkFence.ts";
 import Migration0072 from "./Migrations/072_WaitingLinkRequestIndex.ts";
+import Migration0073 from "./Migrations/073_ActiveTurnItemIndexes.ts";
+import Migration0074 from "./Migrations/074_ExcludeAttachmentPlaceholdersFromSearch.ts";
+import Migration0075 from "./Migrations/075_SubagentDeliveryState.ts";
+import Migration0076 from "./Migrations/076_ProjectionProjectsPinArchive.ts";
+import Migration0077 from "./Migrations/077_RepairBooleanSettledOverride.ts";
+import Migration0078 from "./Migrations/078_DropOrchestrationEventCorrelationIndex.ts";
+import Migration0079 from "./Migrations/079_DelegatedRecoveryIndexes.ts";
+import Migration0080 from "./Migrations/080_ScheduledTaskThreadMode.ts";
 
 export const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -156,6 +161,14 @@ export const migrationEntries = [
   [70, "PeerLinks", Migration0070],
   [71, "PeerLinkFence", Migration0071],
   [72, "WaitingLinkRequestIndex", Migration0072],
+  [73, "ActiveTurnItemIndexes", Migration0073],
+  [74, "ExcludeAttachmentPlaceholdersFromSearch", Migration0074],
+  [75, "SubagentDeliveryState", Migration0075],
+  [76, "ProjectionProjectsPinArchive", Migration0076],
+  [77, "RepairBooleanSettledOverride", Migration0077],
+  [78, "DropOrchestrationEventCorrelationIndex", Migration0078],
+  [79, "DelegatedRecoveryIndexes", Migration0079],
+  [80, "ScheduledTaskThreadMode", Migration0080],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -232,7 +245,7 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   if (toMigrationInclusive === undefined) {
     // A ledger this build does not recognize cannot be repaired here; stop startup.
     yield* runExperimentalFeatureMigrations([CORE_FEATURE_MIGRATIONS]).pipe(
-      Effect.catchIf((error) => error instanceof FeatureMigrationError, Effect.die),
+      Effect.catchTags({ FeatureMigrationError: Effect.die }),
     );
   }
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);

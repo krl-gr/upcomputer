@@ -1,6 +1,7 @@
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { afterEach, assert, it } from "@effect/vitest";
 import { ProjectId } from "@t3tools/contracts";
@@ -38,7 +39,9 @@ const storeOn = (filename: string) =>
     Layer.provideMerge(
       Layer.effectDiscard(runExperimentalFeatureMigrations([TASK_MIGRATION_CONTRIBUTION])),
     ),
-    Layer.provideMerge(Layer.merge(NodeSqliteClient.layer({ filename }), NodeServices.layer)),
+    Layer.provideMerge(
+      Layer.mergeAll(NodeSqliteClient.layer({ filename }), NodeServices.layer, NodeCrypto.layer),
+    ),
   );
 const memoryStore = storeOn(":memory:");
 const databaseFile = () => {

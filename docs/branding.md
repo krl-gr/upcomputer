@@ -56,6 +56,9 @@ literals against it and against the electron-builder config.
 - **User docs:** the same pass rewrites `docs/user`, plus `~/.t3` to `~/.upcomputer`, app.t3.codes
   to app.up.computer and the `t3` command to `up`. Upstream's install scripts, package managers
   and release links are edited by hand after a sync; check-branding does not catch them.
+- **Remote access command:** upstream's `t3 up` is `remote` here (`up remote` for the user). The
+  subcommand name is set by hand in `apps/server/src/cli/up.ts` and pinned by check-branding; the
+  copy pass rewrites `t3 up` in code and docs. There is no `up` alias: no release shipped it.
 - **Names in code:** `APP_BASE_NAME` in `apps/web/src/branding.ts` and
   `apps/desktop/src/app/DesktopEnvironment.ts` (window titles, about panel, menus), the sidebar and
   welcome wizard (`SidebarChrome.tsx`, `WelcomeWizard.tsx`), `apps/web/index.html`,

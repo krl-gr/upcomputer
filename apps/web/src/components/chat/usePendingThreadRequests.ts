@@ -28,13 +28,15 @@ import { useStableCallback } from "../../hooks/useStableCallback";
 import { getUploadedAttachments, useAttachmentUploadStore } from "../../lib/attachmentUploadQueue";
 import {
   buildPendingUserInputAnswers,
+  setPendingUserInputCustomAnswer,
+  togglePendingUserInputOptionSelection,
+  type PendingUserInputDraftAnswer,
+} from "@t3tools/client-runtime/state/pending-user-input";
+import {
   carryDisplacedCustomAnswerIntoPrompt,
   derivePendingUserInputProgress,
   projectPendingUserInputAnswer,
-  setPendingUserInputCustomAnswer,
   threadContextsReferencedByAnswer,
-  togglePendingUserInputOptionSelection,
-  type PendingUserInputDraftAnswer,
 } from "../../pendingUserInput";
 import {
   questionAttachmentDraftId,
@@ -49,6 +51,8 @@ import { readEnvironmentScope } from "../../state/session";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
+import { toastManager } from "../ui/toast";
+
 import type { ChatComposerHandle } from "./ChatComposer";
 
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
@@ -99,9 +103,9 @@ function makePendingCustomAnswerSetter(input: {
       [activePendingRequestKey]: {
         ...existing[activePendingRequestKey],
         [questionId]: setPendingUserInputCustomAnswer(
+          question,
           existing[activePendingRequestKey]?.[questionId],
           value,
-          question,
         ),
       },
     }));
@@ -402,6 +406,12 @@ export function usePendingThreadRequests(input: {
     const nextPrompt = carryDisplacedCustomAnswerIntoPrompt(currentPrompt, displacedAnswer);
     if (nextPrompt !== currentPrompt) {
       setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+      toastManager.add({
+        type: "info",
+        title: "Your typed text was set aside",
+        description: "It will be back in the composer once the question is answered.",
+        data: { threadRef: activeThreadId ? { environmentId, threadId: activeThreadId } : null },
+      });
       if (activeThreadId) {
         const store = useComposerDraftStore.getState();
         const questionTarget = questionAttachmentDraftId(
@@ -472,6 +482,7 @@ export function usePendingThreadRequests(input: {
       }
       return;
     }
+    if (!activePendingProgress.canAdvance) return;
     setActivePendingUserInputQuestionIndex(activePendingProgress.questionIndex + 1);
   };
   const onAdvanceActivePendingUserInputStable = useStableCallback(onAdvanceActivePendingUserInput);

@@ -4,8 +4,12 @@ import type {
 } from "@t3tools/contracts";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 
-import { cursorSdkFailureMessage, isCursorAgentSdkRunnerError } from "./CursorAgentSdk.ts";
-import { CursorSdkError } from "./sdk.ts";
+import {
+  cursorSdkFailureMessage,
+  isCursorAgentSdkRunnerError,
+  isCursorUsageLimitError,
+} from "./CursorAgentSdk.ts";
+import { isCursorSdkError } from "./sdk.ts";
 
 export interface CursorFailureReason {
   readonly message: string;
@@ -35,7 +39,9 @@ const usageLimitText =
 /** The SDK's own error under the runner wrapper. Other thrown values are defects and stay generic. */
 export function cursorSdkErrorReason(cause: unknown): CursorFailureReason | undefined {
   const error = isCursorAgentSdkRunnerError(cause) ? cause.cause : cause;
-  return error instanceof CursorSdkError ? { message: error.message, code: error.code } : undefined;
+  return isCursorSdkError(error, "CursorSdkError")
+    ? { message: error.message, code: error.code }
+    : undefined;
 }
 
 export function cursorRunFailure(input: {
@@ -54,7 +60,11 @@ export function cursorRunFailure(input: {
       .replace(/^[A-Za-z]+Error:\s*/u, "")
       .replace(/^\[[a-z_]+\]\s*/u, "")
       .trim() || undefined;
-  if ((code !== undefined && usageLimitCodes.has(code)) || usageLimitText.test(detail ?? "")) {
+  if (
+    input.class === "usage_limit" ||
+    (code !== undefined && usageLimitCodes.has(code)) ||
+    usageLimitText.test(detail ?? "")
+  ) {
     const model = input.model === "auto" || input.model === "default" ? "" : ` for ${input.model}`;
     // Cursor names its reset date only in prose; keep that sentence visible.
     const resetSentence = /[^.!]*\breset[^.!]*[.!]/iu.exec(detail ?? "")?.[0]?.trim();
@@ -105,5 +115,10 @@ export function cursorTransportFailure(
   const reason =
     cursorSdkErrorReason(cause) ??
     (isCursorAgentSdkRunnerError(cause) ? { message: cursorSdkFailureMessage(cause) } : undefined);
-  return cursorRunFailure({ reason, model, class: "transport_error", cause });
+  return cursorRunFailure({
+    reason,
+    model,
+    class: isCursorUsageLimitError(cause) ? "usage_limit" : "transport_error",
+    cause,
+  });
 }

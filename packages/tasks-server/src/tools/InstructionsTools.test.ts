@@ -17,7 +17,7 @@ import {
   type TaskPromptSettingsUpdateResult,
 } from "@t3tools/tasks-contracts/v1";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -70,16 +70,13 @@ const loopbackMcp: TaskToolInvocationContext = {
 /** The environment's active projects; any other id is unknown or deleted. */
 const projectTitles: Record<string, string> = { "project-a": "Alpha", "project-b": "Beta" };
 
-function countingCrypto(): Layer.Layer<Crypto.Crypto> {
+function countingCrypto(): Layer.Layer<SecureRandom.SecureRandom> {
   let seed = 0;
   return Layer.succeed(
-    Crypto.Crypto,
-    Crypto.make({
-      randomBytes: (size) => {
-        seed += 1;
-        return Uint8Array.from({ length: size }, (_, index) => (seed * 31 + index) % 256);
-      },
-      digest: () => Effect.die("unused digest"),
+    SecureRandom.SecureRandom,
+    SecureRandom.make((size) => {
+      seed += 1;
+      return Uint8Array.from({ length: size }, (_, index) => (seed * 31 + index) % 256);
     }),
   );
 }

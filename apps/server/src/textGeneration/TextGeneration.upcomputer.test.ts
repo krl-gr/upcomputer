@@ -13,6 +13,7 @@ import {
 
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as Layer from "effect/Layer";
@@ -27,6 +28,8 @@ const makeStubTextGeneration = (
     generateBranchName: () => Effect.die("generateBranchName stub not configured for this test"),
     generateThreadTitle: () => Effect.die("generateThreadTitle stub not configured for this test"),
     generateReviewGuide: () => Effect.die("generateReviewGuide stub not configured for this test"),
+    generateTranscriptionPostProcessing: () =>
+      Effect.die("generateTranscriptionPostProcessing stub not configured for this test"),
     ...overrides,
   });
 
@@ -132,9 +135,12 @@ describe("TextGeneration.make in Up.computer", () => {
           makeStubRegistry([codex, openCode]),
         ),
         Effect.provide(
-          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-            resolveLink: () => Effect.die("No link lookup expected"),
-          }),
+          Layer.mergeAll(
+            Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+              resolveLink: () => Effect.die("No link lookup expected"),
+            }),
+            ServerSettings.layerTest(),
+          ),
         ),
       );
 
@@ -146,6 +152,7 @@ describe("TextGeneration.make in Up.computer", () => {
       });
 
       expect(result.title).toBe("Greeting");
+      // Up.computer never picks Big Pickle automatically, only OpenCode's default free model.
       expect(titledWith).toEqual(["opencode/glm-5.3-flash-free"]);
     }),
   );

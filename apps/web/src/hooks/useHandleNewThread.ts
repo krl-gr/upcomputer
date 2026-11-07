@@ -48,6 +48,8 @@ import {
 import { getClientSettings } from "./useSettings";
 import { useThreadRouteTarget } from "./useThreadRouteTarget";
 import { readUnloadedThreadCount } from "../state/olderSettledShelf";
+import { resolveProjectDefaultProviderModelSelection } from "../providerInstances";
+import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 
 interface NewThreadWorkspaceOptions {
   branch?: string | null;
@@ -161,7 +163,26 @@ export function createNewThreadHandler(router: AnyRouter) {
       project?.id ?? null,
       project,
     );
-    const projectDefaultModelSelection = projectSettings.settings.defaultModelSelection;
+    const configuredDefaultModelSelection = projectSettings.settings.defaultModelSelection ?? null;
+    const fallbackResolution = resolveNewThreadModelSelection({
+      defaultSelection:
+        configuredDefaultModelSelection ??
+        (carryModelSelection || useComposerDraftStore.getState().stickyActiveProvider !== null
+          ? null
+          : resolveProjectDefaultProviderModelSelection(
+              environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
+              targetServerSettings,
+              projectRef.projectId,
+            )),
+      fallbackSelection: targetServerSettings.fallbackModelSelection ?? null,
+      providers: environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
+      settings: targetServerSettings,
+      projectId: projectRef.projectId,
+      now: Date.now(),
+    });
+    const projectDefaultModelSelection = fallbackResolution.fallback
+      ? fallbackResolution.selection
+      : configuredDefaultModelSelection;
     const defaultRuntimeMode = projectSettings.settings.defaultRuntimeMode;
     const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
       resolveNewThreadModelSelectionOverride({
@@ -424,7 +445,7 @@ export function resolveDefaultProjectRef(
   projectOrder: readonly string[],
 ): ScopedProjectRef | null {
   const [defaultProject] = orderItemsByPreferredIds({
-    items: projects,
+    items: projects.filter((project) => project.archivedAt == null),
     preferredIds: projectOrder,
     getId: getProjectOrderKey,
     getPreferenceIds: (project) => [

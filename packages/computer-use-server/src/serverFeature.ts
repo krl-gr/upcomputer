@@ -1,6 +1,6 @@
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 
 import {
   defineExperimentalServerFeature,
@@ -18,9 +18,10 @@ import {
 
 const COMPUTER_USE_FEATURE_ID = "upcomputer.computer-use";
 
-class ComputerUseSettingsMoveError extends Data.TaggedError("ComputerUseSettingsMoveError")<{
-  readonly message: string;
-}> {}
+class ComputerUseSettingsMoveError extends Schema.TaggedError<ComputerUseSettingsMoveError>()(
+  "ComputerUseSettingsMoveError",
+  { message: Schema.String },
+) {}
 
 /**
  * Desktop computer use and the managed Chrome for every provider: the

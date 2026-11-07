@@ -27,6 +27,7 @@ export type BotChatInput = Parameters<typeof resolveSidebarThreadStatus>[0] &
   Parameters<typeof hasUnseenCompletion>[0];
 
 const CHARACTER_STATE: { readonly [Kind in ThreadStatusLabelKind]: BotCharacterState } = {
+  preparing: "working",
   working: "working",
   waiting: "waiting",
   approval: "attention",
@@ -43,6 +44,7 @@ const PRIORITY: ReadonlyArray<ThreadStatusLabelKind> = [
   "approval",
   "input",
   "request",
+  "preparing",
   "working",
   "waiting",
   "failed",

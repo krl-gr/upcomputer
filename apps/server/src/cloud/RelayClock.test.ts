@@ -72,10 +72,11 @@ it.effect("reads relay time from a response Date header and a relay token's iat"
     expect(DateTime.formatIso(yield* fromDate.now)).toBe(DateTime.formatIso(RELAY_NOW));
 
     const fromToken = makeRelayClock();
+    const header = Buffer.from(JSON.stringify({ alg: "EdDSA" })).toString("base64url");
     const payload = Buffer.from(
       JSON.stringify({ iat: RELAY_NOW.epochMilliseconds / 1_000 }),
     ).toString("base64url");
-    yield* observeRelayTokenIssuedAt(`e30.${payload}.signature`).pipe(
+    yield* observeRelayTokenIssuedAt(`${header}.${payload}.c2lnbmF0dXJl`).pipe(
       Effect.provideService(RelayClock, fromToken),
     );
     expect(yield* fromToken.offsetMillis).toBe(10 * 60_000);

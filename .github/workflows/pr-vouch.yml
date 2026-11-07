@@ -20,7 +20,11 @@ permissions:
 jobs:
   collect-targets:
     name: Collect PR targets
-    if: github.repository == 'pingdotgg/t3code'
+    # Most comments are not recheck commands; skip them before a runner starts.
+    if: >-
+      github.repository == 'pingdotgg/t3code' &&
+      (github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request && contains(github.event.comment.body, '/recheck-vouch')))
     runs-on: ubuntu-24.04
     outputs:
       targets: ${{ steps.collect.outputs.targets }}

@@ -60,6 +60,7 @@ const { createRoot } = await import("react-dom/client");
 const { runtimeModeConfig, runtimeModeOptions } =
   await import("../components/chat/runtimeModeConfig");
 const { deriveProviderInstanceEntries } = await import("../providerInstances");
+const { describeComposerEffort } = await import("../components/chat/ComposerModelEffort");
 const { ComposerFooterModelPicker } = await import("./ComposerFooterModelPicker");
 const { UpComputerComposerFooter } = await import("./UpComputerComposerFooter");
 const { COMPOSER_CARD_CLASS, composerSendButtonClass } = await import("./composerLookStyles");
@@ -107,6 +108,37 @@ const claudeEntry = deriveProviderInstanceEntries([
   } as ServerProvider,
 ])[0]!;
 
+/** Effort and context, which upstream's model trigger shows after the model name. */
+const TRAITS = {
+  provider: ProviderDriverKind.make("claudeAgent"),
+  instanceId: CLAUDE,
+  draftId: "draft-composer-look" as DraftId,
+  model: OPUS,
+  models: [
+    {
+      slug: OPUS,
+      name: "Claude Opus 5.5",
+      isCustom: false,
+      capabilities: {
+        optionDescriptors: [
+          select("effort", [
+            { id: "medium", label: "Medium" },
+            { id: "high", label: "High" },
+          ]),
+          select("contextWindow", [
+            { id: "200k", label: "200k" },
+            { id: "1m", label: "1M" },
+          ]),
+        ],
+      },
+    },
+  ],
+  modelOptions: undefined,
+  promptUltrathink: "none" as const,
+  onPromptEdit: () => undefined,
+  planModeEnabled: true,
+};
+
 /**
  * The footer as `ChatComposer.tsx` mounts it in the expanded composer,
  * including the class upstream gives its model picker there, inside V1's
@@ -128,42 +160,12 @@ function ComposerUnderTest(props: { mode: boolean; attach: boolean }) {
             instanceEntries={[claudeEntry]}
             modelOptionsByInstance={new Map([[CLAUDE, [{ slug: OPUS, name: "Claude Opus 5.5" }]]])}
             size="sm"
-            triggerClassName="-ms-2.5 min-w-13"
+            triggerClassName="group/model-trigger data-popup-open:bg-accent data-popup-open:text-foreground min-w-13"
+            triggerSuffix={describeComposerEffort(TRAITS, "label", "sm").suffix}
             onInstanceModelChange={() => undefined}
           />
         }
         providerUnavailableControl={null}
-        traitsPickerInput={{
-          provider: ProviderDriverKind.make("claudeAgent"),
-          instanceId: CLAUDE,
-          draftId: "draft-composer-look" as DraftId,
-          model: OPUS,
-          models: [
-            {
-              slug: OPUS,
-              name: "Claude Opus 5.5",
-              isCustom: false,
-              capabilities: {
-                optionDescriptors: [
-                  select("effort", [
-                    { id: "medium", label: "Medium" },
-                    { id: "high", label: "High" },
-                  ]),
-                  select("contextWindow", [
-                    { id: "200k", label: "200k" },
-                    { id: "1m", label: "1M" },
-                  ]),
-                ],
-              },
-            },
-          ],
-          modelOptions: undefined,
-          promptUltrathink: "none" as const,
-          onPromptEdit: () => undefined,
-          planModeEnabled: true,
-          isComposerOwned: true,
-        }}
-        traitsMenuContent={null}
         showInteractionModeToggle={props.mode}
         interactionMode="default"
         onToggleInteractionMode={() => undefined}
@@ -369,9 +371,8 @@ afterAll(async () => {
 const FOLDS = [
   { name: "all shown", hiddenCount: 0, iconOnlyCount: 0, width: 900 },
   { name: "access as a lock", hiddenCount: 0, iconOnlyCount: 1, width: 620 },
-  { name: "access and effort as icons", hiddenCount: 0, iconOnlyCount: 2, width: 560 },
   { name: "access folded into …", hiddenCount: 1, iconOnlyCount: 0, width: 520 },
-  { name: "everything folded into …", hiddenCount: 3, iconOnlyCount: 0, width: 400 },
+  { name: "everything folded into …", hiddenCount: 2, iconOnlyCount: 0, width: 400 },
 ];
 
 describe.skipIf(browser === null)("composer footer separators (real layout in Chromium)", () => {

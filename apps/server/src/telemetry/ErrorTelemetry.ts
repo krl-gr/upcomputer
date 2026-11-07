@@ -35,7 +35,7 @@ const MAX_PENDING_ERRORS = 5;
 const MAX_EVENTS_PER_PROCESS = 50;
 // Connected clients get their own budget: a misbehaving browser tab must not
 // use up the one the server and desktop app report their crashes from.
-const budgetOf = (where: typeof AppErrorWhere.Type) => (where === "web" ? "client" : "host");
+const budgetOf = (where: AppErrorWhere) => (where === "web" ? "client" : "host");
 
 const PendingError = Schema.Struct({
   ...AppErrorReport.fields,
@@ -50,7 +50,7 @@ export class ErrorTelemetry extends Context.Service<
   ErrorTelemetry,
   {
     readonly reportError: (
-      where: typeof AppErrorWhere.Type,
+      where: AppErrorWhere,
       report: AppErrorReportValue,
     ) => Effect.Effect<void>;
     /** A defect that reached a fiber's top: a request handler's or the server's own. */
@@ -89,7 +89,7 @@ export const make = Effect.gen(function* () {
 
   // Deduplicated per stack hash for this process's session: a render loop or a
   // retry loop repeats one error thousands of times.
-  const admit = (where: typeof AppErrorWhere.Type, dedupeKey: string | undefined) =>
+  const admit = (where: AppErrorWhere, dedupeKey: string | undefined) =>
     Ref.modify(budget, (current) => {
       const key = budgetOf(where);
       const recorded = current.recorded.get(key) ?? 0;
@@ -100,7 +100,7 @@ export const make = Effect.gen(function* () {
     });
 
   const recordError = (
-    where: typeof AppErrorWhere.Type,
+    where: AppErrorWhere,
     report: AppErrorReportValue,
     options?: { readonly sessionId?: string; readonly capturedAtMs?: number },
   ) =>

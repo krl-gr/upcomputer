@@ -22,7 +22,7 @@ import {
   type TaskScheduleWriteResult,
 } from "@t3tools/tasks-contracts/v1";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -128,12 +128,11 @@ function planPositions(
 
 const make = Effect.gen(function* () {
   const repository = yield* TaskRepository;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const now = Effect.map(DateTime.now, DateTime.formatIso);
-  const newEntryId = crypto.randomUUIDv4().pipe(
-    Effect.map((uuid) => TaskScheduleEntryId.make(`task-schedule-entry-${uuid}`)),
-    Effect.orDie,
-  );
+  const newEntryId = crypto
+    .uuidV4()
+    .pipe(Effect.map((uuid) => TaskScheduleEntryId.make(`task-schedule-entry-${uuid}`)));
 
   const entriesOn = (date: string) => repository.scheduleEntries({ dates: [date] });
 

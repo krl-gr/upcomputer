@@ -32,6 +32,7 @@ const projection = {
     providerInstanceId: instanceId,
     archivedAt: null,
     deletedAt: null,
+    lineage: { parentThreadId: null, relationshipToParent: null },
   },
   runs: [
     {

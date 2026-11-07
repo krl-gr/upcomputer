@@ -41,6 +41,8 @@ export const ProjectRow = Schema.Struct({
   scripts: Schema.Array(ProjectScript),
   /** Projects every thread of this one also belongs to (UpComputer). */
   linkedProjectIds: Schema.optional(Schema.Array(ProjectId)),
+  pinnedAt: Schema.NullOr(IsoDateTime),
+  archivedAt: Schema.NullOr(IsoDateTime),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -71,6 +73,8 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
     ...(row.linkedProjectIds === undefined || row.linkedProjectIds.length === 0
       ? {}
       : { linkedProjectIds: row.linkedProjectIds }),
+    pinnedAt: row.pinnedAt,
+    archivedAt: row.archivedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -127,6 +131,8 @@ export const make = Effect.gen(function* () {
         project_icon_json AS "projectIcon",
         scripts_json AS "scripts",
         linked_project_ids_json AS "linkedProjectIds",
+        pinned_at AS "pinnedAt",
+        archived_at AS "archivedAt",
         created_at AS "createdAt",
         updated_at AS "updatedAt",
         deleted_at AS "deletedAt"
@@ -158,6 +164,8 @@ export const make = Effect.gen(function* () {
             project_icon_json,
             scripts_json,
             linked_project_ids_json,
+            pinned_at,
+            archived_at,
             created_at,
             updated_at,
             deleted_at
@@ -173,6 +181,8 @@ export const make = Effect.gen(function* () {
             ${encoded.projectIcon},
             ${encoded.scripts},
             ${encoded.linkedProjectIds},
+            ${encoded.pinnedAt},
+            ${encoded.archivedAt},
             ${encoded.createdAt},
             ${encoded.updatedAt},
             ${encoded.deletedAt}
@@ -188,6 +198,8 @@ export const make = Effect.gen(function* () {
             project_icon_json = excluded.project_icon_json,
             scripts_json = excluded.scripts_json,
             linked_project_ids_json = excluded.linked_project_ids_json,
+            pinned_at = excluded.pinned_at,
+            archived_at = excluded.archived_at,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at,
             deleted_at = excluded.deleted_at
@@ -237,6 +249,8 @@ export const make = Effect.gen(function* () {
           projectIcon: payload.projectIcon ?? null,
           scripts: payload.scripts,
           linkedProjectIds: [],
+          pinnedAt: null,
+          archivedAt: null,
           createdAt: payload.createdAt,
           updatedAt: payload.updatedAt,
           deletedAt: null,
@@ -270,6 +284,8 @@ export const make = Effect.gen(function* () {
         ...(payload.linkedProjectIds === undefined
           ? {}
           : { linkedProjectIds: payload.linkedProjectIds }),
+        ...(payload.pinnedAt === undefined ? {} : { pinnedAt: payload.pinnedAt }),
+        ...(payload.archivedAt === undefined ? {} : { archivedAt: payload.archivedAt }),
         updatedAt: payload.updatedAt,
       }).pipe(mapError("apply"));
     },

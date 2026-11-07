@@ -1,3 +1,5 @@
+import { isClearComposerCommand, parseSideChatCommand } from "@t3tools/shared/composerTrigger";
+import { armFreshSession, disarmFreshSession, readFreshSessionArm } from "./freshSessionArms";
 import {
   mergeDirectPreviewAnnotation,
   resolveBackgroundDraftWorkspaceOptions,
@@ -61,6 +63,7 @@ import {
 } from "../../composer-logic";
 import { resolvePlanFollowUpSubmission } from "../../proposedPlan";
 import { type ChatMessage } from "../../types";
+import { recordPromptSent } from "../GitHubStarPrompt";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { newMessageId, newThreadId } from "~/lib/utils";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
@@ -78,7 +81,10 @@ import {
   useComposerDraftStore,
   DraftId,
 } from "../../composerDraftStore";
-import { type TerminalContextDraft } from "../../lib/terminalContext";
+import {
+  filterTerminalContextsWithText,
+  type TerminalContextDraft,
+} from "../../lib/terminalContext";
 import { ensureInlineContextReferences } from "../../lib/composerContextReferences";
 import {
   buildMessageContext,
@@ -205,6 +211,8 @@ interface ComposerSendInput {
   readonly panelAnimationsActive: boolean;
   readonly panelAnimationDurationMs: number;
   readonly keepFullHistory: boolean;
+  /** `/clear` can arm a fresh session on this thread. */
+  readonly freshSessionAvailable: boolean;
   readonly resumeCompactionTokens: number | null;
   readonly showPlanFollowUpPrompt: boolean;
   readonly usageLimitsKey: string | null;
@@ -239,6 +247,10 @@ interface ComposerSendInput {
   readonly anchorNewTurn: TimelineFollow["anchorNewTurn"];
   readonly acknowledgeActiveThreadWoke: () => void;
   readonly handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
+  /** Resolves true once the side chat started and got the prompt. */
+  readonly onSideChat?: ((prompt: string) => Promise<boolean>) | undefined;
+  /** Refuses `/side` with this reason and keeps the draft. */
+  readonly sideChatDisabledReason: string | null;
   readonly handleNewThreadInActiveProject: () => void;
   readonly persistThreadSettingsForNextTurn: (input: {
     threadId: ThreadId;
@@ -296,6 +308,7 @@ export function useComposerSend(input: ComposerSendInput) {
     panelAnimationsActive,
     panelAnimationDurationMs,
     keepFullHistory,
+    freshSessionAvailable,
     resumeCompactionTokens,
     showPlanFollowUpPrompt,
     usageLimitsKey,
@@ -324,6 +337,8 @@ export function useComposerSend(input: ComposerSendInput) {
     anchorNewTurn,
     acknowledgeActiveThreadWoke,
     handleInteractionModeChange,
+    onSideChat,
+    sideChatDisabledReason,
     handleNewThreadInActiveProject,
     persistThreadSettingsForNextTurn,
   } = input;
@@ -475,7 +490,57 @@ export function useComposerSend(input: ComposerSendInput) {
       return;
     }
     const sendCtx = composerRef.current?.getSendContext();
-    if (activePendingProgress && sendCtx?.answeringPendingUserInput !== false) {
+    // `/side` beats an open question and a plan follow-up, which would send the text to main.
+    const sideChatCommand =
+      sendCtx && !directAnnotation && !queuedRunEdit.isEditing
+        ? parseSideChatCommand(promptAtSend)
+        : null;
+    const answeringQuestion =
+      Boolean(activePendingProgress) && sendCtx?.answeringPendingUserInput !== false;
+    // Where side chats are unavailable, `/side` text can still be a literal answer.
+    if (sideChatDisabledReason !== null && sideChatCommand && !answeringQuestion) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "Side chat not started",
+          description: sideChatDisabledReason,
+        }),
+      );
+      return;
+    }
+    if (onSideChat && sendCtx && sideChatCommand && sideChatDisabledReason === null) {
+      if (
+        sendCtx.images.length > 0 ||
+        sendCtx.files.length > 0 ||
+        filterTerminalContextsWithText(sendCtx.terminalContexts).length > 0 ||
+        sendCtx.previewAnnotations.length > 0 ||
+        sendCtx.reviewComments.length > 0 ||
+        sendCtx.threadContexts.length > 0 ||
+        sendCtx.environmentContexts.length > 0
+      ) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Side chats take text only",
+            description: "Remove the attachments and context, then send it again.",
+          }),
+        );
+        return;
+      }
+      const started = await onSideChat(sideChatCommand.prompt);
+      // Clear only what was sent; the user may have edited the draft or left meanwhile.
+      if (
+        started &&
+        currentRouteThreadKeyRef.current === routeThreadKey &&
+        promptRef.current === promptAtSend
+      ) {
+        promptRef.current = "";
+        setComposerDraftPrompt(composerDraftTarget, "");
+        composerRef.current?.resetCursorState();
+      }
+      return;
+    }
+    if (answeringQuestion) {
       if (directAnnotation) {
         notifyDirectAnnotationAttached();
         return;
@@ -658,8 +723,26 @@ export function useComposerSend(input: ComposerSendInput) {
 
       return;
     }
+    const composerHoldsOnlyText =
+      composerImages.length === 0 &&
+      composerFiles.length === 0 &&
+      sendableComposerTerminalContexts.length === 0 &&
+      composerPreviewAnnotations.length === 0 &&
+      composerReviewComments.length === 0 &&
+      composerThreadContexts.length === 0 &&
+      composerEnvironmentContexts.length === 0;
+    if (freshSessionAvailable && composerHoldsOnlyText && isClearComposerCommand(trimmed)) {
+      armFreshSession(routeThreadKey);
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+      return;
+    }
+    // Read once: an arm made while this send is in flight belongs to the next message.
+    const freshArm = freshSessionAvailable ? readFreshSessionArm(routeThreadKey) : undefined;
     if (
       !directAnnotation &&
+      freshArm === undefined &&
       sendInteractionModeEnabled &&
       showPlanFollowUpPrompt &&
       activeProposedPlan &&
@@ -701,8 +784,6 @@ export function useComposerSend(input: ComposerSendInput) {
         interactionMode: followUp.interactionMode,
       });
       if (!followUpSent) {
-        promptRef.current = followUpPromptSnapshot;
-        composerTerminalContextsRef.current = [...followUpTerminalContexts];
         restorePlanFollowUpComposer({
           snapshot: {
             prompt: followUpPromptSnapshot,
@@ -711,6 +792,14 @@ export function useComposerSend(input: ComposerSendInput) {
             previewAnnotations: followUpPreviewAnnotations,
             threadContexts: followUpThreadContexts,
             environmentContexts: followUpEnvironmentContexts,
+          },
+          draftHasUserContent: composerDraftHasUserContent(
+            useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
+          ),
+          routeIsCurrent: currentRouteThreadKeyRef.current === routeThreadKey,
+          writeComposerRefs: (snapshot) => {
+            promptRef.current = snapshot.prompt;
+            composerTerminalContextsRef.current = [...snapshot.terminalContexts];
           },
           writePrompt: (prompt) => setComposerDraftPrompt(composerDraftTarget, prompt),
           writeTerminalContexts: (contexts) =>
@@ -734,14 +823,7 @@ export function useComposerSend(input: ComposerSendInput) {
       return;
     }
     const standaloneSlashCommand =
-      sendInteractionModeEnabled &&
-      composerImages.length === 0 &&
-      composerFiles.length === 0 &&
-      sendableComposerTerminalContexts.length === 0 &&
-      composerPreviewAnnotations.length === 0 &&
-      composerReviewComments.length === 0 &&
-      composerThreadContexts.length === 0 &&
-      composerEnvironmentContexts.length === 0
+      sendInteractionModeEnabled && composerHoldsOnlyText
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
     if (standaloneSlashCommand && multipleModelSelections === null) {
@@ -817,6 +899,7 @@ export function useComposerSend(input: ComposerSendInput) {
       keepFullHistory,
       phase,
       dispatchMode,
+      freshContext: freshArm !== undefined,
     });
     if (missingWorktreeBaseBranch) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
@@ -1312,6 +1395,7 @@ export function useComposerSend(input: ComposerSendInput) {
           runtimeMode,
           interactionMode: sendInteractionMode,
           dispatchMode: turnDispatchMode,
+          ...(freshArm === undefined ? {} : { freshContext: true }),
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
         },
@@ -1345,6 +1429,7 @@ export function useComposerSend(input: ComposerSendInput) {
       } else {
         turnStartSucceeded = true;
         setKeepFullHistory(routeThreadKey, false);
+        if (freshArm !== undefined) disarmFreshSession(routeThreadKey, freshArm);
         clearUsageLimitsFor(routeThreadKey);
         if (turnUsesAttachmentUploads) {
           releaseDraftAttachments(composerAttachmentsSnapshot);
@@ -1383,6 +1468,7 @@ export function useComposerSend(input: ComposerSendInput) {
         ) {
           handleNewThreadInActiveProject();
         }
+        void recordPromptSent(environmentId);
       }
     }
 

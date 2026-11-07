@@ -101,6 +101,7 @@ describe("errorClassOf", () => {
   });
 
   it("sends anything else as other", () => {
+    // @effect-diagnostics-next-line extendsNativeError:off - an arbitrary native class is the input under test.
     class CustomerAcmeError extends Error {}
     expect(errorClassOf(new CustomerAcmeError("x"))).toBe("other");
     expect(errorClassOf({ _tag: "acme/secret-project" })).toBe("other");

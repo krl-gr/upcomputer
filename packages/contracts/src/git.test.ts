@@ -26,6 +26,17 @@ describe("GitCommandError", () => {
 
     expect(error.reason).toBeUndefined();
     expect(error.message).toBe("Git couldn't create the worktree: git worktree add failed.");
+    expect(
+      decodeGitCommandError({
+        _tag: "GitCommandError",
+        operation: "GitVcsDriver.createWorktree.updateSubmodules",
+        command: "git",
+        cwd: "/repo",
+        detail: "git command failed",
+      }).message,
+    ).toBe(
+      "Git couldn't check out the submodules. Try again, and check the Git output in a terminal if it keeps failing.",
+    );
   });
 });
 

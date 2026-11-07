@@ -16,6 +16,7 @@ import * as Stream from "effect/Stream";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import {
@@ -281,6 +282,7 @@ describe("linked project helpers", () => {
 });
 
 const runtimePolicyLayer = RuntimePolicy.layerFromProjectStore.pipe(
+  Layer.provide(ServerSettings.layerTest()),
   Layer.provide(
     Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
       getInstance: () => Effect.undefined,

@@ -14,7 +14,6 @@ import {
   COMPOSER_PLACEHOLDER_CLASS,
   COMPOSER_SHELL_CLASS,
   V1_COMPOSER_EXTRA_WIDTH,
-  composerSendButtonClass,
 } from "./composerLookStyles";
 
 /*
@@ -90,13 +89,6 @@ export function composerWidthStyle(element: "overlay" | "lane"): CSSProperties |
 export function composerBottomSpaceClass(hasContextRow: boolean): string | null {
   if (productSurface("composerFooter") !== "upcomputer") return null;
   return hasContextRow ? COMPOSER_BOTTOM_SPACE_WITH_ROW_CLASS : COMPOSER_BOTTOM_SPACE_CLASS;
-}
-
-/** V1's send button for upstream's send, steer and queue states; null keeps upstream's. */
-export function composerSendButtonSurfaceClass(canSend: boolean): string | null {
-  return productSurface("composerFooter") === "upcomputer"
-    ? composerSendButtonClass(canSend)
-    : null;
 }
 
 /** The prompt's idle placeholder; V1 asked for follow-ups in an existing thread. */

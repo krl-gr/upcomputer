@@ -61,7 +61,7 @@ function uniqueBy<T>(
   const seen = new Set<string>();
   for (const item of items) {
     const value = key(item);
-    if (seen.has(value)) throw new WebFeatureInvariantError(code, describe(value));
+    if (seen.has(value)) throw new WebFeatureInvariantError({ code, message: describe(value) });
     seen.add(value);
   }
   return items;
@@ -77,10 +77,10 @@ function mergeRpcGroups(features: ReadonlyArray<ExperimentalWebFeatureContributi
   for (const group of groups) {
     for (const method of group.requests.keys()) {
       if (methods.has(method)) {
-        throw new WebFeatureInvariantError(
-          "duplicate-rpc-method",
-          `RPC method '${method}' is registered more than once.`,
-        );
+        throw new WebFeatureInvariantError({
+          code: "duplicate-rpc-method",
+          message: `RPC method '${method}' is registered more than once.`,
+        });
       }
       methods.add(method);
     }

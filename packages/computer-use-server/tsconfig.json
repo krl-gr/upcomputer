@@ -19,7 +19,7 @@
           "missingReturnYieldStar": "suggestion",
           "multipleEffectProvide": "suggestion",
           "nodeBuiltinImport": "suggestion",
-          "preferSchemaOverJson": "suggestion",
+          "globalJsonInEffect": "suggestion",
           "unknownInEffectCatch": "suggestion"
         }
       }

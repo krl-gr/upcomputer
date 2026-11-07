@@ -470,9 +470,15 @@ function ThreadList() {
   return useSidebarThreadListShown() ? <ul data-testid="thread-list" /> : null;
 }
 
-/** Upstream's Sidebar `handleNewThreadClick` with several projects, on its real routing rule. */
+/** Upstream's Sidebar `handleNewThreadClick` with several open projects, on its real routing rule. */
 function upstreamNewThreadClick(event?: { readonly shiftKey: boolean }) {
-  if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, PROJECTS.length)) {
+  if (
+    shouldCreateNewThreadInCurrentProject(
+      event?.shiftKey ?? false,
+      PROJECTS.length,
+      PROJECTS.length,
+    )
+  ) {
     spies.createInCurrentProject();
   } else {
     spies.openNewThreadPicker();

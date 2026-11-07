@@ -22,7 +22,7 @@ import {
   type OrchestrationV2ServerCommand,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -271,16 +271,13 @@ test("a run releases its claim by assigning anything but itself", () => {
   );
 });
 
-function deterministicCrypto(): Layer.Layer<Crypto.Crypto> {
+function deterministicCrypto(): Layer.Layer<SecureRandom.SecureRandom> {
   let seed = 0;
   return Layer.succeed(
-    Crypto.Crypto,
-    Crypto.make({
-      randomBytes: (size) => {
-        seed += 1;
-        return Uint8Array.from({ length: size }, (_, index) => (seed * 31 + index) % 256);
-      },
-      digest: () => Effect.die("unused digest"),
+    SecureRandom.SecureRandom,
+    SecureRandom.make((size) => {
+      seed += 1;
+      return Uint8Array.from({ length: size }, (_, index) => (seed * 31 + index) % 256);
     }),
   );
 }

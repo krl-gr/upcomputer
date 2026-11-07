@@ -1,11 +1,15 @@
 import type { SidebarThreadStatus, SidebarV2TopStatusKind } from "../components/Sidebar.logic";
 
+/** Upstream's kinds, plus worktree setup, which upstream's detailed row labels on its own. */
+export type ThreadTopStatusKind = SidebarV2TopStatusKind | "preparing";
+
 /** The status a compact thread row or a bot row names, or null for none. */
 export function resolveSidebarV2TopStatus(input: {
   readonly status: SidebarThreadStatus;
   readonly isUnread: boolean;
   readonly isWoke: boolean;
-}): SidebarV2TopStatusKind | null {
+}): ThreadTopStatusKind | null {
+  if (input.status === "preparing") return "preparing";
   if (input.status === "working") return "working";
   if (input.status === "waiting") return "waiting";
   if (input.status === "approval") return "approval";

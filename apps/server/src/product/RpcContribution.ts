@@ -6,6 +6,7 @@ import {
 import * as Layer from "effect/Layer";
 import type * as Rpc from "effect/rpc/Rpc";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
+import * as Schema from "effect/Schema";
 
 const STABLE_ID_PATTERN = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/;
 
@@ -43,37 +44,36 @@ export interface AnyNamespacedRpcContribution {
   readonly handlers: (context: RpcHandlerContext) => Layer.Layer<never, never, never>;
 }
 
-export class RpcContributionError extends Error {
-  override readonly name = "RpcContributionError";
-  readonly code:
-    | "duplicate-method"
-    | "duplicate-namespace"
-    | "invalid-id"
-    | "invalid-version"
-    | "method-outside-namespace"
-    | "missing-scope";
-
-  constructor(code: RpcContributionError["code"], message: string) {
-    super(message);
-    this.code = code;
-  }
-}
+export class RpcContributionError extends Schema.TaggedError<RpcContributionError>()(
+  "RpcContributionError",
+  {
+    code: Schema.Literals([
+      "duplicate-method",
+      "duplicate-namespace",
+      "invalid-id",
+      "invalid-version",
+      "method-outside-namespace",
+      "missing-scope",
+    ]),
+    message: Schema.String,
+  },
+) {}
 
 function assertVersion(version: number): void {
   if (!Number.isSafeInteger(version) || version < 1) {
-    throw new RpcContributionError(
-      "invalid-version",
-      `RPC contribution version '${String(version)}' must be a positive safe integer.`,
-    );
+    throw new RpcContributionError({
+      code: "invalid-version",
+      message: `RPC contribution version '${String(version)}' must be a positive safe integer.`,
+    });
   }
 }
 
 function assertStableId(value: string, label: string): void {
   if (!STABLE_ID_PATTERN.test(value)) {
-    throw new RpcContributionError(
-      "invalid-id",
-      `${label} '${value}' must be a stable lowercase identifier.`,
-    );
+    throw new RpcContributionError({
+      code: "invalid-id",
+      message: `${label} '${value}' must be a stable lowercase identifier.`,
+    });
   }
 }
 
@@ -89,16 +89,16 @@ function validateContribution(contribution: AnyNamespacedRpcContribution): void 
   const prefix = `${contribution.namespace}.`;
   for (const method of methodNames(contribution.group)) {
     if (!method.startsWith(prefix) || method.length === prefix.length) {
-      throw new RpcContributionError(
-        "method-outside-namespace",
-        `RPC method '${method}' must belong to namespace '${contribution.namespace}'.`,
-      );
+      throw new RpcContributionError({
+        code: "method-outside-namespace",
+        message: `RPC method '${method}' must belong to namespace '${contribution.namespace}'.`,
+      });
     }
     if (!Object.hasOwn(contribution.requiredScopes, method)) {
-      throw new RpcContributionError(
-        "missing-scope",
-        `RPC method '${method}' does not declare its required scope.`,
-      );
+      throw new RpcContributionError({
+        code: "missing-scope",
+        message: `RPC method '${method}' does not declare its required scope.`,
+      });
     }
   }
 }
@@ -128,18 +128,18 @@ export function createRpcContributionPlan(
   for (const contribution of ordered) {
     validateContribution(contribution);
     if (namespaces.has(contribution.namespace)) {
-      throw new RpcContributionError(
-        "duplicate-namespace",
-        `RPC namespace '${contribution.namespace}' is registered more than once.`,
-      );
+      throw new RpcContributionError({
+        code: "duplicate-namespace",
+        message: `RPC namespace '${contribution.namespace}' is registered more than once.`,
+      });
     }
     namespaces.add(contribution.namespace);
     for (const method of methodNames(contribution.group)) {
       if (methods.has(method)) {
-        throw new RpcContributionError(
-          "duplicate-method",
-          `RPC method '${method}' is registered more than once.`,
-        );
+        throw new RpcContributionError({
+          code: "duplicate-method",
+          message: `RPC method '${method}' is registered more than once.`,
+        });
       }
       methods.add(method);
     }

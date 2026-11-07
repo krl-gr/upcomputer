@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Schema from "effect/Schema";
 
 const STABLE_ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 
@@ -22,36 +23,29 @@ export interface ExperimentalFeatureMigrationIdentity {
   readonly name: string;
 }
 
-export type FeatureMigrationErrorCode =
-  | "invalid-owner-id"
-  | "invalid-namespace"
-  | "duplicate-namespace"
-  | "invalid-version"
-  | "invalid-name"
-  | "duplicate-version"
-  | "non-contiguous-versions"
-  | "history-owner-mismatch"
-  | "history-name-mismatch"
-  | "history-ahead";
+const FeatureMigrationErrorCode = Schema.Literals([
+  "invalid-owner-id",
+  "invalid-namespace",
+  "duplicate-namespace",
+  "invalid-version",
+  "invalid-name",
+  "duplicate-version",
+  "non-contiguous-versions",
+  "history-owner-mismatch",
+  "history-name-mismatch",
+  "history-ahead",
+]);
+export type FeatureMigrationErrorCode = typeof FeatureMigrationErrorCode.Type;
 
-export class FeatureMigrationError extends Error {
-  override readonly name = "FeatureMigrationError";
-  readonly code: FeatureMigrationErrorCode;
-  readonly namespace: string | undefined;
-  readonly version: number | undefined;
-
-  constructor(
+export class FeatureMigrationError extends Schema.TaggedError<FeatureMigrationError>()(
+  "FeatureMigrationError",
+  {
     code: FeatureMigrationErrorCode,
-    message: string,
-    namespace?: string,
-    version?: number,
-  ) {
-    super(message);
-    this.code = code;
-    this.namespace = namespace;
-    this.version = version;
-  }
-}
+    message: Schema.String,
+    namespace: Schema.optional(Schema.String),
+    version: Schema.optional(Schema.Number),
+  },
+) {}
 
 export interface ExperimentalPlannedFeatureMigration<
   E,
@@ -74,27 +68,27 @@ export function createExperimentalFeatureMigrationPlan<E>(
 
   for (const contribution of contributions) {
     if (!STABLE_ID.test(contribution.ownerId)) {
-      throw new FeatureMigrationError(
-        "invalid-owner-id",
-        `Feature migration owner '${contribution.ownerId}' must be a lowercase dot, dash, or underscore separated identifier.`,
-        contribution.namespace,
-      );
+      throw new FeatureMigrationError({
+        code: "invalid-owner-id",
+        message: `Feature migration owner '${contribution.ownerId}' must be a lowercase dot, dash, or underscore separated identifier.`,
+        namespace: contribution.namespace,
+      });
     }
     if (!STABLE_ID.test(contribution.namespace)) {
-      throw new FeatureMigrationError(
-        "invalid-namespace",
-        `Feature migration namespace '${contribution.namespace}' must be a lowercase dot, dash, or underscore separated identifier.`,
-        contribution.namespace,
-      );
+      throw new FeatureMigrationError({
+        code: "invalid-namespace",
+        message: `Feature migration namespace '${contribution.namespace}' must be a lowercase dot, dash, or underscore separated identifier.`,
+        namespace: contribution.namespace,
+      });
     }
 
     const existingOwner = namespaces.get(contribution.namespace);
     if (existingOwner !== undefined) {
-      throw new FeatureMigrationError(
-        "duplicate-namespace",
-        `Feature migration namespace '${contribution.namespace}' is already owned by '${existingOwner}'.`,
-        contribution.namespace,
-      );
+      throw new FeatureMigrationError({
+        code: "duplicate-namespace",
+        message: `Feature migration namespace '${contribution.namespace}' is already owned by '${existingOwner}'.`,
+        namespace: contribution.namespace,
+      });
     }
     namespaces.set(contribution.namespace, contribution.ownerId);
 
@@ -104,28 +98,28 @@ export function createExperimentalFeatureMigrationPlan<E>(
     );
     for (const migration of migrations) {
       if (!Number.isInteger(migration.version) || migration.version <= 0) {
-        throw new FeatureMigrationError(
-          "invalid-version",
-          `Feature migration '${contribution.namespace}' has invalid version '${migration.version}'.`,
-          contribution.namespace,
-          migration.version,
-        );
+        throw new FeatureMigrationError({
+          code: "invalid-version",
+          message: `Feature migration '${contribution.namespace}' has invalid version '${migration.version}'.`,
+          namespace: contribution.namespace,
+          version: migration.version,
+        });
       }
       if (migration.name.trim().length === 0) {
-        throw new FeatureMigrationError(
-          "invalid-name",
-          `Feature migration '${contribution.namespace}' version ${migration.version} must have a non-empty name.`,
-          contribution.namespace,
-          migration.version,
-        );
+        throw new FeatureMigrationError({
+          code: "invalid-name",
+          message: `Feature migration '${contribution.namespace}' version ${migration.version} must have a non-empty name.`,
+          namespace: contribution.namespace,
+          version: migration.version,
+        });
       }
       if (versions.has(migration.version)) {
-        throw new FeatureMigrationError(
-          "duplicate-version",
-          `Feature migration '${contribution.namespace}' version ${migration.version} is registered more than once.`,
-          contribution.namespace,
-          migration.version,
-        );
+        throw new FeatureMigrationError({
+          code: "duplicate-version",
+          message: `Feature migration '${contribution.namespace}' version ${migration.version} is registered more than once.`,
+          namespace: contribution.namespace,
+          version: migration.version,
+        });
       }
       versions.add(migration.version);
       plan.push({
@@ -139,12 +133,12 @@ export function createExperimentalFeatureMigrationPlan<E>(
 
     for (let expectedVersion = 1; expectedVersion <= migrations.length; expectedVersion += 1) {
       if (!versions.has(expectedVersion)) {
-        throw new FeatureMigrationError(
-          "non-contiguous-versions",
-          `Feature migration namespace '${contribution.namespace}' must be contiguous from version 1; version ${expectedVersion} is missing.`,
-          contribution.namespace,
-          expectedVersion,
-        );
+        throw new FeatureMigrationError({
+          code: "non-contiguous-versions",
+          message: `Feature migration namespace '${contribution.namespace}' must be contiguous from version 1; version ${expectedVersion} is missing.`,
+          namespace: contribution.namespace,
+          version: expectedVersion,
+        });
       }
     }
   }
@@ -187,34 +181,28 @@ export const runExperimentalFeatureMigrations = Effect.fn("runExperimentalFeatur
       if (!activeNamespaces.has(row.namespace)) continue;
       const planned = plannedByIdentity.get(`${row.namespace}:${row.version}`);
       if (planned === undefined) {
-        return yield* Effect.fail(
-          new FeatureMigrationError(
-            "history-ahead",
-            `Database migration history for '${row.namespace}' is ahead of the registered feature at version ${row.version}.`,
-            row.namespace,
-            row.version,
-          ),
-        );
+        return yield* new FeatureMigrationError({
+          code: "history-ahead",
+          message: `Database migration history for '${row.namespace}' is ahead of the registered feature at version ${row.version}.`,
+          namespace: row.namespace,
+          version: row.version,
+        });
       }
       if (planned.ownerId !== row.ownerId) {
-        return yield* Effect.fail(
-          new FeatureMigrationError(
-            "history-owner-mismatch",
-            `Feature migration namespace '${row.namespace}' is recorded for owner '${row.ownerId}', not '${planned.ownerId}'.`,
-            row.namespace,
-            row.version,
-          ),
-        );
+        return yield* new FeatureMigrationError({
+          code: "history-owner-mismatch",
+          message: `Feature migration namespace '${row.namespace}' is recorded for owner '${row.ownerId}', not '${planned.ownerId}'.`,
+          namespace: row.namespace,
+          version: row.version,
+        });
       }
       if (planned.name !== row.name) {
-        return yield* Effect.fail(
-          new FeatureMigrationError(
-            "history-name-mismatch",
-            `Feature migration '${row.namespace}' version ${row.version} was recorded as '${row.name}', not '${planned.name}'.`,
-            row.namespace,
-            row.version,
-          ),
-        );
+        return yield* new FeatureMigrationError({
+          code: "history-name-mismatch",
+          message: `Feature migration '${row.namespace}' version ${row.version} was recorded as '${row.name}', not '${planned.name}'.`,
+          namespace: row.namespace,
+          version: row.version,
+        });
       }
     }
 

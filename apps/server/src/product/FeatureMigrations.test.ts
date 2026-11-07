@@ -1,6 +1,6 @@
 import { assert, it } from "@effect/vitest";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -10,7 +10,12 @@ import {
   type ExperimentalFeatureMigrationContribution,
 } from "./FeatureMigrations.ts";
 
-class SimulatedMigrationError extends Data.TaggedError("SimulatedMigrationError")<{}> {}
+const isFeatureMigrationError = Schema.is(FeatureMigrationError);
+
+class SimulatedMigrationError extends Schema.TaggedError<SimulatedMigrationError>()(
+  "SimulatedMigrationError",
+  {},
+) {}
 
 const noFeatureMigrations: ReadonlyArray<ExperimentalFeatureMigrationContribution<never>> = [];
 
@@ -122,8 +127,8 @@ layer("feature migrations", (it) => {
 
       const older = contribution("test.downgrade", [current.migrations[0]!]);
       const error = yield* runExperimentalFeatureMigrations([older]).pipe(Effect.flip);
-      assert.equal(error instanceof FeatureMigrationError, true);
-      if (error instanceof FeatureMigrationError) {
+      assert.isTrue(isFeatureMigrationError(error));
+      if (isFeatureMigrationError(error)) {
         assert.equal(error.code, "history-ahead");
       }
     }),

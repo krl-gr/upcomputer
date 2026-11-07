@@ -95,10 +95,6 @@ export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
   return true;
 }).pipe(Atom.withLabel("web-all-environment-shells-bootstrapped"));
 
-export function expectsPrimaryEnvironment(): boolean {
-  return !isHostedStaticApp() && !isLocalEnvironmentDisabled();
-}
-
 export function hasPrimaryEnvironment(catalog: EnvironmentCatalogState): boolean {
   return Array.from(catalog.entries.values()).some(
     (entry) => entry.target._tag === "PrimaryConnectionTarget",
@@ -134,12 +130,17 @@ export const allEnvironmentProjectSnapshotsReadyAtom =
   createAllEnvironmentProjectSnapshotsReadyAtom({
     catalogValueAtom: environmentCatalog.catalogValueAtom,
     shellStateValueAtom: environmentShell.stateValueAtom,
-    requiresPrimaryEnvironment: !isHostedStaticApp(),
+    requiresPrimaryEnvironment: expectsPrimaryEnvironment(),
   });
+
+/** Hosted clients and desktops with the local environment disabled never discover a primary. */
+export function expectsPrimaryEnvironment(): boolean {
+  return !isHostedStaticApp() && !isLocalEnvironmentDisabled();
+}
 
 export const allReachableShellsLiveAtom = Atom.make((get) => {
   const catalog = get(environmentCatalog.catalogValueAtom);
-  if (!catalogIsComplete(catalog, !isHostedStaticApp())) return false;
+  if (!catalogIsComplete(catalog, expectsPrimaryEnvironment())) return false;
   for (const environmentId of enabledEnvironmentIds(catalog)) {
     const shell = get(environmentShell.stateValueAtom(environmentId));
     if (shell.status === "live" && Option.isSome(shell.snapshot)) continue;

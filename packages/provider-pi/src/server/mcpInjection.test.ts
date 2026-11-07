@@ -132,6 +132,7 @@ describe("pi T3 MCP injection", () => {
       extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
       sessionPath: "/fake/persisted.jsonl",
       ephemeral: true,
+      shortLived: true,
       disableExtensions: true,
       disableTools: true,
     });
@@ -141,9 +142,19 @@ describe("pi T3 MCP injection", () => {
       "--no-session",
       "--provider",
       "anthropic",
+      "--offline",
       "--no-extensions",
       "--no-tools",
     ]);
+    const alreadyOffline = buildPiRpcLaunch({
+      launchArgs: ["--offline"],
+      environment: {},
+      mcpSession: undefined,
+      extensionPath: undefined,
+      ephemeral: true,
+      shortLived: true,
+    });
+    assert.deepEqual(alreadyOffline.args, ["--mode", "rpc", "--no-session", "--offline"]);
     assert.deepInclude(resolvePiLaunchArgs("--mode text"), {
       ok: false,
       message: "Pi launch argument '--mode' is controlled by Up.computer and cannot be overridden.",

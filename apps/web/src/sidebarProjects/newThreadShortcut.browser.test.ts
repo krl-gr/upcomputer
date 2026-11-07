@@ -5,7 +5,7 @@ import { installChatRouteCommands } from "../shortcuts/chatRouteCommands";
 
 const spies = vi.hoisted(() => ({
   openCommandPalette: vi.fn(),
-  startNewThreadFromContext: vi.fn(),
+  startNewThreadFromContext: vi.fn(async () => true),
   startScratchThread: vi.fn(),
 }));
 const state = vi.hoisted(() => ({
@@ -90,7 +90,7 @@ describe("New thread shortcuts", () => {
   it("chat.new keeps upstream's behaviour in the boring sidebar", () => {
     using _commands = setup({ boringSidebar: true });
     press("chat.new");
-    expect(spies.startNewThreadFromContext).toHaveBeenCalledOnce();
+    expect(spies.openCommandPalette).toHaveBeenCalledExactlyOnceWith({ open: "new-thread-in" });
     expect(spies.startScratchThread).not.toHaveBeenCalled();
   });
 

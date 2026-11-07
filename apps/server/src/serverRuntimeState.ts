@@ -25,6 +25,16 @@ export const PersistedServerRuntimeState = Schema.Struct({
   // tell a server it lost (this PID is gone) from one started from the CLI.
   desktopParentPid: Schema.optional(Schema.Int),
   serverVersion: Schema.optional(Schema.String),
+  // The managed policy this server loaded at startup, null for none; absent from older servers.
+  managedPolicy: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        source: Schema.String,
+        organization: Schema.String,
+        fingerprint: Schema.String,
+      }),
+    ),
+  ),
 });
 export type PersistedServerRuntimeState = typeof PersistedServerRuntimeState.Type;
 
@@ -62,6 +72,7 @@ export const makePersistedServerRuntimeState = (input: {
   readonly port: number;
   readonly serviceManaged?: boolean;
   readonly desktopParentPid?: number;
+  readonly managedPolicy?: PersistedServerRuntimeState["managedPolicy"];
 }): Effect.Effect<PersistedServerRuntimeState> =>
   Effect.map(DateTime.now, (now) => ({
     version: 1,
@@ -75,6 +86,7 @@ export const makePersistedServerRuntimeState = (input: {
     ...(input.serviceManaged ? { serviceManaged: true } : {}),
     ...(input.desktopParentPid === undefined ? {} : { desktopParentPid: input.desktopParentPid }),
     serverVersion: packageJson.version,
+    ...(input.managedPolicy === undefined ? {} : { managedPolicy: input.managedPolicy }),
   }));
 
 export const persistServerRuntimeState = (input: {
