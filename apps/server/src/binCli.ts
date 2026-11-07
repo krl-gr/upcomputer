@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import { Argument, Command } from "effect/cli";
 import * as CliError from "effect/cli/CliError";
 
+import { setPullRequestAgentToolsRegistered } from "@t3tools/provider-core/server/pullRequestAgentTools";
 import * as NetService from "@t3tools/shared/Net";
 import { applyUpcomputerEnvAliases } from "@t3tools/shared/upcomputerEnv";
 import packageJson from "../package.json" with { type: "json" };
@@ -132,6 +133,7 @@ export function runCli(
   applyUpcomputerEnvAliases(process.env);
   extendConnectionAttemptTimeout();
   keepOutboundFetchOnHttp1();
+  setPullRequestAgentToolsRegistered(product.flags.pullRequestAgentTools);
   Command.run(cli, { version: packageJson.version }).pipe(
     Effect.scoped,
     Effect.provideService(ServerProduct, product),

@@ -1,3 +1,4 @@
+import { pullRequestAgentToolsRegistered } from "./pullRequestAgentTools.ts";
 import { currentUserInstructionsBlock } from "./userInstructions.ts";
 
 /** Session-invariant; harnesses with a native system-prompt append can carry it once per session. */
@@ -28,7 +29,7 @@ export function buildRuntimeInstructions(runtime: {
     runtime.omitUserInstructions === true ? undefined : currentUserInstructionsBlock();
   const runtimeInfo = `<runtime_info>In case you're asked: you are running in Up.computer through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images, video, and audio in your response using Markdown image syntax with absolute file paths. Link any other file you produce using its absolute path so the user can open it in Up.computer's files viewer.</runtime_info>`;
   const instructions =
-    runtime.pullRequestLinking === false
+    runtime.pullRequestLinking === false || !pullRequestAgentToolsRegistered()
       ? runtimeInfo
       : `${runtimeInfo}\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}`;
   return userInstructions === undefined ? instructions : `${instructions}\n\n${userInstructions}`;
