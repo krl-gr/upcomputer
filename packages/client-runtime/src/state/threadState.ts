@@ -30,6 +30,7 @@ export const EMPTY_ENVIRONMENT_THREAD_STATE: EnvironmentThreadState = {
  * A thread holds a write once it has applied the write's commit sequence. A bounded
  * projection can page the message out later, so finding it is only a fallback for
  * servers that do not report the sequence.
+ * @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace.
  */
 export function threadHasCaughtUpTo(
   write: { readonly messageId: string; readonly sequence?: number | undefined },

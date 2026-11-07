@@ -174,6 +174,7 @@ function listAccepts(input: PullRequestListInput, state: string, isDraft: boolea
 /**
  * Listing rows with an action's reply applied, the same array when it changes none, and `refresh`
  * when the reply adds the pull request to a listing, which only a read can place.
+ * @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace.
  */
 export function patchPullRequestListEntries<Entry extends PullRequestListEntry>(
   input: PullRequestListInput,

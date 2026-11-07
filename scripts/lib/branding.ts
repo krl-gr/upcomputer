@@ -207,7 +207,7 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   },
   {
     path: "apps/desktop/src/app/DesktopEarlyElectronStartup.ts",
-    requires: ["UPCOMPUTER_APP_ID", "UPCOMPUTER_EXECUTABLE_NAME"],
+    requires: ["UPCOMPUTER_APP_ID"],
     forbids: ["com.t3tools.T3Code", '"t3code"'],
   },
   {

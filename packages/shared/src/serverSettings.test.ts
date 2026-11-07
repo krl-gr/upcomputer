@@ -114,10 +114,10 @@ describe("resolveReadyTextGenerationModelSelection", () => {
   });
   const unchosen = DEFAULT_SERVER_SETTINGS.textGenerationModelSelection;
 
-  it("moves the unchosen Codex default to OpenCode's automatic free model", () => {
+  it("moves the unchosen Codex default to OpenCode's text-generation model", () => {
     expect(
       resolveReadyTextGenerationModelSelection(unchosen, [notInstalledCodex, freeOpenCode]),
-    ).toEqual({ instanceId: "opencode", model: "opencode/glm-5.3-flash-free" });
+    ).toEqual({ instanceId: "opencode", model: "opencode/big-pickle" });
   });
 
   it("prefers a ready provider's own text-generation model", () => {

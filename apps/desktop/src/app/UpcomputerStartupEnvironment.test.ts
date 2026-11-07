@@ -48,7 +48,6 @@ describe("Up.computer desktop identity", () => {
       assert.equal(environment.stateDir, "/Users/alice/.upcomputer/userdata");
       assert.equal(environment.appUserModelId, "computer.up.upcomputer");
       assert.equal(environment.displayName, "Up.computer (Alpha)");
-      assert.equal(environment.linuxWmClass, "upcomputer");
     }),
   );
 

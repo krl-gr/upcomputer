@@ -185,8 +185,9 @@
     },
     "packages/computer-use-web": {
       "includeEntryExports": true,
-      // React DOM pairs with the React this plug-in renders into the web host.
-      "ignoreDependencies": ["react-dom", "@types/react-dom"],
+      // React DOM pairs with the React this plug-in renders into the web host. Its
+      // tsconfig loads vite/client types, which knip reads only from a tsc script.
+      "ignoreDependencies": ["react-dom", "@types/react-dom", "vite"],
     },
     "packages/effect-acp": {
       "includeEntryExports": true,

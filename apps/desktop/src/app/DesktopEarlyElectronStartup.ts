@@ -1,5 +1,5 @@
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
-import { UPCOMPUTER_APP_ID, UPCOMPUTER_EXECUTABLE_NAME } from "@t3tools/shared/upcomputerIdentity";
+import { UPCOMPUTER_APP_ID } from "@t3tools/shared/upcomputerIdentity";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -33,9 +33,6 @@ export interface EarlyLinuxElectronOptions {
 
 export const resolveLinuxDesktopEntryName = (isDevelopment: boolean): string =>
   isDevelopment ? `${UPCOMPUTER_APP_ID}.Development.desktop` : `${UPCOMPUTER_APP_ID}.desktop`;
-
-export const resolveLinuxWmClass = (isDevelopment: boolean): string =>
-  isDevelopment ? `${UPCOMPUTER_EXECUTABLE_NAME}-dev` : UPCOMPUTER_EXECUTABLE_NAME;
 
 const trimNonEmpty = (value: string | undefined): string | null => {
   const trimmed = value?.trim();

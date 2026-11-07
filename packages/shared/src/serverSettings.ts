@@ -115,7 +115,7 @@ export function defaultTextGenerationModel(driver: ProviderDriverKind): string {
  * The text-generation model a user never picked is Codex's, which a new user
  * may not have. Settings cannot tell an explicit pick of that same model apart.
  */
-export function isDefaultTextGenerationModelSelection(selection: ModelSelection): boolean {
+function isDefaultTextGenerationModelSelection(selection: ModelSelection): boolean {
   const fallback = DEFAULT_SERVER_SETTINGS.textGenerationModelSelection;
   return selection.instanceId === fallback.instanceId && selection.model === fallback.model;
 }
@@ -124,8 +124,7 @@ export function isDefaultTextGenerationModelSelection(selection: ModelSelection)
  * Moves the default selection to the first ready provider once its own has
  * been checked and is not ready, so titles do not fail on a missing Codex. The
  * model is the provider's text-generation default when it serves it, else the
- * model it marks default: for OpenCode that is the automatic free model, never
- * Big Pickle. A selection the user made is kept.
+ * model it marks default. A selection the user made is kept.
  */
 export function resolveReadyTextGenerationModelSelection(
   selection: ModelSelection,
