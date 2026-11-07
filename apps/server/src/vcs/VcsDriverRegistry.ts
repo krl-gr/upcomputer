@@ -1,10 +1,12 @@
 import * as Cache from "effect/Cache";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import type { VcsDriverKind, VcsError, VcsRepositoryIdentity } from "@t3tools/contracts";
@@ -16,6 +18,9 @@ import * as VcsDriver from "./VcsDriver.ts";
 const DETECTION_CACHE_CAPACITY = 2_048;
 // Detection costs three git processes per cwd; cached hits still stat disk, so TTL bounds only undetectable changes.
 const DETECTION_CACHE_TTL = Duration.minutes(5);
+// A git that cannot start (missing, or Apple's stub without the Command Line Tools) stays so
+// for a while; without this every status poll would retry it.
+const SPAWN_FAILURE_CACHE_TTL = Duration.seconds(30);
 
 export interface VcsDriverResolveInput {
   readonly cwd: string;
@@ -149,7 +154,13 @@ export const make = Effect.gen(function* () {
       capacity: DETECTION_CACHE_CAPACITY,
       timeToLive: Exit.match({
         onSuccess: (detected) => (detected === null ? Duration.zero : DETECTION_CACHE_TTL),
-        onFailure: () => Duration.zero,
+        onFailure: (cause) =>
+          Option.exists(
+            Cause.findErrorOption(cause),
+            (error) => error._tag === "VcsProcessSpawnError",
+          )
+            ? SPAWN_FAILURE_CACHE_TTL
+            : Duration.zero,
       }),
     },
   );
