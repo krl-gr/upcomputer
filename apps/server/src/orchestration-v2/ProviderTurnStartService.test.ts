@@ -1809,7 +1809,7 @@ effectIt.effect("fails the run without a retry when the provider needs sign-in",
         status: "failed",
         failure: {
           class: "provider_error",
-          message: "Failed to open antigravity provider session new-provider-session.",
+          message: "Codex couldn't start. Check Codex in Settings, then send the message again.",
         },
       },
     ]);
@@ -1882,7 +1882,7 @@ effectIt.effect("fails the run instead of replacing a native thread another clie
     expect(projection.turnItems).toMatchObject([
       {
         type: "error",
-        title: "Provider turn failed to start",
+        title: "Codex stopped with an error",
         failure: { class: "provider_error", message: detail },
       },
     ]);

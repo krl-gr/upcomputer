@@ -40,6 +40,7 @@ import {
   verifyRelayJwt,
 } from "@t3tools/shared/relayJwt";
 import { isSecureRelayUrl } from "@t3tools/shared/relayUrl";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Signature from "effect/crypto/Signature";
@@ -101,7 +102,12 @@ import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import * as ManagedLimits from "../policy/managedLimits.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import { relayUrlConfig } from "./publicConfig.ts";
-import { observeRelayResponseDate, observeRelayTokenIssuedAt, RelayClock } from "./RelayClock.ts";
+import {
+  inRelayTime,
+  observeRelayResponseDate,
+  observeRelayTokenIssuedAt,
+  RelayClock,
+} from "./RelayClock.ts";
 import {
   filterRelayResponse,
   relayRequestError,
@@ -1494,13 +1500,18 @@ const make = Effect.gen(function* () {
       const linkedCloudUserId = yield* readInstalledCloudUserId;
       const now = yield* relayClock.now;
       const nowSeconds = Math.floor(now.epochMilliseconds / 1_000);
+      const relayTime = inRelayTime(yield* Clock.Clock, yield* relayClock.offsetMillis);
       const proofOption = yield* verifyRelayJwt(RelayCloudEnvironmentHealthProofPayload, {
         publicKey: cloudMintPublicKey,
         token: request.proof,
         typ: RELAY_HEALTH_REQUEST_TYP,
         issuer: normalizeRelayIssuer(relayIssuer),
         audience: `t3-env:${environmentId}`,
-      }).pipe(Effect.provideService(Signature.Signature, signature), Effect.option);
+      }).pipe(
+        Effect.provideService(Signature.Signature, signature),
+        Effect.provideService(Clock.Clock, relayTime),
+        Effect.option,
+      );
       if (
         Option.isNone(proofOption) ||
         proofOption.value.environmentId !== environmentId ||
@@ -1596,13 +1607,18 @@ const make = Effect.gen(function* () {
       const linkedCloudUserId = yield* readInstalledCloudUserId;
       const now = yield* relayClock.now;
       const nowSeconds = Math.floor(now.epochMilliseconds / 1_000);
+      const relayTime = inRelayTime(yield* Clock.Clock, yield* relayClock.offsetMillis);
       const proofOption = yield* verifyRelayJwt(RelayCloudMintCredentialProofPayload, {
         publicKey: cloudMintPublicKey,
         token: request.proof,
         typ: RELAY_MINT_REQUEST_TYP,
         issuer: normalizeRelayIssuer(relayIssuer),
         audience: `t3-env:${environmentId}`,
-      }).pipe(Effect.provideService(Signature.Signature, signature), Effect.option);
+      }).pipe(
+        Effect.provideService(Signature.Signature, signature),
+        Effect.provideService(Clock.Clock, relayTime),
+        Effect.option,
+      );
       if (
         Option.isNone(proofOption) ||
         proofOption.value.environmentId !== environmentId ||
@@ -1673,9 +1689,11 @@ const make = Effect.gen(function* () {
   if (!ManagedLimits.allowsConnect(managedPolicy)) {
     // Reading state and unlinking stay available so clients can show and leave the old link.
     yield* unlink().pipe(
-      Effect.tap(() => Effect.logInfo("T3 Connect is off by managed policy; unlinked.")),
+      Effect.tap(() => Effect.logInfo("UpComputer Connect is off by managed policy; unlinked.")),
       Effect.catch((cause) =>
-        Effect.logWarning("Failed to unlink T3 Connect turned off by managed policy", { cause }),
+        Effect.logWarning("Failed to unlink UpComputer Connect turned off by managed policy", {
+          cause,
+        }),
       ),
     );
     const refused = Effect.fn("CloudLink.refusedByPolicy")(function* () {

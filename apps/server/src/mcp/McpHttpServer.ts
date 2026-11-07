@@ -1217,8 +1217,14 @@ export const resultToolkitRegistration = <Tools extends Record<string, Tool.Any>
                         )
                       : Effect.die(error),
                   ),
+                  // Schema services of a generic toolkit stay unresolved for the checker;
+                  // `services` holds every service the handlers declared.
                   Effect.provideContext(
-                    Context.add(services, McpInvocationContext.McpInvocationContext, invocation),
+                    Context.add(
+                      services,
+                      McpInvocationContext.McpInvocationContext,
+                      invocation,
+                    ) as Context.Context<unknown>,
                   ),
                 );
               }),

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -6,11 +7,12 @@ import {
   type ProviderInstallState,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientResponse } from "effect/http";
@@ -43,8 +45,8 @@ const makeHarness = Effect.fn("test.makeOpenCodeInstallation")(function* (
       mode: 0o755,
     });
   }
-  const crypto = yield* Crypto.Crypto;
-  const sha256 = Hex.encode(yield* crypto.digest("SHA-256", archive).pipe(Effect.orDie));
+  const digest = yield* Digest.Digest;
+  const sha256 = Hex.encode(yield* digest.digest(Digest.sha256, archive).pipe(Effect.orDie));
   let downloads = 0;
   const installation = yield* OpenCodeInstallation.makeOpenCodeInstallation({
     baseDir,
@@ -115,7 +117,7 @@ it.effect.each(["1.14.19", "1.19.3", "2.0.1"])(
       expect(state.operationId).not.toBeNull();
       expect(h.downloads()).toBe(0);
       expect(yield* h.fs.exists(h.installation.managedDirectory)).toBe(false);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("downloads the pinned release past an old OpenCode and reuses it next launch", () =>
@@ -143,7 +145,7 @@ it.effect("downloads the pinned release past an old OpenCode and reuses it next 
       executablePath: installed.executablePath,
     });
     expect(relaunched.downloads()).toBe(0);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect.each([
@@ -170,7 +172,7 @@ it.effect.each([
       entry.startsWith(".install-damaged-"),
     );
     expect(setAside).toEqual([]);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("rejects a corrupted download without installing anything", () =>
@@ -182,7 +184,7 @@ it.effect("rejects a corrupted download without installing anything", () =>
     expect(failed.message).toContain("SHA-256");
     expect(yield* h.fs.exists(`${h.installation.managedDirectory}/1.19.3`)).toBe(false);
     expect(yield* h.fs.exists(`${h.installation.managedDirectory}/active.json`)).toBe(false);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("fails a stalled download so the user can retry", () =>
@@ -203,7 +205,7 @@ it.effect("fails a stalled download so the user can retry", () =>
     expect(failed.message).toContain("stopped responding");
     yield* h.installation.start;
     expect((yield* h.installation.state).phase).toBe("downloading");
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 const openCodeId = ProviderInstanceId.make("opencode");
@@ -239,7 +241,7 @@ it.effect("turns on OpenCode with the managed runtime as its binary path", () =>
       enabled: true,
       config: { binaryPath: "/home/.t3/tools/opencode/1.19.3/opencode" },
     });
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("turns on a local OpenCode without pinning its path", () =>
@@ -249,7 +251,7 @@ it.effect("turns on a local OpenCode without pinning its path", () =>
     );
     expect(instance?.enabled).toBe(true);
     expect(instance?.config).toEqual({});
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("keeps a custom binary path and ignores the startup state", () =>
@@ -270,5 +272,5 @@ it.effect("keeps a custom binary path and ignores the startup state", () =>
     expect(yield* activate(succeeded({ operationId: null }), settings)).toMatchObject({
       enabled: false,
     });
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

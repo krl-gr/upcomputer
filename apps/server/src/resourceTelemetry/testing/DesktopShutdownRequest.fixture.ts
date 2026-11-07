@@ -7,6 +7,7 @@ import * as NodeFS from "node:fs";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -29,7 +30,7 @@ Effect.gen(function* () {
   );
   // Stands in for the server's shutdown finalizers, such as `server.stopped`. The marker file
   // comes first: a parent that stopped reading stdout must still see that this ran.
-  const marker = process.env.T3_TEST_SHUTDOWN_MARKER;
+  const marker = (yield* HostProcess.Environment).T3_TEST_SHUTDOWN_MARKER;
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
       if (marker !== undefined) NodeFS.writeFileSync(marker, "stopped\n");

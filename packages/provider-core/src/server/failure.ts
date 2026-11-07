@@ -226,7 +226,8 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
         case "ProviderAdapterThreadInUseError":
           return {
             message: stringField(cause, "message") ?? "",
-            code: undefined,
+            // The message is shown as written; a session-open wrapper still names the stage.
+            code: wrapper === "open_session" ? ProviderFailureCode.sessionOpen : undefined,
             retryable: undefined,
             detail: undefined,
             known: true,

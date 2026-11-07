@@ -446,7 +446,10 @@ it.effect("thread cleanup notifies subscribers and a finishing run cannot recrea
       yield* Deferred.await(started);
       yield* Deferred.await(running);
       const refused = yield* service.runNow({ id: task.id }).pipe(Effect.flip);
-      assert.equal(refused.message, "Schedule task is already running.");
+      assert.equal(
+        refused.message,
+        '"Check orchestration" couldn\'t run now: schedule task is already running. Try again in a moment.',
+      );
       yield* service.deleteForThread(threadId);
       yield* Deferred.await(removed);
       yield* Deferred.succeed(release, undefined);

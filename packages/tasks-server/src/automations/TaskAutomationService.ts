@@ -6,7 +6,7 @@ import {
 } from "@t3tools/tasks-contracts/v1";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -74,7 +74,7 @@ export class TaskAutomationService extends Context.Service<
 const make = Effect.gen(function* () {
   const repository = yield* TaskRepository;
   const agents = yield* TaskAgentService;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const analytics = yield* Effect.serviceOption(AnalyticsService);
 
   const now = Effect.map(DateTime.now, DateTime.formatIso);
@@ -93,7 +93,7 @@ const make = Effect.gen(function* () {
         })
       : Effect.void;
   const randomId = (prefix: string) =>
-    crypto.randomUUIDv4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
+    crypto.uuidV4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
 
   interface FireResult {
     readonly at: string;

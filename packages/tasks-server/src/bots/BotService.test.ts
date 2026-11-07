@@ -15,7 +15,7 @@ import {
   TaskId,
   type TaskChange,
 } from "@t3tools/tasks-contracts/v1";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -122,11 +122,8 @@ const harness = Effect.gen(function* () {
     Layer.provide(Layer.mock(TaskAgentService)({ scheduleTaskChanged: () => Effect.void })),
     Layer.provide(
       Layer.succeed(
-        Crypto.Crypto,
-        Crypto.make({
-          randomBytes: (size) => new Uint8Array(size),
-          digest: () => Effect.die("unused digest"),
-        }),
+        SecureRandom.SecureRandom,
+        SecureRandom.make((size) => new Uint8Array(size)),
       ),
     ),
   );

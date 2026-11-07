@@ -2,7 +2,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { CursorAgentSdkRunnerError } from "./CursorAgentSdk.ts";
 import { cursorRunFailure, cursorSdkErrorReason } from "./runFailure.ts";
-import { CursorSdkError } from "./sdk.ts";
+import { loadCursorSdk } from "./sdk.ts";
+
+const { CursorSdkError } = loadCursorSdk();
 
 // The SDK joins Cursor's ErrorDetails title and detail with a space.
 const usageLimitMessage =

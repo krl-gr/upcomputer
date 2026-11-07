@@ -194,7 +194,7 @@ it.effect("does not wait on a hung local Codex while starting and probes it once
     expect(Exit.isFailure(yield* Fiber.join(resolving))).toBe(true);
     expect(spawns).toBe(1);
     expect(yield* h.installation.state).toMatchObject({ phase: "idle", installedVersion: null });
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 it.effect("publishes a local Codex found after startup", () =>
   Effect.gen(function* () {
@@ -206,7 +206,7 @@ it.effect("publishes a local Codex found after startup", () =>
         Effect.map(Option.getOrThrow),
       ),
     ).toMatchObject({ phase: "succeeded", installedVersion: "0.156.1" });
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 it.effect.each([
   { version: "0.128.9" },

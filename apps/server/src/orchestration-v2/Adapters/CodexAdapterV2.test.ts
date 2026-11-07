@@ -1869,7 +1869,12 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     }).pipe(
       Effect.scoped,
       Effect.provide(
-        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
       ),
     ),
   );
@@ -6254,7 +6259,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         const terminal = harness.terminalEvents()[0];
         assert.equal(terminal?.status, "failed");
         if (terminal?.status !== "failed") return;
-        assert.equal(terminal.failure.message, message);
+        assert.equal(
+          terminal.failure.message,
+          "gpt-5-codex isn't available with your ChatGPT account. Pick another model and send again.",
+        );
       }).pipe(
         Effect.provide(
           Layer.mergeAll(

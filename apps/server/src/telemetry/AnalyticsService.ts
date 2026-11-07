@@ -279,10 +279,7 @@ export const make = Effect.gen(function* () {
     : Option.none<string>();
   const sessionId = Option.isSome(desktopSessionId)
     ? desktopSessionId.value
-    : yield* crypto.uuidV4().pipe(
-        Effect.map((id): string | undefined => id),
-        Effect.catchCause(() => Effect.sync((): string | undefined => undefined)),
-      );
+    : yield* crypto.uuidV4();
   const internalDeviceMarker = path.join(serverConfig.stateDir, INTERNAL_DEVICE_MARKER_FILE);
   // Read for every event, so creating the file by hand takes effect without a restart.
   const internalDevice = fileSystem
@@ -598,12 +595,15 @@ export const make = Effect.gen(function* () {
 
   // Desktop quit stops the server, so this is the app session length there.
   // The marker goes before the flush: a stop killed during a slow send was still clean.
+  // One budget for the whole stop, so the marker's file work cannot delay the flush's deadline.
   yield* Effect.addFinalizer(() =>
     Clock.currentTimeMillis.pipe(
       Effect.flatMap((now) => record("server.stopped", { uptimeMs: now - startedAtMs })),
       Effect.andThen(enabled ? fileSystem.remove(sessionMarkerPath, { force: true }) : Effect.void),
       Effect.ignoreCause,
-      Effect.andThen(flush.pipe(Effect.timeout(SHUTDOWN_FLUSH_TIMEOUT), Effect.ignore)),
+      Effect.andThen(flush),
+      Effect.timeout(SHUTDOWN_FLUSH_TIMEOUT),
+      Effect.ignore,
     ),
   );
 

@@ -15,7 +15,6 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
 import {
-  knownProviderFailureMessage,
   makeProviderFailure,
   makeProviderFailureTurnItem,
   providerFailureTitle,
@@ -116,10 +115,10 @@ it("preserves actionable T3 errors wrapped by turn startup", () => {
 
 it("names how the provider process exited and the stage it failed in, without its output", () => {
   for (const [exit, status] of [
-    [{ signal: "SIGILL" }, " after signal SIGILL"],
-    [{ code: 134 }, " with code 134"],
-    [{}, ""],
-    [{ signal: "SIGILL Bearer signal-secret" }, ""],
+    [{ signal: "SIGILL" }, "it quit after signal SIGILL"],
+    [{ code: 134 }, "it quit with exit code 134"],
+    [{}, "it quit unexpectedly"],
+    [{ signal: "SIGILL Bearer signal-secret" }, "it quit unexpectedly"],
   ] as const) {
     const sessionOpenFailure = {
       _tag: "ProviderSessionOpenError",
@@ -135,13 +134,16 @@ it("names how the provider process exited and the stage it failed in, without it
         },
       }),
     };
-    const expected = `The provider session could not be opened: the provider process exited${status}. Check the server logs for the provider's output, then retry the turn.`;
-    assert.equal(knownProviderFailureMessage(sessionOpenFailure), expected);
-    assert.equal(makeProviderFailure({ cause: Cause.fail(sessionOpenFailure) }).message, expected);
+    const failure = makeProviderFailure({ cause: Cause.fail(sessionOpenFailure) });
+    assert.equal(
+      failure.message,
+      `The agent couldn't start: ${status}. Check the agent in Settings, then send the message again.`,
+    );
+    assert.equal(failure.code, "session_open_failed");
   }
   assert.equal(
     makeProviderFailure({ cause: { _tag: "AcpProcessExitedError", code: 1 } }).message,
-    "The provider process exited with code 1. Check the server logs for the provider's output, then retry the turn.",
+    "The agent stopped before finishing: it quit with exit code 1. Send the message again; if it keeps happening, check the agent in Settings.",
   );
 });
 
@@ -307,16 +309,14 @@ it("explains why a session could not open instead of leaking its internal id", (
     cause: {
       _tag: "ProviderAdapterOpenSessionError",
       message: "Failed to open codex provider session ps_123.",
-      cause: {
-        _tag: "ProviderSetupError",
+      cause: new ProviderSetupError({
+        instanceId: ProviderInstanceId.make("codex"),
+        operation: "start",
         detail: "Set up managed Codex before starting a session.",
-      },
+      }),
     },
   });
-  assert.equal(
-    failure.message,
-    "Codex couldn't start: set up managed Codex before starting a session. Check Codex in Settings, then send the message again.",
-  );
+  assert.equal(failure.message, "Set up managed Codex before starting a session.");
   assert.notInclude(failure.message, "ps_123");
   assert.equal(failure.code, "session_open_failed");
   assert.equal(providerFailureTitle(failure, driver), "Couldn't start Codex");

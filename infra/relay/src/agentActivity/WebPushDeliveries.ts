@@ -4,7 +4,7 @@ import {
   type RelayDeliveryResult,
 } from "@t3tools/contracts/relay";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -118,7 +118,7 @@ export class WebPushDeliveries extends Context.Service<
 
 export const make = Effect.gen(function* () {
   const config = yield* RelayConfiguration.RelayConfiguration;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const sender = yield* WebPushDeliveryQueueSender.WebPushDeliveryQueueSender;
   const client = yield* WebPushClient.WebPushClient;
   const devices = yield* Devices.Devices;
@@ -215,7 +215,7 @@ export const make = Effect.gen(function* () {
         status: statusForPhase(state.phase),
       });
       const tag = `${state.environmentId}:${state.threadId}`;
-      const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(tag));
+      const digest = yield* crypto.digest(Digest.sha256, new TextEncoder().encode(tag));
       const gone = yield* client
         .send({
           subscription: target.subscription,

@@ -7,7 +7,7 @@ import {
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -49,7 +49,7 @@ const dependencies = [
   ProjectService.ProjectService,
   ManagedProjectFolders.ManagedProjectFolders,
   SqlClient.SqlClient,
-  Crypto.Crypto,
+  SecureRandom.SecureRandom,
   Path.Path,
 ];
 

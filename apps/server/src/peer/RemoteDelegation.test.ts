@@ -1002,7 +1002,8 @@ it.effect.each(["no active parent run", "a newer run owned by another provider"]
               text: JSON.stringify({
                 _tag: "OrchestratorMcpFailure",
                 code: "parent_not_active",
-                message: "The calling provider no longer owns an active thread run.",
+                message:
+                  "This agent's turn already ended, so it can't start new work now. Send it a message to continue.",
               }),
             },
           ]);

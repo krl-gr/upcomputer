@@ -5,7 +5,11 @@ import { vi } from "vite-plus/test";
 
 import * as CursorSdk from "./CursorSdk.ts";
 
-vi.mock("./sdk.ts", () => ({ Agent: {}, createAgentPlatform: {}, SqliteLocalAgentStore: {} }));
+vi.mock("./sdk.ts", () => ({
+  loadCursorSdk: () => ({}),
+  loadCursorSqlite: () => ({}),
+  isCursorSdkError: () => false,
+}));
 
 // Calls the guard directly with crash observers attached, Vitest's own listener detached.
 const rejectWithObservers = (

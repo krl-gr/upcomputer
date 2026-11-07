@@ -1,5 +1,5 @@
 import { CommandId, ProjectId } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 
@@ -15,7 +15,7 @@ export const makeFeatureProjects = Effect.gen(function* () {
   const projects = yield* ProjectService;
   const config = yield* ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   return {
     /** The T3 home: the server's base data directory. */
     homeDir: config.baseDir,
@@ -27,8 +27,8 @@ export const makeFeatureProjects = Effect.gen(function* () {
       function* (input: { readonly title: string; readonly workspaceRoot: string }) {
         yield* fileSystem.makeDirectory(input.workspaceRoot, { recursive: true });
         const { project } = yield* projects.bootstrap({
-          commandId: CommandId.make(yield* crypto.randomUUIDv4()),
-          projectId: ProjectId.make(yield* crypto.randomUUIDv4()),
+          commandId: CommandId.make(yield* crypto.uuidV4()),
+          projectId: ProjectId.make(yield* crypto.uuidV4()),
           title: input.title,
           workspaceRoot: input.workspaceRoot,
         });

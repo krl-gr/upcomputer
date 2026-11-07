@@ -3,10 +3,7 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { reconcileV2PreviewMigration } from "./reconcileV2PreviewMigration.ts";
 import { reconcileUpComputerV1Migrations } from "./reconcileUpComputerV1Migrations.ts";
-import {
-  FeatureMigrationError,
-  runExperimentalFeatureMigrations,
-} from "../product/FeatureMigrations.ts";
+import { runExperimentalFeatureMigrations } from "../product/FeatureMigrations.ts";
 import { CORE_FEATURE_MIGRATIONS } from "./CoreFeatureMigrations.ts";
 
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -248,7 +245,7 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   if (toMigrationInclusive === undefined) {
     // A ledger this build does not recognize cannot be repaired here; stop startup.
     yield* runExperimentalFeatureMigrations([CORE_FEATURE_MIGRATIONS]).pipe(
-      Effect.catchIf((error) => error instanceof FeatureMigrationError, Effect.die),
+      Effect.catchTags({ FeatureMigrationError: Effect.die }),
     );
   }
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);

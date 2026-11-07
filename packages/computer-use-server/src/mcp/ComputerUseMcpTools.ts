@@ -5,6 +5,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import type * as JsonSchema from "effect/JsonSchema";
+import * as Schema from "effect/Schema";
 import { McpSchema, Tool, Toolkit } from "effect/ai";
 
 import {
@@ -62,6 +63,11 @@ const denied = (text: string): ComputerUseToolResult => ({
   details: {},
 });
 
+class ComputerUseToolCallError extends Schema.TaggedError<ComputerUseToolCallError>()(
+  "ComputerUseToolCallError",
+  { toolName: Schema.String, cause: Schema.Defect() },
+) {}
+
 /** Runs one tool call through the session check, the approval setting and the shared policy. */
 export const callComputerUseTool = Effect.fn("ComputerUseMcpTools.call")(function* (
   tool: Pick<ComputerUseToolDefinition, "name">,
@@ -74,19 +80,23 @@ export const callComputerUseTool = Effect.fn("ComputerUseMcpTools.call")(functio
   if (denial !== undefined || interactionMode === undefined) {
     return denied(denial ?? "Computer use is unavailable.");
   }
-  return yield* Effect.tryPromise(async () => {
-    const approval = await computerUse.shouldRequireApproval({
-      toolName: tool.name,
-      args,
-      interactionMode,
-    });
-    if (approval.required) return denied(APPROVAL_REQUIRED_REASON);
-    return computerUse.callTool({ toolName: tool.name, args, interactionMode });
+  return yield* Effect.tryPromise({
+    try: async () => {
+      const approval = await computerUse.shouldRequireApproval({
+        toolName: tool.name,
+        args,
+        interactionMode,
+      });
+      if (approval.required) return denied(APPROVAL_REQUIRED_REASON);
+      return computerUse.callTool({ toolName: tool.name, args, interactionMode });
+    },
+    catch: (cause) => new ComputerUseToolCallError({ toolName: tool.name, cause }),
   }).pipe(
-    Effect.catch((cause) =>
-      Effect.logWarning("Computer-use MCP call failed", { toolName: tool.name, cause }).pipe(
-        Effect.as(denied(`${tool.name} failed.`)),
-      ),
+    Effect.catch((error) =>
+      Effect.logWarning("Computer-use MCP call failed", {
+        toolName: tool.name,
+        cause: error.cause,
+      }).pipe(Effect.as(denied(`${tool.name} failed.`))),
     ),
   );
 });

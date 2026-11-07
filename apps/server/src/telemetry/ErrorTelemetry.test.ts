@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -12,6 +13,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import * as ServerConfig from "../config.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 import * as ErrorTelemetry from "./ErrorTelemetry.ts";
 
@@ -70,6 +72,7 @@ const runServer = <E>(
             Layer.succeed(HostProcess.Platform, "darwin"),
             Layer.succeed(HostProcess.Architecture, "arm64"),
             layerAcceptClient(events),
+            ManagedPolicy.layerTest(),
           ),
         ),
       ),
@@ -85,7 +88,7 @@ function throwFrom(name: string): Error {
   return error;
 }
 
-it.layer(NodeServices.layer)("ErrorTelemetry", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ErrorTelemetry", (it) => {
   it.effect("records a client error once per stack hash, with no text", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

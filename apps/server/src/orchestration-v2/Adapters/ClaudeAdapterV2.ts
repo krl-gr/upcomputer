@@ -590,11 +590,6 @@ export interface ClaudeAgentSdkQuerySession {
   readonly close: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   /** How Claude took the t3-code server when the query opened; absent when it had none. */
   readonly t3McpRegistration?: ClaudeT3McpRegistration;
-  /** Absent in replays, which record no status probe. */
-  readonly mcpServerStatus?: Effect.Effect<
-    ReadonlyArray<ClaudeMcpServerState>,
-    ClaudeAgentSdkQueryRunnerError
-  >;
 }
 
 export interface ClaudeT3McpRegistration {
@@ -1623,10 +1618,6 @@ export const layerQueryRunner: Layer.Layer<
               ),
             ),
             ...(t3McpRegistration === undefined ? {} : { t3McpRegistration }),
-            mcpServerStatus: Effect.tryPromise({
-              try: () => queryRuntime.mcpServerStatus(),
-              catch: (cause) => queryRunnerError(cause, "mcpServerStatus"),
-            }),
           } satisfies ClaudeAgentSdkQuerySession;
         },
         // Fresh IDs may already have a metadata-only transcript; only resumed opens can reuse their ID.
@@ -4245,7 +4236,7 @@ function providerFailureFromResult(
       code: "api_error_429",
       retryable: true,
       resetAt: gatewayResetAt,
-      detail: message.result,
+      detail: message.subtype === "success" ? message.result : undefined,
     });
   }
   const failureClass =
@@ -5662,14 +5653,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const probeMcpStatus = Effect.fn("ClaudeAdapterV2.probeMcpStatus")(function* (
           querySession: ClaudeAgentSdkQuerySession,
         ) {
-          const probe = querySession.mcpServerStatus;
-          if (probe === undefined || (yield* Ref.get(mcpStatus))?.t3 === undefined) return;
-          yield* probe.pipe(
+          if ((yield* Ref.get(mcpStatus))?.t3 === undefined) return;
+          yield* querySession.mcpServerStatus.pipe(
             Effect.flatMap((servers) =>
               sdkMessageLock.withPermits(1)(updateMcpStatus({ servers })),
             ),
             Effect.timeout("15 seconds"),
-            Effect.ignore,
+            // Replays die on a status probe they never recorded.
+            Effect.ignoreCause,
             Effect.forkIn(sessionScope),
           );
         });

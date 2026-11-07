@@ -1406,6 +1406,7 @@ it.effect("a publish whose push fails still refreshes the new remote", () =>
             scopes: [AuthSourceControlWriteScope],
           },
           {},
+          yield* Ref.make<ReadonlyArray<AppView>>([]),
           yield* ServerBrowser.ServerBrowser,
           () => Effect.void,
           { secretReferences: true },

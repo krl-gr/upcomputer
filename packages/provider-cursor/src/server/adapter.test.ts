@@ -286,7 +286,11 @@ describe("CursorAdapterV2", () => {
         status: "error" as const,
         error: { message: "You've hit your usage limit", code: "PRO_USER_USAGE_LIMIT" },
       }),
-      failure: { class: "usage_limit", message: "You've hit your usage limit" },
+      failure: {
+        class: "usage_limit",
+        message:
+          "Cursor usage limit reached for claude-fable-5. Switch to another model or provider to keep working now.",
+      },
     },
     {
       reason: "the error Cursor's run ended with",

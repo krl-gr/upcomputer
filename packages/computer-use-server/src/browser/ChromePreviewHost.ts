@@ -89,6 +89,7 @@ interface ChromeTab {
 }
 
 /** A failure reported to agents with the same tags desktop hosts use. */
+// @effect-diagnostics-next-line extendsNativeError:off - thrown in Playwright promise code; the tryPromise catch unwraps it.
 export class ChromePreviewHostError extends Error {
   readonly remote: PreviewAutomationRemoteError;
 

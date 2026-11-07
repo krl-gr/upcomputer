@@ -4062,7 +4062,7 @@ describe("PiAdapterV2", () => {
       // No MCP session: the instructions must still reach Pi.
       const { runtime, takeEvent } = yield* openRuntime(fake);
       const path = fake.lastSpawn().env.T3_PI_USER_INSTRUCTIONS_PATH;
-      assert.isDefined(path);
+      if (typeof path !== "string") return assert.fail("expected a plain instructions path");
       assert.isUndefined(fake.lastSpawn().env.T3_MCP_URL);
       const providerThread = yield* runtime.ensureThread({
         threadId: THREAD_ID,
@@ -4073,7 +4073,7 @@ describe("PiAdapterV2", () => {
         setUserInstructions(instructions);
         yield* startTurn(runtime, providerThread, "default", [], "Hello", undefined, runOrdinal);
         yield* fake.takeRequest("prompt");
-        const written = yield* fileSystem.readFileString(path!);
+        const written = yield* fileSystem.readFileString(path);
         yield* fake.emit({ type: "agent_start" });
         yield* fake.emit({ type: "agent_settled" });
         yield* takeEvent((event) => event.type === "turn.terminal");

@@ -51,6 +51,7 @@ import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
@@ -507,11 +508,13 @@ const unfinishedTurnHarness = (recorded: Array<Readonly<Record<string, unknown>>
   });
 
 const layerRecordingAnalytics = (recorded: Array<Readonly<Record<string, unknown>>>) =>
-  Layer.succeed(ProviderEventIngestor.ProviderTurnAnalytics, {
-    record: (properties: Readonly<Record<string, unknown>>) =>
+  Layer.succeed(ProviderUsageAnalytics.ProviderTurnAnalytics, {
+    runStarted: () => Effect.void,
+    turnCompleted: (report) =>
       Effect.sync(() => {
-        recorded.push(properties);
+        recorded.push(ProviderUsageAnalytics.providerTurnProperties(report, () => undefined));
       }),
+    runSettled: () => Effect.void,
   });
 
 it.effect("reports why a failed or interrupted turn ended, in either event order", () => {
@@ -655,7 +658,16 @@ it.effect("times a turn's first model output and claims the first completed turn
     Effect.provide(
       layerTest.pipe(
         Layer.provide(
-          ProviderEventIngestor.layerAnalytics.pipe(Layer.provide(layerAnalyticsService)),
+          ProviderUsageAnalytics.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                layerAnalyticsService,
+                Layer.mock(ProviderRegistry.ProviderRegistry)({
+                  getProviders: Effect.succeed([]),
+                }),
+              ),
+            ),
+          ),
         ),
       ),
     ),

@@ -2,6 +2,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ProjectId } from "@t3tools/contracts";
@@ -185,7 +186,7 @@ function harness() {
     Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })),
   );
   const layer = InboxProjectLive.pipe(
-    Layer.provideMerge(Layer.mergeAll(storage, core, NodeServices.layer)),
+    Layer.provideMerge(Layer.mergeAll(storage, core, NodeServices.layer, NodeCrypto.layer)),
   );
   const mapping = new Map([["gamma - old", NodePath.join(projectsDir, "Gamma")]]);
   const run = (dryRun: boolean, email = "me@example.com") =>

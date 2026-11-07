@@ -1920,9 +1920,10 @@ export const layer = Layer.effect(
       taskId: string,
       retentionBucket: ReturnType<typeof deliveryBucket>,
     ) => {
-      const rowBucket = sql.literal(`CASE WHEN outcome = 'filtered' THEN 'filtered'
-        WHEN outcome IN ('duplicate', 'coalesced', 'rate_limited') OR error = 'The filled-in prompt is too long.' THEN 'dedupe'
-        ELSE 'main' END`);
+      const rowBucket = sql`CASE WHEN outcome = 'filtered' THEN 'filtered'
+        WHEN outcome IN ('duplicate', 'coalesced', 'rate_limited')
+          OR error IN (${PROMPT_TOO_LONG}, ${LEGACY_PROMPT_TOO_LONG}) THEN 'dedupe'
+        ELSE 'main' END`;
       return sql`
         DELETE FROM scheduled_task_webhook_deliveries
         WHERE task_id = ${taskId} AND ${rowBucket} = ${retentionBucket}
@@ -2102,7 +2103,7 @@ export const layer = Layer.effect(
         ]);
       const dispatched = yield* Ref.make(false);
       return yield* runTask(task, "webhook", { deliveryId, prompt, dispatched }).pipe(
-        Effect.flatMap(({ dispatchFailed }) =>
+        Effect.flatMap(({ task: completed, dispatchFailed }) =>
           dispatchFailed
             ? runOutcome("failed").pipe(
                 Effect.andThen(

@@ -2,7 +2,7 @@
 import * as NodeAssert from "node:assert/strict";
 import { test } from "vite-plus/test";
 
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -116,16 +116,13 @@ function fakeRepository(options: FakeOptions): {
 }
 
 /** Deterministic bytes keep generated task ids stable between runs. */
-function deterministicCrypto(): Layer.Layer<Crypto.Crypto> {
+function deterministicCrypto(): Layer.Layer<SecureRandom.SecureRandom> {
   let seed = 0;
   return Layer.succeed(
-    Crypto.Crypto,
-    Crypto.make({
-      randomBytes: (size) => {
-        seed += 1;
-        return Uint8Array.from({ length: size }, (_, index) => (seed * 31 + index) % 256);
-      },
-      digest: () => Effect.die("digest is unused by the scheduler"),
+    SecureRandom.SecureRandom,
+    SecureRandom.make((size) => {
+      seed += 1;
+      return Uint8Array.from({ length: size }, (_, index) => (seed * 31 + index) % 256);
     }),
   );
 }

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
@@ -40,7 +41,7 @@ const TestLayer = Layer.mergeAll(TaskRepositoryLive, TaskPromptSettingsStoreLive
     }),
   ),
   Layer.provideMerge(database),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 it("rewrites V1 tool names to the names v2 serves", () => {

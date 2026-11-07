@@ -11,7 +11,7 @@ import { CommandId, MessageId, ThreadId, type OrchestrationV2Run } from "@t3tool
 import { taskAgentRunEndInterruptReason } from "@t3tools/shared/taskAgentRunInterrupt";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -461,7 +461,7 @@ const make = Effect.gen(function* () {
   const promptSettings = yield* TaskPromptSettingsStore;
   const threads = yield* ThreadManagementService;
   const projects = yield* ProjectStoreV2;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const recordFirstUse = yield* makeFirstUseRecorder;
   const recordRunFinished = yield* makeAgentRunFinishedRecorder(repository);
   const jobs = yield* Queue.bounded<ReconciliationJob>(RECONCILIATION_QUEUE_CAPACITY);
@@ -508,7 +508,7 @@ const make = Effect.gen(function* () {
   });
 
   const randomId = (prefix: string) =>
-    crypto.randomUUIDv4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
+    crypto.uuidV4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const appendEvent = Effect.fn("TaskAgentService.appendEvent")(
     function* (task: Task, kind: string, payload: unknown, id?: TaskEventId) {
@@ -1555,7 +1555,9 @@ ${message.text}`,
       const { messages } = yield* threads.getThreadRecords(v2Run.threadId, ["messages"], {
         messageIds: [v2Run.userMessageId],
       });
-      if (messages[0]?.createdBy !== "user") return;
+      const message = messages[0];
+      // Usage-limit auto-resume is the server's (`limit-resume:` ids) but continues the person's run.
+      if (message?.createdBy !== "user" && !message?.id.startsWith("limit-resume:")) return;
       const result = yield* continueRun(latest.value.id, {
         type: "adopted",
         startedAt: iso(v2Run.requestedAt),

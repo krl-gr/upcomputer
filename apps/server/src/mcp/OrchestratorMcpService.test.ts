@@ -1503,6 +1503,7 @@ describe("OrchestratorMcpService provider resolution", () => {
           const unusable = new Set([
             disabledAntigravityInstanceId,
             disabledWithoutAdapterInstanceId,
+            projectDisabledInstanceId,
             forkOnlyInstanceId,
           ]);
           const expectedModelIds = (provider: ServerProvider) =>
@@ -1562,7 +1563,7 @@ describe("OrchestratorMcpService provider resolution", () => {
           const projectDisabled = byId.get(projectDisabledInstanceId);
           assert.isDefined(projectDisabled);
           assert.isFalse(projectDisabled!.canRunChildTask);
-          assert.deepEqual(projectDisabled!.constraints, ["Provider instance is disabled."]);
+          assert.deepEqual(projectDisabled!.constraints, ["it's turned off"]);
 
           const disabledWithoutAdapter = byId.get(disabledWithoutAdapterInstanceId);
           assert.isDefined(disabledWithoutAdapter);
@@ -1617,10 +1618,16 @@ describe("OrchestratorMcpService provider resolution", () => {
       ];
       const layerDependencies = Layer.mergeAll(
         NodeServices.layer,
+        NodeCrypto.layer,
         Layer.mock(ThreadManagementService.ThreadManagementService)({
           getThreadRecords: () => Effect.succeed(parentProjection([])),
         }),
-        ServerSettings.layerTest(),
+        ServerSettings.layerTest({
+          // OpenCode is off until configured.
+          providerInstances: {
+            [opencodeInstanceId]: { driver: ProviderDriverKind.make("opencode"), enabled: true },
+          },
+        }),
         Layer.mock(ProviderRegistry.ProviderRegistry)({
           getProviders: Effect.sync(() => providers),
         }),
@@ -1751,6 +1758,7 @@ describe("OrchestratorMcpService provider resolution", () => {
         let delegated = false;
         const layerDependencies = Layer.mergeAll(
           NodeServices.layer,
+          NodeCrypto.layer,
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             hasReceipt: () => Effect.succeed(false),
             assertProviderInstanceEnabled: () => Effect.void,
@@ -1952,6 +1960,13 @@ describe("OrchestratorMcpService provider resolution", () => {
                     ),
                 }),
                 ServerSettings.layerTest({
+                  // OpenCode is off until configured.
+                  providerInstances: {
+                    [opencodeInstanceId]: {
+                      driver: ProviderDriverKind.make("opencode"),
+                      enabled: true,
+                    },
+                  },
                   favorites: [
                     { provider: codexInstanceId, model: "gpt-4" },
                     { provider: opencodeInstanceId, model: "oc/m10" },

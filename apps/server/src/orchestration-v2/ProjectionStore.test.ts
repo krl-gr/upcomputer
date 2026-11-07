@@ -4568,10 +4568,16 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         const lookup = plan.filter((detail) =>
           detail.includes("orchestration_v2_projection_turn_items"),
         );
-        assert.lengthOf(lookup, 1);
-        assert.match(
-          lookup[0]!,
-          /^SEARCH .*\((?:thread_id=\? AND )?run_id=\?(?: AND thread_id=\?)?\)$/,
+        // The run's own items, plus the thread's run-less notifications and compactions.
+        assert.lengthOf(lookup, 2);
+        assert.deepEqual(
+          lookup.filter((detail) => !detail.startsWith("SEARCH ")),
+          [],
+        );
+        assert.isTrue(
+          lookup.some((detail) =>
+            /^SEARCH .*\((?:thread_id=\? AND )?run_id=\?(?: AND thread_id=\?)?\)$/.test(detail),
+          ),
         );
       }
     }),

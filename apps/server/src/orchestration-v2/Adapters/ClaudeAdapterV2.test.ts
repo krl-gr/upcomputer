@@ -1513,6 +1513,11 @@ const claudeMcpSessionUpdates = Effect.fn("claudeMcpSessionUpdates")(function* (
           applyFlagSettings: () => Effect.void,
           setPermissionMode: () => Effect.void,
           backgroundTasks: () => Effect.succeed(false),
+          // These cases follow init's server list; the status probe never answers.
+          mcpServerStatus: Effect.never,
+          readMcpResource: () => Effect.die("unexpected MCP resource read"),
+          callMcpTool: () => Effect.die("unexpected MCP tool call"),
+          listPermissionRules: Effect.die("unexpected permission rules read"),
           stopTask: () => Effect.void,
           interrupt: Effect.void,
           close: Effect.void,
@@ -1590,7 +1595,12 @@ describe("ClaudeAdapterV2 MCP status", () => {
       }),
     ).pipe(
       Effect.provide(
-        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
       ),
     ),
   );
@@ -1618,7 +1628,12 @@ describe("ClaudeAdapterV2 MCP status", () => {
       }),
     ).pipe(
       Effect.provide(
-        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
       ),
     ),
   );

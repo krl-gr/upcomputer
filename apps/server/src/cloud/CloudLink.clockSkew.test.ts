@@ -1,5 +1,6 @@
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no generateKeyPairSync.
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's crypto has no generateKeyPairSync.
 import * as NodeCrypto from "node:crypto";
+import * as NodeCryptoLayer from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
@@ -22,6 +23,7 @@ import {
   signRelayJwt,
   verifyRelayJwt,
 } from "@t3tools/shared/relayJwt";
+import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -37,6 +39,7 @@ import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfigModule from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
 import * as CliTokenManager from "./CliTokenManager.ts";
 import * as CloudLink from "./CloudLink.ts";
@@ -50,6 +53,7 @@ import {
   RELAY_ISSUER_SECRET,
   RELAY_URL_SECRET,
 } from "./config.ts";
+import * as EnvironmentKeys from "./environmentKeys.ts";
 import { getOrCreateEnvironmentKeyPairFromSecretStore } from "./environmentKeys.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import { makeRelayClock, RelayClock } from "./RelayClock.ts";
@@ -75,30 +79,41 @@ const decodeRecoveryRegistration = Schema.decodeUnknownSync(
 const relayNowSeconds = (elapsed: Duration.Duration = Duration.zero) =>
   Math.floor((RELAY_NOW.epochMilliseconds + Duration.toMillis(elapsed)) / 1_000);
 
+/** Runs `effect` with the relay's clock, a second after `RELAY_NOW`. */
+const onRelayClock = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.flatMap(Clock.Clock, (clock) => {
+    const millis = RELAY_NOW.epochMilliseconds + 1_000;
+    const nanos = BigInt(millis) * 1_000_000n;
+    return effect.pipe(
+      Effect.provideService(Clock.Clock, {
+        ...clock,
+        currentTimeMillisUnsafe: () => millis,
+        currentTimeMillis: Effect.succeed(millis),
+        currentTimeNanosUnsafe: () => nanos,
+        currentTimeNanos: Effect.succeed(nanos),
+      }),
+    );
+  });
+
 /** The relay's own checks: the explicit expiry check, then signature and iat. */
 const relayAccepts = <A>(input: {
   readonly token: string;
   readonly typ: string;
   readonly publicKey: string;
-  readonly schema: Schema.Decoder<A>;
+  readonly schema: Schema.ConstraintDecoder<A>;
 }) =>
   Effect.gen(function* () {
     const now = relayNowSeconds(Duration.seconds(1));
-    const candidate = decodeRelayJwt(input.token);
+    const candidate = yield* decodeRelayJwt(input.token);
     if (typeof candidate.exp !== "number" || candidate.exp <= now) return false;
-    return yield* verifyRelayJwt({
+    return yield* verifyRelayJwt(input.schema, {
       publicKey: input.publicKey,
       token: input.token,
       typ: input.typ,
       issuer: `t3-env:${ENVIRONMENT_ID}`,
       audience: RELAY_ISSUER,
-      nowEpochSeconds: now,
-    }).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(input.schema)),
-      Effect.as(true),
-      Effect.orElseSucceed(() => false),
-    );
-  });
+    }).pipe(onRelayClock, Effect.as(true));
+  }).pipe(Effect.orElseSucceed(() => false));
 
 function memorySecrets(initial: ReadonlyArray<readonly [string, string]>) {
   const values = new Map<string, Uint8Array>(
@@ -122,7 +137,7 @@ const provideCloudLink =
   }) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
-      Effect.provide(CloudLink.layer),
+      Effect.provide(CloudLink.layer.pipe(Layer.provideMerge(EnvironmentKeys.layer))),
       Effect.provideService(RelayClock, makeRelayClock()),
       Effect.provideService(
         HttpServer.HttpServer,
@@ -163,6 +178,7 @@ const provideCloudLink =
           requestRecovery: () => Effect.void,
           tunnelConnected: Stream.empty,
           inspectConnector: Effect.succeed(null),
+          restartConnector: unused,
           readinessChanged: Stream.empty,
           withLinkStateLock: (effect) => effect,
         }),
@@ -201,7 +217,9 @@ const provideCloudLink =
       ),
       Effect.provide(
         ServerConfigModule.layerTest("/", { prefix: "t3-cloud-clock-skew-test-" }).pipe(
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(
+            Layer.mergeAll(NodeServices.layer, NodeCryptoLayer.layer, ManagedPolicy.layerTest()),
+          ),
         ),
       ),
       Effect.scoped,
@@ -253,7 +271,7 @@ describe("relay proofs on a computer with a skewed clock", () => {
             scopes: new Set([]),
           }),
         );
-      const claims = decodeRelayJwt(proof);
+      const claims = yield* decodeRelayJwt(proof);
       expect(claims.iat).toBe(relayNowSeconds());
       expect(Number(claims.exp) - Number(claims.iat)).toBe(5 * 60);
       expect(
@@ -316,7 +334,7 @@ describe("relay proofs on a computer with a skewed clock", () => {
                     },
                     { status: 401, headers },
                   );
-            }),
+            }).pipe(Effect.provide(NodeCryptoLayer.layer)),
         }),
       );
     },
@@ -353,7 +371,7 @@ describe("relay proofs on a computer with a skewed clock", () => {
         });
         const link = yield* CloudLink.CloudLink;
         const response = yield* link.mintCredential({ proof: requestProof });
-        const claims = decodeRelayJwt(response.proof);
+        const claims = yield* decodeRelayJwt(response.proof);
         expect(claims.iat).toBe(relayNowSeconds());
         expect(Math.floor(Date.parse(response.expiresAt) / 1_000)).toBe(claims.exp);
         expect(

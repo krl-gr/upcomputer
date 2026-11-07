@@ -15,27 +15,11 @@ import * as Option from "effect/Option";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { CLOUD_MINT_PUBLIC_KEY, RELAY_ISSUER_SECRET, RELAY_URL_SECRET } from "../cloud/config.ts";
-import { RelayClock } from "../cloud/RelayClock.ts";
+import { inRelayTime, RelayClock } from "../cloud/RelayClock.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 
 /** Covers the relay's 24-hour hold plus a margin. */
 const MAX_PROOF_AGE = "25 hours";
-
-const NANOS_PER_MILLI = BigInt(1_000_000);
-
-// Jwt.verify checks iat/exp against Clock, so the proof is checked in relay time.
-const inRelayTime = (clock: Clock.Clock, offsetMillis: number): Clock.Clock => {
-  const offsetNanos = BigInt(Math.trunc(offsetMillis)) * NANOS_PER_MILLI;
-  return {
-    currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe() + offsetMillis,
-    currentTimeMillis: Effect.map(clock.currentTimeMillis, (millis) => millis + offsetMillis),
-    currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe() + offsetNanos,
-    currentTimeNanos: Effect.map(clock.currentTimeNanos, (nanos) => nanos + offsetNanos),
-    monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe(),
-    monotonicTimeNanos: clock.monotonicTimeNanos,
-    sleep: (duration) => clock.sleep(duration),
-  };
-};
 
 const text = (bytes: Option.Option<Uint8Array>) =>
   Option.map(bytes, (value) => new TextDecoder().decode(value));
