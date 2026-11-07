@@ -105,6 +105,7 @@ import { AdvancedSettings } from "./AdvancedSettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
 import { StorageCleanupSections } from "./StorageSettings";
 import { UpdateTrackSwitchDialog } from "./UpdateTrackSwitchDialog";
+import { switchDesktopUpdateChannel } from "../../updateTrack/switchDesktopUpdateChannel";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentSessionStatesAtom } from "~/state/session";
 import { canUpdateServer } from "../ServerUpdateAction";
@@ -170,6 +171,7 @@ function AboutVersionSection() {
       ? primaryPolicy.organization
       : undefined;
   const selectedHostedAppChannel = hasDesktopBridge ? null : HOSTED_APP_CHANNEL;
+  const fleetTrackSwitch = isProductFeatureShown("fleetTrackSwitch");
   // A switch that failed part way leaves this app or a server on the other track.
   // With its updater off, a switch cannot move this app, so it is not counted.
   const appOffTrack =
@@ -333,7 +335,7 @@ function AboutVersionSection() {
                   ? "; switch to Stable to keep getting updates."
                   : "."
               }`
-            ) : unswitchedMachines > 0 ? (
+            ) : unswitchedMachines > 0 && fleetTrackSwitch ? (
               <>
                 {unswitchedMachines === 1
                   ? "1 machine still runs"
@@ -349,8 +351,10 @@ function AboutVersionSection() {
                   Review
                 </Button>
               </>
-            ) : (
+            ) : fleetTrackSwitch ? (
               "Switches this app and every connected machine whose database the target release supports."
+            ) : (
+              "Use stable releases or nightly builds. Switch back anytime."
             )
           }
           managed={updatesDenial}
@@ -358,9 +362,9 @@ function AboutVersionSection() {
             <Select
               value={selectedUpdateChannel}
               onValueChange={(value) => {
-                if (value !== selectedUpdateChannel) {
-                  setSwitchChannel(value as DesktopUpdateChannel);
-                }
+                if (value === selectedUpdateChannel) return;
+                if (fleetTrackSwitch) setSwitchChannel(value as DesktopUpdateChannel);
+                else switchDesktopUpdateChannel(value as DesktopUpdateChannel);
               }}
             >
               <SelectTrigger
@@ -1703,7 +1707,7 @@ export function ThreadsSettingsPanel() {
           serverScoped
           settingKeys={["wakeChatOnTaskCompletion"]}
           {...searchableSetting("wake-chat-on-task-completion")}
-          description="The chat that created a task replies when its runs complete. Turning this off saves tokens, but the chat does not react to completed tasks until you message it. Blocked or failed runs always wake the chat."
+          description="The chat that created a task replies when its runs complete. Turning this off saves tokens, but the chat ignores completed tasks until you message it. Blocked or failed runs always wake the chat."
           resetAction={
             settings.wakeChatOnTaskCompletion !==
             DEFAULT_UNIFIED_SETTINGS.wakeChatOnTaskCompletion ? (
