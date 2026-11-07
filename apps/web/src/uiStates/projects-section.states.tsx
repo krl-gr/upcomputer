@@ -9,7 +9,6 @@ import { __setClientSettingsForTests } from "../hooks/useSettings";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { SidebarProjectsSection } from "../sidebarProjects/SidebarProjectsSection";
 import { ALL_PROJECTS_ROW_KEY } from "../sidebarProjects/sidebarProjects.logic";
-import { SIDEBAR_ALL_PROJECTS_SELECTED_AT_STORAGE_KEY } from "../sidebarProjects/useSidebarProjectsList";
 import { useUiStateStore } from "../uiStateStore";
 import { captureUiStateSheet, type UiState } from "./uiStateSheet";
 
@@ -77,8 +76,6 @@ function section(
   name: string,
   options: {
     readonly selected?: string;
-    /** When All projects was last picked; without it, a fresh install. */
-    readonly allPickedDaysAgo?: number;
     /** Project ids in the manual order; the groups follow it, as useSidebarProjectGroups orders them. */
     readonly manualOrder?: ReadonlyArray<string>;
   },
@@ -103,12 +100,6 @@ function section(
         sidebarProjectScopeKeys: options.selected ? [keyOf(options.selected)] : [],
         projectOrder: manualOrder ?? [],
       });
-      if (options.allPickedDaysAgo !== undefined) {
-        window.localStorage.setItem(
-          SIDEBAR_ALL_PROJECTS_SELECTED_AT_STORAGE_KEY,
-          JSON.stringify(daysAgo(options.allPickedDaysAgo)),
-        );
-      }
       __setClientSettingsForTests({
         ...DEFAULT_CLIENT_SETTINGS,
         sidebarProjectSortOrder: options.manualOrder ? "manual" : "updated_at",
@@ -118,7 +109,6 @@ function section(
           sidebarProjectScopeKeys: previous.sidebarProjectScopeKeys,
           projectOrder: previous.projectOrder,
         });
-        window.localStorage.removeItem(SIDEBAR_ALL_PROJECTS_SELECTED_AT_STORAGE_KEY);
         __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
       };
     },
@@ -130,15 +120,9 @@ it("projects-section", async () => {
     {
       title: "Updated order",
       states: [
-        section("default: fresh install, All projects first", {}),
-        section("All projects in More: picked 10 days ago, UpComputer selected", {
-          selected: "upcomputer",
-          allPickedDaysAgo: 10,
-        }),
-        section("selected project from More: Infra takes the last slot", {
-          selected: "infra",
-          allPickedDaysAgo: 10,
-        }),
+        section("default: All projects first", {}),
+        section("UpComputer selected: All projects stays first", { selected: "upcomputer" }),
+        section("selected project from More: Infra takes the last slot", { selected: "infra" }),
       ],
     },
     {

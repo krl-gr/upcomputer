@@ -46,7 +46,7 @@ export function primaryScratchProject<TProject>(input: {
 export function buildSidebarProjectsRows<TProject extends { readonly projectKey: string }>(input: {
   /** The sidebar's project groups, in its project order. */
   readonly projects: ReadonlyArray<TProject>;
-  /** All projects' place among `projects`, from `allProjectsSortIndex` or `manualAllProjectsIndex`. */
+  /** All projects' place among `projects`: first, or from `manualAllProjectsIndex`. */
   readonly allProjectsIndex: number;
   /** The selected row's key: a project key, or `ALL_PROJECTS_ROW_KEY`. */
   readonly selectedKey: string;
@@ -88,17 +88,6 @@ function holdOrder<TRow extends { readonly key: string }>(
     .toSorted((left, right) => heldIndex.get(left.key)! - heldIndex.get(right.key)!);
   let next = 0;
   return rows.map((row) => (heldIndex.has(row.key) ? held[next++]! : row));
-}
-
-/**
- * All projects' place in an activity order: `sorted` is the projects sorted
- * together with a stand-in for All projects, whose key is `ALL_PROJECTS_ROW_KEY`.
- */
-export function allProjectsSortIndex(sorted: ReadonlyArray<{ readonly projectKey: string }>) {
-  return Math.max(
-    0,
-    sorted.findIndex((project) => project.projectKey === ALL_PROJECTS_ROW_KEY),
-  );
 }
 
 /**
