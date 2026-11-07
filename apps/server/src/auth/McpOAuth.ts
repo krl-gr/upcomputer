@@ -17,7 +17,7 @@ import {
   mcpClientScopes,
   type RuntimeMode,
 } from "@t3tools/contracts";
-import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
+import { UPCOMPUTER_HOSTED_APP_URL } from "@t3tools/shared/upcomputerIdentity";
 import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -31,7 +31,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { HttpServerRequest } from "effect/http";
 
-import { hostedAppUrlConfig } from "../cloud/publicConfig.ts";
+import { threadLinkAppUrlConfig } from "../cloud/publicConfig.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
@@ -581,11 +581,11 @@ export const layerMcpClientAuthenticator = Layer.effect(
     const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
     const environment = yield* ServerEnvironment.ServerEnvironment;
     const environmentId = yield* environment.getEnvironmentId;
-    const hostedAppUrl = yield* hostedAppUrlConfig.pipe(
+    const hostedAppUrl = yield* threadLinkAppUrlConfig.pipe(
       Effect.catch((cause) =>
-        Effect.logWarning("Outside MCP clients get app.t3.codes thread links", { cause }).pipe(
-          Effect.as(DEFAULT_HOSTED_APP_URL),
-        ),
+        Effect.logWarning("Outside MCP clients get default hosted app thread links", {
+          cause,
+        }).pipe(Effect.as(UPCOMPUTER_HOSTED_APP_URL)),
       ),
     );
     return McpHttpServer.McpClientAuthenticator.of({
