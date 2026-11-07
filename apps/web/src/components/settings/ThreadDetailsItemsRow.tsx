@@ -6,7 +6,7 @@ import {
   isDefaultThreadDetailsVisibility,
   resolveThreadDetailsVisibility,
   RESET_THREAD_DETAILS_ITEMS,
-  THREAD_DETAILS_ITEMS,
+  shownThreadDetailsItems,
 } from "../chat/threadDetailsItems";
 import { Button } from "../ui/button";
 import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -15,7 +15,8 @@ import { searchableSetting } from "./settingsSearch";
 
 export function ThreadDetailsItemsRow() {
   const visibility = useClientSettings(resolveThreadDetailsVisibility);
-  const enabled = THREAD_DETAILS_ITEMS.filter((item) => visibility[item.id]).length;
+  const items = shownThreadDetailsItems();
+  const enabled = items.filter((item) => visibility[item.id]).length;
   return (
     <SettingsRow
       {...searchableSetting("thread-details-items")}
@@ -36,11 +37,11 @@ export function ThreadDetailsItemsRow() {
                 variant="outline"
                 size="sm"
                 className="w-full justify-between sm:w-40"
-                aria-label={`Thread details: ${enabled} of ${THREAD_DETAILS_ITEMS.length} on`}
+                aria-label={`Thread details: ${enabled} of ${items.length} on`}
               />
             }
           >
-            {enabled} of {THREAD_DETAILS_ITEMS.length} on
+            {enabled} of {items.length} on
             <ChevronDownIcon aria-hidden />
           </MenuTrigger>
           <MenuPopup align="end">

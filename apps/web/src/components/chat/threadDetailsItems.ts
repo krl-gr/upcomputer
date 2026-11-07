@@ -1,5 +1,7 @@
 import type { ClientSettings } from "@t3tools/contracts";
 
+import { isProductFeatureShown } from "../../product/productFlags";
+
 // Ids are stored in client settings, so never rename one.
 export const THREAD_DETAILS_ITEMS = [
   { id: "environment", label: "Environment and worktree", defaultVisible: true },
@@ -15,6 +17,10 @@ export const THREAD_DETAILS_ITEMS = [
   { id: "usage", label: "Usage limits", defaultVisible: false },
   { id: "context", label: "Context window", defaultVisible: false },
 ] as const;
+
+// UpComputer: project scripts run in the terminal, which a product can hide.
+export const shownThreadDetailsItems = () =>
+  THREAD_DETAILS_ITEMS.filter((item) => item.id !== "scripts" || isProductFeatureShown("terminal"));
 
 export type ThreadDetailsItemId = (typeof THREAD_DETAILS_ITEMS)[number]["id"];
 export type ThreadDetailsVisibility = Readonly<Record<ThreadDetailsItemId, boolean>>;
