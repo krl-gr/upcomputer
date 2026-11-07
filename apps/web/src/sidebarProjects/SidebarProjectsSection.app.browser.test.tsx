@@ -53,6 +53,20 @@ installFakeEnvironment(
 );
 await page.viewport(1400, 900);
 
+const OPEN_PATH = `/${ENVIRONMENT_ID}/${OPEN.id}`;
+const appRouter = () => getRouter(createMemoryHistory({ initialEntries: [OPEN_PATH] }));
+// Importing the thread route's code-split modules took 10 to 15 s on a loaded CI runner, so
+// the file does it while it collects, not inside the first test's 15 s.
+{
+  const router = appRouter();
+  await Promise.all(
+    router
+      .matchRoutes(OPEN_PATH)
+      .flatMap((match) => router.looseRoutesById[match.routeId] ?? [])
+      .map((route) => router.loadRouteChunk(route)),
+  );
+}
+
 const scope = () => useUiStateStore.getState().sidebarProjectScopeKeys;
 /** The thread rows the sidebar lists. */
 const listedThreads = () =>
@@ -97,9 +111,7 @@ async function mountApp(sidebarProjectSortOrder: "updated_at" | "manual" = "upda
     sidebarProjectSortOrder,
   });
   useUiStateStore.setState({ sidebarProjectScopeKeys: [], projectOrder: [] });
-  const router = getRouter(
-    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${OPEN.id}`] }),
-  );
+  const router = appRouter();
   await router.load();
   const container = document.createElement("div");
   container.style.cssText = "height: 900px; width: 1400px;";
@@ -109,8 +121,7 @@ async function mountApp(sidebarProjectSortOrder: "updated_at" | "manual" = "upda
 }
 
 describe("Projects section More", () => {
-  // quarantine: #74 the More click times out on CI only; passes locally
-  it.skip("filters to a project picked in More while another project's thread is open", async () => {
+  it("filters to a project picked in More while another project's thread is open", async () => {
     await using _app = await mountApp();
     await userEvent.click(page.getByText("More", { exact: true }));
     await userEvent.click(page.getByRole("option", { name: /delta/ }));
