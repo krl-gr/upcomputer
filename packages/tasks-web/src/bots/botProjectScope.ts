@@ -3,8 +3,8 @@ import type { Bot } from "@t3tools/tasks-contracts/v1";
 
 /**
  * The bots the sidebar's Projects filter leaves in one environment's Bots section. `scope` is
- * null for All projects; otherwise its projects, without Scratch ("No project"), so that filter
- * shows no bots. A bot shows when a selected project on its own environment is the one it works in.
+ * null for All projects; otherwise its projects, with Scratch for "No project". A bot shows when
+ * a selected project on its own environment is the one it lives in.
  */
 export function botsInProjectScope<B extends Pick<Bot, "projectId">>(
   environmentId: EnvironmentId,
