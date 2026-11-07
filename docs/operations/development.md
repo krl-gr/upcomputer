@@ -270,10 +270,12 @@ options.
 
 ### Prepared server bytecode
 
-Native macOS and Windows desktop artifact builds generate server bytecode with the packaged
-Electron executable, after ASAR creation and before signing. Linux builds skip generation until
-native packaging and relocated AppImage reuse have been validated. macOS x64 builds on ARM64
-hosts run the packaged x64 Electron under Rosetta to generate the cache. Other cross-platform and
+Native macOS desktop artifact builds generate server bytecode with the packaged Electron
+executable, after ASAR creation and before signing. Linux builds skip generation until native
+packaging and relocated AppImage reuse have been validated. Windows builds skip it too: the
+loose cache files would push the installer payload over `WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT`,
+and upstream's Windows releases, cross-built on Linux, never carried them. macOS x64 builds on
+ARM64 hosts run the packaged x64 Electron under Rosetta to generate the cache. Other cross-platform and
 cross-architecture builds skip generation explicitly. CLI, SEA and WSL runtimes keep their
 existing behavior; only desktop backend imports covered by generation receive prepared bytecode.
 Worker-only modules compile normally.

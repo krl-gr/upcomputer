@@ -1314,6 +1314,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         assert.instanceOf(error, WindowsPackagedPayloadValidationError);
         assert.equal(error.reason, "file-limit-exceeded");
         assert.isAbove(error.fileCount ?? 0, 2);
+        assert.include(error.message, NodePath.join("resources", WINDOWS_SERVER_ASAR_RESOURCE));
       }),
     ),
   );
