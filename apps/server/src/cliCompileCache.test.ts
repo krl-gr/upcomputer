@@ -68,7 +68,7 @@ it.live("loads the CLI with its cache settings only when the command needs it", 
     const launcherHelp = yield* run({ T3CODE_HOME: "" }, ["__service-launcher", "--help"]);
     expect(launcherHelp.exitCode).toBe(0);
     expect(launcherHelp.stderr).toContain("LOADED_CLI_MAIN");
-    expect(launcherHelp.stdout).toContain("t3 __service-launcher [flags]");
+    expect(launcherHelp.stdout).toContain("up __service-launcher [flags]");
     const launcherFlags = yield* run({ T3CODE_HOME: "" }, [
       "__service-launcher",
       "--log-level",

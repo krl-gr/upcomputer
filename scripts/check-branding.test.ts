@@ -31,8 +31,21 @@ describe("check-branding", () => {
       '{ "productName": "T3 Code (Alpha)" }\n',
     );
 
-    expect(findBrandingProblems(root, ["apps/desktop/package.json"])).toContain(
+    NodeFS.mkdirSync(NodePath.join(root, "apps/server/src/cli"), { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(root, "apps/server/src/cli/service.ts"),
+      'const next = "Run `t3 service install`.";\n',
+    );
+
+    const problems = findBrandingProblems(root, [
+      "apps/desktop/package.json",
+      "apps/server/src/cli/service.ts",
+    ]);
+    expect(problems).toContain(
       'apps/desktop/package.json: missing "productName": "Up.computer (Alpha)"',
+    );
+    expect(problems).toContain(
+      "apps/server/src/cli/service.ts:1: T3 copy; run node scripts/apply-branding.ts",
     );
   });
 });
@@ -54,9 +67,41 @@ describe("apply-branding rules", () => {
         'const title = "Restart Up.computer to finish.";',
         'const label = "Open an Up.computer terminal";',
         'const connect = "Sign in to UpComputer Connect";',
-        'const hint = "Run `t3 remote --lan`, then `t3 update`.";',
+        'const hint = "Run `up remote --lan`, then `up update`.";',
         '  name: "T3 Code",',
       ].join("\n"),
+    );
+  });
+
+  it("names the CLI `up` in command hints, but not upstream's package, MCP server or files", () => {
+    const source = [
+      'const usage = "Use \\"t3 --help\\" or \\"t3 ./my-project\\"; run `sudo t3 browser setup`.";',
+      'const examples = [{ command: "t3 status --json" }];',
+      'const upstream = "npx t3 pair, pnpm dlx t3 serve, t3@nightly, bin/t3 serve, t3.exe";',
+      'const mcp = "codex mcp add t3 --url https://host/mcp";',
+      'const prose = "Remove t3 from this machine?";',
+    ].join("\n");
+
+    expect(rebrandText(source, "apps/web/src/example.ts")).toBe(
+      [
+        'const usage = "Use \\"up --help\\" or \\"up ./my-project\\"; run `sudo up browser setup`.";',
+        'const examples = [{ command: "up status --json" }];',
+        'const upstream = "npx t3 pair, pnpm dlx t3 serve, t3@nightly, bin/t3 serve, t3.exe";',
+        'const mcp = "codex mcp add t3 --url https://host/mcp";',
+        'const prose = "Remove t3 from this machine?";',
+      ].join("\n"),
+    );
+    // The CLI's own prose names the program, but its identifiers and tests stay upstream's.
+    expect(
+      rebrandText(
+        'const text = `t3 is already on ${version}.`; const manifest = { t3: "./bin/t3.mjs" }; if (name === "t3") {}',
+        "apps/server/src/cli/update.ts",
+      ),
+    ).toBe(
+      'const text = `up is already on ${version}.`; const manifest = { t3: "./bin/t3.mjs" }; if (name === "t3") {}',
+    );
+    expect(rebrandText('it("t3 is not on PATH")', "apps/server/src/cli/update.test.ts")).toBe(
+      'it("t3 is not on PATH")',
     );
   });
 

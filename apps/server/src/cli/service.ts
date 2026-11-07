@@ -135,8 +135,8 @@ function formatProtection(
   if (protection === undefined) return [];
   return [
     protection.unprotected === undefined
-      ? `  Memory protection: on${protection.setByProtect ? " (t3 service protect)" : ""}`
-      : `  Memory protection: off, ${protection.unprotected} grants none. Run \`t3 service protect\`.`,
+      ? `  Memory protection: on${protection.setByProtect ? " (up service protect)" : ""}`
+      : `  Memory protection: off, ${protection.unprotected} grants none. Run \`up service protect\`.`,
     ...(protection.oomScoreAdj === undefined ? [] : [`  OOM score: ${protection.oomScoreAdj}`]),
   ];
 }
@@ -150,7 +150,7 @@ function formatServiceStatus(
     return "Up.computer service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd, macOS with launchd";
   }
   if (!status.installed) {
-    return "Up.computer service\n  Status: not installed\n  Next: Run `t3 service install`.";
+    return "Up.computer service\n  Status: not installed\n  Next: Run `up service install`.";
   }
   const installedVersion = status.installedVersion ?? cliVersion;
   const problems = (status.problems ?? []).map(
@@ -168,7 +168,7 @@ function formatServiceStatus(
       `  Logs: ${status.logPath}`,
       ...formatProtection(protection),
       ...problems,
-      `  Next: Run \`t3 update ${installedVersion}\` to match it, or pass \`--allow-downgrade\` to \`t3 service install\` explicitly.`,
+      `  Next: Run \`up update ${installedVersion}\` to match it, or pass \`--allow-downgrade\` to \`up service install\` explicitly.`,
     ].join("\n");
   }
   return [
@@ -178,7 +178,7 @@ function formatServiceStatus(
     `  Logs: ${status.logPath}`,
     ...formatProtection(protection),
     ...problems,
-    ...(status.current ? [] : ["  Next: Run `t3 service install` to repair it."]),
+    ...(status.current ? [] : ["  Next: Run `up service install` to repair it."]),
   ].join("\n");
 }
 
@@ -201,7 +201,7 @@ const serviceReconcileFlags = {
 
 const serviceInstallCommand = Command.make("install", serviceReconcileFlags).pipe(
   Command.withDescription(
-    "Install Up.computer as a background service for this user. `t3 remote` also chooses how your other devices reach it.",
+    "Install Up.computer as a background service for this user. `up remote` also chooses how your other devices reach it.",
   ),
   Command.withHandler((flags) =>
     runServiceCommand(
@@ -216,7 +216,7 @@ const serviceInstallCommand = Command.make("install", serviceReconcileFlags).pip
         }
         yield* Console.log(formatServiceChange(result));
         if (!result.previouslyInstalled) {
-          yield* Console.log("Run `t3 remote` to choose how your other devices reach it.");
+          yield* Console.log("Run `up remote` to choose how your other devices reach it.");
         }
       }),
     ),
@@ -224,14 +224,14 @@ const serviceInstallCommand = Command.make("install", serviceReconcileFlags).pip
 );
 
 const serviceUpdateCommand = Command.make("update", serviceReconcileFlags).pipe(
-  Command.withDescription("Deprecated. Run `t3 update` to move to a newer release."),
+  Command.withDescription("Deprecated. Run `up update` to move to a newer release."),
   Command.unlisted,
   Command.withHandler((flags) =>
     runServiceCommand(
       flags,
       Effect.gen(function* () {
         yield* Console.log(
-          "`t3 service update` is deprecated: run `t3 update` to move to a newer release, or `t3 service install` to repair the service. Repairing now.",
+          "`up service update` is deprecated: run `up update` to move to a newer release, or `up service install` to repair the service. Repairing now.",
         );
         const result = yield* reconcileService({ allowDowngrade: flags.allowDowngrade });
         if (!result.changed) {
@@ -248,7 +248,7 @@ const serviceUpdateCommand = Command.make("update", serviceReconcileFlags).pipe(
 
 const serviceRestartCommand = Command.make("restart", projectLocationFlags).pipe(
   Command.withDescription(
-    "Restart the background service. Picks up a version installed by `t3 update` that was not restarted at the time.",
+    "Restart the background service. Picks up a version installed by `up update` that was not restarted at the time.",
   ),
   Command.withHandler((flags) =>
     runServiceCommand(
@@ -353,7 +353,7 @@ const serviceProtectCommand = Command.make("protect", {
       // Before resolving config, which creates T3 directories that root would then own.
       if ((yield* HostProcess.UserId) === 0) {
         return yield* Console.log(
-          "Run `t3 service protect` as the user that runs Up.computer, without sudo. It asks for sudo when it needs root.",
+          "Run `up service protect` as the user that runs Up.computer, without sudo. It asks for sudo when it needs root.",
         );
       }
       return yield* runServiceCommand(
@@ -390,7 +390,7 @@ const serviceProtectCommand = Command.make("protect", {
             if (!(yield* confirm(flags.yes, "Remove Up.computer service protection?"))) return;
             yield* ServiceProtection.removeProtection(installed);
             return yield* Console.log(
-              "Removed Up.computer service protection. The server's OOM score returns to normal after `t3 service restart`.",
+              "Removed Up.computer service protection. The server's OOM score returns to normal after `up service restart`.",
             );
           }
 
@@ -399,7 +399,7 @@ const serviceProtectCommand = Command.make("protect", {
               "Keeps Up.computer running when agents fill this machine's memory:",
               "  - reserves memory for the Up.computer server, so the kernel takes memory from agents first",
               "  - makes the out-of-memory killer pick agents before the server",
-              "It adds systemd drop-in files and changes nothing else. Undo with `t3 service protect --undo`.",
+              "It adds systemd drop-in files and changes nothing else. Undo with `up service protect --undo`.",
             ].join("\n"),
           );
           const names = remote.map((unit) => unit.replace(/\.service$/, "")).join(" and ");
@@ -425,7 +425,7 @@ const serviceProtectCommand = Command.make("protect", {
           if (!(yield* confirm(flags.yes, "Apply these settings?"))) return;
           yield* ServiceProtection.applyProtection(plan);
           yield* Console.log(
-            "Protected Up.computer. Memory protection applies now; the server takes its OOM score after `t3 service restart`. Undo with `t3 service protect --undo`.",
+            "Protected Up.computer. Memory protection applies now; the server takes its OOM score after `up service restart`. Undo with `up service protect --undo`.",
           );
         }).pipe(Effect.provide(ProcessRunner.layer)),
       );

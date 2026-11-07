@@ -64,7 +64,7 @@ function recoveryHint(error: RelayProtectedError): string {
     case "RelayEnvironmentLinkLimitExceededError":
       return "Unlink an unused environment in UpComputer Connect, then restart Up.computer on this machine.";
     case "RelayAuthInvalidError":
-      return "Run `t3 connect login` to check this machine's authorization. If the stored credential was revoked, sign out with `t3 connect logout`, then run `t3 connect` again. Restart Up.computer after signing in.";
+      return "Run `up connect login` to check this machine's authorization. If the stored credential was revoked, sign out with `up connect logout`, then run `up connect` again. Restart Up.computer after signing in.";
     case "RelayEnvironmentLinkProofExpiredError":
     case "RelayEnvironmentLinkProofInvalidError":
       return "Check this machine's date and time, update Up.computer, then restart it.";

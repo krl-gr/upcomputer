@@ -9,18 +9,16 @@ import {
   buildSidebarProjectSnapshots,
   resolveSidebarProjectScopeKeys,
 } from "../sidebarProjectGrouping";
-import { useIsScratchProjectGroup } from "./sidebarProjectIcons";
 
 /**
  * The projects the sidebar's Projects filter selected, for sections that follow it (Bots): null for All
- * projects, and none for No project. Keys resolve to groups as the Threads list resolves them.
+ * projects; No project selects the Scratch projects. Keys resolve to groups as the Threads list resolves them.
  */
 export function useSidebarProjectScope(): ReadonlyArray<ScopedProjectRef> | null {
   const keys = useUiStateStore((store) => store.sidebarProjectScopeKeys);
   const projects = useProjects();
   const settings = useClientSettings(selectProjectGroupingSettings);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const isScratch = useIsScratchProjectGroup();
   if (keys.length === 0) return null;
   const groups = buildSidebarProjectSnapshots({
     projects,
@@ -32,5 +30,5 @@ export function useSidebarProjectScope(): ReadonlyArray<ScopedProjectRef> | null
   const scoped = resolveSidebarProjectScopeKeys({ groups, keys, settings });
   const chosen = groups.filter((group) => scoped.includes(group.projectKey));
   if (chosen.length === 0) return null;
-  return chosen.flatMap((group) => (isScratch(group) ? [] : group.memberProjectRefs));
+  return chosen.flatMap((group) => group.memberProjectRefs);
 }

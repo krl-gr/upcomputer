@@ -8,6 +8,7 @@ const there = EnvironmentId.make("env-there");
 const atlas = ProjectId.make("project-atlas");
 const research = ProjectId.make("project-research");
 const docs = ProjectId.make("project-docs");
+const scratch = ProjectId.make("project-scratch");
 const bot = (name: string, projectId: ProjectId, allowedProjectIds: ReadonlyArray<ProjectId>) => ({
   name,
   projectId,
@@ -17,13 +18,14 @@ const bots = [
   bot("developer", atlas, [atlas]),
   bot("writer", research, [research, atlas]),
   bot("helper", docs, [docs]),
+  bot("assistant", scratch, [scratch]),
 ];
 const names = (scope: Parameters<typeof botsInProjectScope>[2], environmentId = here) =>
   botsInProjectScope(environmentId, bots, scope).map((entry) => entry.name);
 
 describe("botsInProjectScope", () => {
   it("shows every bot for All projects", () => {
-    expect(names(null)).toEqual(["developer", "writer", "helper"]);
+    expect(names(null)).toEqual(["developer", "writer", "helper", "assistant"]);
   });
 
   it("shows a bot whose chat lives in a selected project", () => {
@@ -34,8 +36,8 @@ describe("botsInProjectScope", () => {
     expect(names([{ environmentId: here, projectId: atlas }])).toEqual(["developer"]);
   });
 
-  it("shows no bot for No project, which leaves the scope without projects", () => {
-    expect(names([])).toEqual([]);
+  it("shows the bots that live in Scratch for No project", () => {
+    expect(names([{ environmentId: here, projectId: scratch }])).toEqual(["assistant"]);
   });
 
   it("matches projects only on the bot's own environment", () => {

@@ -21,7 +21,7 @@ const notOnPath = (launcherPath: string | null): DesktopCliCommandState => ({
 describe("resolveTriageCommand", () => {
   it("prefers t3 on PATH, then the desktop launcher", async () => {
     const onPath = { ...notOnPath("/home/me/.t3/bin/t3"), onPath: true };
-    await expect(resolveTriageCommand(desktopWith(async () => onPath))).resolves.toBe("t3 triage");
+    await expect(resolveTriageCommand(desktopWith(async () => onPath))).resolves.toBe("up triage");
     await expect(
       resolveTriageCommand(desktopWith(async () => notOnPath("/home/me/.t3/bin/t3"))),
     ).resolves.toBe("/home/me/.t3/bin/t3 triage");

@@ -688,7 +688,7 @@ function ConfiguredCloudLinkRow({
       ) : linkRevoked ? (
         <SettingsRow
           title={searchableSetting("t3-connect").title}
-          description="This environment was removed from UpComputer Connect. Run `t3 connect link` on the host to link it again."
+          description="This environment was removed from UpComputer Connect. Run `up connect link` on the host to link it again."
         />
       ) : null}
       {signedOut && isElectron ? null : (

@@ -155,13 +155,15 @@ details** to include the error in a bug report.
 
 ## Registries and proxies
 
-Each server checks Up.computer releases, and providers installed with npm, through
-its own npm, so the checks use npm's configured registry, authentication, and
-proxy settings. Providers installed with Homebrew or pnpm check through those
-tools.
-Configure npm on the server's machine. If that registry cannot be reached, the
-release shows as unavailable; Up.computer does not try the public registry instead.
-Machines without npm check the public npm registry directly.
+Up.computer is not published to npm. The desktop app and its server update from
+[GitHub Releases](https://github.com/krl-gr/upcomputer/releases). Release
+downloads for servers that run without the desktop app are not published yet, so
+updating such a server fails and it keeps running its current version.
+
+Providers installed with npm check for updates through the server's own npm, so
+those checks use npm's configured registry, authentication, and proxy settings.
+Configure npm on the server's machine. Providers installed with Homebrew or pnpm
+check through those tools.
 
 ## Update providers
 

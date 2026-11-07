@@ -65,7 +65,7 @@ export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand
     if (!explicitPath && (!(yield* fs.exists(cwd)) || (yield* fs.stat(cwd)).type !== "Directory")) {
       return yield* new CliError.UserError({
         cause: cwd,
-        userMessage: `Unknown command ${yield* encodeCommand(cwd)}. Use "t3 --help" for commands or an explicit path such as "t3 ./my-project" for a new directory.`,
+        userMessage: `Unknown command ${yield* encodeCommand(cwd)}. Use "up --help" for commands or an explicit path such as "up ./my-project" for a new directory.`,
       });
     }
   }
@@ -81,7 +81,7 @@ export const startCommand = Command.make("start", { ...sharedServerCommandFlags 
 export const serveCommand = Command.make("serve", { ...sharedServerCommandFlags }).pipe(
   Command.withShortDescription("Run Up.computer in this terminal, with no browser."),
   Command.withDescription(
-    "Run Up.computer in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run `t3 remote`.",
+    "Run Up.computer in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run `up remote`.",
   ),
   Command.withHandler((flags) =>
     runServerCommand(flags, {
