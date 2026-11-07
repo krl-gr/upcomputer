@@ -27,7 +27,7 @@ import {
   type Task,
 } from "@t3tools/tasks-contracts/v1";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -241,7 +241,7 @@ const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService;
   const projects = yield* ProjectStoreV2;
   const taskAgents = yield* TaskAgentService;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const recordFirstUse = yield* makeFirstUseRecorder;
   const notices = yield* Effect.serviceOption(BackgroundNotices);
   const report = (notice: Parameters<BackgroundNotices["Service"]["report"]>[0]) =>
@@ -580,7 +580,7 @@ const make = Effect.gen(function* () {
     )
       yield* threads.dispatch({
         type: "thread.metadata.update",
-        commandId: CommandId.make(`bot:name:${row.agentId}:${yield* crypto.randomUUIDv4()}`),
+        commandId: CommandId.make(`bot:name:${row.agentId}:${yield* crypto.uuidV4()}`),
         threadId,
         title: agent.value.name,
       });
@@ -603,7 +603,7 @@ const make = Effect.gen(function* () {
   ) {
     yield* threads.dispatch({
       type: "thread.metadata.update",
-      commandId: CommandId.make(`bot:keep-name:${threadId}:${yield* crypto.randomUUIDv4()}`),
+      commandId: CommandId.make(`bot:keep-name:${threadId}:${yield* crypto.uuidV4()}`),
       threadId,
       title: name,
       regenerateTitle: false,
@@ -766,7 +766,7 @@ const make = Effect.gen(function* () {
     const bot = yield* get(input.id);
     yield* ensureThread(bot, existing ? existing.adopted === 1 : input.threadId !== undefined);
     const thread = (yield* threads.getThreadRecords(threadId, [])).thread;
-    const commandSuffix = yield* crypto.randomUUIDv4();
+    const commandSuffix = yield* crypto.uuidV4();
     trackChat(threadId, input.name);
     if (thread.projectId !== input.projectId)
       yield* threads.dispatch({

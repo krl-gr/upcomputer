@@ -13,7 +13,7 @@ import { resolveCommandPath, resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Clock from "effect/Clock";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -169,7 +169,7 @@ export const makeOpenCodeInstallation = Effect.fn("makeOpenCodeInstallation")(fu
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const http = yield* HttpClient.HttpClient;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const serviceScope = yield* Effect.scope;
@@ -499,7 +499,7 @@ export const makeOpenCodeInstallation = Effect.fn("makeOpenCodeInstallation")(fu
       Effect.gen(function* () {
         const current = yield* SubscriptionRef.get(state);
         if (isRunning(current)) return current;
-        const operationId = yield* crypto.randomUUIDv4();
+        const operationId = yield* crypto.uuidV4();
         const local = yield* resolveLocal();
         if (local) {
           yield* succeed(local, operationId);

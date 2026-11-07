@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -104,6 +105,7 @@ describe("linked project folders in provider sessions", () => {
       Effect.provide(
         Layer.mergeAll(
           NodeServices.layer,
+          NodeCrypto.layer,
           IdAllocator.layer,
           McpProviderSessions.layer,
           TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)),

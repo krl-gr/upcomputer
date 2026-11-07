@@ -10,7 +10,7 @@ import {
   type TaskPromptSettingsUpdateResult,
 } from "@t3tools/tasks-contracts/v1";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -177,7 +177,7 @@ const normalizeText = (field: InstructionsField, text: string) =>
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const allChatsInstructions = yield* AllChatsInstructions;
 
   const changeColumns = sql`
@@ -362,7 +362,7 @@ const make = Effect.gen(function* () {
   }) {
     const change: TaskPromptSettingsChange = {
       // A failing random source is a defect, not a storage error.
-      id: `task-prompt-change-${yield* Effect.orDie(crypto.randomUUIDv4())}`,
+      id: `task-prompt-change-${yield* crypto.uuidV4()}`,
       projectId: input.projectId,
       revision: input.revision,
       field: input.field,

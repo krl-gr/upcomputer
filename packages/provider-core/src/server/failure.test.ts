@@ -2,6 +2,9 @@ import { assert, it } from "@effect/vitest";
 import {
   NodeId,
   ProviderDriverKind,
+  ProviderInstanceId,
+  ProviderSessionId,
+  ProviderSetupError,
   ProviderThreadId,
   ProviderTurnId,
   RunId,
@@ -42,6 +45,20 @@ it("redacts credentials and URL secrets from provider failures", () => {
   assert.notInclude(failure.message, "sk-abcdefghijklmnop");
 });
 
+it("redacts credentials whose key names end in a credential word", () => {
+  const failure = makeProviderFailure({
+    code: '{"refresh_token":"code value"}',
+    message:
+      'oauth refresh failed: client_secret=client-value refresh_token=refresh-value {"client_secret":"json-value"} clientSecret: camel-value X-Auth-Token: header-value max_tokens=4096',
+  });
+
+  assert.equal(failure.code, '{"refresh_token":"[REDACTED]"}');
+  assert.equal(
+    failure.message,
+    'oauth refresh failed: client_secret=[REDACTED] refresh_token=[REDACTED] {"client_secret":"[REDACTED]"} clientSecret: [REDACTED] X-Auth-Token: [REDACTED] max_tokens=4096',
+  );
+});
+
 it("does not split a surrogate pair at the truncation boundary", () => {
   const failure = makeProviderFailure({
     message: `${"a".repeat(MAX_PROVIDER_FAILURE_MESSAGE_LENGTH - 2)}🚀tail`,
@@ -75,8 +92,16 @@ it("keeps arbitrary cause messages out of the main message and in the detail", (
   }
 });
 
-it("preserves actionable handoff errors wrapped by turn startup", () => {
-  for (const error of [new ContextHandoffBudgetError(), new ContextHandoffBackgroundWorkError()]) {
+it("preserves actionable T3 errors wrapped by turn startup", () => {
+  for (const error of [
+    new ContextHandoffBudgetError(),
+    new ContextHandoffBackgroundWorkError(),
+    new ProviderSetupError({
+      instanceId: ProviderInstanceId.make("codex"),
+      operation: "runtime",
+      detail: "Codex 0.144.3 does not work with this Up.computer release.",
+    }),
+  ]) {
     const cause = new ProviderAdapter.ProviderAdapterTurnStartError({
       driver: ProviderDriverKind.make("codex"),
       threadId: ThreadId.make("thread:handoff-error"),
@@ -88,6 +113,40 @@ it("preserves actionable handoff errors wrapped by turn startup", () => {
   }
 });
 
+it("names how the provider process exited and the stage it failed in, without its output", () => {
+  for (const [exit, status] of [
+    [{ signal: "SIGILL" }, "it quit after signal SIGILL"],
+    [{ code: 134 }, "it quit with exit code 134"],
+    [{}, "it quit unexpectedly"],
+    [{ signal: "SIGILL Bearer signal-secret" }, "it quit unexpectedly"],
+  ] as const) {
+    const sessionOpenFailure = {
+      _tag: "ProviderSessionOpenError",
+      cause: new ProviderAdapter.ProviderAdapterOpenSessionError({
+        driver: ProviderDriverKind.make("antigravity"),
+        providerSessionId: ProviderSessionId.make("provider-session:private-id"),
+        cause: {
+          _tag: "AcpProcessExitedError",
+          ...exit,
+          pid: 4242,
+          stderr: "*** SIGILL *** token=stderr-secret",
+          cause: new Error("Process interrupted with private-detail"),
+        },
+      }),
+    };
+    const failure = makeProviderFailure({ cause: Cause.fail(sessionOpenFailure) });
+    assert.equal(
+      failure.message,
+      `The agent couldn't start: ${status}. Check the agent in Settings, then send the message again.`,
+    );
+    assert.equal(failure.code, "session_open_failed");
+  }
+  assert.equal(
+    makeProviderFailure({ cause: { _tag: "AcpProcessExitedError", code: 1 } }).message,
+    "The agent stopped before finishing: it quit with exit code 1. Send the message again; if it keeps happening, check the agent in Settings.",
+  );
+});
+
 it("keeps unrecognized reasons and provider text out of category messages", () => {
   // A protocol error's own detail is our adapters' text and may show; see its catalogue test.
   for (const cause of [
@@ -95,6 +154,16 @@ it("keeps unrecognized reasons and provider text out of category messages", () =
     { _tag: "ProviderAdapterProtocolError", reason: "private-config" },
     { _tag: "ProviderAdapterProtocolError", reason: "constructor" },
     { _tag: "constructor", cause: "private-config" },
+    {
+      _tag: "CodexAppServerRequestError",
+      method: "thread/goal/set",
+      message: "thread not found: private-thread",
+    },
+    {
+      _tag: "CodexAppServerRequestError",
+      method: "turn/start",
+      message: "goal objective must be at most 4000 characters",
+    },
   ]) {
     assert.equal(
       makeProviderFailure({ cause: { _tag: "ProviderAdapterTurnStartError", cause } }).message,
@@ -125,6 +194,23 @@ it("uses the innermost category without carrying an outer reason into it", () =>
   );
 });
 
+it("explains a native thread another client is writing to", () => {
+  const inUse = new ProviderAdapter.ProviderAdapterThreadInUseError({
+    driver: ProviderDriverKind.make("codex"),
+    providerThreadId: ProviderThreadId.make("provider-thread:in-use"),
+    detail: "This conversation is open in another Codex client.",
+    cause: new Error("thread provider-thread:in-use already has an active writer"),
+  });
+  const cause = new ProviderAdapter.ProviderAdapterTurnStartError({
+    driver: ProviderDriverKind.make("codex"),
+    threadId: ThreadId.make("thread:in-use"),
+    providerThreadId: ProviderThreadId.make("provider-thread:in-use"),
+    runId: RunId.make("run:in-use"),
+    cause: inUse,
+  });
+  assert.equal(makeProviderFailure({ cause: Cause.fail(cause) }).message, inUse.message);
+});
+
 it("does not expose defect text nested inside a known error category", () => {
   const failure = makeProviderFailure({
     cause: {
@@ -134,7 +220,7 @@ it("does not expose defect text nested inside a known error category", () => {
       ),
     },
   });
-  assert.include(failure.message, "dropped while it was working");
+  assert.include(failure.message, "The connection to the agent dropped while it was working");
   assert.equal(failure.code, "connection_lost");
   assert.notInclude(failure.message, "Session rejected:");
   assert.notInclude(failure.message, "nested-secret");
@@ -223,16 +309,14 @@ it("explains why a session could not open instead of leaking its internal id", (
     cause: {
       _tag: "ProviderAdapterOpenSessionError",
       message: "Failed to open codex provider session ps_123.",
-      cause: {
-        _tag: "ProviderSetupError",
+      cause: new ProviderSetupError({
+        instanceId: ProviderInstanceId.make("codex"),
+        operation: "start",
         detail: "Set up managed Codex before starting a session.",
-      },
+      }),
     },
   });
-  assert.equal(
-    failure.message,
-    "Codex couldn't start: set up managed Codex before starting a session. Check Codex in Settings, then send the message again.",
-  );
+  assert.equal(failure.message, "Set up managed Codex before starting a session.");
   assert.notInclude(failure.message, "ps_123");
   assert.equal(failure.code, "session_open_failed");
   assert.equal(providerFailureTitle(failure, driver), "Couldn't start Codex");

@@ -25,7 +25,7 @@ import {
   readProject,
   useAllEnvironmentShellsBootstrapped,
   useProjects,
-  useThreadShells,
+  useVisibleThreadShells,
   useWorkspaceKnown,
   useWorkspaceDelivery,
   useWorkspaceSettled,
@@ -47,7 +47,7 @@ function ChatIndexRouteView() {
 
 function IndexDraftLanding() {
   const projects = useProjects();
-  const threads = useThreadShells();
+  const threads = useVisibleThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const workspaceKnown = useWorkspaceKnown();
   const workspaceSettled = useWorkspaceSettled();
@@ -82,7 +82,11 @@ function IndexDraftLanding() {
   });
 
   const mostRecentProject = projectsKnown
-    ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
+    ? (sortScopedProjectsForSidebar(
+        projects.filter((project) => project.archivedAt == null),
+        threads,
+        "updated_at",
+      )[0] ?? null)
     : null;
   // UpComputer: with no projects yet, home is a chat without a project, the
   // draft New thread opens, instead of upstream's "add a project" hero.

@@ -598,7 +598,7 @@ const makeTaskRepository = Effect.gen(function* () {
           threadId,
           runCounts: grouped.get(threadId) ?? [],
         })),
-      } satisfies typeof TaskThreadRunCountsResult.Type;
+      } satisfies TaskThreadRunCountsResult;
     },
     Effect.mapError(
       toSqlOrDecodeError(
@@ -2110,7 +2110,7 @@ const makeTaskRepository = Effect.gen(function* () {
     const decodedLatest = yield* decodeLatestRunRows(latest);
     const latestByTask = new Map(decodedLatest.map(({ taskId, status }) => [taskId, status]));
     const decodedCounts = yield* decodeTaskRunCountRows(counts);
-    const countsByTask = new Map<TaskId, Array<typeof TaskRunCount.Type>>();
+    const countsByTask = new Map<TaskId, Array<TaskRunCount>>();
     for (const { taskId, status, count } of decodedCounts) {
       const entries = countsByTask.get(taskId) ?? [];
       entries.push({ status, count });

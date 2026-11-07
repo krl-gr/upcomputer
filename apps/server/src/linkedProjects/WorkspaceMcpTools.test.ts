@@ -301,7 +301,7 @@ it.effect("replaces upstream's project-scoped t3_thread_search when registered a
       // The order McpHttpServer.layer uses: core toolkits first, then product tools.
       WorkspaceMcpToolsLive.pipe(
         Layer.provideMerge(McpHttpServer.layerThreadToolkit),
-        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
         Layer.provide(
           Layer.mergeAll(
             layer,

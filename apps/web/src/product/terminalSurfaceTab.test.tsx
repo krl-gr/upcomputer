@@ -30,6 +30,7 @@ await vi.hoisted(async () => {
 const fakes = vi.hoisted(() => ({
   hidden: true,
   queries: [] as unknown[],
+  atoms: [] as unknown[],
   attached: [] as unknown[],
   written: [] as string[],
   surfaceOptions: null as null | { onData: (data: string) => void },
@@ -116,7 +117,10 @@ vi.mock("../state/use-atom-command", () => ({
 }));
 vi.mock("@effect/atom-react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@effect/atom-react")>()),
-  useAtomValue: () => null,
+  useAtomValue: (atom: unknown) => {
+    fakes.atoms.push(atom);
+    return null;
+  },
 }));
 vi.mock("../hooks/useSettings", () => ({
   useClientSettings: (select: (settings: Record<string, unknown>) => unknown) =>
@@ -133,7 +137,7 @@ const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 type Root = import("react-dom/client").Root;
 const { default: ThreadTerminalDrawer } = await import("../components/ThreadTerminalDrawer");
-const { useKnownTerminalSessions, useThreadRunningTerminalIds } =
+const { knownTerminalSessionsAtom, useKnownTerminalSessions, useThreadRunningTerminalIds } =
   await import("../state/terminalSessions");
 const { withoutHiddenProductKeybindings } = await import("./productFlags");
 
@@ -149,6 +153,7 @@ afterEach(() => {
   document.body.replaceChildren();
   fakes.hidden = true;
   fakes.queries = [];
+  fakes.atoms = [];
   fakes.attached = [];
   fakes.written = [];
   fakes.surfaceOptions = null;
@@ -201,18 +206,18 @@ describe("the right-panel terminal tab in the UpComputer product", () => {
       useThreadRunningTerminalIds({ environmentId, threadId });
       return null;
     }
+    const metadata = knownTerminalSessionsAtom(environmentId, threadId);
     await render(<Probe />);
     // The tab's labels and working directories, but no running-terminal row badge.
-    expect(fakes.queries).toEqual([{ metadata: { environmentId, input: null } }, null]);
+    expect(fakes.atoms).toHaveLength(2);
+    expect(fakes.atoms[0]).toBe(metadata);
+    expect(fakes.atoms[1]).not.toBe(metadata);
 
     act(() => root?.unmount());
     root = null;
     fakes.hidden = false;
-    fakes.queries = [];
+    fakes.atoms = [];
     await render(<Probe />);
-    expect(fakes.queries).toEqual([
-      { metadata: { environmentId, input: null } },
-      { metadata: { environmentId, input: null } },
-    ]);
+    expect(fakes.atoms).toEqual([metadata, metadata]);
   });
 });

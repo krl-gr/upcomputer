@@ -3,6 +3,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
@@ -109,6 +110,7 @@ function harness() {
       Layer.mergeAll(
         database,
         NodeServices.layer,
+        NodeCrypto.layer,
         ServerSettings.layerTest({ customInstructions: "" }),
       ),
     ),

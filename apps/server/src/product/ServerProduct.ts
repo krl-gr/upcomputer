@@ -16,6 +16,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import {
   UPSTREAM_PRODUCT_FLAGS,
   type ProductFlag,
@@ -122,34 +123,33 @@ export interface ExperimentalServerProductOptions {
   readonly flags?: ProductFlags;
 }
 
-export class ServerProductCompositionError extends Error {
-  override readonly name = "ServerProductCompositionError";
-  readonly code:
-    | "invalid-id"
-    | "invalid-version"
-    | "duplicate-feature"
-    | "duplicate-contribution"
-    | "owner-mismatch"
-    | "duplicate-provider-driver";
-
-  constructor(code: ServerProductCompositionError["code"], message: string) {
-    super(message);
-    this.code = code;
-  }
-}
+export class ServerProductCompositionError extends Schema.TaggedError<ServerProductCompositionError>()(
+  "ServerProductCompositionError",
+  {
+    code: Schema.Literals([
+      "invalid-id",
+      "invalid-version",
+      "duplicate-feature",
+      "duplicate-contribution",
+      "owner-mismatch",
+      "duplicate-provider-driver",
+    ]),
+    message: Schema.String,
+  },
+) {}
 
 function assertIdentity(label: string, id: string, version: number): void {
   if (!STABLE_ID.test(id)) {
-    throw new ServerProductCompositionError(
-      "invalid-id",
-      `${label} '${id}' must be a lowercase dot, dash, or underscore separated id.`,
-    );
+    throw new ServerProductCompositionError({
+      code: "invalid-id",
+      message: `${label} '${id}' must be a lowercase dot, dash, or underscore separated id.`,
+    });
   }
   if (!Number.isSafeInteger(version) || version < 1) {
-    throw new ServerProductCompositionError(
-      "invalid-version",
-      `${label} '${id}' must have a positive safe-integer version.`,
-    );
+    throw new ServerProductCompositionError({
+      code: "invalid-version",
+      message: `${label} '${id}' must have a positive safe-integer version.`,
+    });
   }
 }
 
@@ -164,17 +164,17 @@ function collectOwned<C extends OwnedContribution>(
     for (const contribution of pick(feature) ?? []) {
       assertIdentity(label, contribution.id, contribution.version);
       if (contribution.ownerId !== feature.id) {
-        throw new ServerProductCompositionError(
-          "owner-mismatch",
-          `${label} owned by '${contribution.ownerId}' cannot be registered by feature '${feature.id}'.`,
-        );
+        throw new ServerProductCompositionError({
+          code: "owner-mismatch",
+          message: `${label} owned by '${contribution.ownerId}' cannot be registered by feature '${feature.id}'.`,
+        });
       }
       const key = `${contribution.ownerId}:${contribution.id}`;
       if (keys.has(key)) {
-        throw new ServerProductCompositionError(
-          "duplicate-contribution",
-          `${label} '${key}' is registered more than once.`,
-        );
+        throw new ServerProductCompositionError({
+          code: "duplicate-contribution",
+          message: `${label} '${key}' is registered more than once.`,
+        });
       }
       keys.add(key);
       collected.push(contribution);
@@ -206,10 +206,10 @@ export function composeExperimentalServerFeatures(
   for (const feature of features) {
     defineExperimentalServerFeature(feature);
     if (featureIds.has(feature.id)) {
-      throw new ServerProductCompositionError(
-        "duplicate-feature",
-        `Server feature '${feature.id}' is registered more than once.`,
-      );
+      throw new ServerProductCompositionError({
+        code: "duplicate-feature",
+        message: `Server feature '${feature.id}' is registered more than once.`,
+      });
     }
     featureIds.add(feature.id);
   }
@@ -224,10 +224,10 @@ export function composeExperimentalServerFeatures(
   const driverKinds = new Set<string>();
   for (const { driver } of drivers) {
     if (driverKinds.has(driver.driverKind)) {
-      throw new ServerProductCompositionError(
-        "duplicate-provider-driver",
-        `Provider driver '${driver.driverKind}' is registered more than once.`,
-      );
+      throw new ServerProductCompositionError({
+        code: "duplicate-provider-driver",
+        message: `Provider driver '${driver.driverKind}' is registered more than once.`,
+      });
     }
     driverKinds.add(driver.driverKind);
   }
@@ -235,10 +235,10 @@ export function composeExperimentalServerFeatures(
   const migrations = features.flatMap((feature) => {
     for (const migration of feature.migrations ?? []) {
       if (migration.ownerId !== feature.id) {
-        throw new ServerProductCompositionError(
-          "owner-mismatch",
-          `Feature migrations owned by '${migration.ownerId}' cannot be registered by feature '${feature.id}'.`,
-        );
+        throw new ServerProductCompositionError({
+          code: "owner-mismatch",
+          message: `Feature migrations owned by '${migration.ownerId}' cannot be registered by feature '${feature.id}'.`,
+        });
       }
     }
     return feature.migrations ?? [];
@@ -248,10 +248,10 @@ export function composeExperimentalServerFeatures(
   const rpc = features.flatMap((feature) =>
     (feature.rpc ?? []).map((contribution) => {
       if (contribution.ownerId !== feature.id) {
-        throw new ServerProductCompositionError(
-          "owner-mismatch",
-          `RPC contribution owned by '${contribution.ownerId}' cannot be registered by feature '${feature.id}'.`,
-        );
+        throw new ServerProductCompositionError({
+          code: "owner-mismatch",
+          message: `RPC contribution owned by '${contribution.ownerId}' cannot be registered by feature '${feature.id}'.`,
+        });
       }
       return contribution;
     }),
@@ -260,10 +260,10 @@ export function composeExperimentalServerFeatures(
   const httpRoutes = features.flatMap((feature) =>
     (feature.httpRoutes ?? []).map((contribution) => {
       if (contribution.ownerId !== feature.id) {
-        throw new ServerProductCompositionError(
-          "owner-mismatch",
-          `HTTP route owned by '${contribution.ownerId}' cannot be registered by feature '${feature.id}'.`,
-        );
+        throw new ServerProductCompositionError({
+          code: "owner-mismatch",
+          message: `HTTP route owned by '${contribution.ownerId}' cannot be registered by feature '${feature.id}'.`,
+        });
       }
       return contribution;
     }),
@@ -377,10 +377,10 @@ export function withProductProviderDrivers(
   const builtInKinds = new Set(builtIn.map((driver) => driver.driverKind));
   for (const driver of product.providerDrivers) {
     if (builtInKinds.has(driver.driverKind)) {
-      throw new ServerProductCompositionError(
-        "duplicate-provider-driver",
-        `Provider driver '${driver.driverKind}' is owned by core.`,
-      );
+      throw new ServerProductCompositionError({
+        code: "duplicate-provider-driver",
+        message: `Provider driver '${driver.driverKind}' is owned by core.`,
+      });
     }
   }
   return [...builtIn, ...product.providerDrivers];

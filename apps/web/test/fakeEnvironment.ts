@@ -17,6 +17,7 @@ import {
   TurnItemId,
   WS_METHODS,
   WsRpcGroup,
+  type VcsStatusStreamEvent,
   type OrchestrationProjectShell,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2Run,
@@ -25,6 +26,7 @@ import {
   type OrchestrationV2ThreadShell,
   type OrchestrationV2ThreadStreamItem,
   type OrchestrationV2TurnItem,
+  type TerminalMetadataStreamEvent,
 } from "@t3tools/contracts";
 import type {
   ConnectionAttemptError,
@@ -44,7 +46,7 @@ import * as Stream from "effect/Stream";
 import { RpcSchema } from "effect/rpc";
 
 export const ENVIRONMENT_ID = EnvironmentId.make("environment-render");
-const PROJECT_ID = ProjectId.make("project-render");
+export const PROJECT_ID = ProjectId.make("project-render");
 const CODEX = ProviderInstanceId.make("codex");
 const MODEL = { instanceId: CODEX, model: "gpt-5.4" };
 const AT = DateTime.makeUnsafe("2026-03-17T19:12:28.000Z");
@@ -186,6 +188,8 @@ function run(threadId: ThreadId, id: RunId, ordinal: number, userMessageId: stri
 }
 
 export interface FakeThread {
+  /** Makes this a side chat of that thread. */
+  readonly sideChatOf?: ThreadId;
   readonly id: ThreadId;
   /** The project of `fakeProject`'s name; without it, the environment's own project. */
   readonly projectId?: ProjectId;
@@ -230,7 +234,12 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
     branch: "main",
     worktreePath: null,
     activeProviderThreadId: null,
-    lineage: { rootThreadId: thread.id, parentThreadId: null, relationshipToParent: null },
+    lineage: {
+      rootThreadId: thread.sideChatOf ?? thread.id,
+      parentThreadId: thread.sideChatOf ?? null,
+      relationshipToParent: null,
+      ...(thread.sideChatOf ? { sideChat: true } : {}),
+    },
     forkedFrom: null,
     createdBy: "user",
     creationSource: "web",
@@ -314,9 +323,11 @@ const json = (body: unknown, status = 200) =>
 
 // Keyed by thread id: a live thread subscription's queue, for pushing events to it.
 const threadSubscribers = new Map<string, Queue.Queue<OrchestrationV2ThreadStreamItem>>();
+let terminalMetadataSubscriber: Queue.Queue<TerminalMetadataStreamEvent> | null = null;
 let threads: ReadonlyArray<FakeThread> = [];
 let extraProjects: ReadonlyArray<OrchestrationProjectShell> = [];
 let sequence = 1;
+let vcsStatusSubscriber: Queue.Queue<VcsStatusStreamEvent> | null = null;
 
 const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>) => () => void) =>
   Stream.unwrap(
@@ -332,6 +343,13 @@ const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>
   );
 
 const handlers: Record<string, (input: never) => unknown> = {
+  [WS_METHODS.subscribeTerminalMetadata]: () =>
+    subscribe<TerminalMetadataStreamEvent>([{ type: "snapshot", terminals: [] }], (queue) => {
+      terminalMetadataSubscriber = queue;
+      return () => {
+        if (terminalMetadataSubscriber === queue) terminalMetadataSubscriber = null;
+      };
+    }),
   [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: () =>
     subscribe<OrchestrationV2ShellStreamItem>([
       {
@@ -364,6 +382,13 @@ const handlers: Record<string, (input: never) => unknown> = {
       },
     );
   },
+  [WS_METHODS.subscribeVcsStatus]: () =>
+    subscribe<VcsStatusStreamEvent>([], (queue) => {
+      vcsStatusSubscriber = queue;
+      return () => {
+        if (vcsStatusSubscriber === queue) vcsStatusSubscriber = null;
+      };
+    }),
   [WS_METHODS.subscribeServerConfig]: () =>
     subscribe([{ version: 1 as const, type: "snapshot" as const, config: serverConfig }]),
 };
@@ -450,6 +475,11 @@ export function installFakeEnvironment(
 
 type ThreadEvent = Extract<OrchestrationV2ThreadStreamItem, { readonly kind: "event" }>["event"];
 
+export async function emitTerminalMetadata(event: TerminalMetadataStreamEvent): Promise<void> {
+  if (terminalMetadataSubscriber === null) throw new Error("No terminal metadata subscription");
+  await Effect.runPromise(Queue.offer(terminalMetadataSubscriber, event));
+}
+
 /** Whether the app holds a live subscription to the thread, so events reach it. */
 export function isThreadSubscribed(threadId: ThreadId): boolean {
   return threadSubscribers.has(threadId);
@@ -481,3 +511,8 @@ export function runningRun(threadId: ThreadId, id: string, ordinal: number, user
 }
 
 export { userItem };
+
+export async function emitVcsStatus(event: VcsStatusStreamEvent): Promise<void> {
+  if (vcsStatusSubscriber === null) throw new Error("No VCS status subscription");
+  await Effect.runPromise(Queue.offer(vcsStatusSubscriber, event));
+}

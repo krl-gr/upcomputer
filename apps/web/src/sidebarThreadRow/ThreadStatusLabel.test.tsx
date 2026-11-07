@@ -38,8 +38,8 @@ vi.mock("../product/productFlags", async (importOriginal) => ({
   productSurface: () => surface.sidebarThreadRow,
 }));
 
-import type { SidebarThreadStatus, SidebarV2TopStatusKind } from "../components/Sidebar.logic";
-import { resolveSidebarV2TopStatus } from "./topStatus";
+import type { SidebarThreadStatus } from "../components/Sidebar.logic";
+import { resolveSidebarV2TopStatus, type ThreadTopStatusKind } from "./topStatus";
 import { resolveThreadStatusLabel, THREAD_STATUS_LABELS } from "./ThreadStatusLabel";
 
 const { SidebarThreadRow } = await import("../components/sidebar/SidebarThreadRow");
@@ -49,6 +49,7 @@ const EVERY_STATUS: Record<SidebarThreadStatus, true> = {
   approval: true,
   input: true,
   request: true,
+  preparing: true,
   working: true,
   waiting: true,
   failed: true,
@@ -57,7 +58,8 @@ const EVERY_STATUS: Record<SidebarThreadStatus, true> = {
 };
 
 // Typecheck fails here, and in THREAD_STATUS_LABELS, when upstream adds a kind.
-const EXPECTED_LABELS: Record<SidebarV2TopStatusKind, string | null> = {
+const EXPECTED_LABELS: Record<ThreadTopStatusKind, string | null> = {
+  preparing: "Setting up",
   working: "Working",
   approval: "Pending Approval",
   input: "Awaiting Input",
@@ -71,7 +73,7 @@ const EXPECTED_LABELS: Record<SidebarV2TopStatusKind, string | null> = {
 
 describe("THREAD_STATUS_LABELS", () => {
   it("labels every status kind upstream derives, except Woke", () => {
-    const derived = new Set<SidebarV2TopStatusKind>();
+    const derived = new Set<ThreadTopStatusKind>();
     for (const status of Object.keys(EVERY_STATUS) as SidebarThreadStatus[]) {
       for (const isUnread of [false, true]) {
         for (const isWoke of [false, true]) {

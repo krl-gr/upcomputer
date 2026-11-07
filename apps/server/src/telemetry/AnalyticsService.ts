@@ -10,8 +10,9 @@ import {
 import type { ClientOs } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -31,6 +32,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import { getTelemetryIdentity, type TelemetryOwner } from "./Identify.ts";
 
 interface BufferedAnalyticsEvent {
@@ -58,8 +60,10 @@ interface DeliveryState {
 
 // Retry delays shorter than this still wait for the next background check.
 const FLUSH_INTERVAL_MS = 1_000;
-// A hung send would hold the flush lock, and with it the shutdown flush.
+// A hung send would hold the flush lock for the next background flush.
 const SEND_TIMEOUT = "10 seconds";
+// Quit and restart wait for this flush; events it cannot send in time are dropped.
+const SHUTDOWN_FLUSH_TIMEOUT = "1 second";
 // A failed batch is tried again until it has failed for this long. Ingest answers 503 when it
 // cannot store a batch, and a broken Cloudflare location can take about 5 minutes to fail over.
 // The waiting batch holds newer events back; `maxBufferedEvents` bounds them meanwhile.
@@ -209,15 +213,42 @@ function serverOsFromNodePlatform(platform: string): ClientOs {
 /** @public */
 export const make = Effect.gen(function* () {
   const telemetryConfig = yield* TelemetryEnvConfig;
+  const hostEnvironment = yield* HostProcess.Environment;
+  const awaitingShellConsent = hostEnvironment.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING === "1";
+  // A managed policy can switch analytics off over the environment, never on.
+  const policyAllows =
+    ManagedPolicy.deniedBy(yield* ManagedPolicy.ManagedPolicy, "telemetry") === undefined;
+  const shellConsentPending = Effect.sync(
+    () => awaitingShellConsent && hostEnvironment.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING === "1",
+  );
+  // A cached PATH does not establish consent from the current login shell.
+  const telemetryEnabled = Effect.suspend(() => {
+    if (!telemetryConfig.enabled || !policyAllows) return Effect.succeed(false);
+    if (!awaitingShellConsent) return Effect.succeed(true);
+    if (hostEnvironment.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING === "1")
+      return Effect.succeed(false);
+    const preference = hostEnvironment.T3CODE_TELEMETRY_ENABLED;
+    return Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(
+      Config.withDefault(true),
+      Effect.provideService(
+        ConfigProvider.ConfigProvider,
+        ConfigProvider.fromEnv({
+          env: preference === undefined ? {} : { T3CODE_TELEMETRY_ENABLED: preference },
+        }),
+      ),
+      Effect.orElseSucceed(() => false),
+    );
+  });
   const httpClient = yield* HttpClient.HttpClient;
   const serverConfig = yield* ServerConfig.ServerConfig;
   // Opted-out installs never read provider account files or write an identity.
-  const { distinctId, installId } = telemetryConfig.enabled
-    ? yield* getTelemetryIdentity
-    : { distinctId: null, installId: null };
+  const { distinctId, installId } =
+    telemetryConfig.enabled && policyAllows
+      ? yield* getTelemetryIdentity
+      : { distinctId: null, installId: null };
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const bufferRef = yield* Ref.make<ReadonlyArray<BufferedAnalyticsEvent>>([]);
   const deliveryRef = yield* Ref.make<DeliveryState>({
     failedBatch: [],
@@ -248,10 +279,7 @@ export const make = Effect.gen(function* () {
     : Option.none<string>();
   const sessionId = Option.isSome(desktopSessionId)
     ? desktopSessionId.value
-    : yield* crypto.randomUUIDv4().pipe(
-        Effect.map((id): string | undefined => id),
-        Effect.catchCause(() => Effect.sync((): string | undefined => undefined)),
-      );
+    : yield* crypto.uuidV4();
   const internalDeviceMarker = path.join(serverConfig.stateDir, INTERNAL_DEVICE_MARKER_FILE);
   // Read for every event, so creating the file by hand takes effect without a restart.
   const internalDevice = fileSystem
@@ -310,7 +338,7 @@ export const make = Effect.gen(function* () {
   const sendBatch = Effect.fn("AnalyticsService.sendBatch")(function* (
     events: ReadonlyArray<BufferedAnalyticsEvent>,
   ) {
-    if (!telemetryConfig.enabled || !distinctId) return;
+    if (!(yield* telemetryEnabled) || !distinctId) return;
 
     const payload = {
       api_key: telemetryConfig.posthogKey,
@@ -358,6 +386,8 @@ export const make = Effect.gen(function* () {
 
   // Back off even after dropping rejected batches so bad API keys cannot drain the queue in a tight loop.
   const flush: AnalyticsService["Service"]["flush"] = Effect.gen(function* () {
+    // Hold the buffer until consent is known; sendBatch drops it then if the user opted out.
+    if (yield* shellConsentPending) return;
     while (true) {
       const delivery = yield* Ref.get(deliveryRef);
       const batch = delivery.failedBatch.length > 0 ? delivery.failedBatch : yield* takeBatch;
@@ -426,7 +456,7 @@ export const make = Effect.gen(function* () {
   });
 
   const startedAtMs = yield* Clock.currentTimeMillis;
-  const enabled = telemetryConfig.enabled && distinctId !== null;
+  const enabled = telemetryConfig.enabled && policyAllows && distinctId !== null;
   const sessionMarkerPath = path.join(serverConfig.stateDir, SESSION_MARKER_FILE);
   const previousStart = enabled
     ? yield* fileSystem.readFileString(sessionMarkerPath).pipe(
@@ -464,11 +494,13 @@ export const make = Effect.gen(function* () {
 
   const record: AnalyticsService["Service"]["record"] = Effect.fn("AnalyticsService.record")(
     function* (event, properties, options) {
-      if (!telemetryConfig.enabled || !distinctId) return;
+      if (!telemetryConfig.enabled || !policyAllows || !distinctId) return;
+      // Startup events wait in the buffer for shell consent; flush sends or drops them then.
+      if (!(yield* shellConsentPending) && !(yield* telemetryEnabled)) return;
       if (quietUntilMs > 0 && (yield* Clock.currentTimeMillis) < quietUntilMs) return;
 
       // Catch Node UUID defects too; best-effort telemetry drops events without UUIDs.
-      const uuid = yield* Effect.exit(crypto.randomUUIDv7());
+      const uuid = yield* Effect.exit(crypto.uuidV7());
       if (Exit.isFailure(uuid)) return;
 
       const enqueueResult = yield* enqueueBufferedEvent(
@@ -563,12 +595,15 @@ export const make = Effect.gen(function* () {
 
   // Desktop quit stops the server, so this is the app session length there.
   // The marker goes before the flush: a stop killed during a slow send was still clean.
+  // One budget for the whole stop, so the marker's file work cannot delay the flush's deadline.
   yield* Effect.addFinalizer(() =>
     Clock.currentTimeMillis.pipe(
       Effect.flatMap((now) => record("server.stopped", { uptimeMs: now - startedAtMs })),
       Effect.andThen(enabled ? fileSystem.remove(sessionMarkerPath, { force: true }) : Effect.void),
       Effect.ignoreCause,
       Effect.andThen(flush),
+      Effect.timeout(SHUTDOWN_FLUSH_TIMEOUT),
+      Effect.ignore,
     ),
   );
 

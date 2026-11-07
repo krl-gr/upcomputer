@@ -19,7 +19,7 @@ import {
   type TaskAutomation,
 } from "@t3tools/tasks-contracts/v1";
 import { AuthOrchestrationOperateScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
@@ -110,14 +110,14 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
             Effect.gen(function* () {
               const repository = yield* TaskRepository;
               const agents = yield* TaskAgentService;
-              const crypto = yield* Crypto.Crypto;
+              const crypto = yield* SecureRandom.SecureRandom;
               const invalid =
                 taskKindAudienceError(input.kind ?? "task", input.audience ?? "agent") ??
                 personTaskStatusError(input.audience ?? "agent", input.status);
               if (invalid !== null) return yield* taskError(invalid);
               const projectId = input.projectId ?? (yield* (yield* InboxProject).ensure);
               const timestamp = yield* now;
-              const id = input.id ?? TaskId.make(`task-${yield* crypto.randomUUIDv4()}`);
+              const id = input.id ?? TaskId.make(`task-${yield* crypto.uuidV4()}`);
               const upsert = repository.upsert({
                 id,
                 projectId,
@@ -304,9 +304,9 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
           asTaskRpc(
             Effect.gen(function* () {
               const repository = yield* TaskRepository;
-              const crypto = yield* Crypto.Crypto;
+              const crypto = yield* SecureRandom.SecureRandom;
               return yield* repository.appendEvent({
-                id: input.id ?? TaskEventId.make(`task-event-${yield* crypto.randomUUIDv4()}`),
+                id: input.id ?? TaskEventId.make(`task-event-${yield* crypto.uuidV4()}`),
                 taskId: input.taskId,
                 kind: input.kind,
                 payload: input.payload ?? null,
@@ -405,9 +405,9 @@ const TASK_AGENTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
             Effect.gen(function* () {
               const repository = yield* TaskRepository;
               const taskAgents = yield* TaskAgentService;
-              const crypto = yield* Crypto.Crypto;
+              const crypto = yield* SecureRandom.SecureRandom;
               const timestamp = yield* now;
-              const id = input.id ?? TaskAgentId.make(`task-agent-${yield* crypto.randomUUIDv4()}`);
+              const id = input.id ?? TaskAgentId.make(`task-agent-${yield* crypto.uuidV4()}`);
               const existing = yield* repository.getAgentById({ id });
               const agent = yield* repository.upsertAgent({
                 id,
@@ -484,11 +484,10 @@ const TASK_AUTOMATIONS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
             Effect.gen(function* () {
               const status = input.status ?? "draft";
               const repository = yield* TaskRepository;
-              const crypto = yield* Crypto.Crypto;
+              const crypto = yield* SecureRandom.SecureRandom;
               const timestamp = yield* now;
               const id =
-                input.id ??
-                TaskAutomationId.make(`task-automation-${yield* crypto.randomUUIDv4()}`);
+                input.id ?? TaskAutomationId.make(`task-automation-${yield* crypto.uuidV4()}`);
               const existing = yield* repository.getAutomationById({ id });
               const armed = armAutomationSchedule(input.schedule, status, new Date(timestamp));
               if (Result.isFailure(armed)) return yield* taskError(armed.failure);

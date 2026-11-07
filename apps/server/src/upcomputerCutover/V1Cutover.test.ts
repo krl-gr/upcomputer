@@ -5,6 +5,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -16,6 +17,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import { vi } from "vite-plus/test";
@@ -359,7 +361,7 @@ it.effect("moves a V1 home onto v2 with a backup that restores it", () => {
       ),
     );
   }).pipe(
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(root, { recursive: true, force: true }))),
   );
 });
@@ -387,7 +389,7 @@ it.effect("refuses while the app is running", () => {
       "v1-cutover.lock",
     ]);
   }).pipe(
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(home, { recursive: true, force: true }))),
   );
 });
@@ -441,7 +443,10 @@ it.effect("runs on the first server start on a V1 home, and only then", () => {
     // A restart finds v2's database and leaves the home alone.
     assert.equal(yield* onStart(home, "2026-10-06T09:00:00.000Z"), "not-needed");
     assert.equal(home.backups().length, 1);
-  }).pipe(Effect.provide(NodeServices.layer), Effect.ensuring(home.cleanup));
+  }).pipe(
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    Effect.ensuring(home.cleanup),
+  );
 });
 
 it.effect("a failing check keeps V1 as it was and the server down until a retry", () => {
@@ -501,7 +506,10 @@ it.effect("a failing check keeps V1 as it was and the server down until a retry"
     );
     assert.equal(readV1CutoverState(home.userdata)?.status, "completed");
     assert.isTrue(NodeFS.existsSync(home.v2Path));
-  }).pipe(Effect.provide(NodeServices.layer), Effect.ensuring(home.cleanup));
+  }).pipe(
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    Effect.ensuring(home.cleanup),
+  );
 });
 
 it.effect("a cutover cut short starts over on the next start", () => {
@@ -529,7 +537,10 @@ it.effect("a cutover cut short starts over on the next start", () => {
     assert.isFalse(NodeFS.existsSync(cutShort?.backupDir ?? ""));
     assert.isFalse(NodeFS.readdirSync(home.userdata).some((file) => file.includes(".cutover")));
     assert.equal(readV1CutoverState(home.userdata)?.status, "completed");
-  }).pipe(Effect.provide(NodeServices.layer), Effect.ensuring(home.cleanup));
+  }).pipe(
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    Effect.ensuring(home.cleanup),
+  );
 });
 
 it.effect("leaves homes without UpComputer V1 data to the server", () => {
@@ -544,7 +555,10 @@ it.effect("leaves homes without UpComputer V1 data to the server", () => {
     assert.equal(yield* onStart(home, "2026-10-06T08:00:00.000Z"), "not-needed");
     assert.deepStrictEqual(home.backups(), []);
     assert.isNull(readV1CutoverState(home.userdata));
-  }).pipe(Effect.provide(NodeServices.layer), Effect.ensuring(home.cleanup));
+  }).pipe(
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    Effect.ensuring(home.cleanup),
+  );
 });
 
 it.effect(
@@ -570,7 +584,7 @@ it.effect(
     }).pipe(
       Effect.provide(ServerConfig.layerTest(home, home)),
       Effect.provideService(ServerProduct, PUBLIC_SERVER_PRODUCT),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Effect.ensuring(Effect.sync(() => NodeFS.rmSync(home, { recursive: true, force: true }))),
     );
   },
@@ -626,7 +640,10 @@ it.effect("a second starter is refused while a cutover runs, and leaves its file
     assert.equal(done?.runId, running?.runId);
     assert.isTrue(NodeFS.existsSync(home.v2Path));
     assert.isTrue(NodeFS.existsSync(running?.backupDir ?? ""));
-  }).pipe(Effect.provide(NodeServices.layer), Effect.ensuring(home.cleanup));
+  }).pipe(
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    Effect.ensuring(home.cleanup),
+  );
 });
 
 it.effect("a run records its outcome only over its own state", () => {
@@ -645,7 +662,10 @@ it.effect("a run records its outcome only over its own state", () => {
     yield* first.resume;
     yield* Fiber.join(first.fiber);
     assert.deepStrictEqual(readV1CutoverState(home.userdata), newer);
-  }).pipe(Effect.provide(NodeServices.layer), Effect.ensuring(home.cleanup));
+  }).pipe(
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    Effect.ensuring(home.cleanup),
+  );
 });
 
 it.effect("a full disk during the backup still records the failure for the desktop", () => {
@@ -668,7 +688,7 @@ it.effect("a full disk during the backup still records the failure for the deskt
     assert.isFalse(NodeFS.existsSync(home.v2Path));
     assert.isFalse(NodeFS.readdirSync(home.userdata).some((file) => file.includes(".cutover")));
   }).pipe(
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Effect.ensuring(Effect.sync(() => void (disk.rejects = null))),
     Effect.ensuring(home.cleanup),
   );
@@ -690,7 +710,7 @@ it.effect("a disk too full to record anything still fails the start with the rea
     assert.equal(readV1CutoverState(home.userdata)?.status, "running");
     assert.isFalse(NodeFS.existsSync(home.v2Path));
   }).pipe(
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Effect.ensuring(Effect.sync(() => void (disk.rejects = null))),
     Effect.ensuring(home.cleanup),
   );
@@ -710,7 +730,7 @@ it.effect("stops before the backup when the disk cannot hold the upgrade", () =>
     assert.deepStrictEqual(home.backups(), []);
     assert.isFalse(NodeFS.existsSync(home.v2Path));
   }).pipe(
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Effect.ensuring(Effect.sync(() => void (disk.freeBytes = null))),
     Effect.ensuring(home.cleanup),
   );

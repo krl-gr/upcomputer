@@ -117,10 +117,10 @@ export function TimelineMinimap({
   return (
     <div
       className={cn(
-        "group/minimap pointer-events-none absolute inset-y-0 right-0 z-40 hidden w-18 [@media(pointer:fine)]:block",
+        "group/minimap pointer-events-none absolute inset-y-0 right-0 z-40 w-18",
         hasPersistentGutter
           ? "opacity-100"
-          : "opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
+          : "hidden opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100 [@media(pointer:fine)]:block",
       )}
       data-testid="timeline-minimap"
       data-persistent-gutter={hasPersistentGutter ? "true" : "false"}
@@ -220,7 +220,7 @@ export function TimelineMinimap({
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "group/strip pointer-events-none absolute right-0 h-0.5 w-6 origin-right -translate-y-1/2 rounded-full transition-transform duration-150",
+                    "pointer-events-none absolute right-0 h-0.5 w-6 origin-right -translate-y-1/2 rounded-full transition-transform duration-150 after:absolute after:inset-0 after:rounded-full after:bg-foreground/55 after:opacity-0 after:transition-opacity after:duration-150 data-[in-view=true]:after:opacity-100",
                     activeDistance === 0 ? "bg-muted-foreground/60" : "bg-muted-foreground/25",
                     activeDistance === 0
                       ? "scale-x-100"
@@ -241,9 +241,7 @@ export function TimelineMinimap({
                     }
                   }}
                   style={{ top }}
-                >
-                  <span className="absolute inset-0 rounded-full bg-foreground/55 opacity-0 transition-opacity duration-150 group-data-[in-view=true]/strip:opacity-100" />
-                </span>
+                />
               );
             })}
             {activeItem ? (

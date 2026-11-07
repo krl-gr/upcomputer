@@ -44,6 +44,7 @@ describe("apply-branding rules", () => {
       'const title = "Restart T3 Code to finish.";',
       'const label = "Open a T3 Code terminal";',
       'const connect = "Sign in to T3 Connect";',
+      'const hint = "Run `t3 up --lan`, then `t3 update`.";',
       '  name: "T3 Code",',
     ].join("\n");
 
@@ -53,6 +54,7 @@ describe("apply-branding rules", () => {
         'const title = "Restart Up.computer to finish.";',
         'const label = "Open an Up.computer terminal";',
         'const connect = "Sign in to UpComputer Connect";',
+        'const hint = "Run `t3 remote --lan`, then `t3 update`.";',
         '  name: "T3 Code",',
       ].join("\n"),
     );
@@ -75,6 +77,8 @@ describe("apply-branding rules", () => {
       "t3 thread list",
       "id=$(t3 thread start .)",
       "sudo t3 browser setup",
+      "t3 up --lan",
+      "Run `t3 up` here, then `t3 update`.",
     ].join("\n");
     const rebranded = rebrandText(doc, "docs/user/example.md");
     expect(rebranded).toBe(
@@ -84,6 +88,8 @@ describe("apply-branding rules", () => {
         "up thread list",
         "id=$(up thread start .)",
         "sudo up browser setup",
+        "up remote --lan",
+        "Run `up remote` here, then `up update`.",
       ].join("\n"),
     );
     expect(rebrandText(rebranded, "docs/user/example.md")).toBe(rebranded);

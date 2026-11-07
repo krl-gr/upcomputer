@@ -56,7 +56,7 @@ import {
   personTaskStatusError,
   taskKindAudienceError,
 } from "@t3tools/tasks-contracts/v1";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -208,7 +208,7 @@ type TranscriptThread = Pick<OrchestrationV2ThreadProjection, "messages" | "turn
 function buildAgentRunTranscript(
   run: TaskAgentRun,
   thread: TranscriptThread,
-  input: typeof AgentRunTranscriptInput.Type,
+  input: AgentRunTranscriptInput,
 ) {
   const iso = (value: DateTime.DateTime) => DateTime.formatIso(DateTime.toUtc(value));
   const entries: TranscriptEntry[] = [
@@ -433,7 +433,7 @@ const SHOWN_IN: Record<TaskAudience, string> = {
 /** The top-level task_create arguments that go with a tasks list. */
 const TASK_CREATE_BATCH_KEYS = new Set(["tasks", "projectId", "workspaceRoot"]);
 
-function patchTask(existing: Task, update: typeof TaskUpdateInput.Type, updatedAt: string): Task {
+function patchTask(existing: Task, update: TaskUpdateInput, updatedAt: string): Task {
   return {
     ...existing,
     ...(update.projectId !== undefined ? { projectId: update.projectId } : {}),
@@ -461,7 +461,7 @@ export type AgentCreateModelDecision =
   | { readonly ok: false; readonly reason: "missing-explicit-selection" | "unresolved-selection" };
 
 function resolveAgentCreateModelDecision(
-  input: typeof AgentCreateInput.Type,
+  input: AgentCreateInput,
   resolvedModel: ModelSelection | undefined,
 ): AgentCreateModelDecision {
   const explicitModelSelection = input.modelSelection ?? input.config?.modelSelection;
@@ -474,7 +474,7 @@ function resolveAgentCreateModelDecision(
 
 /** Undefined when the given modelAlias did not resolve: keeping the old model would hide that. */
 function resolveAgentUpdateModelSelection(
-  input: typeof AgentUpdateInput.Type,
+  input: AgentUpdateInput,
   existing: ModelSelection,
   resolvedModel: ModelSelection | undefined,
 ): ModelSelection | undefined {
@@ -483,7 +483,7 @@ function resolveAgentUpdateModelSelection(
   return input.modelAlias !== undefined ? resolvedModel : existing;
 }
 
-function hasAgentConfigPatch(input: typeof AgentCreateInput.Type | typeof AgentUpdateInput.Type) {
+function hasAgentConfigPatch(input: AgentCreateInput | AgentUpdateInput) {
   return (
     input.config !== undefined ||
     input.modelSelection !== undefined ||
@@ -501,7 +501,7 @@ function buildAgentConfig(input: {
   readonly name: string;
   readonly existing?: TaskAgent["config"];
   readonly modelSelection: TaskAgent["config"]["modelSelection"];
-  readonly patch: typeof AgentCreateInput.Type | typeof AgentUpdateInput.Type;
+  readonly patch: AgentCreateInput | AgentUpdateInput;
 }): TaskAgent["config"] {
   const base = input.patch.config ?? input.existing;
   const runtimeMode = input.patch.runtimeMode ?? base?.runtimeMode;
@@ -532,11 +532,11 @@ const make = Effect.gen(function* () {
   const inbox = yield* InboxProject;
   const schedule = yield* TaskScheduleService;
   const bots = yield* BotService;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const recordFirstUse = yield* makeFirstUseRecorder;
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const randomId = (prefix: string) =>
-    crypto.randomUUIDv4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
+    crypto.uuidV4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
   /**
    * Task-agent runs read untrusted content, so an injected "add to the
    * instructions" must not rewrite every agent's rules. A thread that any run

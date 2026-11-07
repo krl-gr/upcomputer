@@ -48,7 +48,7 @@ function serviceFor(
   );
   const spawned: string[][] = [];
   const childProcessSpawner = ChildProcessSpawner.make((command) => {
-    spawned.push("args" in command ? [...command.args] : []);
+    spawned.push("args" in command ? command.args.map(String) : []);
     return Effect.die(new Error("the helper is not available in tests"));
   });
   const service = createComputerUseService({ settingsPath } as ServerConfig["Service"], {

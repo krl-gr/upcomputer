@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
@@ -51,7 +52,11 @@ const test = <A, E>(
             Layer.effectDiscard(runExperimentalFeatureMigrations([TASK_MIGRATION_CONTRIBUTION])),
           ),
           Layer.provideMerge(
-            Layer.merge(NodeSqliteClient.layer({ filename: ":memory:" }), NodeServices.layer),
+            Layer.mergeAll(
+              NodeSqliteClient.layer({ filename: ":memory:" }),
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
           ),
         ),
       ),

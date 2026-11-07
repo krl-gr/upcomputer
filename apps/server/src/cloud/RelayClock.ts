@@ -1,4 +1,5 @@
 import { decodeRelayJwt } from "@t3tools/shared/relayJwt";
+import type * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -21,6 +22,22 @@ const MIN_CORRECTED_OFFSET_MILLIS = Duration.toMillis(Duration.seconds(30));
 // Beyond this the observation is not trusted as a clock to correct. It also
 // keeps any correction far inside the one-day replay marker retention.
 const MAX_CORRECTED_OFFSET_MILLIS = Duration.toMillis(Duration.hours(12));
+
+const NANOS_PER_MILLI = BigInt(1_000_000);
+
+/** `clock` moved to relay time, for checks that read `Clock`, such as `Jwt.verify`'s iat/exp. */
+export const inRelayTime = (clock: Clock.Clock, offsetMillis: number): Clock.Clock => {
+  const offsetNanos = BigInt(Math.trunc(offsetMillis)) * NANOS_PER_MILLI;
+  return {
+    currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe() + offsetMillis,
+    currentTimeMillis: Effect.map(clock.currentTimeMillis, (millis) => millis + offsetMillis),
+    currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe() + offsetNanos,
+    currentTimeNanos: Effect.map(clock.currentTimeNanos, (nanos) => nanos + offsetNanos),
+    monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe(),
+    monotonicTimeNanos: clock.monotonicTimeNanos,
+    sleep: (duration) => clock.sleep(duration),
+  };
+};
 
 export interface RelayClockShape {
   /** Records a timestamp the relay produced just now. */
@@ -70,7 +87,8 @@ export const observeRelayResponseDate = (response: HttpClientResponse.HttpClient
 
 /** For a relay-signed token received moments after the relay issued it. */
 export const observeRelayTokenIssuedAt = (token: string) =>
-  Effect.try(() => decodeRelayJwt(token).iat).pipe(
+  decodeRelayJwt(token).pipe(
+    Effect.map((claims) => claims.iat),
     Effect.option,
     Effect.flatMap((issuedAt) =>
       observe(

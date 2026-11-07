@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ProjectId } from "@t3tools/contracts";
@@ -24,7 +25,7 @@ const layer = Layer.mergeAll(
       Layer.effectDiscard(runExperimentalFeatureMigrations([TASK_MIGRATION_CONTRIBUTION])),
     ),
     Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   ),
   Layer.succeed(InboxProject, { ensure: Effect.succeed(project) }),
   Layer.succeed(TaskAgentService, { scheduleTaskChanged: () => Effect.void } as never),

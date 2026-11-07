@@ -13,11 +13,13 @@ export function materializeReplayTranscriptRuntimeInstructions(
       ? "Cursor"
       : runtime.driver === "grok"
         ? "Grok"
-        : runtime.driver === "acpRegistry"
-          ? "acpRegistry"
-          : runtime.driver === "fx"
-            ? "fx"
-            : undefined;
+        : runtime.driver === "kiro"
+          ? "Kiro"
+          : runtime.driver === "acpRegistry"
+            ? "acpRegistry"
+            : runtime.driver === "fx"
+              ? "fx"
+              : undefined;
   if (harness === undefined) return transcript;
   const instructions = buildRuntimeInstructions({ harness, model: runtime.model });
 
@@ -55,9 +57,24 @@ export function materializeReplayTranscriptRuntimeInstructions(
           "type" in lastPart &&
           lastPart.type === "text" &&
           "text" in lastPart &&
-          lastPart.text === instructions
+          typeof lastPart.text === "string" &&
+          // A recording that switched models mid-thread already carries the
+          // instructions for the model each prompt ran on, in upstream's product name.
+          (lastPart.text === instructions || lastPart.text.startsWith("<runtime_info>"))
         ) {
-          return entry;
+          const text = lastPart.text.replaceAll("T3 Code", UPCOMPUTER_PRODUCT_NAME);
+          return text === lastPart.text
+            ? entry
+            : {
+                ...entry,
+                frame: {
+                  ...frame,
+                  params: {
+                    ...frame.params,
+                    prompt: [...prompt.slice(0, -1), { ...lastPart, text }],
+                  },
+                },
+              };
         }
         return {
           ...entry,

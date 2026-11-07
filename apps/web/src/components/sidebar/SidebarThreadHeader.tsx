@@ -16,7 +16,6 @@ import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export interface SidebarThreadHeaderProps {
-  searchFieldRef?: RefObject<HTMLDivElement | null>;
   hasProjects: boolean;
   projectScope: ReactNode;
   onNewProject: () => void;
@@ -36,7 +35,6 @@ export interface SidebarThreadHeaderProps {
 }
 
 export function SidebarThreadHeader({
-  searchFieldRef,
   hasProjects,
   projectScope,
   onNewProject,
@@ -65,7 +63,6 @@ export function SidebarThreadHeader({
     <div className="flex items-center gap-1">
       <SidebarCompactSearch />
       <div
-        ref={searchFieldRef}
         className={cn(
           "flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-within:bg-sidebar-row-hover focus-within:text-sidebar-foreground",
           productSurface("sidebarProjects") === "upcomputer" && SIDEBAR_SEARCH_ROW_TEXT,

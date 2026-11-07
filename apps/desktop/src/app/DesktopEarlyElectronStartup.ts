@@ -1,5 +1,5 @@
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
-import { UPCOMPUTER_APP_ID, UPCOMPUTER_EXECUTABLE_NAME } from "@t3tools/shared/upcomputerIdentity";
+import { UPCOMPUTER_APP_ID } from "@t3tools/shared/upcomputerIdentity";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -27,16 +27,12 @@ type EarlyLinuxElectronOptionsInput = EarlyDesktopSettingsInput;
 
 export interface EarlyLinuxElectronOptions {
   readonly isDevelopment: boolean;
-  readonly linuxWmClass: string;
   readonly linuxDesktopEntryName: string;
   readonly passwordStore: LinuxPasswordStoreSwitch | null;
 }
 
 export const resolveLinuxDesktopEntryName = (isDevelopment: boolean): string =>
   isDevelopment ? `${UPCOMPUTER_APP_ID}.Development.desktop` : `${UPCOMPUTER_APP_ID}.desktop`;
-
-export const resolveLinuxWmClass = (isDevelopment: boolean): string =>
-  isDevelopment ? `${UPCOMPUTER_EXECUTABLE_NAME}-dev` : UPCOMPUTER_EXECUTABLE_NAME;
 
 const trimNonEmpty = (value: string | undefined): string | null => {
   const trimmed = value?.trim();
@@ -150,7 +146,6 @@ export function resolveEarlyLinuxElectronOptions(
   const isDevelopment = isDevelopmentEnvironment(input.env);
   return {
     isDevelopment,
-    linuxWmClass: resolveLinuxWmClass(isDevelopment),
     linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
     passwordStore: resolveLinuxPasswordStoreSwitch({
       preference,

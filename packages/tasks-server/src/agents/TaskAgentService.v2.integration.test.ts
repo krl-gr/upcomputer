@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -513,7 +514,7 @@ function makeLayer(
         Layer.orDie,
       ),
     ),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
   const composed = productMcpToolsLayer.pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
@@ -1668,7 +1669,10 @@ it.live("after a restart an active run's cut turn continues once, inside that ru
           messages.filter((message) => message.id.startsWith("message:restart-continuation:")),
           1,
         );
-        assert.strictEqual((yield* Ref.get(started)).at(-1)?.text, "Continue where you left off.");
+        assert.strictEqual(
+          (yield* Ref.get(started)).at(-1)?.text,
+          "Continue where you left off. Your last turn was cut short, so a command or other action it started may have finished or may still be running. Before you repeat one that changes state, confirm it did not take effect and is not still running; if you cannot tell, say so instead of repeating it.",
+        );
         // The continuation stayed in the run: no second run, and nothing for
         // agents that start on interrupted runs.
         assert.deepStrictEqual(

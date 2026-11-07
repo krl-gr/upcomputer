@@ -1,5 +1,6 @@
 import * as Layer from "effect/Layer";
 import { HttpRouter } from "effect/http";
+import * as Schema from "effect/Schema";
 
 type HttpRouteMethod = Parameters<typeof HttpRouter.add>[0];
 type HttpRoutePath = Parameters<typeof HttpRouter.add>[1];
@@ -16,35 +17,26 @@ export interface HttpRouteContribution {
 
 export type AnyHttpRouteContribution = HttpRouteContribution;
 
-export class HttpRouteContributionError extends Error {
-  override readonly name = "HttpRouteContributionError";
-  readonly code:
-    | "duplicate-id"
-    | "duplicate-route"
-    | "invalid-id"
-    | "invalid-version"
-    | "path-outside-owner-namespace";
-
-  constructor(
-    code:
-      | "duplicate-id"
-      | "duplicate-route"
-      | "invalid-id"
-      | "invalid-version"
-      | "path-outside-owner-namespace",
-    message: string,
-  ) {
-    super(message);
-    this.code = code;
-  }
-}
+export class HttpRouteContributionError extends Schema.TaggedError<HttpRouteContributionError>()(
+  "HttpRouteContributionError",
+  {
+    code: Schema.Literals([
+      "duplicate-id",
+      "duplicate-route",
+      "invalid-id",
+      "invalid-version",
+      "path-outside-owner-namespace",
+    ]),
+    message: Schema.String,
+  },
+) {}
 
 function assertVersion(version: number): void {
   if (!Number.isSafeInteger(version) || version < 1) {
-    throw new HttpRouteContributionError(
-      "invalid-version",
-      `HTTP contribution version '${String(version)}' must be a positive safe integer.`,
-    );
+    throw new HttpRouteContributionError({
+      code: "invalid-version",
+      message: `HTTP contribution version '${String(version)}' must be a positive safe integer.`,
+    });
   }
 }
 
@@ -52,20 +44,20 @@ const CONTRIBUTION_ID_PATTERN = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/;
 
 function assertContributionId(value: string, label: string): void {
   if (!CONTRIBUTION_ID_PATTERN.test(value)) {
-    throw new HttpRouteContributionError(
-      "invalid-id",
-      `${label} '${value}' must be a stable lowercase identifier.`,
-    );
+    throw new HttpRouteContributionError({
+      code: "invalid-id",
+      message: `${label} '${value}' must be a stable lowercase identifier.`,
+    });
   }
 }
 
 function assertRoutePath(ownerId: string, path: HttpRoutePath): void {
   const prefix = `/api/extensions/${ownerId}/`;
   if (!path.startsWith(prefix) || path.length === prefix.length) {
-    throw new HttpRouteContributionError(
-      "path-outside-owner-namespace",
-      `HTTP route '${path}' must be inside '${prefix}'.`,
-    );
+    throw new HttpRouteContributionError({
+      code: "path-outside-owner-namespace",
+      message: `HTTP route '${path}' must be inside '${prefix}'.`,
+    });
   }
 }
 
@@ -113,19 +105,19 @@ export function httpRouteContributionsLayer<
 
     const contributionKey = `${contribution.ownerId}:${contribution.id}`;
     if (ids.has(contributionKey)) {
-      throw new HttpRouteContributionError(
-        "duplicate-id",
-        `HTTP contribution '${contributionKey}' is registered more than once.`,
-      );
+      throw new HttpRouteContributionError({
+        code: "duplicate-id",
+        message: `HTTP contribution '${contributionKey}' is registered more than once.`,
+      });
     }
     ids.add(contributionKey);
 
     const routeKey = `${contribution.method} ${contribution.path}`;
     if (routes.has(routeKey)) {
-      throw new HttpRouteContributionError(
-        "duplicate-route",
-        `HTTP route '${routeKey}' is contributed more than once.`,
-      );
+      throw new HttpRouteContributionError({
+        code: "duplicate-route",
+        message: `HTTP route '${routeKey}' is contributed more than once.`,
+      });
     }
     routes.add(routeKey);
   }

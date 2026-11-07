@@ -4,6 +4,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { afterEach, test } from "vite-plus/test";
 
@@ -27,7 +28,7 @@ import {
   type OrchestrationV2ServerCommand,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -442,16 +443,13 @@ interface Harness {
   readonly seedRun: Harness["endRun"];
 }
 
-function deterministicCrypto(): Layer.Layer<Crypto.Crypto> {
+function deterministicCrypto(): Layer.Layer<SecureRandom.SecureRandom> {
   let seed = 0;
   return Layer.succeed(
-    Crypto.Crypto,
-    Crypto.make({
-      randomBytes: (size) => {
-        seed += 1;
-        return Uint8Array.from({ length: size }, (_, index) => (seed * 31 + index * 7) % 256);
-      },
-      digest: () => Effect.die("unused digest"),
+    SecureRandom.SecureRandom,
+    SecureRandom.make((size) => {
+      seed += 1;
+      return Uint8Array.from({ length: size }, (_, index) => (seed * 31 + index * 7) % 256);
     }),
   );
 }
@@ -1498,7 +1496,7 @@ test("the V1 cutover's tool-name rewrite does not replay completed work on the f
           TaskPromptSettingsStoreLive.pipe(
             Layer.provide(AllChatsInstructionsLive),
             Layer.provide(ServerSettings.layerTest()),
-            Layer.provide(NodeServices.layer),
+            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
         ),
       );

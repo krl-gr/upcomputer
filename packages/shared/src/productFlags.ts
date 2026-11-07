@@ -49,6 +49,11 @@ export interface ProductFlags {
   readonly t3Chat: boolean;
   /** Triage an issue from the command palette; its playbook files reports upstream. */
   readonly triage: boolean;
+  /**
+   * Switching every connected machine along with this app's update track. It
+   * looks up the target release of the `t3` package on npm.
+   */
+  readonly fleetTrackSwitch: boolean;
 }
 
 export type ProductFlag = keyof ProductFlags;
@@ -67,6 +72,7 @@ export const UPSTREAM_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   usageDataNotice: true,
   t3Chat: true,
   triage: true,
+  fleetTrackSwitch: true,
 });
 
 export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
@@ -83,6 +89,7 @@ export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   usageDataNotice: true,
   t3Chat: false,
   triage: false,
+  fleetTrackSwitch: false,
 });
 
 /**
@@ -305,6 +312,12 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
   },
   triage: {
     capabilities: ["triage"],
+    keybindingCommands: [],
+    settingsSearchIds: [],
+    rightPanelSurfaces: [],
+  },
+  fleetTrackSwitch: {
+    capabilities: ["npmReleaseLookup"],
     keybindingCommands: [],
     settingsSearchIds: [],
     rightPanelSurfaces: [],

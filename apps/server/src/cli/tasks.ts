@@ -31,7 +31,7 @@ import { ServerProduct } from "../product/ServerProduct.ts";
 import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { openZipArchive } from "../zipArchive.ts";
 import { resolveCliAuthConfig } from "./config.ts";
-import { layerProjectCliRuntime } from "./project.ts";
+import { makeProjectCliRuntimeLayer } from "./project.ts";
 
 const userError = (message: string) => new CliError.UserError({ cause: message });
 
@@ -157,6 +157,9 @@ const importWandeCommand = Command.make("import-wande", {
       }
 
       const tables = yield* readSnapshot(path.resolve(yield* expandHomePath(flags.snapshot)));
+      const { layerProjectService } = yield* Effect.promise(
+        () => import("../orchestration-v2/runtimeLayer.ts"),
+      );
       const runtime = WandeImportServicesLive.pipe(
         Layer.provideMerge(ProjectStore.layer),
         Layer.provideMerge(
@@ -166,7 +169,7 @@ const importWandeCommand = Command.make("import-wande", {
             ),
           ),
         ),
-        Layer.provideMerge(layerProjectCliRuntime),
+        Layer.provideMerge(makeProjectCliRuntimeLayer(layerProjectService)),
         Layer.provideMerge(ServerConfig.layer(config)),
         Layer.provide(Layer.succeed(References.MinimumLogLevel, config.logLevel)),
       );

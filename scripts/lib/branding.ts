@@ -13,7 +13,14 @@ export interface CopyRule {
   readonly replacement: string;
 }
 
+/**
+ * Upstream's `t3 up` (remote access setup) is `remote` here; the command name
+ * itself is set by hand in apps/server/src/cli/up.ts and pinned in the registry.
+ */
+const REMOTE_COMMAND_RULE: CopyRule = { pattern: /\bt3 up\b/g, replacement: "t3 remote" };
+
 export const COPY_RULES: ReadonlyArray<CopyRule> = [
+  REMOTE_COMMAND_RULE,
   { pattern: /\bT3 Code\b/g, replacement: "Up.computer" },
   { pattern: /\b(a|A) Up\.computer\b/g, replacement: "$1n Up.computer" },
   { pattern: /\ba T3 thread\b/g, replacement: "an Up.computer thread" },
@@ -52,6 +59,7 @@ const COPY_EXTENSIONS = /\.(ts|tsx|mjs|cjs|js|html|md)$/;
  * edit; check-branding does not catch those.
  */
 const DOC_RULES: ReadonlyArray<CopyRule> = [
+  REMOTE_COMMAND_RULE,
   {
     // T3 Chat is another product; its account link stays hidden in ours.
     pattern: /\bT3(?! Code\b| Connect\b| Chat\b)(?='s\b|-owned\b|-managed\b|\s|$)/g,
@@ -124,12 +132,22 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
     path: /^apps\/server\/src\/orchestration-v2\/Adapters\/AcpAdapterV2\.test\.ts$/,
     line: /snippet: "T3 Code page"/,
   },
+  // Suite titles of upstream's `t3 up` tests; renaming them reflows the whole suite.
+  {
+    path: /^apps\/server\/src\/cli\/up(\.connect)?\.test\.ts$/,
+    line: /^it\.layer\(.*\("t3 up", |^  "t3 up with /,
+  },
   // Its headings are the anchors clients link to (T3_CONNECT_TROUBLESHOOTING_SECTIONS in
   // packages/contracts/src/environmentHttp.ts), so they keep upstream's wording.
   { path: /^docs\/user\/t3-connect-troubleshooting\.md$/, line: /^#{2,3} / },
   {
     path: /^packages\/shared\/src\/t3McpToolPresentation\.test\.ts$/,
     line: /^\s*"T3 Code( delegate_task)? ?",$/,
+  },
+  // The normalized form of the test's "  T3   Code " vocabulary hint, not copy.
+  {
+    path: /^packages\/shared\/src\/speech\.test\.ts$/,
+    line: /^\s*\{ term: "T3 Code", aliases: \[\] \},$/,
   },
 ];
 
@@ -207,7 +225,7 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   },
   {
     path: "apps/desktop/src/app/DesktopEarlyElectronStartup.ts",
-    requires: ["UPCOMPUTER_APP_ID", "UPCOMPUTER_EXECUTABLE_NAME"],
+    requires: ["UPCOMPUTER_APP_ID"],
     forbids: ["com.t3tools.T3Code", '"t3code"'],
   },
   {
@@ -315,6 +333,11 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   // UPCOMPUTER_* environment aliases at the entry points.
   { path: "apps/server/src/bin.ts", requires: ["applyUpcomputerEnvAliases(process.env)"] },
   { path: "apps/server/src/binCli.ts", requires: ["applyUpcomputerEnvAliases(process.env)"] },
+  {
+    path: "apps/server/src/cli/up.ts",
+    requires: ['Command.make("remote", {', 'resolveHostCliCommand("remote", '],
+    forbids: ['Command.make("up", {', 'resolveHostCliCommand("up", '],
+  },
   { path: "scripts/lib/public-config.ts", requires: ["applyUpcomputerEnvAliases("] },
   // Web shell.
   {

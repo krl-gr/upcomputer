@@ -1,6 +1,7 @@
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { ProviderDriverKind, settingsSecretLiteral } from "@t3tools/contracts";
 import { OpenCodeSettings } from "../settings.ts";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -15,6 +16,8 @@ import * as OpenCode2TextGeneration from "./v2/textGeneration.ts";
 import { makeOpenCodeTextGeneration } from "./textGeneration.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as OpenCodeAdapterV2 from "./adapter.ts";
 import * as OpenCode2AdapterV2 from "./v2/adapter.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
@@ -94,6 +97,7 @@ export const openCodeUpdateFor = (generation: ProbedOpenCode["generation"]) =>
     nativeUpdate: {
       args: ["upgrade"],
       isCommandPath: isOpenCodeNativeCommandPath,
+      requiresCommandPath: true,
     },
   });
 
@@ -162,6 +166,11 @@ function selectOpenCodeRuntimeTextGeneration(
         v1: v1.generateReviewGuide(input),
         v2: v2.generateReviewGuide(input),
       }),
+    generateTranscriptionPostProcessing: (input) =>
+      byOpenCodeRuntime(probe.get, {
+        v1: v1.generateTranscriptionPostProcessing(input),
+        v2: v2.generateTranscriptionPostProcessing(input),
+      }),
   };
 }
 
@@ -169,7 +178,8 @@ export type OpenCodeDriverEnv =
   | OpenCodeAdapterV2.OpenCodeAdapterV2DriverEnv
   | ProviderHost.ProviderHost
   | ChildProcessSpawner.ChildProcessSpawner
-  | Crypto.Crypto
+  | Digest.Digest
+  | SecureRandom.SecureRandom
   | FileSystem.FileSystem
   | HttpClient.HttpClient
   | ProviderLatestVersions.ProviderLatestVersions
@@ -203,7 +213,7 @@ export const OpenCodeDriver: ProviderDriver<
     const openCodeRuntime = yield* OpenCodeRuntime.OpenCodeRuntime;
     const httpClient = yield* HttpClient.HttpClient;
     const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
-    const crypto = yield* Crypto.Crypto;
+    const digest = yield* Digest.Digest;
     const host = yield* ProviderHost.ProviderHost;
     const processEnv = yield* mergeProviderInstanceEnvironment(environment);
     const continuationIdentity = defaultProviderContinuationIdentity({
@@ -217,7 +227,13 @@ export const OpenCodeDriver: ProviderDriver<
       accentColor,
       continuationGroupKey: continuationIdentity.continuationKey,
     });
-    const effectiveConfig = { ...config, enabled } satisfies OpenCodeSettings;
+    const effectiveConfig = {
+      ...config,
+      enabled,
+      binaryPath: expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
+      // The instance registry has already read a referenced password from its secret provider.
+      serverPassword: settingsSecretLiteral(config.serverPassword),
+    } satisfies OpenCodeSettings;
     const runtimeProbe = yield* makeOpenCodeRuntimeProbe(
       probeOpenCodeRuntime(effectiveConfig, processEnv).pipe(
         Effect.provideService(HttpClient.HttpClient, httpClient),
@@ -262,7 +278,7 @@ export const OpenCodeDriver: ProviderDriver<
       accentColor,
       environment,
       enabled,
-      config,
+      config: effectiveConfig,
     }).pipe(
       Effect.mapError(
         (cause) =>
@@ -346,6 +362,16 @@ export const OpenCodeDriver: ProviderDriver<
       ),
     );
 
+    const checkUsageLimits = readOpenCodeGoUsageLimits({
+      enabled: effectiveConfig.enabled,
+      serverUrl: effectiveConfig.serverUrl,
+      environment: processEnv,
+    }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, pathService),
+      Effect.provideService(HttpClient.HttpClient, httpClient),
+      Effect.provideService(Digest.Digest, digest),
+    );
     const checkProvider = Effect.all(
       {
         provider: checkOpenCodeProviderStatus(
@@ -358,20 +384,12 @@ export const OpenCodeDriver: ProviderDriver<
           Effect.annotateLogs({ providerInstanceId: instanceId }),
           Effect.annotateSpans({ providerInstanceId: instanceId }),
         ),
-        usageLimits: readOpenCodeGoUsageLimits({
-          enabled: effectiveConfig.enabled,
-          serverUrl: effectiveConfig.serverUrl,
-          environment: processEnv,
-        }),
+        usageLimits: checkUsageLimits,
       },
       { concurrency: "unbounded" },
     ).pipe(
       Effect.map(({ provider, usageLimits }) => ({ ...provider, usageLimits })),
       Effect.map(stampIdentity),
-      Effect.provideService(FileSystem.FileSystem, fileSystem),
-      Effect.provideService(Path.Path, pathService),
-      Effect.provideService(HttpClient.HttpClient, httpClient),
-      Effect.provideService(Crypto.Crypto, crypto),
       Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner),
       Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
     );
@@ -457,6 +475,7 @@ export const OpenCodeDriver: ProviderDriver<
       initialSnapshot: (settings) =>
         makePendingOpenCodeProvider(settings.provider).pipe(Effect.map(stampIdentity)),
       checkProvider,
+      checkUsageLimits,
       enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
         resolveMaintenance().pipe(
           Effect.flatMap((maintenanceCapabilities) =>

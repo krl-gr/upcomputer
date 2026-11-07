@@ -414,6 +414,8 @@ function gitActionPhrase(operation: string): string {
   if (op.includes("pull")) return "pull";
   if (op.includes("commit")) return "commit";
   if (op.includes("removeworktree")) return "remove the worktree";
+  // Submodules check out after the worktree already exists.
+  if (op.includes("submodule")) return "check out the submodules";
   if (op.includes("worktree")) return "create the worktree";
   if (op.includes("checkout") || op.includes("switch")) return "switch branches";
   if (op.includes("fetch")) return "fetch from the remote";
