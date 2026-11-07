@@ -34,10 +34,13 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
 
 describe("fallbackTextGenerationModelSelection", () => {
-  it("uses Big Pickle when only OpenCode is enabled", () => {
-    expect(
-      fallbackTextGenerationModelSelection({}, (instanceId) => instanceId === "opencode"),
-    ).toEqual({ instanceId: "opencode", model: "opencode/big-pickle" });
+  it("never picks Big Pickle when only OpenCode is enabled", () => {
+    const fallback = fallbackTextGenerationModelSelection(
+      {},
+      (instanceId) => instanceId === "opencode",
+    );
+    expect(fallback?.instanceId).toBe("opencode");
+    expect(fallback?.model).not.toBe("opencode/big-pickle");
   });
 
   it("replaces and clears the fallback without carrying model options", () => {
@@ -114,10 +117,10 @@ describe("resolveReadyTextGenerationModelSelection", () => {
   });
   const unchosen = DEFAULT_SERVER_SETTINGS.textGenerationModelSelection;
 
-  it("moves the unchosen Codex default to OpenCode's text-generation model", () => {
+  it("moves the unchosen Codex default to OpenCode's automatic free model, never Big Pickle", () => {
     expect(
       resolveReadyTextGenerationModelSelection(unchosen, [notInstalledCodex, freeOpenCode]),
-    ).toEqual({ instanceId: "opencode", model: "opencode/big-pickle" });
+    ).toEqual({ instanceId: "opencode", model: "opencode/glm-5.3-flash-free" });
   });
 
   it("prefers a ready provider's own text-generation model", () => {
