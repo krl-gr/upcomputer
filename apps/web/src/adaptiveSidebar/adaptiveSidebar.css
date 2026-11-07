@@ -219,7 +219,11 @@
 [data-sidebar-compact="true"]
   [data-app-sidebar]
   [data-sidebar="footer"]
-  > :not([data-sidebar="menu"]) {
+  > :not([data-sidebar="menu"]),
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-sidebar="footer"]
+  [data-sidebar-undo-notice] {
   display: none;
 }
 [data-sidebar-compact="true"] [data-app-sidebar] [data-track="sidebar.back"] {

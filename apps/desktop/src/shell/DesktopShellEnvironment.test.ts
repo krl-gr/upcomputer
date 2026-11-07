@@ -564,11 +564,13 @@ describe("DesktopShellEnvironment", () => {
         handler: () =>
           envOutput({
             PATH: "/opt/homebrew/bin:/usr/bin",
+            T3CODE_TELEMETRY_ENABLED: "true",
             UPCOMPUTER_TELEMETRY_ENABLED: "false",
           }),
       });
 
-      assert.equal(env.UPCOMPUTER_TELEMETRY_ENABLED, "false");
+      // The server reads T3CODE_TELEMETRY_ENABLED, and the Up.computer name wins.
+      assert.equal(env.T3CODE_TELEMETRY_ENABLED, "false");
     }),
   );
   it.effect("hydrates missing CA trust variables from the login shell", () =>

@@ -1,6 +1,7 @@
 import * as NodeOS from "node:os";
 
 import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
+import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 import { currentDesktopBootstrapToken } from "@t3tools/shared/desktopBootstrapToken";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveUpcomputerBuildKind } from "@t3tools/shared/upcomputerIdentity";
@@ -26,7 +27,6 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopServerExposure from "./DesktopServerExposure.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
-import { resolveDefaultDesktopUpdateChannel } from "../updates/updateChannels.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 import * as DesktopWslServerTree from "../wsl/DesktopWslServerTree.ts";
 
@@ -266,7 +266,7 @@ function desktopTelemetryEnv(input: {
   return {
     T3CODE_DESKTOP_VERSION: input.isPackaged ? input.appVersion : serverPackageJson.version,
     T3CODE_DESKTOP_RELEASE_CHANNEL: hasUpdateFeed
-      ? resolveDefaultDesktopUpdateChannel(input.appVersion)
+      ? desktopUpdateChannelOf(input.appVersion)
       : undefined,
     T3CODE_DESKTOP_BUILD_KIND: buildKind,
     T3CODE_DESKTOP_SESSION_ID: input.sessionId,
@@ -772,10 +772,7 @@ export const make = Effect.gen(function* () {
   const primaryStarts = yield* Ref.make(0);
   // One per app launch, so backend restarts stay in the same telemetry session.
   // Without one the backend starts its own.
-  const telemetrySessionId = yield* crypto.randomUUIDv4().pipe(
-    Effect.map((id): string | undefined => id),
-    Effect.catchCause(() => Effect.sync((): string | undefined => undefined)),
-  );
+  const telemetrySessionId = yield* random.uuidV4();
   const getOrCreateBootstrapSecret = SynchronizedRef.modifyEffect(secretRef, (current) =>
     Option.match(current, {
       onSome: (secret) => Effect.succeed([secret, current] as const),

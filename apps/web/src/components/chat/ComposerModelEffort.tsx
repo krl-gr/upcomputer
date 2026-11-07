@@ -674,19 +674,23 @@ function PermissionsMenu(props: {
 /** The model picker's footer: speed stays one click away, permissions sit one menu deeper. */
 export function ComposerPickerFooter(props: {
   traits: TraitsSelectionInput | null;
+  /** UpComputer: false where the composer footer has its own access control. */
+  showPermissions?: boolean;
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t border-border/70 bg-muted/40 px-3 py-2">
+    <div className="flex flex-wrap items-center gap-2 border-t border-border/70 bg-muted/40 px-3 py-2 empty:hidden">
       {props.traits ? <SpeedControl traits={props.traits} /> : null}
       {props.traits ? <UltracodeControl traits={props.traits} /> : null}
-      <PermissionsMenu
-        runtimeMode={props.runtimeMode}
-        options={props.runtimeModeOptions}
-        onChange={props.onRuntimeModeChange}
-      />
+      {props.showPermissions === false ? null : (
+        <PermissionsMenu
+          runtimeMode={props.runtimeMode}
+          options={props.runtimeModeOptions}
+          onChange={props.onRuntimeModeChange}
+        />
+      )}
     </div>
   );
 }

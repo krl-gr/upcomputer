@@ -1,3 +1,5 @@
+import * as Schema from "effect/Schema";
+
 /**
  * Whether an environment serves the Tasks RPC groups. V1 read this from the
  * product manifest; on v2 the client asks the server once (see
@@ -41,13 +43,11 @@ export function resolveTasksWebAccess(input: ResolveTasksWebAccessInput): TasksW
   };
 }
 
-export class TasksWebCapabilityUnavailableError extends Error {
-  override readonly name = "TasksWebCapabilityUnavailableError";
-
-  constructor(
-    readonly operation: string,
-    readonly reason: string,
-  ) {
-    super(`Tasks operation '${operation}' is unavailable: ${reason}`);
+export class TasksWebCapabilityUnavailableError extends Schema.TaggedError<TasksWebCapabilityUnavailableError>()(
+  "TasksWebCapabilityUnavailableError",
+  { operation: Schema.String, reason: Schema.String },
+) {
+  override get message(): string {
+    return `Tasks operation '${this.operation}' is unavailable: ${this.reason}`;
   }
 }

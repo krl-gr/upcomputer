@@ -7,9 +7,9 @@ import {
   createCommandPermissions,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type * as RpcClient from "effect/rpc/RpcClient";
@@ -24,9 +24,11 @@ export type ExperimentalFeatureRpcClient<Group extends RpcGroup.Any> = RpcClient
 >;
 
 /** Carries a feature's own RPC failure through the environment command. */
-class FeatureRpcFailure extends Data.TaggedError("FeatureRpcFailure")<{
-  readonly error: unknown;
-}> {}
+class FeatureRpcFailure extends Schema.TaggedError<FeatureRpcFailure>()("FeatureRpcFailure", {
+  error: Schema.Unknown,
+}) {}
+
+const isFeatureRpcFailure = Schema.is(FeatureRpcFailure);
 
 interface FeatureRpcRequest {
   readonly execute: (client: unknown) => Effect.Effect<unknown, FeatureRpcFailure>;
@@ -89,7 +91,7 @@ export async function requestExperimentalFeatureRpc<Group extends RpcGroup.Any, 
   });
   if (result._tag === "Success") return result.value as A;
   const failure = squashAtomCommandFailure(result);
-  throw failure instanceof FeatureRpcFailure ? failure.error : failure;
+  throw isFeatureRpcFailure(failure) ? failure.error : failure;
 }
 
 export const useExperimentalFeatureRpcPermission = (

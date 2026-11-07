@@ -51,12 +51,13 @@ vi.mock("../components/ProjectFavicon", () => ({
 }));
 vi.mock("../state/entities", () => ({
   useProjects: () => state.projects,
-  useThreadShells: () => [],
+  useVisibleThreadShells: () => [],
 }));
 vi.mock("../state/environments", () => ({
   useEnvironments: () => ({
     environments: [{ environmentId: "env-1", label: "This Mac", serverConfig: null }],
   }),
+  useEnvironmentProviders: () => new Map(),
   usePrimaryEnvironmentId: () => "env-1",
 }));
 vi.mock("../state/server", async (importOriginal) => ({
@@ -71,6 +72,12 @@ vi.mock("../hooks/useSettings", async () => {
       select(DEFAULT_CLIENT_SETTINGS),
   };
 });
+vi.mock("../hooks/useProjectGroupUpdate", () => ({
+  useProjectPin: () => ({
+    canPinProjectGroup: () => false,
+    toggleProjectGroupPin: () => undefined,
+  }),
+}));
 vi.mock("../hooks/useScratchProject", () => ({
   useScratchProject: () => ({
     scratchEnvironmentId: () => "env-1",

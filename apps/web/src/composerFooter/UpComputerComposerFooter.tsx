@@ -9,7 +9,6 @@ import {
   ComposerSelectControl,
 } from "../components/chat/ComposerControl";
 import { useComposerMenuProps } from "../components/chat/composerEventScope";
-import { renderProviderTraitsPicker } from "../components/chat/composerProviderState";
 import type { runtimeModeConfig } from "../components/chat/runtimeModeConfig";
 import { useComposerMenuState } from "../components/chat/useComposerMenuState";
 import { resolveRestingComposerControlsLayout } from "../components/composerFooterLayout";
@@ -32,13 +31,13 @@ type RuntimeModeOption = { readonly mode: RuntimeMode } & (typeof runtimeModeCon
 export interface UpComputerComposerFooterProps {
   /** Upstream's hidden file input and the click that opens it, or null without attachments. */
   attach: { input: ReactNode; open: () => void } | null;
-  /** Upstream's model picker, labelled "Provider · Model" through `composerModelPickerSurfaceProps`. */
+  /**
+   * Upstream's model picker, labelled "Provider · Model" by `ComposerFooterModelPicker`. It also
+   * carries effort and context, after the model name and in its popup.
+   */
   modelPicker: ReactNode;
   /** Upstream's "Open provider settings" control, shown instead of the controls when set. */
   providerUnavailableControl: ReactNode;
-  /** Upstream's effort and context window picker input; the picker renders only what the model has. */
-  traitsPickerInput: Parameters<typeof renderProviderTraitsPicker>[0];
-  traitsMenuContent: ReactNode;
   showInteractionModeToggle: boolean;
   interactionMode: ProviderInteractionMode;
   onToggleInteractionMode: () => void;
@@ -272,17 +271,17 @@ function AccessControl(props: {
   );
 }
 
-type FooterBlockId = "mode" | "traits" | "access";
+type FooterBlockId = "mode" | "access";
 
 /**
  * The composer footer in V1's layout, built from upstream's controls: attach,
- * mode, provider and model, effort and context, access, then the context ring
- * and send on the right. Trailing blocks fold into upstream's overflow menu.
+ * mode, provider and model (with effort and context), access, then the context
+ * ring and send on the right. Trailing blocks fold into upstream's overflow menu.
  *
  * Separators: exactly one between neighbours that are shown. Each one belongs
  * to the item that can be missing, on the side facing the model picker (which
- * is always there): the paperclip and the mode carry one after them, effort,
- * access and the overflow trigger one before them. An absent or folded item
+ * is always there): the paperclip and the mode carry one after them, access
+ * and the overflow trigger one before them. An absent or folded item
  * takes its separator along, and the measured widths include it. V1 drew no
  * separator before the overflow trigger.
  */
@@ -290,12 +289,10 @@ export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
   const { attachRow, hiddenCount, iconOnlyCount } = useComposerFooterControlsLayout();
   const [actions, setActions] = useState<HTMLDivElement | null>(null);
   useCompactComposerActionsWidth(actions, props.compact === true);
-  const hasTraits = renderProviderTraitsPicker(props.traitsPickerInput) !== null;
   // Priority order, V1's: the last block loses its label and folds first, so
-  // access goes to its lock first, then effort and context, then the mode.
+  // access goes to its lock first, then the mode.
   const blocks: FooterBlockId[] = [
     ...(props.showInteractionModeToggle ? (["mode"] as const) : []),
-    ...(hasTraits ? (["traits"] as const) : []),
     "access",
   ];
   const hiddenBlocks = new Set(blocks.slice(Math.max(0, blocks.length - hiddenCount)));
@@ -360,19 +357,6 @@ export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
                 )
               : null}
             {props.modelPicker}
-            {hasTraits
-              ? renderBlock(
-                  "traits",
-                  <>
-                    <FooterSeparator />
-                    {renderProviderTraitsPicker({
-                      ...props.traitsPickerInput,
-                      hidden: hiddenBlocks.has("traits"),
-                      triggerClassName: COMPOSER_CONTROL_TEXT_TRIGGER_CLASS,
-                    })}
-                  </>,
-                )
-              : null}
             {renderBlock(
               "access",
               <>
@@ -402,7 +386,6 @@ export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
                 hidden={hiddenBlocks.size === 0}
                 triggerClassName={COMPOSER_CONTROL_ICON_TRIGGER_CLASS}
                 showInteractionModeToggle={hiddenBlocks.has("mode")}
-                traitsMenuContent={hiddenBlocks.has("traits") ? props.traitsMenuContent : undefined}
                 onToggleInteractionMode={props.onToggleInteractionMode}
                 onRuntimeModeChange={props.onRuntimeModeChange}
               />

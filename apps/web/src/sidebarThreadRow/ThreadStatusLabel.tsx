@@ -1,9 +1,9 @@
-import type { SidebarThreadStatus, SidebarV2TopStatusKind } from "../components/Sidebar.logic";
-import { resolveSidebarV2TopStatus } from "./topStatus";
+import type { SidebarThreadStatus } from "../components/Sidebar.logic";
+import { resolveSidebarV2TopStatus, type ThreadTopStatusKind } from "./topStatus";
 import { cn } from "../lib/utils";
 
 /** Upstream's status kinds that have a text label. Woke has none: it stays hidden. */
-export type ThreadStatusLabelKind = Exclude<SidebarV2TopStatusKind, "woke">;
+export type ThreadStatusLabelKind = Exclude<ThreadTopStatusKind, "woke">;
 
 export interface ThreadStatusLabelEntry {
   /** "draft": a typed, unsent message, named only when no status applies. */
@@ -20,6 +20,8 @@ export interface ThreadStatusLabelEntry {
 export const THREAD_STATUS_LABELS: {
   readonly [Kind in ThreadStatusLabelKind]: Omit<ThreadStatusLabelEntry, "kind">;
 } = {
+  // Upstream's word for worktree setup, in Working's hue.
+  preparing: { label: "Setting up", className: "text-info-foreground" },
   working: { label: "Working", className: "text-info-foreground" },
   approval: { label: "Pending Approval", className: "text-warning-foreground" },
   input: { label: "Awaiting Input", className: "text-indigo-600 dark:text-indigo-300" },

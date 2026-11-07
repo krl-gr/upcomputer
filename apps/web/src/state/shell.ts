@@ -95,10 +95,6 @@ export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
   return true;
 }).pipe(Atom.withLabel("web-all-environment-shells-bootstrapped"));
 
-export function expectsPrimaryEnvironment(): boolean {
-  return !isHostedStaticApp() && !isLocalEnvironmentDisabled();
-}
-
 export function hasPrimaryEnvironment(catalog: EnvironmentCatalogState): boolean {
   return Array.from(catalog.entries.values()).some(
     (entry) => entry.target._tag === "PrimaryConnectionTarget",

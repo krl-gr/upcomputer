@@ -6,6 +6,7 @@ import {
   resolveKnownPosixCliDirs,
   setWindowsPath,
 } from "@t3tools/shared/shell";
+import { applyUpcomputerEnvAliases } from "@t3tools/shared/upcomputerEnv";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -488,6 +489,8 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
         config.env[name] = shellEnvironment[name];
       }
     }
+    // UpComputer: the published patch carries only T3CODE_ names, so a shell-only opt-out is copied.
+    applyUpcomputerEnvAliases(config.env);
 
     // Hydrate locale variables together; inherited LC_ALL can override LANG or LC_CTYPE.
     if (

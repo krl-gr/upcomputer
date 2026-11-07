@@ -125,7 +125,9 @@ export function createTasksWebRpcClient(
   ): Promise<RpcSuccess<Tag>> => {
     const access = options.getAccess();
     if (!access[required]) {
-      return Promise.reject(new TasksWebCapabilityUnavailableError(operation, access.reason));
+      return Promise.reject(
+        new TasksWebCapabilityUnavailableError({ operation, reason: access.reason }),
+      );
     }
     return requestRpc(
       (client) => {
@@ -141,7 +143,10 @@ export function createTasksWebRpcClient(
   const subscribe = createTaskChangeSubscription((signal, listener) => {
     if (!options.getAccess().canReadTasks)
       return Promise.reject(
-        new TasksWebCapabilityUnavailableError("tasks.subscribe", options.getAccess().reason),
+        new TasksWebCapabilityUnavailableError({
+          operation: "tasks.subscribe",
+          reason: options.getAccess().reason,
+        }),
       );
     return requestRpc((client) => {
       const aborted = Effect.callback<void>((resume) => {

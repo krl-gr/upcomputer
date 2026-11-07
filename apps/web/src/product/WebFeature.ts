@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import type { NavigateOptions } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 
 const STABLE_ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
@@ -140,66 +141,67 @@ export interface ExperimentalWebFeatureContribution {
   readonly rpcGroups?: ReadonlyArray<RpcGroup.Any>;
 }
 
-export class WebFeatureInvariantError extends Error {
-  override readonly name = "WebFeatureInvariantError";
-
-  constructor(
-    readonly code:
-      | "invalid-id"
-      | "invalid-version"
-      | "invalid-route"
-      | "duplicate-feature"
-      | "duplicate-route"
-      | "duplicate-navigation"
-      | "duplicate-settings"
-      | "invalid-shortcut"
-      | "duplicate-right-panel-surface"
-      | "duplicate-rpc-method",
-    message: string,
-  ) {
-    super(message);
-  }
-}
+export class WebFeatureInvariantError extends Schema.TaggedError<WebFeatureInvariantError>()(
+  "WebFeatureInvariantError",
+  {
+    code: Schema.Literals([
+      "invalid-id",
+      "invalid-version",
+      "invalid-route",
+      "duplicate-feature",
+      "duplicate-route",
+      "duplicate-navigation",
+      "duplicate-settings",
+      "invalid-shortcut",
+      "duplicate-right-panel-surface",
+      "duplicate-rpc-method",
+    ]),
+    message: Schema.String,
+  },
+) {}
 
 function assertStableId(value: string, field: string): void {
   if (!STABLE_ID.test(value)) {
-    throw new WebFeatureInvariantError(
-      "invalid-id",
-      `${field} '${value}' must be a lowercase dot, dash, or underscore separated id.`,
-    );
+    throw new WebFeatureInvariantError({
+      code: "invalid-id",
+      message: `${field} '${value}' must be a lowercase dot, dash, or underscore separated id.`,
+    });
   }
 }
 
 function assertLabel(label: string, field: string): void {
   if (label.trim().length === 0) {
-    throw new WebFeatureInvariantError("invalid-id", `${field} must have a non-empty label.`);
+    throw new WebFeatureInvariantError({
+      code: "invalid-id",
+      message: `${field} must have a non-empty label.`,
+    });
   }
 }
 
 function assertRoutePath(path: string): void {
   if (!ROUTE_PATH.test(path) || RESERVED_ROUTE_PATHS.has(path)) {
-    throw new WebFeatureInvariantError(
-      "invalid-route",
-      `Web feature route '${path}' must be an unreserved top-level application path.`,
-    );
+    throw new WebFeatureInvariantError({
+      code: "invalid-route",
+      message: `Web feature route '${path}' must be an unreserved top-level application path.`,
+    });
   }
 }
 
 function assertSettingsPath(path: string): void {
   if (!SETTINGS_ROUTE_PATH.test(path)) {
-    throw new WebFeatureInvariantError(
-      "invalid-route",
-      `Web feature settings path '${path}' must be a direct child of /settings.`,
-    );
+    throw new WebFeatureInvariantError({
+      code: "invalid-route",
+      message: `Web feature settings path '${path}' must be a direct child of /settings.`,
+    });
   }
 }
 
 function assertShortcut(shortcut: string, field: string): void {
   if (!/^[A-Z]$/.test(shortcut) || CORE_RIGHT_PANEL_SHORTCUTS.has(shortcut)) {
-    throw new WebFeatureInvariantError(
-      "invalid-shortcut",
-      `${field} shortcut '${shortcut}' must be one uppercase letter core's launcher does not use.`,
-    );
+    throw new WebFeatureInvariantError({
+      code: "invalid-shortcut",
+      message: `${field} shortcut '${shortcut}' must be one uppercase letter core's launcher does not use.`,
+    });
   }
 }
 
@@ -208,10 +210,10 @@ export function defineExperimentalWebFeature<
 >(feature: Feature): Feature {
   assertStableId(feature.id, "Web feature id");
   if (!Number.isSafeInteger(feature.version) || feature.version < 1) {
-    throw new WebFeatureInvariantError(
-      "invalid-version",
-      `Web feature '${feature.id}' must have a positive safe-integer version.`,
-    );
+    throw new WebFeatureInvariantError({
+      code: "invalid-version",
+      message: `Web feature '${feature.id}' must have a positive safe-integer version.`,
+    });
   }
   for (const route of feature.routes ?? []) {
     assertStableId(route.id, `Route id for '${feature.id}'`);

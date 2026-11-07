@@ -258,16 +258,16 @@ describe("DesktopLifecycle", () => {
         return yield* Deferred.await(relaunched);
       }).pipe(
         Effect.provide(layer),
-        Effect.provideService(HostProcess.ExecutablePath, "/opt/T3 Code/t3code"),
+        Effect.provideService(HostProcess.ExecutablePath, "/opt/Up.computer/t3code"),
         Effect.provideService(HostProcess.Arguments, [
-          "/opt/T3 Code/t3code",
+          "/opt/Up.computer/t3code",
           "--no-sandbox",
-          "T3CODE://pair?token=spent",
-          "t3code://new?prompt=hello",
+          "UPCOMPUTER://pair?token=spent",
+          "upcomputer://new?prompt=hello",
         ]),
       );
 
-      assert.deepEqual(options, { execPath: "/opt/T3 Code/t3code", args: ["--no-sandbox"] });
+      assert.deepEqual(options, { execPath: "/opt/Up.computer/t3code", args: ["--no-sandbox"] });
     }),
   );
 

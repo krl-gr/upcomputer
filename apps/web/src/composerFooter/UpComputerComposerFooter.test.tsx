@@ -49,16 +49,9 @@ vi.mock("../components/ui/tooltip", () => ({
   ),
 }));
 
-import {
-  ProviderDriverKind,
-  ProviderInstanceId,
-  type ProviderOptionDescriptor,
-  type ServerProvider,
-  type ServerProviderModel,
-} from "@t3tools/contracts";
+import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
+import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 
-import type { DraftId } from "../composerDraftStore";
-import type { ContextWindowSnapshot } from "../lib/contextWindow";
 import { runtimeModeConfig, runtimeModeOptions } from "../components/chat/runtimeModeConfig";
 import type { UpComputerComposerFooterProps } from "./UpComputerComposerFooter";
 import {
@@ -79,42 +72,6 @@ const {
 
 const CLAUDE = ProviderInstanceId.make("claudeAgent");
 const OPUS = "claude-opus-5-5";
-
-function selectDescriptor(
-  id: string,
-  options: ReadonlyArray<{ id: string; label: string; isDefault?: boolean }>,
-): ProviderOptionDescriptor {
-  const currentValue = options.find((option) => option.isDefault)?.id;
-  return {
-    id,
-    label: id,
-    type: "select",
-    options: [...options],
-    ...(currentValue ? { currentValue } : {}),
-  };
-}
-
-const EFFORT = selectDescriptor("effort", [
-  { id: "medium", label: "Medium" },
-  { id: "high", label: "High", isDefault: true },
-]);
-const CONTEXT_WINDOW = selectDescriptor("contextWindow", [
-  { id: "200k", label: "200k" },
-  { id: "1m", label: "1M", isDefault: true },
-]);
-
-function claudeModels(
-  descriptors: ReadonlyArray<ProviderOptionDescriptor>,
-): ReadonlyArray<ServerProviderModel> {
-  return [
-    {
-      slug: OPUS,
-      name: "Claude Opus 5.5",
-      isCustom: false,
-      capabilities: { optionDescriptors: [...descriptors] },
-    },
-  ];
-}
 
 const claudeEntry = (() => {
   const provider: ServerProvider = {
@@ -169,29 +126,12 @@ function modelPicker(
 }
 
 function footerProps(
-  overrides: Partial<UpComputerComposerFooterProps> & {
-    descriptors?: ReadonlyArray<ProviderOptionDescriptor>;
-  } = {},
+  overrides: Partial<UpComputerComposerFooterProps> = {},
 ): UpComputerComposerFooterProps {
-  const { descriptors = [EFFORT, CONTEXT_WINDOW], ...rest } = overrides;
-  const traitsInput = {
-    provider: ProviderDriverKind.make("claudeAgent"),
-    instanceId: CLAUDE,
-    draftId: "draft-footer-test" as DraftId,
-    model: OPUS,
-    models: claudeModels(descriptors),
-    modelOptions: undefined,
-    promptUltrathink: "none" as const,
-    onPromptEdit: () => undefined,
-    planModeEnabled: true,
-    isComposerOwned: true,
-  };
   return {
     attach: { input: <input type="file" className="hidden" />, open: spies.onAttach },
     modelPicker: modelPicker(),
     providerUnavailableControl: null,
-    traitsPickerInput: traitsInput,
-    traitsMenuContent: <span data-testid="traits-menu-content">Effort options</span>,
     showInteractionModeToggle: true,
     interactionMode: "default",
     onToggleInteractionMode: spies.onToggleInteractionMode,
@@ -208,7 +148,7 @@ function footerProps(
         <button type="submit" aria-label="Send message" />
       </>
     ),
-    ...rest,
+    ...overrides,
   };
 }
 
@@ -262,8 +202,6 @@ function click(element: Element) {
 function stubLayout(rowWidth: number) {
   const widthOf = (element: HTMLElement) => {
     if (element.dataset.testid === "tooltip" || element.matches("input")) return 0;
-    // The secondary trait ("1M") is counted in its block's 80px.
-    if (element.dataset.composerSecondaryTrait !== undefined) return 0;
     if (element.dataset.composerControlLabel !== undefined) return 50;
     if (element.dataset.composerControlCompactIcon !== undefined) return 16;
     if (element.dataset.composerFooterBlock !== undefined) return 80;
@@ -279,10 +217,7 @@ function stubLayout(rowWidth: number) {
   vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (
     this: HTMLElement,
   ) {
-    return this.dataset.composerControlLabel !== undefined &&
-      this.dataset.composerSecondaryTrait === undefined
-      ? 50
-      : 0;
+    return this.dataset.composerControlLabel !== undefined ? 50 : 0;
   });
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (
     this: HTMLElement,
@@ -343,13 +278,7 @@ describe("UpComputerComposerFooter", () => {
           element.querySelector('[data-chat-provider-model-picker-label="true"]')?.textContent ??
           element.textContent,
       );
-    expect(left).toEqual([
-      "Attach files",
-      "Build",
-      "Claude · Opus 5.5",
-      "Effort: High · 1M",
-      "Access: Full access",
-    ]);
+    expect(left).toEqual(["Attach files", "Build", "Claude · Opus 5.5", "Access: Full access"]);
     const right = container.querySelector('[data-chat-composer-actions="right"]')!;
     expect(
       Array.from(right.querySelectorAll("button")).map((button) =>
@@ -380,26 +309,6 @@ describe("UpComputerComposerFooter", () => {
     expect(
       container.querySelector('[data-chat-provider-model-picker-label="true"]')?.textContent,
     ).toBe("Opus 5.5");
-  });
-
-  it("combines effort and context, and shows only what the model has", async () => {
-    await render(footerProps());
-    const traitLabels = () =>
-      Array.from(
-        block("traits")?.querySelectorAll("[data-composer-control-label]") ?? [],
-        (label) => label.textContent,
-      ).join(" · ");
-    expect(traitLabels()).toBe("High · 1M");
-
-    await render(footerProps({ descriptors: [EFFORT] }));
-    expect(traitLabels()).toBe("High");
-    // The gauge shows only when the row runs out of room, like the access lock.
-    const gauge = block("traits")!.querySelector("[data-composer-control-compact-icon]")!;
-    expect(gauge.classList.contains("lucide-gauge")).toBe(true);
-    expect(gauge.classList.contains("invisible")).toBe(true);
-
-    await render(footerProps({ descriptors: [] }));
-    expect(block("traits")).toBeNull();
   });
 
   it("labels the mode Build or Plan, and a click toggles it", async () => {
@@ -472,7 +381,7 @@ describe("UpComputerComposerFooter", () => {
   it("keeps every control in the row when it fits", async () => {
     stubLayout(600);
     await render(footerProps());
-    for (const id of ["mode", "traits", "access"]) {
+    for (const id of ["mode", "access"]) {
       expect(block(id)?.getAttribute("aria-hidden")).toBeNull();
     }
     expect(
@@ -481,40 +390,27 @@ describe("UpComputerComposerFooter", () => {
   });
 
   it("folds access to its lock first when the row runs short, as V1 did", async () => {
-    // 220px of fixed controls and three 80px blocks need 460px. Access as a
-    // lock saves 34px; effort and context fold to an icon next.
+    // 220px of fixed controls and two 80px blocks need 380px. Access as a
+    // lock saves 34px.
     stubLayout(600);
     await render(footerProps());
-    for (const id of ["mode", "traits", "access"]) {
+    for (const id of ["mode", "access"]) {
       expect(block(id)?.getAttribute("data-composer-block-icon-only")).toBe("false");
     }
 
-    // A fresh row per width: the stubs change no size a ResizeObserver would see.
-    const remount = async () => {
-      await act(async () => root.unmount());
-      root = createRoot(container);
-    };
-    await remount();
-    stubLayout(440);
+    // A fresh row: the stubs change no size a ResizeObserver would see.
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    stubLayout(360);
     await render(footerProps({ runtimeMode: "approval-required" }));
     expect(block("access")?.getAttribute("data-composer-block-icon-only")).toBe("true");
     expect(block("access")?.getAttribute("aria-hidden")).toBeNull();
-    expect(block("traits")?.getAttribute("data-composer-block-icon-only")).toBe("false");
     expect(block("mode")?.getAttribute("data-composer-block-icon-only")).toBe("false");
     // The icon-only class swaps the label for the lock; the label stays mounted to be measured.
     expect(block("access")?.className).toContain("[&_[data-composer-control-label]]:invisible");
     expect(block("access")?.className).toContain(
       "[&_[data-composer-control-compact-icon]]:[visibility:inherit]",
     );
-    expect(block("traits")?.className).not.toContain("[&_[data-composer-control-label]]:invisible");
-
-    await remount();
-    stubLayout(400);
-    await render(footerProps({ runtimeMode: "full-access" }));
-    expect(block("access")?.getAttribute("data-composer-block-icon-only")).toBe("true");
-    expect(block("traits")?.getAttribute("data-composer-block-icon-only")).toBe("true");
-    expect(block("mode")?.getAttribute("data-composer-block-icon-only")).toBe("false");
-    expect(block("access")?.getAttribute("aria-hidden")).toBeNull();
   });
 
   /**
@@ -566,8 +462,6 @@ describe("UpComputerComposerFooter", () => {
       "|",
       "Claude · Opus 5.5",
       "|",
-      "Effort: High · 1M",
-      "|",
       "Access: Full access",
     ]);
 
@@ -578,19 +472,17 @@ describe("UpComputerComposerFooter", () => {
       "|",
       "Claude · Opus 5.5",
       "|",
-      "Effort: High · 1M",
-      "|",
       "Access: Full access",
     ]);
 
-    await render(footerProps({ showInteractionModeToggle: false, attach: null, descriptors: [] }));
+    await render(footerProps({ showInteractionModeToggle: false, attach: null }));
     expect(visibleSequence()).toEqual(["Claude · Opus 5.5", "|", "Access: Full access"]);
   });
 
   it("never doubles, leads or trails a separator while controls fold", async () => {
     for (const showInteractionModeToggle of [true, false]) {
       for (const attach of [true, false]) {
-        for (const width of [600, 440, 400, 360, 330, 300, 200]) {
+        for (const width of [600, 360, 340, 300, 200]) {
           await act(async () => root.unmount());
           root = createRoot(container);
           stubLayout(width);
@@ -612,17 +504,15 @@ describe("UpComputerComposerFooter", () => {
   });
 
   it("folds trailing controls into upstream's overflow menu at a narrow width", async () => {
-    // 220px of fixed controls and three 80px blocks: 340px keeps only the mode block.
+    // 220px of fixed controls, the mode block and the 30px overflow trigger: 340px keeps the mode.
     stubLayout(340);
     await render(footerProps());
     expect(block("mode")?.getAttribute("aria-hidden")).toBeNull();
-    expect(block("traits")?.getAttribute("aria-hidden")).toBe("true");
     expect(block("access")?.getAttribute("aria-hidden")).toBe("true");
 
     const overflow = container.querySelector<HTMLElement>("[data-composer-footer-overflow]")!;
     expect(overflow.getAttribute("aria-hidden")).toBeNull();
     await click(overflow.querySelector('[aria-label="More composer controls"]')!);
-    expect(document.querySelector('[data-testid="traits-menu-content"]')).not.toBeNull();
     expect(buttonByText("Full access")).toBeDefined();
     expect(buttonByText("Plan")).toBeUndefined();
   });
@@ -632,7 +522,6 @@ describe("UpComputerComposerFooter", () => {
     const textTriggers = [
       buttonByText("Build")!,
       container.querySelector<HTMLElement>("[data-chat-provider-model-picker]")!,
-      block("traits")!.querySelector<HTMLElement>('[aria-label^="Effort"]')!,
       container.querySelector<HTMLElement>("[data-composer-footer-access]")!,
     ];
     // tailwind-merge drops the classes V1's trigger replaces, so compare V1's own.

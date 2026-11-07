@@ -243,12 +243,16 @@ export function ComposerControlsBar(props: {
       triggerSuffix={effort.suffix}
       triggerDetail={effort.detail}
       triggerShortcuts={
-        pickerOwnsModeShortcut ? "composer.effort composer.mode" : "composer.effort"
+        // UpComputer: its footer's access control always answers composer.mode.
+        pickerOwnsModeShortcut && !upComputerFooter
+          ? "composer.effort composer.mode"
+          : "composer.effort"
       }
       effortColumn={<ComposerEffortColumn traits={traitsInput} />}
       footer={
         <ComposerPickerFooter
           traits={traitsInput}
+          showPermissions={!upComputerFooter}
           runtimeMode={compatibleRuntimeMode}
           runtimeModeOptions={compatibleRuntimeModeOptions}
           onRuntimeModeChange={handleRuntimeModeChange}
@@ -297,10 +301,6 @@ export function ComposerControlsBar(props: {
         attach={upComputerFooter.attach}
         modelPicker={composerModelPicker}
         providerUnavailableControl={showProviderUnavailable ? providerUnavailableControl : null}
-        // Upstream folded effort into the model picker and dropped the traits render helpers;
-        // the footer still takes the traits input on its own (see the sync follow-up).
-        traitsPickerInput={traitsInput}
-        traitsMenuContent={null}
         showInteractionModeToggle={planModeUiEnabled}
         interactionMode={interactionMode}
         onToggleInteractionMode={toggleInteractionMode}

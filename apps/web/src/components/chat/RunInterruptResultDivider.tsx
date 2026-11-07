@@ -51,6 +51,7 @@ function RunInterruptResultDividerView(props: {
       detail={presentation.detail}
       tone={presentation.tone}
       icon={ICONS[presentation.kind]}
+      wrapDetail
     />
   );
 }

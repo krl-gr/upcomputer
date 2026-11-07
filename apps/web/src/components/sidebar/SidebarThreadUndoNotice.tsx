@@ -31,6 +31,7 @@ export function SidebarThreadUndoNotice() {
 
   return (
     <SidebarMenuItem
+      data-sidebar-undo-notice=""
       className="@container flex min-w-0 flex-1"
       aria-hidden={!summary}
       inert={!summary}
