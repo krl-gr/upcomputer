@@ -19,6 +19,13 @@ describe("describeError", () => {
     expect(described.detail).toBe(raw);
     expect(describeError(new Error('{"type":"error"}')).reason).toBeUndefined();
     expect(describeError(new Error("ProviderSessionOpenError: boom")).reason).toBeUndefined();
+    expect(
+      describeError(
+        new Error(
+          "VCS process failed to spawn in GitVcsDriver.initRepository: git (/Users/ada/.upcomputer/scratch/a)",
+        ),
+      ).reason,
+    ).toBeUndefined();
   });
 
   it("reads disconnects, timeouts and missing permission from nested causes", () => {
@@ -38,6 +45,17 @@ describe("plainErrorSentence", () => {
     );
     expect(plainErrorSentence(new Error("Failed to fetch"))).toBe(
       "Your computer isn't connected. Reconnect, then try again.",
+    );
+    // VcsProcessSpawnError as the client decodes it: the reason is in the encoded cause.
+    const missingTools = {
+      message:
+        "VCS process failed to spawn in GitVcsDriver.initRepository: git (/Users/ada/.upcomputer/scratch/a)",
+      cause: new Error(
+        "NotFound: ChildProcess.spawn (/usr/bin/git): git needs the Xcode Command Line Tools, which are not installed.",
+      ),
+    };
+    expect(plainErrorSentence(missingTools)).toBe(
+      "Git needs the Xcode Command Line Tools. Install them by running xcode-select --install in Terminal, then try again.",
     );
     expect(plainErrorSentence(undefined)).toBe(
       "Something went wrong. Try again, and if it keeps failing, check that your computer is connected.",

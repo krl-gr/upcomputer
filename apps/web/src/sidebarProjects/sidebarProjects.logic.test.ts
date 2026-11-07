@@ -2,7 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   ALL_PROJECTS_ROW_KEY as ALL,
-  allProjectsSortIndex,
   buildSidebarProjectsRows,
   manualAllProjectsIndex,
   sidebarProjectsDragOrder,
@@ -81,7 +80,7 @@ describe("buildSidebarProjectsRows", () => {
   });
 
   it("keeps the held order on screen, with new rows in their own slots", () => {
-    // All projects was just picked and sorts first, but the pointer is still in the sidebar.
+    // All projects was just dragged first in the manual order, but the pointer is still in the sidebar.
     expect(
       rows([project("a"), project("b"), project("c"), project("new")], {
         allProjectsIndex: 0,
@@ -116,12 +115,6 @@ describe("buildSidebarProjectsRows", () => {
 });
 
 describe("All projects' place", () => {
-  it("follows its stand-in in an activity order", () => {
-    expect(
-      allProjectsSortIndex([{ projectKey: "a" }, { projectKey: ALL }, { projectKey: "b" }]),
-    ).toBe(1);
-  });
-
   it("follows its entry in the manual order, and comes first without one", () => {
     const projectOrderKeys = [["a"], ["b-local", "b-remote"], ["c"], ["unlisted"]];
     expect(manualAllProjectsIndex({ projectOrder: ["a", "b-local", "c"], projectOrderKeys })).toBe(

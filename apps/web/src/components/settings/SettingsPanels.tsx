@@ -528,7 +528,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       : []),
     ...(settings.diffLayout !== DEFAULT_UNIFIED_SETTINGS.diffLayout ? ["Diff layout"] : []),
     ...(settings.proactivePanelsEnabled !== DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled
-      ? ["Open pull requests and changes panels proactively"]
+      ? [searchableSetting("proactive-panels").title]
       : []),
     ...(settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu
       ? ["Show skills in slash menu"]
@@ -1334,6 +1334,44 @@ function DiffColorsSettingsRow() {
   );
 }
 
+function ProactivePanelsSettingRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const setting = searchableSetting("proactive-panels");
+
+  return (
+    <SettingsRow
+      {...setting}
+      description={
+        isProductFeatureShown("pullRequests")
+          ? "Open linked pull requests first. Otherwise, open Changes for edits to at least 3 files or 50 lines."
+          : "Open Changes when a turn edits at least 3 files or 50 lines."
+      }
+      resetAction={
+        settings.proactivePanelsEnabled !== DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled ? (
+          <SettingResetButton
+            label="proactive panels"
+            onClick={() =>
+              updateSettings({
+                proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={settings.proactivePanelsEnabled}
+          onCheckedChange={(checked) =>
+            updateSettings({ proactivePanelsEnabled: Boolean(checked) })
+          }
+          aria-label={setting.title}
+        />
+      }
+    />
+  );
+}
+
 export function DiffsSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -1402,7 +1440,11 @@ export function DiffsSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("default-diff-file-state")}
-          description="Start with files expanded or collapsed when opening diffs or a pull request's Code tab."
+          description={
+            isProductFeatureShown("pullRequests")
+              ? "Start with files expanded or collapsed when opening diffs or a pull request's Code tab."
+              : "Start with files expanded or collapsed when opening diffs."
+          }
           resetAction={
             settings.diffFilesCollapsed !== DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed ? (
               <SettingResetButton
@@ -1443,36 +1485,15 @@ export function DiffsSettingsPanel() {
           }
         />
         <DiffColorsSettingsRow />
+        {isProductFeatureShown("pullRequests") ? null : <ProactivePanelsSettingRow />}
       </SettingsSection>
 
-      <SettingsSection id="pull-requests" title="Pull requests">
-        <SettingsRow
-          {...searchableSetting("proactive-panels")}
-          description="Open linked pull requests first. Otherwise, open Changes for edits to at least 3 files or 50 lines."
-          resetAction={
-            settings.proactivePanelsEnabled !== DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled ? (
-              <SettingResetButton
-                label="proactive panels"
-                onClick={() =>
-                  updateSettings({
-                    proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.proactivePanelsEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings({ proactivePanelsEnabled: Boolean(checked) })
-              }
-              aria-label="Open pull requests and changes panels proactively"
-            />
-          }
-        />
-        {isProductFeatureShown("pullRequests") ? <PullRequestLinksOpenInAppSetting /> : null}
-      </SettingsSection>
+      {isProductFeatureShown("pullRequests") ? (
+        <SettingsSection id="pull-requests" title="Pull requests">
+          <ProactivePanelsSettingRow />
+          <PullRequestLinksOpenInAppSetting />
+        </SettingsSection>
+      ) : null}
     </SettingsPageContainer>
   );
 }

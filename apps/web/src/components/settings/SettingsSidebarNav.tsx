@@ -120,7 +120,8 @@ const SETTINGS_DETAIL_PAGE_PARENTS: Readonly<Record<string, SettingsPath>> = {
   "/settings/open-source-licenses": "/settings/about",
 };
 
-// Attached only to the highlighted result, so it runs whenever the highlight lands on a row.
+// Attached only to the highlighted result or the current section, so it runs whenever the
+// highlight lands on a row, and when a search jump brings the section list back.
 function scrollResultIntoView(row: HTMLElement | null) {
   row?.scrollIntoView({ block: "nearest" });
 }
@@ -410,7 +411,11 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                           const Icon = SETTINGS_SECTION_ICONS[to];
                           const isActive = activePath === to || activePath.startsWith(`${to}/`);
                           return (
-                            <SidebarMenuItem key={to} role="presentation">
+                            <SidebarMenuItem
+                              key={to}
+                              role="presentation"
+                              ref={isActive ? scrollResultIntoView : undefined}
+                            >
                               <SidebarMenuButton
                                 data-track={`settings.nav.${to.slice("/settings/".length)}`}
                                 data-settings-section={to}

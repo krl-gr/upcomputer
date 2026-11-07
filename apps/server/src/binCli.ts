@@ -72,7 +72,7 @@ const connectUnavailableCommand = Command.make("connect", {
   ),
 );
 
-export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
+export const makeCli = ({ cloudEnabled = hasCloudPublicConfig, triage = true } = {}) =>
   Command.make("up", { ...sharedServerCommandFlags }).pipe(
     Command.withDescription(
       "Run Up.computer in this terminal and open it in your browser. To use it from your other devices, run `up remote`.",
@@ -118,7 +118,8 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       traceCommand,
       doctorCommand,
       policyCommand,
-      triageCommand,
+      // Triage files reports upstream; a product that hides it keeps the command off the help.
+      triage ? triageCommand : triageCommand.pipe(Command.unlisted),
       cloudEnabled ? connectCommand : connectUnavailableCommand,
     ]),
   );
@@ -134,7 +135,7 @@ export function runCli(
   extendConnectionAttemptTimeout();
   keepOutboundFetchOnHttp1();
   setPullRequestAgentToolsRegistered(product.flags.pullRequestAgentTools);
-  Command.run(cli, { version: packageJson.version }).pipe(
+  Command.run(makeCli({ triage: product.flags.triage }), { version: packageJson.version }).pipe(
     Effect.scoped,
     Effect.provideService(ServerProduct, product),
     Effect.provide(layerCliRuntime),

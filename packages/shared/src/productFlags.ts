@@ -263,6 +263,7 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     settingsSearchIds: [
       "auto-settle-inactive-threads",
       "auto-settle-merged-threads",
+      "keep-threads-with-pull-requests",
       "days-before-auto-settle",
     ],
     rightPanelSurfaces: [],

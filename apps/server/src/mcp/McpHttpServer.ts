@@ -1324,7 +1324,7 @@ export const layerInProcessMcpServer = McpServer.middleware<{
 
 export const layerMcpTransport = <RA, RE, RR>(registrations: Layer.Layer<RA, RE, RR>) =>
   McpServer.layerHttp({
-    name: "T3 Code",
+    name: "Up.computer",
     version: packageJson.version,
     path: "/mcp",
     protocols: [McpProtocol.v2025_06_18],

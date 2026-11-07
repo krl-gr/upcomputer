@@ -8,12 +8,15 @@ export interface PlainError {
   readonly reason: string | undefined;
   /** Raw error text for a copyable Details disclosure; never the main message. */
   readonly detail: string | undefined;
-  readonly kind: "disconnected" | "timeout" | "permission" | "other";
+  readonly kind: "disconnected" | "timeout" | "permission" | "developer-tools" | "other";
 }
 
 const MAX_DETAIL_LENGTH = 4_000;
 const MAX_PLAIN_REASON_LENGTH = 160;
 const MAX_NODES = 32;
+
+// The server's words when Apple's stub stands in for a tool, e.g. "git needs the Xcode Command Line Tools".
+const DEVELOPER_TOOLS = /\b([\w.+-]+) needs the Xcode Command Line Tools\b/u;
 
 const REASONS: ReadonlyArray<{
   readonly pattern: RegExp;
@@ -80,7 +83,7 @@ function looksPlain(text: string): boolean {
   return (
     text.length <= MAX_PLAIN_REASON_LENGTH &&
     !/[\r\n{}[\]<>`]/u.test(text) &&
-    !/(?:^|\s)\/[\w.-]+\//u.test(text) &&
+    !/(?:^|[\s(])\/[\w.-]+\//u.test(text) &&
     !/\b[A-Z]:\\/u.test(text) &&
     !/\b[A-Za-z]+Error\b|\bat \w+ \(/u.test(text) &&
     !/\b[A-Za-z]+\.[A-Za-z]+\.[A-Za-z]+\b|\b[a-z]+[A-Z]\w*\.\w+/u.test(text) &&
@@ -100,6 +103,14 @@ export function describeError(error: unknown): PlainError {
   const detail = joined.length === 0 ? undefined : joined.slice(0, MAX_DETAIL_LENGTH);
   if (texts.some((text) => isTransportConnectionErrorMessage(text))) {
     return { reason: "your computer isn't connected", detail, kind: "disconnected" };
+  }
+  const developerTools = DEVELOPER_TOOLS.exec(joined);
+  if (developerTools !== null) {
+    return {
+      reason: `${developerTools[1]} needs the Xcode Command Line Tools`,
+      detail,
+      kind: "developer-tools",
+    };
   }
   for (const entry of REASONS) {
     if (entry.pattern.test(joined)) return { reason: entry.reason, detail, kind: entry.kind };
@@ -129,6 +140,8 @@ export function plainErrorSentence(error: unknown, action?: string): string {
       return `${lead}. Reconnect, then try again.`;
     case "permission":
       return `${lead}. Pair this device again with full access in Settings, Connections.`;
+    case "developer-tools":
+      return `${lead}. Install them by running xcode-select --install in Terminal, then try again.`;
     default:
       return `${lead}. Try again, and if it keeps failing, check that your computer is connected.`;
   }

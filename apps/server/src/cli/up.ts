@@ -140,7 +140,7 @@ const formatSetup = (setup: Setup) => {
           [
             "UpComputer Connect",
             setup.connect
-              ? "on · your T3 account"
+              ? "on · your Up.computer account"
               : setup.connectRevoked
                 ? "off · link revoked. Run `up connect`."
                 : "off",
@@ -424,7 +424,7 @@ export const upCommand = Command.make("remote", {
   ...projectLocationFlags,
   connect: Flag.Boolean("connect").pipe(
     Flag.withDescription(
-      "Allow access through UpComputer Connect with your T3 account. Turn off with --no-connect.",
+      "Allow access through UpComputer Connect with your Up.computer account. Turn off with --no-connect.",
     ),
     Flag.optional,
   ),

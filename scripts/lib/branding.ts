@@ -44,6 +44,21 @@ const CLI_PROSE_RULE: CopyRule = {
   replacement: "up",
 };
 
+/** T3 standing alone for the app in the CLI's prose ("Start T3", "your T3 account"); T3 Chat is another product. */
+const CLI_PRODUCT_RULE: CopyRule = {
+  pattern: /(?<![\w./@$'"`-])T3(?=[\s,;:!?]|'s\b|\.(?!\w))(?! Chat\b)/g,
+  replacement: "Up.computer",
+};
+
+/**
+ * Help names the documented `UPCOMPUTER_*` alias of a variable the user sets
+ * (`applyUpcomputerEnvAliases`). service.env keeps the `T3CODE_*` names it stores.
+ */
+const CLI_ENV_ALIAS_RULE: CopyRule = {
+  pattern: /\b(equivalent to|set) T3CODE_(?=[A-Z])/g,
+  replacement: "$1 UPCOMPUTER_",
+};
+
 const isCliFile = (path: string): boolean =>
   path.startsWith("apps/server/src/cli/") && !path.endsWith(".test.ts");
 
@@ -58,7 +73,7 @@ export const COPY_RULES: ReadonlyArray<CopyRule> = [
   // The HTML render tools and their errors, which agents read and repeat to the user.
   {
     pattern:
-      /\bT3('s (?:headless browser|home directory)| (?:is (?:still )?installing|could not install|fits the frame|injects its)\b)/g,
+      /\bT3('s (?:headless browser|browser|home directory)| (?:is (?:still )?installing|could not install|fits the frame|injects its)\b)/g,
     replacement: "Up.computer$1",
   },
   // Markdown links to the site. Other t3.codes URLs are upstream's schemas,
@@ -131,13 +146,8 @@ export function isCopyFile(path: string): boolean {
 // keeps them out of merge conflicts.
 const COMMENT_LINE = /^\s*(\/\/|\/\*|\*)/;
 
-/**
- * Lines that carry protocol identity rather than copy. The MCP server's
- * `serverInfo` name is what agents echo back as a tool-name prefix, and the
- * tool presentation parser recognizes upstream's spelling of it.
- */
+/** Lines that carry protocol identity rather than copy. */
 const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }> = [
-  { path: /^apps\/server\/src\/mcp\/McpHttpServer\.ts$/, line: /^\s*name: "T3 Code",$/ },
   // Codex app-server `clientInfo`; the Codex replay fixtures pin it.
   {
     path: /^apps\/server\/src\/provider\/CodexProvider\.ts$/,
@@ -194,10 +204,10 @@ export function rebrandLine(line: string, path = ""): string {
     );
   }
   if (COMMENT_LINE.test(line)) return line;
-  return [...COPY_RULES, ...(isCliFile(path) ? [CLI_PROSE_RULE] : [])].reduce(
-    (text, rule) => text.replace(rule.pattern, rule.replacement),
-    line,
-  );
+  return [
+    ...COPY_RULES,
+    ...(isCliFile(path) ? [CLI_PROSE_RULE, CLI_PRODUCT_RULE, CLI_ENV_ALIAS_RULE] : []),
+  ].reduce((text, rule) => text.replace(rule.pattern, rule.replacement), line);
 }
 
 export function rebrandText(text: string, path = ""): string {
@@ -315,6 +325,11 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
     path: "scripts/lib/brand-assets.ts",
     requires: ["assets/prod/upcomputer-macos-1024.png", "assets/dev/upcomputer-blueprint-"],
     forbids: ['"assets/prod/black-', '"assets/prod/t3-black-', '"assets/nightly/nightly-'],
+  },
+  {
+    path: "scripts/resolve-nightly-release.ts",
+    requires: ["${UPCOMPUTER_PRODUCT_NAME} ${CHANNEL_RELEASE_LABELS[channel]}"],
+    forbids: ["`T3 Code ${"],
   },
   {
     path: "scripts/resolve-previous-release-tag.ts",

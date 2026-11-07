@@ -75,7 +75,6 @@ const { SidebarProvider } = await import("../components/ui/sidebar");
 const { DEFAULT_CLIENT_SETTINGS } = await import("@t3tools/contracts/settings");
 const { __setClientSettingsForTests } = await import("../hooks/useSettings");
 const { ALL_PROJECTS_ROW_KEY } = await import("./sidebarProjects.logic");
-const { SIDEBAR_ALL_PROJECTS_SELECTED_AT_STORAGE_KEY } = await import("./useSidebarProjectsList");
 const { useUiStateStore } = await import("../uiStateStore");
 const { SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, SidebarProjectsSection } =
   await import("./SidebarProjectsSection");
@@ -157,13 +156,6 @@ function render(projectGroups = PROJECTS, loaded = true) {
   });
 }
 
-const pointer = (type: "pointerenter" | "pointerleave") =>
-  act(async () => {
-    container
-      .querySelector("[data-testid='sidebar-surface']")!
-      .dispatchEvent(new Event(type, { bubbles: false }));
-  });
-
 const moreOption = (label: string) => {
   const option = [...document.querySelectorAll<HTMLElement>("[role='option']")].find(
     (candidate) => candidate.textContent === label,
@@ -243,32 +235,17 @@ describe("SidebarProjectsSection", () => {
     expect(rowLabels()).toEqual(["All projects", "UpComputer", "No project", "More"]);
   });
 
-  it("sorts All projects by when it was last picked, and lists it under More", async () => {
-    window.localStorage.setItem(
-      SIDEBAR_ALL_PROJECTS_SELECTED_AT_STORAGE_KEY,
-      JSON.stringify("2026-01-01T00:00:00.000Z"),
-    );
+  it("keeps All projects first in an activity order, whatever was picked or active since", async () => {
     const recent = (id: string, title: string, day: number) =>
-      group(id, title, undefined, `2026-02-${String(day).padStart(2, "0")}T00:00:00.000Z`);
-    const projects = [recent("upcomputer", "UpComputer", 9), recent("site", "Site", 8)];
-    const older = [recent("docs", "Docs", 7), group("infra", "Infra")];
-    useUiStateStore.setState({ sidebarProjectScopeKeys: ["key-upcomputer"] });
-    await render([...projects, ...older]);
-    expect(rowLabels()).toEqual(["UpComputer", "Site", "Docs", "More"]);
-    await click(rowButton("More"));
-    expect(
-      [...document.querySelectorAll<HTMLElement>("[role='option']")].map((o) => o.textContent),
-    ).toEqual(["All projects", "Infra"]);
-
-    // Picked with the pointer in the sidebar, it takes the last slot and moves up only once the pointer leaves.
-    await pointer("pointerenter");
-    await click(moreOption("All projects"));
-    expect(useUiStateStore.getState().sidebarProjectScopeKeys).toEqual([]);
-    expect(rowLabels()).toEqual(["UpComputer", "Site", "All projects", "More"]);
-    await click(rowButton("UpComputer"));
-    expect(rowLabels()).toEqual(["UpComputer", "Site", "All projects", "More"]);
-    await pointer("pointerleave");
-    expect(rowLabels()).toEqual(["All projects", "UpComputer", "Site", "More"]);
+      group(id, title, undefined, `2099-02-${String(day).padStart(2, "0")}T00:00:00.000Z`);
+    // All projects used to sort by this pick time, so newer activity elsewhere (a new bot's
+    // thread in No project) moved it down.
+    window.localStorage.setItem(
+      "upcomputer:sidebar-all-projects-selected-at",
+      JSON.stringify("2026-11-01T00:00:00.000Z"),
+    );
+    await render([recent("upcomputer", "UpComputer", 9), recent("site", "Site", 8), PROJECTS[1]!]);
+    expect(rowLabels().slice(0, 2)).toEqual(["All projects", "UpComputer"]);
   });
 
   it("places All projects at its entry in the manual order", async () => {

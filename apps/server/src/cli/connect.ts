@@ -201,7 +201,7 @@ function formatCloudStatus(status: CloudCliStatus, options?: { readonly json?: b
       : !status.desired
         ? "Run `up connect link` to enable UpComputer Connect."
         : !status.linked
-          ? "Start T3 to provision the environment link and launch its managed tunnel."
+          ? "Start Up.computer to provision the environment link and launch its managed tunnel."
           : undefined;
 
   return [
@@ -234,7 +234,7 @@ const CLOUD_CLI_LIVE_SERVER_TIMEOUT = Duration.seconds(5);
 const confirmRelayClientInstall = (version: string) =>
   Prompt.run(
     Prompt.Confirm({
-      message: `The T3 relay client is required for UpComputer Connect. Download and install version ${version}?`,
+      message: `The Up.computer relay client is required for UpComputer Connect. Download and install version ${version}?`,
       initial: false,
     }),
   );
@@ -482,11 +482,11 @@ const reportCloudDisconnectResults = Effect.fn("cloud.cli.report_disconnect_resu
       yield* Console.warn(
         input.clearAuthorization
           ? "Could not revoke the relay-side environment record before signing out.\nThe stored CLI authorization was still removed locally."
-          : "Could not revoke the relay-side environment record yet.\nRun `up connect unlink` again when the relay is reachable, or deregister it from the UpComputer Connect page of your T3 account.",
+          : "Could not revoke the relay-side environment record yet.\nRun `up connect unlink` again when the relay is reachable, or deregister it from the UpComputer Connect page of your Up.computer account.",
       );
     } else if (input.relayResult.value.status === "not-authenticated") {
       yield* Console.warn(
-        "The relay-side environment record was not revoked.\nDeregister it from the UpComputer Connect page of your T3 account, or run `up connect login` and retry.",
+        "The relay-side environment record was not revoked.\nDeregister it from the UpComputer Connect page of your Up.computer account, or run `up connect login` and retry.",
       );
     } else if (input.relayResult.value.status === "revoked") {
       yield* Console.log("Revoked the relay-side environment record.");
@@ -660,7 +660,7 @@ const connectLinkCommand = Command.make("link", {
           const serveCommand = yield* resolveCliCommand("serve");
           yield* Console.log(
             flags.publishOnly
-              ? `✓ Authorized${connectedAs(linked.identity)}\n\nNext\n  Start T3 to publish agent activity (no managed tunnel).`
+              ? `✓ Authorized${connectedAs(linked.identity)}\n\nNext\n  Start Up.computer to publish agent activity (no managed tunnel).`
               : `✓ Authorized${connectedAs(linked.identity)}\n\nNext\n  Start the server with \`${serveCommand}\` to make this machine reachable.`,
           );
         }
@@ -780,13 +780,13 @@ const connectPublishCommand = Command.make("publish", {
         // A desired managed link already covers publishing and must not be downgraded.
         if (yield* CliState.readCliDesiredCloudLink) {
           yield* Console.log(
-            "A UpComputer Connect link is already pending. Start T3 to finish provisioning it; publishing starts once it links.",
+            "A UpComputer Connect link is already pending. Start Up.computer to finish provisioning it; publishing starts once it links.",
           );
           return;
         }
         yield* CliState.setCliDesiredCloudLink(true, "publish_only");
         yield* Console.log(
-          "Restart T3 to finish authorizing this environment to publish (no managed tunnel is created).",
+          "Restart Up.computer to finish authorizing this environment to publish (no managed tunnel is created).",
         );
       }),
     ),

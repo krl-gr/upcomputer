@@ -1,29 +1,16 @@
-import * as Schema from "effect/Schema";
 import { useState } from "react";
 
-import { sortSidebarV2ProjectGroups } from "../components/Sidebar.logic";
-import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useClientSettings } from "../hooks/useSettings";
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
-import { useDelegatedUnderParent, useQuietThreadShells } from "../state/entities";
 import { useUiStateStore } from "../uiStateStore";
 import { useIsPrimaryProjectGroup, useIsScratchProjectGroup } from "./sidebarProjectIcons";
 import {
   ALL_PROJECTS_ROW_KEY,
-  allProjectsSortIndex,
   buildSidebarProjectsRows,
   manualAllProjectsIndex,
   sidebarProjectsDragOrder,
   type SidebarProjectsRow,
 } from "./sidebarProjects.logic";
-
-export const SIDEBAR_ALL_PROJECTS_SELECTED_AT_STORAGE_KEY =
-  "upcomputer:sidebar-all-projects-selected-at";
-
-const PICKED_AT_SCHEMA = Schema.NullOr(Schema.String);
-
-// Before All projects is picked it is the fresh install's selection, so it comes first.
-const NEVER_PICKED = "9999-12-31T23:59:59.999Z";
 
 /** The sidebar elements a pointer stays in while the Projects rows hold still. */
 const SIDEBAR_SURFACES = "[data-sidebar='sidebar']";
@@ -53,18 +40,12 @@ export function useSidebarProjectsList(projectGroups: ReadonlyArray<SidebarProje
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const reorderProjects = useUiStateStore((store) => store.reorderProjects);
   const sortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
-  const threads = useQuietThreadShells();
-  const delegatedUnderParent = useDelegatedUnderParent();
   const isScratch = useIsScratchProjectGroup();
   const isPrimary = useIsPrimaryProjectGroup();
-  const [allProjectsPickedAt, setAllProjectsPickedAt] = useLocalStorage(
-    SIDEBAR_ALL_PROJECTS_SELECTED_AT_STORAGE_KEY,
-    null,
-    PICKED_AT_SCHEMA,
-  );
   const [pointerInside, setPointerInside] = useState(false);
   const [heldOrder, setHeldOrder] = useState<ReadonlyArray<string> | null>(null);
 
+  // Activity orders keep All projects first, so new activity in No project never jumps it.
   const allProjectsIndex =
     sortOrder === "manual"
       ? manualAllProjectsIndex({
@@ -73,24 +54,7 @@ export function useSidebarProjectsList(projectGroups: ReadonlyArray<SidebarProje
             group.memberProjects.map((member) => member.physicalProjectKey),
           ),
         })
-      : allProjectsSortIndex(
-          sortSidebarV2ProjectGroups(
-            [
-              ...projectGroups,
-              {
-                id: ALL_PROJECTS_ROW_KEY,
-                title: "All projects",
-                projectKey: ALL_PROJECTS_ROW_KEY,
-                memberProjectRefs: [],
-                createdAt: allProjectsPickedAt ?? NEVER_PICKED,
-                updatedAt: allProjectsPickedAt ?? NEVER_PICKED,
-              },
-            ],
-            threads,
-            sortOrder,
-            delegatedUnderParent,
-          ),
-        );
+      : 0;
   const selectedKey = scopeKey ?? ALL_PROJECTS_ROW_KEY;
   const rows = buildSidebarProjectsRows({
     projects: projectGroups,
@@ -122,10 +86,6 @@ export function useSidebarProjectsList(projectGroups: ReadonlyArray<SidebarProje
   };
 
   const select = (key: string) => {
-    // Until All projects is picked, it counts as picked up to the first other pick.
-    if (key === ALL_PROJECTS_ROW_KEY || allProjectsPickedAt === null) {
-      setAllProjectsPickedAt(new Date().toISOString());
-    }
     setScopeKeys(key === ALL_PROJECTS_ROW_KEY ? [] : [key]);
   };
 

@@ -14,6 +14,7 @@ import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { writeLocalStorageValue } from "../../hooks/useLocalStorage";
 import { commandLabel } from "./KeybindingsSettings.logic";
 import type { ResolvedSettingsScope } from "./settingsScope";
+import { isProductFeatureShown } from "../../product/productFlags";
 
 export type SettingsPath =
   | "/settings/projects"
@@ -94,7 +95,9 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/chat": "Chat",
-  "/settings/diffs": "Diffs & pull requests",
+  get "/settings/diffs"() {
+    return isProductFeatureShown("pullRequests") ? "Diffs & pull requests" : "Diffs";
+  },
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
   "/settings/providers": "Providers",
@@ -703,9 +706,18 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "proactive-panels",
-    title: "Open pull requests and changes panels proactively",
+    // Without pull requests the setting still opens Changes, so it stays under Diffs.
+    get title() {
+      return isProductFeatureShown("pullRequests")
+        ? "Open pull requests and changes panels proactively"
+        : "Open the changes panel after large edits";
+    },
     to: "/settings/diffs",
-    searchTerms: ["proactive automatically open diff pull request pr right panel agent completion"],
+    get searchTerms() {
+      return isProductFeatureShown("pullRequests")
+        ? ["proactive automatically open diff pull request pr right panel agent completion"]
+        : ["proactive automatically open diff changes right panel agent completion"];
+    },
   },
   {
     id: "skills-in-slash-menu",
