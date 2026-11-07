@@ -19,6 +19,7 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
+import { shownWithProductFeature } from "../../../product/ServerProduct.ts";
 import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
 
 const dependencies = [
@@ -447,7 +448,8 @@ const WritePullRequestGuidesTool = Tool.make("write_pull_request_guides", {
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false)
-  .annotate(Tool.OpenWorld, true);
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, shownWithProductFeature("pullRequests"));
 
 const ReadPullRequestGuideTool = Tool.make("read_pull_request_guide", {
   description:
@@ -464,7 +466,8 @@ const ReadPullRequestGuideTool = Tool.make("read_pull_request_guide", {
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true)
-  .annotate(Tool.OpenWorld, true);
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, shownWithProductFeature("pullRequests"));
 
 export const PullRequestsToolkit = Toolkit.make(
   LinkPullRequestTool,

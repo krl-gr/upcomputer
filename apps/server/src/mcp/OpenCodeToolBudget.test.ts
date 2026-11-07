@@ -38,7 +38,7 @@ const upComputerT3Tools = new Set([
   ...names(EnvironmentToolkit),
   ...names(PreviewControlsToolkit),
   ...names(WorktreeToolkit),
-  ...(UPCOMPUTER_PRODUCT_FLAGS.pullRequests ? names(PullRequestsToolkit) : []),
+  ...(UPCOMPUTER_PRODUCT_FLAGS.pullRequestAgentTools ? names(PullRequestsToolkit) : []),
   ...(UPCOMPUTER_PRODUCT_FLAGS.devices ? names(DeviceToolkit) : []),
   ...names(HtmlToolkit),
   ...names(WorkspaceToolkit),
@@ -87,7 +87,14 @@ describe("OpenCode session tools", () => {
   it("keep the tools Up.computer's instructions name", () => {
     const sent = toolsOpenCodeSends(upComputerT3Tools);
 
-    for (const tool of ["task_get", "task_update", "t3_thread_launch", "html_render"]) {
+    for (const tool of [
+      "task_get",
+      "task_update",
+      "t3_thread_launch",
+      "html_render",
+      "link_pull_request",
+      "watch_pull_request",
+    ]) {
       expect(sent).toContain(`t3-code_${tool}`);
     }
     for (const tool of ["preview_snapshot", "t3_preview_list", "computer_click"]) {

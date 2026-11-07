@@ -15,6 +15,7 @@ import {
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import {
@@ -338,6 +339,15 @@ export const isProductFeatureShown = Effect.fn("ServerProduct.isProductFeatureSh
 ) {
   return (yield* ServerProduct).flags[flag];
 });
+
+/**
+ * `McpSchema.EnabledWhen` for core tools that only serve a flagged feature. EnabledWhen is
+ * synchronous, so it reads the product from the request fiber.
+ */
+export const shownWithProductFeature = (flag: ProductFlag) => (): boolean => {
+  const fiber = Fiber.getCurrent();
+  return Context.get(fiber?.context ?? Context.empty(), ServerProduct).flags[flag];
+};
 
 /**
  * Hook for upstream background work and tools behind a product flag: the

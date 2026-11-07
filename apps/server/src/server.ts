@@ -651,11 +651,11 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerIdleCompactionWorker,
   StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
   DatabaseStorage.layer.pipe(Layer.provide(ProjectionMaintenance.layer)),
-  whenProductFeature("pullRequests", layerThreadPullRequestWorker),
+  whenProductFeature("pullRequestAgentTools", layerThreadPullRequestWorker),
   DelegatedTaskAnalytics.layer,
   Layer.effectDiscard(
     Effect.gen(function* () {
-      if (!(yield* isProductFeatureShown("pullRequests"))) return;
+      if (!(yield* isProductFeatureShown("pullRequestAgentTools"))) return;
       const service = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       yield* service.start();
     }),
@@ -666,7 +666,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ),
   Layer.effectDiscard(
     Effect.gen(function* () {
-      if (!(yield* isProductFeatureShown("pullRequests"))) return;
+      if (!(yield* isProductFeatureShown("pullRequestAgentTools"))) return;
       const service = yield* PullRequestWatchReactor.PullRequestWatchReactor;
       yield* service.start();
     }),

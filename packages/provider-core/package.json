@@ -127,6 +127,10 @@
       "types": "./src/server/ProviderLatestVersions.ts",
       "import": "./src/server/ProviderLatestVersions.ts"
     },
+    "./server/pullRequestAgentTools": {
+      "types": "./src/server/pullRequestAgentTools.ts",
+      "import": "./src/server/pullRequestAgentTools.ts"
+    },
     "./server/randomUuid": {
       "types": "./src/server/randomUuid.ts",
       "import": "./src/server/randomUuid.ts"

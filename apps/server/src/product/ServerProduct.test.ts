@@ -203,17 +203,18 @@ describe("server product composition", () => {
       const startJobs = (product?: ReturnType<typeof composeExperimentalServerFeatures>) =>
         Layer.build(
           Layer.mergeAll(
-            whenProductFeature("pullRequests", job("pull-request-sync")),
+            whenProductFeature("pullRequestAgentTools", job("pull-request-watch")),
             whenProductFeature("threadSettlement", job("settlement")),
           ).pipe(product ? Layer.provide(Layer.succeed(ServerProduct, product)) : (layer) => layer),
         ).pipe(Effect.scoped);
 
       // Core without a product: upstream behaviour, every job starts.
       yield* startJobs();
-      expect(yield* Ref.getAndSet(started, [])).toEqual(["pull-request-sync", "settlement"]);
+      expect(yield* Ref.getAndSet(started, [])).toEqual(["pull-request-watch", "settlement"]);
 
+      // Up.computer hides the PR screens but keeps the jobs that link, sync and watch for agents.
       yield* startJobs(composeExperimentalServerFeatures([], { flags: UPCOMPUTER_PRODUCT_FLAGS }));
-      expect(yield* Ref.get(started)).toEqual([]);
+      expect(yield* Ref.get(started)).toEqual(["pull-request-watch"]);
     }),
   );
 
