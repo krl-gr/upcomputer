@@ -103,7 +103,7 @@ import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { isMacPlatform } from "~/lib/utils";
 import { readLocalApi } from "../localApi";
-import { configuredHostedAppUrl } from "../hostedPairing";
+import { threadLinkOrigin } from "../threadLinks/threadLinkOrigin";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import {
   pickableProjectGroups,
@@ -2938,7 +2938,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           case "copy-thread":
             void copyThreadReference(
-              threadChipCopyTarget(threadRef, thread.title, configuredHostedAppUrl()),
+              threadChipCopyTarget(threadRef, thread.title, threadLinkOrigin()),
             );
             return;
           case "copy-thread-id":
@@ -3187,9 +3187,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   ) : scopedProjectGroups[0] ? (
                     <span className="flex shrink-0">
                       <ProjectFavicon
-                      project={scopedProjectGroups[0]}
-                      className={SIDEBAR_ICON_SIZE}
-                    />
+                        project={scopedProjectGroups[0]}
+                        className={SIDEBAR_ICON_SIZE}
+                      />
                     </span>
                   ) : (
                     <ListFilterIcon className={SIDEBAR_ICON_SIZE} />
@@ -3234,10 +3234,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         toggleProjectScopeKey(project.projectKey);
                         return;
                       }
-                      if (
-                        event.key !== "ContextMenu" &&
-                        !(event.shiftKey && event.key === "F10")
-                      ) {
+                      if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) {
                         return;
                       }
                       if (project) handleProjectSettings(event, project);

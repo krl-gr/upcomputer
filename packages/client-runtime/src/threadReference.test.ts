@@ -99,7 +99,7 @@ describe("resolveThreadReferenceCopyTarget", () => {
       ],
     });
     // The plain text opens the thread anywhere and pastes back as the copied record's chip.
-    expect(target!.value).toBe("https://app.t3.codes/threads/env-1/thread-1");
+    expect(target!.value).toBe("https://app.up.computer/threads/env-1/thread-1");
     expect(threadLinkContextReferences(target!.value, pasted!.records, () => undefined)).toEqual({
       text: `[Fix the login flow](t3-context://v1/thread/${pasted!.records[0]!.contextId})`,
       records: pasted!.records,

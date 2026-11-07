@@ -181,7 +181,7 @@ describe("hosted thread links", () => {
   it("escapes every id character a sentence or path could claim, and reads it back", () => {
     const thread = ref("env.1", "thread:delegated/mcp%3A1.");
     const link = hostedThreadLink(thread);
-    expect(link).toBe("https://app.t3.codes/threads/env%2E1/thread%3Adelegated%2Fmcp%253A1%2E");
+    expect(link).toBe("https://app.up.computer/threads/env%2E1/thread%3Adelegated%2Fmcp%253A1%2E");
     expect(parseThreadLinkHref(link)).toEqual(thread);
     expect(hostedThreadLink(thread, "https://preview.t3.codes/")).toMatch(
       /^https:\/\/preview\.t3\.codes\/threads\//,
@@ -189,21 +189,25 @@ describe("hosted thread links", () => {
   });
 
   it("reads only a bare thread path on the hosted app", () => {
-    expect(parseThreadLinkHref("https://app.t3.codes/threads/env-1/thread-1")).toEqual(
+    expect(parseThreadLinkHref("https://app.up.computer/threads/env-1/thread-1")).toEqual(
       ref("env-1", "thread-1"),
     );
-    expect(parseThreadLinkHref("https://app.t3.codes/threads/env-1/thread-1?prompt=go")).toBeNull();
-    expect(parseThreadLinkHref("https://app.t3.codes/threads/env-1/thread-1/extra")).toBeNull();
-    expect(parseThreadLinkHref("https://app.t3.codes/threads/env-1")).toBeNull();
+    expect(
+      parseThreadLinkHref("https://app.up.computer/threads/env-1/thread-1?prompt=go"),
+    ).toBeNull();
+    expect(parseThreadLinkHref("https://app.up.computer/threads/env-1/thread-1/extra")).toBeNull();
+    expect(parseThreadLinkHref("https://app.up.computer/threads/env-1")).toBeNull();
     expect(parseThreadLinkHref("https://app.t3.codes/env-1/thread-1")).toBeNull();
     expect(parseThreadLinkHref("https://evil.test/threads/env-1/thread-1")).toBeNull();
   });
 
   it("writes a copied link a reader can follow, labeled when it has a title", () => {
     expect(formatHostedThreadLink(ref("e", "t1"), "Fix [ci]")).toBe(
-      "[Fix ci](https://app.t3.codes/threads/e/t1)",
+      "[Fix ci](https://app.up.computer/threads/e/t1)",
     );
-    expect(formatHostedThreadLink(ref("e", "t1"), " ")).toBe("https://app.t3.codes/threads/e/t1");
+    expect(formatHostedThreadLink(ref("e", "t1"), " ")).toBe(
+      "https://app.up.computer/threads/e/t1",
+    );
   });
 
   it("titles hosted links in every Markdown form and writes them as v2 links", () => {
@@ -211,11 +215,11 @@ describe("hosted thread links", () => {
     expect(
       relabelThreadLinks(
         [
-          "See https://app.t3.codes/threads/there/t1.",
-          "[old](https://app.t3.codes/threads/there/t1)",
-          "<https://app.t3.codes/threads/there/t1>",
-          "`https://app.t3.codes/threads/there/t1`",
-          "https://app.t3.codes/threads/there/t1?prompt=go",
+          "See https://app.up.computer/threads/there/t1.",
+          "[old](https://app.up.computer/threads/there/t1)",
+          "<https://app.up.computer/threads/there/t1>",
+          "`https://app.up.computer/threads/there/t1`",
+          "https://app.up.computer/threads/there/t1?prompt=go",
         ].join("\n"),
         local,
         title,
@@ -225,14 +229,14 @@ describe("hosted thread links", () => {
         "See [There](t3-thread://v2/there/t1).",
         "[There](t3-thread://v2/there/t1)",
         "[There](t3-thread://v2/there/t1)",
-        "`https://app.t3.codes/threads/there/t1`",
-        "https://app.t3.codes/threads/there/t1?prompt=go",
+        "`https://app.up.computer/threads/there/t1`",
+        "https://app.up.computer/threads/there/t1?prompt=go",
       ].join("\n"),
     );
     expect(
-      relabelThreadLinks("https://app.t3.codes/threads/there/t1", local, () => undefined),
+      relabelThreadLinks("https://app.up.computer/threads/there/t1", local, () => undefined),
     ).toBe("Thread on another machine");
-    expect(threadLinkRefs("Open https://app.t3.codes/threads/there/t%3A1", local)).toEqual([
+    expect(threadLinkRefs("Open https://app.up.computer/threads/there/t%3A1", local)).toEqual([
       ref("there", "t:1"),
     ]);
   });

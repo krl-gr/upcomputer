@@ -2,12 +2,13 @@ import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contract
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { DEFAULT_HOSTED_APP_URL } from "./connectAuth.ts";
+import { UPCOMPUTER_HOSTED_APP_URL } from "./upcomputerIdentity.ts";
 
 export const THREAD_LINK_PROTOCOL = "t3-thread";
 const V1_PREFIX = `${THREAD_LINK_PROTOCOL}://v1/`;
 const V2_PREFIX = `${THREAD_LINK_PROTOCOL}://v2/`;
-const HOSTED_PREFIX = `${DEFAULT_HOSTED_APP_URL}/threads/`;
+// Up.computer's hosted app; its default hosted URL in connectAuth is the site.
+const HOSTED_PREFIX = `${UPCOMPUTER_HOSTED_APP_URL}/threads/`;
 const HOSTED_SEGMENT = "[A-Za-z0-9_%-]+";
 const HOSTED_LINK = `${HOSTED_PREFIX.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}${HOSTED_SEGMENT}/${HOSTED_SEGMENT}`;
 // Code comes first in the alternation so a link written inside a code span or fence is skipped.
@@ -33,7 +34,7 @@ const hostedSegment = (id: string) =>
   );
 
 /** Opens the thread from anywhere: the hosted app offers the desktop app, the mobile app, or itself. */
-export function hostedThreadLink(ref: ScopedThreadRef, origin = DEFAULT_HOSTED_APP_URL): string {
+export function hostedThreadLink(ref: ScopedThreadRef, origin = UPCOMPUTER_HOSTED_APP_URL): string {
   const path = `/threads/${hostedSegment(ref.environmentId)}/${hostedSegment(ref.threadId)}`;
   return new URL(path, origin).toString();
 }

@@ -117,7 +117,7 @@ describe("link round trips", () => {
     const path = promptLinkAppPath(link);
     expect(path).toBe("/env-1/mcp%3A1");
     const deepLink = promptLinkDeepLink(path!);
-    expect(deepLink).toBe("t3code://threads/env-1/mcp%3A1");
+    expect(deepLink).toBe("upcomputer://threads/env-1/mcp%3A1");
     expect(promptLinkAppPath(deepLink)).toBe(path);
   });
 
@@ -127,15 +127,15 @@ describe("link round trips", () => {
     expect(promptLinkAppPath("https://app.up.computer/env-1/thread-1?prompt=go")).toBe(
       "/env-1/thread-1?prompt=go",
     );
-    expect(promptLinkAppPath("https://app.t3.codes/threads/env-1/thread-1")).toBe(
+    expect(promptLinkAppPath("https://app.up.computer/threads/env-1/thread-1")).toBe(
       "/env-1/thread-1",
     );
-    expect(promptLinkAppPath("https://app.t3.codes/threads/env-1/thread-1?prompt=go")).toBe(
+    expect(promptLinkAppPath("https://app.up.computer/threads/env-1/thread-1?prompt=go")).toBe(
       "/env-1/thread-1?prompt=go",
     );
     // The web app's own thread route, reloaded, is no link.
     expect(promptLinkAppPath("https://app.t3.codes/env-1/thread-1")).toBeNull();
-    expect(promptLinkAppPath("https://app.t3.codes/threads/env-1")).toBeNull();
+    expect(promptLinkAppPath("https://app.up.computer/threads/env-1")).toBeNull();
     expect(promptLinkAppPath("https://app.t3.codes/settings/general")).toBeNull();
     expect(promptLinkAppPath("https://evil.test/new?prompt=hi")).toBeNull();
     expect(promptLinkAppPath("upcomputer://app/index.html")).toBeNull();
