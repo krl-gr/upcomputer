@@ -52,6 +52,10 @@ Use one of these per machine:
 | Windows | Group Policy template, or a `Policy` JSON value (both under `HKLM\SOFTWARE\Policies\T3Tools\T3Code`) | `C:\Program Files\T3Code\policy.json`             |
 | Linux   |                                                                                                      | `/etc/t3code/policy.json`                         |
 
+These locations use the names `com.t3tools.t3code`, `T3Code` and `t3code`, not Up.computer's app id
+`computer.up.upcomputer`. A profile for `computer.up.upcomputer` or a file in an `Up.computer` folder
+is ignored.
+
 Up.computer does not merge sources. If a machine has both a native policy and a policy file, Up.computer
 refuses to start until you remove one.
 
@@ -217,7 +221,7 @@ The limit decides which modes Up.computer asks the provider for. It is not a san
 `clients` lists how the server may run:
 
 - `desktop`: as the desktop app's own server.
-- `local-browser`: as a server only browsers on this machine reach, such as `npx t3`.
+- `local-browser`: as a server only browsers on this machine reach, such as `up` run in a terminal.
 - `remote`: reachable from phones, other computers, and app.up.computer over the network.
 
 `remote` is the line that matters. A server reachable from the network also accepts browsers on
@@ -276,13 +280,13 @@ starts the binary you set.
 
 - `mode`: `auto` keeps the normal update flow. `off` stops Up.computer from checking for updates, for
   machines that get Up.computer through device management.
-- `feedUrl`: Up.computer updates from your own mirror instead of GitHub: the desktop app, `up update`,
-  and updates started from another device. Publish only the versions you have approved, laid out
-  as on a GitHub release. The release's update files (`latest.yml`, `latest-mac.yml`,
-  `latest-linux.yml`, `latest-linux-arm64.yml`, and their `nightly` versions if you allow nightly)
-  and the desktop installers they list go at the URL's root. The release's `t3-*` archives and
-  `SHA256SUMS` go under `v<version>/`. A `up` run through `npx` comes from npm, so pin it with your
-  package tooling.
+- `feedUrl`: Up.computer updates from your own mirror instead of GitHub. Publish only the versions
+  you have approved, laid out as on a GitHub release. The release's update files (`latest.yml`,
+  `latest-mac.yml`, `latest-linux.yml`, `latest-linux-arm64.yml`, and their `nightly` versions if
+  you allow nightly) and the desktop installers they list go at the URL's root; desktop apps update
+  from there. `up update` and background services look for CLI archives (`t3-*`) and `SHA256SUMS`
+  under `v<version>/`, but Up.computer releases do not include CLI archives yet, so those updates
+  cannot come from a mirror.
 - `allowNightly: false`: the nightly channel is unavailable.
 
 ## What a policy does not cover
