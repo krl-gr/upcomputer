@@ -14,6 +14,7 @@ import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { writeLocalStorageValue } from "../../hooks/useLocalStorage";
 import { commandLabel } from "./KeybindingsSettings.logic";
 import type { ResolvedSettingsScope } from "./settingsScope";
+import { isProductFeatureShown } from "../../product/productFlags";
 
 export type SettingsPath =
   | "/settings/projects"
@@ -94,7 +95,9 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/chat": "Chat",
-  "/settings/diffs": "Diffs & pull requests",
+  get "/settings/diffs"() {
+    return isProductFeatureShown("pullRequests") ? "Diffs & pull requests" : "Diffs";
+  },
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
   "/settings/providers": "Providers",

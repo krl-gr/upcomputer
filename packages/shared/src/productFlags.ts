@@ -228,6 +228,7 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
       "review-guide-model",
       "review-guide-instructions",
       "pull-request-links-open-in-app",
+      "proactive-panels",
     ],
     rightPanelSurfaces: ["Pull request", "Linked pull requests"],
   },
@@ -263,6 +264,7 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     settingsSearchIds: [
       "auto-settle-inactive-threads",
       "auto-settle-merged-threads",
+      "keep-threads-with-pull-requests",
       "days-before-auto-settle",
     ],
     rightPanelSurfaces: [],
