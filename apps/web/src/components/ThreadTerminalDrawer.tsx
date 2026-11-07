@@ -1907,6 +1907,8 @@ export default function ThreadTerminalDrawer({
           className={cn(
             "flex h-full min-h-0 bg-(--terminal-background)",
             hasTerminalSidebar && "gap-1.5",
+            // UpComputer: in the right panel the first line starts below the floating actions.
+            isPanel && !hasTerminalSidebar && "pt-8",
           )}
         >
           <div className="min-w-0 flex-1">
