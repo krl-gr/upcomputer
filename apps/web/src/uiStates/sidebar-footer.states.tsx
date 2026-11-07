@@ -7,6 +7,7 @@ import { SIDEBAR_COMPACT_WIDTH } from "../adaptiveSidebar/sidebarWidthMode";
 import { SidebarChromeFooter } from "../components/sidebar/SidebarChrome";
 import type { UpdateEverythingRun } from "../components/sidebar/updateEverything.logic";
 import { setUpdateEverythingRun } from "../components/sidebar/updateEverythingRun";
+import { useThreadUndoNotice } from "../hooks/showThreadUndoNotice";
 import { SidebarProvider } from "../components/ui/sidebar";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import { captureUiStateSheet, type UiState } from "./uiStateSheet";
@@ -140,6 +141,7 @@ function footer(
     readonly run?: UpdateEverythingRun;
     readonly hover?: string;
     readonly open?: boolean;
+    readonly undo?: boolean;
   } = {},
 ): UiState {
   return {
@@ -151,7 +153,13 @@ function footer(
       source.pullRequestsSupported = options.pullRequests ?? false;
       source.pathname = options.pathname ?? "/";
       if (options.run) setUpdateEverythingRun(() => options.run!);
+      if (options.undo) {
+        useThreadUndoNotice.setState({
+          notice: { action: "Archived", count: 1, undo: () => Promise.resolve() },
+        });
+      }
       return () => {
+        useThreadUndoNotice.setState({ notice: null });
         source.update = null;
         source.notices = [];
         source.pullRequestsSupported = false;
@@ -188,6 +196,7 @@ const FULL_STATES: ReadonlyArray<UiState> = [
     pullRequests: true,
   }),
   footer("notifications popover open: buttons keep their width", { open: true }),
+  footer("undo notice: icons keep their width, the notice takes the rest", { undo: true }),
   footer("hover on Usage", { hover: '[data-track="sidebar.usage"]' }),
   footer("hover on the bell, with an error dot", {
     notices: [ERROR],
