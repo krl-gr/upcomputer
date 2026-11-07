@@ -152,7 +152,8 @@ describe("TextGeneration.make in Up.computer", () => {
       });
 
       expect(result.title).toBe("Greeting");
-      expect(titledWith).toEqual(["opencode/big-pickle"]);
+      // Up.computer never picks Big Pickle automatically, only OpenCode's default free model.
+      expect(titledWith).toEqual(["opencode/glm-5.3-flash-free"]);
     }),
   );
 });

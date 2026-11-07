@@ -510,7 +510,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
   const openCodeFailureMessage = (failureClass: string, text: string) =>
     failureClass === "usage_limit"
       ? usageLimitMessage("OpenCode", text)
-      : `OpenCode reported an error: ${text.replace(/^./u, (first) => first.toLowerCase())}. Send the message again.`;
+      : `OpenCode reported an error: ${text.replace(/^./u, (first) => first.toLowerCase()).replace(/\.$/u, "")}. Send the message again.`;
 
   // regression: #18315 OpenCode Go quota stops were not shown as usage limits
   it.effect.each([
@@ -645,8 +645,9 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         assert.deepEqual(ended?.failure, {
           class: "usage_limit",
           code: "provider.unknown",
-          message,
+          message: openCodeFailureMessage("usage_limit", message),
           retryable: null,
+          detail: message,
           resetAt: "2026-11-02T20:00:00.000Z",
         });
       }).pipe(Effect.scoped),

@@ -508,7 +508,7 @@ it.layer(
         assert.strictEqual(status.status, "error");
         assert.strictEqual(status.installed, true);
         assert.strictEqual(status.version, "0.1.4161006");
-        assert.match(status.message ?? "", /^Codex app-server provider probe failed: /);
+        assert.match(status.message ?? "", /^Codex quit while starting\. /);
         const classified = withBundledCompatibility({
           ...status,
           instanceId: ProviderInstanceId.make("codex"),
@@ -555,7 +555,7 @@ it.layer(
         assert.strictEqual(status.status, "error");
         assert.strictEqual(status.installed, true);
         assert.strictEqual(status.version, null);
-        assert.match(status.message ?? "", /^Codex app-server provider probe failed: /);
+        assert.match(status.message ?? "", /^Codex quit while starting\. /);
       }),
     );
 
@@ -584,7 +584,7 @@ it.layer(
         assert.strictEqual(status.version, null);
         assert.strictEqual(status.status, "error");
         assert.strictEqual(status.installed, true);
-        assert.match(status.message ?? "", /^Codex app-server provider probe failed: /);
+        assert.match(status.message ?? "", /^Codex quit while starting\. /);
         assert.isTrue(yield* Deferred.isDone(released));
       }),
     );

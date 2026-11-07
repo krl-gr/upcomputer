@@ -17,6 +17,7 @@ import { HttpClient, HttpClientResponse } from "effect/http";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as TestClock from "effect/testing/TestClock";
+import { VERSION_PROBE_TIMEOUT_MS } from "@t3tools/provider-core/server/snapshotProbe";
 import { GrokSettings } from "@t3tools/provider-grok/settings";
 
 import {
@@ -237,14 +238,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("checkGrokProvide
       label: "answers after 6 s",
       versionDelay: "6 seconds",
       version: "1.0.52",
-      message: "Grok CLI is installed but ACP initialize failed. Model options may be incomplete.",
+      message:
+        "Grok is installed but didn't report its models. Some model choices may be missing; refresh to try again.",
       probesAfterVersion: true,
     },
     {
       label: "never answers",
       versionDelay: "Infinity",
       version: null,
-      message: "Grok CLI is installed but timed out while running `grok --version`.",
+      message:
+        "Grok is installed but didn't respond in time. Open a terminal and run `grok --version` to see what's wrong, then refresh.",
       probesAfterVersion: false,
     },
   ] as const)("gives `grok --version` 10 s when it $label", (row) =>
@@ -285,7 +288,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("checkGrokProvide
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.forkChild,
       );
-      yield* TestClock.adjust("10 seconds");
+      // Up.computer gives every CLI version probe the shared 20 s budget.
+      yield* TestClock.adjust(VERSION_PROBE_TIMEOUT_MS);
       const snapshot = yield* Fiber.join(fiber);
       expect(snapshot.installed).toBe(true);
       expect(snapshot.version).toBe(row.version);

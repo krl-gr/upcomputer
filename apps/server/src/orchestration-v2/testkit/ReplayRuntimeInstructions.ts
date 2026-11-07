@@ -59,10 +59,22 @@ export function materializeReplayTranscriptRuntimeInstructions(
           "text" in lastPart &&
           typeof lastPart.text === "string" &&
           // A recording that switched models mid-thread already carries the
-          // instructions for the model each prompt ran on.
+          // instructions for the model each prompt ran on, in upstream's product name.
           (lastPart.text === instructions || lastPart.text.startsWith("<runtime_info>"))
         ) {
-          return entry;
+          const text = lastPart.text.replaceAll("T3 Code", UPCOMPUTER_PRODUCT_NAME);
+          return text === lastPart.text
+            ? entry
+            : {
+                ...entry,
+                frame: {
+                  ...frame,
+                  params: {
+                    ...frame.params,
+                    prompt: [...prompt.slice(0, -1), { ...lastPart, text }],
+                  },
+                },
+              };
         }
         return {
           ...entry,
