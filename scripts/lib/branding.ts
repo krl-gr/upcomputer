@@ -144,6 +144,11 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
     path: /^packages\/shared\/src\/t3McpToolPresentation\.test\.ts$/,
     line: /^\s*"T3 Code( delegate_task)? ?",$/,
   },
+  // The normalized form of the test's "  T3   Code " vocabulary hint, not copy.
+  {
+    path: /^packages\/shared\/src\/speech\.test\.ts$/,
+    line: /^\s*\{ term: "T3 Code", aliases: \[\] \},$/,
+  },
 ];
 
 export function rebrandLine(line: string, path = ""): string {
