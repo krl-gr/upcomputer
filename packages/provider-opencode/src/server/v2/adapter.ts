@@ -2199,7 +2199,11 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
                   resetAt: claudeLimit?.resetAt ?? null,
                   detail: readable,
                 })
-              : makeNativeProviderFailure({ driver: OPENCODE_PROVIDER, text: readable, code: type }),
+              : makeNativeProviderFailure({
+                  driver: OPENCODE_PROVIDER,
+                  text: readable,
+                  code: type,
+                }),
           });
         }
         default:

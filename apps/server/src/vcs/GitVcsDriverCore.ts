@@ -36,7 +36,11 @@ import { dedupeRemoteBranchesWithLocalMatches } from "@t3tools/shared/git";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { compactTraceAttributes } from "@t3tools/shared/observability";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
-import { isMacDeveloperToolStub, resolveSpawnCommand, runsGitWithoutConsole } from "@t3tools/shared/shell";
+import {
+  isMacDeveloperToolStub,
+  resolveSpawnCommand,
+  runsGitWithoutConsole,
+} from "@t3tools/shared/shell";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import { resolveProjectFileBackedSetting } from "@t3tools/shared/projectSettings";
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";

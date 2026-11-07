@@ -260,6 +260,7 @@ export function DraftHeroHeadline({
         providers: providersByEnvironment.get(project.environmentId) ?? [],
         ...(environmentSettings ? { settings: environmentSettings } : {}),
         projectId: project.id,
+        // oxlint-disable-next-line react/purity -- runs from the picker's select handler, not in render
         now: Date.now(),
       });
       const defaultModelSelection = fallbackResolution.fallback
