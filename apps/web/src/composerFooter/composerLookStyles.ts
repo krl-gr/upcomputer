@@ -5,6 +5,8 @@
  * controls and their logic stay upstream's.
  */
 
+import { productSurface } from "../product/productFlags";
+
 /** V1's `SIDEBAR_LABEL_TEXT_CLASS`: the controls read at the sidebar rows' text size. */
 const V1_LABEL_TEXT_CLASS = "text-sm font-normal leading-relaxed tracking-normal";
 
@@ -125,3 +127,10 @@ export const V1_COMPOSER_EXTRA_WIDTH = "4rem";
 export const COMPOSER_BOTTOM_SPACE_WITH_ROW_CLASS = "h-[calc(env(safe-area-inset-bottom)+0.25rem)]";
 export const COMPOSER_BOTTOM_SPACE_CLASS =
   "h-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:h-[calc(env(safe-area-inset-bottom)+1rem)]";
+
+/** V1's send button for upstream's send, steer and queue states; null keeps upstream's. */
+export function composerSendButtonSurfaceClass(canSend: boolean): string | null {
+  return productSurface("composerFooter") === "upcomputer"
+    ? composerSendButtonClass(canSend)
+    : null;
+}

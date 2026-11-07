@@ -12,7 +12,7 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { composerFloatingLayerProps } from "./composerEventScope";
-import { composerSendButtonSurfaceClass } from "~/composerFooter/composerFooterSurface";
+import { composerSendButtonSurfaceClass } from "~/composerFooter/composerLookStyles";
 import {
   alternateComposerDispatchAction,
   resolveComposerDispatchMode,
