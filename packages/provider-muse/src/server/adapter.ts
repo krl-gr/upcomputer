@@ -991,14 +991,11 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
             ? { nativeConversationHeadRef: nativeRef(turn.nativeId) }
             : {}),
         });
-        const usageLimited =
-          status === "failed" &&
-          disposition === "reusable" &&
-          (quota !== undefined || isMuseUsageLimitFailure(detail));
-        const failure =
-          status !== "failed"
-            ? undefined
-            : disposition === "broken"
+        if (status === "failed") {
+          const usageLimited =
+            disposition === "reusable" && (quota !== undefined || isMuseUsageLimitFailure(detail));
+          const failure =
+            disposition === "broken"
               ? makeProviderCrashFailure({ driver: MUSE_PROVIDER, detail })
               : usageLimited
                 ? makeProviderFailure({
@@ -1013,13 +1010,9 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
                     ),
                   })
                 : makeNativeProviderFailure({ driver: MUSE_PROVIDER, text: detail });
-        // The banner reads the same as the failure item.
-        yield* updateSession(
-          disposition === "broken" ? "error" : "ready",
-          failure?.message ?? detail ?? null,
-        );
-        active = undefined;
-        if (failure !== undefined) {
+          // The banner reads the same as the failure item.
+          yield* updateSession(disposition === "broken" ? "error" : "ready", failure.message);
+          active = undefined;
           const base = baseItem(turn, `failure:${turn.nativeId}`, completedAt);
           yield* emit({
             type: "turn_item.updated",
@@ -1045,6 +1038,8 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
             threadDisposition: disposition,
           });
         } else {
+          yield* updateSession(disposition === "broken" ? "error" : "ready", detail ?? null);
+          active = undefined;
           yield* emit({
             type: "turn.terminal",
             driver: MUSE_PROVIDER,
