@@ -5,7 +5,7 @@ that cannot change after release, says Up.computer. Everything internal stays up
 from upstream stay cheap and upstream clients (such as the Swift iOS client) stay compatible.
 
 **Stays upstream:** the `@t3tools/*` package scope, `T3CODE_*` variable names, type, file and
-function names, the `t3` CLI name, and the pairing and Connect protocol (`/.well-known/t3/environment`,
+function names, the `t3` npm package and runtime file names, and the pairing and Connect protocol (`/.well-known/t3/environment`,
 `urn:t3:...`, JWT `typ` values, the `t3-code` MCP server and its `serverInfo`, the Codex
 `clientInfo`, relay stack and resource names).
 
@@ -56,6 +56,13 @@ literals against it and against the electron-builder config.
 - **User docs:** the same pass rewrites `docs/user`, plus `~/.t3` to `~/.upcomputer`, app.t3.codes
   to app.up.computer and the `t3` command to `up`. Upstream's install scripts, package managers
   and release links are edited by hand after a sync; check-branding does not catch them.
+- **CLI command:** the desktop app installs the CLI as `up`, so the CLI says `up` too. The
+  root command name (`apps/server/src/binCli.ts`) and the PATH lookup behind printed commands
+  (`apps/server/src/cli/invocation.ts`) are set by hand and pinned by check-branding. The copy
+  pass rewrites `t3` before a subcommand, `--help` or a path everywhere in its scope, and the
+  program's name in the CLI's own prose (`apps/server/src/cli/`, not its tests). `npx t3`,
+  `t3@channel`, the `t3` MCP server and file names stay. A WSL distro has no `up` launcher, so
+  its hint keeps `t3`.
 - **Remote access command:** upstream's `t3 up` is `remote` here (`up remote` for the user). The
   subcommand name is set by hand in `apps/server/src/cli/up.ts` and pinned by check-branding; the
   copy pass rewrites `t3 up` in code and docs. There is no `up` alias: no release shipped it.

@@ -19,8 +19,37 @@ export interface CopyRule {
  */
 const REMOTE_COMMAND_RULE: CopyRule = { pattern: /\bt3 up\b/g, replacement: "t3 remote" };
 
+const CLI_SUBCOMMANDS =
+  "help|serve|start|app|pair|auth|environment|browser|project|thread|remote|status|service|update|uninstall|theme|cutover-v1|tasks|trace|doctor|policy|triage|connect";
+
+/**
+ * The `t3` command is `up` here, the launcher the desktop app installs. Rewritten where it
+ * names a subcommand, `--help` or a path, which leaves `npx t3` (upstream's npm package),
+ * the `t3` MCP server (`mcp add t3 --url`) and `t3` as an identifier alone.
+ */
+const CLI_COMMAND_RULE: CopyRule = {
+  pattern: new RegExp(
+    `(?<![\\w./@$-]|npx |bunx |dlx )t3(?= (?:${CLI_SUBCOMMANDS})\\b| --help\\b| \\./)`,
+    "g",
+  ),
+  replacement: "up",
+};
+
+/**
+ * The CLI's own prose names the program too ("Remove t3 from this machine"). Quoted `"t3"`,
+ * `t3@channel`, paths, `t3.exe` and object keys are upstream's identifiers and stay.
+ */
+const CLI_PROSE_RULE: CopyRule = {
+  pattern: /(?<![\w./@$'"-]|-g |npx |bunx |dlx )t3(?![\w.@/:'"`-])/g,
+  replacement: "up",
+};
+
+const isCliFile = (path: string): boolean =>
+  path.startsWith("apps/server/src/cli/") && !path.endsWith(".test.ts");
+
 export const COPY_RULES: ReadonlyArray<CopyRule> = [
   REMOTE_COMMAND_RULE,
+  CLI_COMMAND_RULE,
   { pattern: /\bT3 Code\b/g, replacement: "Up.computer" },
   { pattern: /\b(a|A) Up\.computer\b/g, replacement: "$1n Up.computer" },
   { pattern: /\ba T3 thread\b/g, replacement: "an Up.computer thread" },
@@ -79,11 +108,12 @@ const isDocFile = (path: string): boolean => path.endsWith(".md");
 
 /**
  * Files whose T3 text is not ours to rebrand: upstream's issue triage tool
- * files reports against upstream, and the relay contract follows upstream's
+ * files reports against upstream and its prompt describes upstream's npm `t3`, and the relay contract follows upstream's
  * relay, which Up.computer runs as is.
  */
 const COPY_EXCLUDED = [
   /^apps\/server\/src\/cli\/triage/,
+  /^apps\/server\/src\/triage\//,
   /^packages\/contracts\/src\/relay\.ts$/,
   /\/fixtures\//,
   /\/node_modules\//,
@@ -137,6 +167,10 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
     path: /^apps\/server\/src\/cli\/up(\.connect)?\.test\.ts$/,
     line: /^it\.layer\(.*\("t3 up", |^  "t3 up with /,
   },
+  // A WSL distro has no `up` launcher; the hint names upstream's npm `t3` there.
+  { path: /^apps\/desktop\/src\/wsl\/DesktopWslBackend\.ts$/, line: /npx t3@latest/ },
+  // Comments in the shell script the SSH tunnel runs on the remote host.
+  { path: /^packages\/ssh\/src\/tunnel\.ts$/, line: /^#/ },
   // Its headings are the anchors clients link to (T3_CONNECT_TROUBLESHOOTING_SECTIONS in
   // packages/contracts/src/environmentHttp.ts), so they keep upstream's wording.
   { path: /^docs\/user\/t3-connect-troubleshooting\.md$/, line: /^#{2,3} / },
@@ -160,8 +194,10 @@ export function rebrandLine(line: string, path = ""): string {
     );
   }
   if (COMMENT_LINE.test(line)) return line;
-  if (KEEP_LINES.some((keep) => keep.path.test(path) && keep.line.test(line))) return line;
-  return COPY_RULES.reduce((text, rule) => text.replace(rule.pattern, rule.replacement), line);
+  return [...COPY_RULES, ...(isCliFile(path) ? [CLI_PROSE_RULE] : [])].reduce(
+    (text, rule) => text.replace(rule.pattern, rule.replacement),
+    line,
+  );
 }
 
 export function rebrandText(text: string, path = ""): string {
@@ -332,7 +368,20 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   },
   // UPCOMPUTER_* environment aliases at the entry points.
   { path: "apps/server/src/bin.ts", requires: ["applyUpcomputerEnvAliases(process.env)"] },
-  { path: "apps/server/src/binCli.ts", requires: ["applyUpcomputerEnvAliases(process.env)"] },
+  // The CLI's own name, which help and usage lines print; the desktop app installs it as `up`.
+  {
+    path: "apps/server/src/binCli.ts",
+    requires: [
+      "applyUpcomputerEnvAliases(process.env)",
+      'Command.make("up", { ...sharedServerCommandFlags })',
+    ],
+    forbids: ['Command.make("t3", {', 'commandPath: ["t3"'],
+  },
+  {
+    path: "apps/server/src/cli/invocation.ts",
+    requires: ['resolveCommandPath("up")'],
+    forbids: ['resolveCommandPath("t3")'],
+  },
   {
     path: "apps/server/src/cli/up.ts",
     requires: ['Command.make("remote", {', 'resolveHostCliCommand("remote", '],

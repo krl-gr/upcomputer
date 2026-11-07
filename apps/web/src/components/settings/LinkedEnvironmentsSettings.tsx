@@ -325,7 +325,7 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
                   onChange={(event) => setPairingCode(event.target.value)}
                   placeholder={
                     machine === null
-                      ? "From that environment's Connections, or t3 pair there"
+                      ? "From that environment's Connections, or up pair there"
                       : "Paste the code"
                   }
                   disabled={busy}

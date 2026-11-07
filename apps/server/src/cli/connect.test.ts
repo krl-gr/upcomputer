@@ -59,7 +59,7 @@ it.effect("does not install the relay client when the user declines the managed 
 );
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))(
-  "t3 connect unlink",
+  "up connect unlink",
   (it) => {
     const runUnlink = (recordedPid: number, options?: { readonly portFreed?: boolean }) =>
       Effect.gen(function* () {
