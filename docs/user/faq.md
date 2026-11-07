@@ -13,7 +13,7 @@ Bring your own: Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigra
 We were inspired by the Codex desktop app, Conductor, Claude Desktop, and Cursor Glass, but none met our bar. What you get:
 
 - Bring your own sub. Claude, Codex, and whatever else you already have installed.
-- Best in class remote. Run `up up` on any box and drive it from anywhere.
+- Best in class remote. Run `up remote` on any box and drive it from anywhere.
 - Best in class mobile app.
 - Truly 100% open source. If we go the wrong direction, fork it.
 
@@ -33,7 +33,7 @@ Up.computer drives Claude through Anthropic's Agent SDK. I confirmed it's a real
 
 ## How do I use Up.computer remotely?
 
-Your agents run wherever Up.computer runs: your desktop, a server, a VPS. You connect to it from anywhere. I do this constantly. Less than 5% of my prompts run on my laptop. Run `up up` on that machine and you get really good remote support. UpComputer Connect is the easy path. LAN pairing and Tailscale work too, and [app.up.computer](https://app.up.computer) is the web client. [Remote access](./remote-access.md)
+Your agents run wherever Up.computer runs: your desktop, a server, a VPS. You connect to it from anywhere. I do this constantly. Less than 5% of my prompts run on my laptop. Run `up remote` on that machine and you get really good remote support. UpComputer Connect is the easy path. LAN pairing and Tailscale work too, and [app.up.computer](https://app.up.computer) is the web client. [Remote access](./remote-access.md)
 
 ## How do I use Up.computer on my phone?
 

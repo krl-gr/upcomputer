@@ -162,7 +162,7 @@ const formatSetup = (setup: Setup) => {
       ? ["Anyone on your LAN or tailnet can reach the port. A pairing code is the only lock."]
       : []),
     ...(setup.lanFromOldDefault
-      ? ["Older installs keep LAN access on. Turn it off: `t3 up --no-lan`."]
+      ? ["Older installs keep LAN access on. Turn it off: `t3 remote --no-lan`."]
       : []),
   ];
   return [
@@ -241,7 +241,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
       cause: "routes",
       userMessage: `No terminal. Choose access with ${
         before.connect === null ? "--lan" : "--connect or --lan"
-      }, or use --yes for the default. See \`t3 up --help\`.`,
+      }, or use --yes for the default. See \`t3 remote --help\`.`,
     });
   }
   if (routes.connect && !current.connect) yield* requireConnectAllowed;
@@ -367,7 +367,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
     if ("failed" in result && before.service.installed) {
       // The old service still runs, so a foreground server would clash with it.
       yield* restoreServiceEnv;
-      const { command } = yield* resolveHostCliCommand("up", baseDirArgs);
+      const { command } = yield* resolveHostCliCommand("remote", baseDirArgs);
       yield* Console.log(
         `Service setup failed: ${result.failed} Fix that, then run \`${command}\` again.`,
       );
@@ -420,7 +420,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
   );
 });
 
-export const upCommand = Command.make("up", {
+export const upCommand = Command.make("remote", {
   ...projectLocationFlags,
   connect: Flag.Boolean("connect").pipe(
     Flag.withDescription(
@@ -447,11 +447,14 @@ export const upCommand = Command.make("up", {
     "Set up remote access and the Up.computer background service. Access flags skip the question, and routes not named keep their settings. Without a terminal, a needed restart runs without asking and stops running agent turns.",
   ),
   Command.withExamples([
-    { command: "t3 up", description: "Choose remote access." },
-    { command: "t3 up --connect", description: "Turn on UpComputer Connect. Keep other settings." },
-    { command: "t3 up --lan", description: "Allow LAN access with pairing codes." },
-    { command: "t3 up --no-lan", description: "Stop LAN access." },
-    { command: "t3 up --yes", description: "Take the defaults with no questions." },
+    { command: "t3 remote", description: "Choose remote access." },
+    {
+      command: "t3 remote --connect",
+      description: "Turn on UpComputer Connect. Keep other settings.",
+    },
+    { command: "t3 remote --lan", description: "Allow LAN access with pairing codes." },
+    { command: "t3 remote --no-lan", description: "Stop LAN access." },
+    { command: "t3 remote --yes", description: "Take the defaults with no questions." },
     { command: "t3 status --json", description: "Read the settings from a script." },
   ]),
   Command.withHandler((flags) => runCloudCommand(flags, setUp(flags), { quietLogs: true })),
@@ -461,7 +464,9 @@ export const connectCommand = Command.make("connect", {
   ...projectLocationFlags,
   headless: headlessFlag,
 }).pipe(
-  Command.withDescription("Set up UpComputer Connect for this machine. Same as `t3 up --connect`."),
+  Command.withDescription(
+    "Set up UpComputer Connect for this machine. Same as `t3 remote --connect`.",
+  ),
   Command.withHandler((flags) =>
     runCloudCommand(
       flags,
@@ -521,7 +526,7 @@ export const statusCommand = Command.make("status", {
       yield* Console.log(
         flags.json
           ? setupJson(setup)
-          : `This machine\n${formatSetup(setup)}\n\nChange access: \`t3 up\`.`,
+          : `This machine\n${formatSetup(setup)}\n\nChange access: \`t3 remote\`.`,
       );
     }),
   ),

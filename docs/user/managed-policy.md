@@ -228,7 +228,7 @@ Without `remote`, the server listens only on a loopback address, creates no pair
 signs out devices that paired earlier. It does not start with a host other than a loopback
 address or `localhost`. A [background service](./background-service.md) installed before
 `T3CODE_LAN` existed keeps private-network access, so without `remote` it refuses to start.
-Run `up up --no-lan` when its `service.env` sets no `T3CODE_HOST`, or set
+Run `up remote --no-lan` when its `service.env` sets no `T3CODE_HOST`, or set
 `T3CODE_HOST=127.0.0.1` in `service.env`, then run `up service restart`. The desktop app starts
 with network access and Tailscale Serve off, whatever the user chose. That also turns off
 UpComputer Connect. To keep other remote access but turn off UpComputer Connect alone, set `"connect": false`.

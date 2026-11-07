@@ -17,7 +17,7 @@ standalone download is not published yet.
 | ------------------------------------------------ | ----------------------------------------------------------------------- |
 | Start the server and open the web app            | `up`                                                                    |
 | Start the server without a browser               | `up serve`                                                              |
-| Use it from your other devices                   | `up up` ([details](./remote-access.md))                                 |
+| Use it from your other devices                   | `up remote` ([details](./remote-access.md))                             |
 | Keep it running in the background (macOS, Linux) | `up service install` ([details](./background-service.md))               |
 | Reclaim database space                           | `up doctor` ([details](./background-service.md#reclaim-database-space)) |
 

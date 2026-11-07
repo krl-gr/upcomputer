@@ -10,7 +10,7 @@ run these commands on the machine that will host Up.computer:
 
 | Task                                  | Command                |
 | ------------------------------------- | ---------------------- |
-| Set up access from your other devices | `up up`                |
+| Set up access from your other devices | `up remote`            |
 | See how your other devices reach it   | `up status`            |
 | Install and start                     | `up service install`   |
 | Inspect status and log location       | `up service status`    |
@@ -45,8 +45,8 @@ under Up.computer home. Pass `--yes` from a script.
 ## Local network access
 
 A new service answers only on this machine. Other devices reach it through
-UpComputer Connect, or directly once you choose the local network in `up up` (or run
-`up up --lan`, which sets `T3CODE_LAN=true` in `service.env`). It then listens on
+UpComputer Connect, or directly once you choose the local network in `up remote` (or run
+`up remote --lan`, which sets `T3CODE_LAN=true` in `service.env`). It then listens on
 your local network and Tailscale addresses, so the desktop and mobile apps on
 the same network connect directly instead of through UpComputer Connect. It still does
 not answer on public addresses. Anyone on the same network can reach the port,
@@ -54,7 +54,7 @@ so a pairing code is all that keeps them out. The hosted web app at app.up.compu
 stays on UpComputer Connect, because browsers block plain HTTP from an HTTPS page.
 
 A service installed before `T3CODE_LAN` existed keeps listening on the local
-network. `up status` says so, and `up up --no-lan` turns it off. Any
+network. `up status` says so, and `up remote --no-lan` turns it off. Any
 `T3CODE_HOST` value replaces this setting.
 
 ## Configure the service environment
@@ -98,7 +98,7 @@ enabled, or keep `up serve` running in a terminal. Minimize the desktop app rath
 than closing its last window, which stops its local server. Linking UpComputer Connect
 does not configure automatic startup at Windows sign-in.
 
-`up up` installs the service when you set up UpComputer Connect, but the two are managed
+`up remote` installs the service when you set up UpComputer Connect, but the two are managed
 separately. Signing out of UpComputer Connect does not stop or uninstall the service.
 
 ## Keep the server responsive when agents use all memory

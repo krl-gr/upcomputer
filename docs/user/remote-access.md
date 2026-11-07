@@ -12,16 +12,16 @@ Sharing & access**, sign in, and enable **UpComputer Connect** for that environm
 For a command-line host, run:
 
 ```bash
-up up
+up remote
 ```
 
 It asks how your other devices reach the machine: UpComputer Connect, the local network,
 or both. Choose UpComputer Connect and follow the sign-in instructions. On Linux and
 macOS, it then runs Up.computer as a [background service](./background-service.md).
-`up connect` is the same as `up up --connect`. Run `up up` again to change your
+`up connect` is the same as `up remote --connect`. Run `up remote` again to change your
 choice, and `up status` to see it.
 
-The background service is not available on Windows, so there `up up` prints the
+The background service is not available on Windows, so there `up remote` prints the
 `up serve` command to keep running in a terminal. You can also keep the desktop
 app running with its local environment enabled. Closing the desktop app's last
 window stops its local server. Saving your sign-in alone does not start a server
@@ -41,15 +41,15 @@ disconnect an otherwise healthy conversation.
 
 ### Scripts and agents
 
-`up up` asks nothing when you name a choice: `--connect`, `--lan`, or their
+`up remote` asks nothing when you name a choice: `--connect`, `--lan`, or their
 `--no-` forms. Choices you do not name keep their settings, and `--yes` takes
 the defaults. Without a terminal:
 
 - UpComputer Connect sign-in prints a URL and a code. Approve it on any device.
 - A needed restart runs without asking, and stops running agent turns.
-- With nothing set up and no choice named, `up up` stops and names the flags.
+- With nothing set up and no choice named, `up remote` stops and names the flags.
 
-`up status --json` prints the settings. `up up --help` lists every flag with
+`up status --json` prints the settings. `up remote --help` lists every flag with
 examples.
 
 ### Machine limit
@@ -65,10 +65,10 @@ On a desktop host, open **Settings → Sharing & access**, enable **Network acce
 then create a pairing link using an address the other device can reach. Changing
 network access restarts the desktop app. You can turn it off in the same place.
 
-For a command-line host, choose the local network in `up up`, or run:
+For a command-line host, choose the local network in `up remote`, or run:
 
 ```bash
-up up --lan
+up remote --lan
 ```
 
 For a server in a terminal, run `up serve --lan`. Either way, Up.computer then
@@ -118,7 +118,7 @@ pairing once through UpComputer Connect is enough to use the LAN at home. When t
 machine's LAN address changes, for example after it joins another Wi-Fi network,
 the learned route follows it. The machine must allow network access for its LAN
 address to be learned: **Network access** in the desktop app, or the
-[local network](./background-service.md#local-network-access) choice in `up up`.
+[local network](./background-service.md#local-network-access) choice in `up remote`.
 You can reorder a learned route, but not remove it; it
 goes away with the route it was learned through, or when the machine stops
 reporting that address.
