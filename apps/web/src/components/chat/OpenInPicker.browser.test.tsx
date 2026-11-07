@@ -195,10 +195,14 @@ describe("remote editor links", () => {
     const { screen, pressOpenFavorite, FavoriteEditorFallback } = fixture;
     state.remote = { mode: "remote-links", host: { kind: "ssh-alias", host: "sol" } };
     await act(async () => screen.rerender(<FavoriteEditorFallback />));
+    using _timers = fakeTimers();
 
     expect((await pressOpenFavorite()).defaultPrevented).toBe(true);
     expect(state.openUrl).toHaveBeenCalledWith(expect.stringContaining("ssh-remote+sol"));
     expect(state.run).not.toHaveBeenCalled();
+    // On the real clock this flush would land 250 ms later, inside the next test.
+    await act(async () => vi.runAllTimers());
+    expect(document.body.textContent).toContain("Opened in VS Code");
   });
 });
 
@@ -210,6 +214,10 @@ describe("open in editor announcement", () => {
     await renderPicker();
     using _timers = fakeTimers();
     const regions = () => [...document.querySelectorAll('body > [aria-live="polite"]')];
+    // The announcer's regions outlive a test and may still hold an earlier test's message.
+    const silence = () => {
+      for (const region of regions()) region.textContent = "";
+    };
     const spoken = async () => {
       await act(async () => vi.runAllTimers());
       return regions()
@@ -219,13 +227,14 @@ describe("open in editor announcement", () => {
     const refuse = () =>
       state.run.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("No editor"))));
 
+    silence();
     refuse();
     await pressOpenFavorite();
     expect(await spoken()).toBe("");
     await pressOpenFavorite();
     expect(await spoken()).toBe("Opened in VS Code");
 
-    for (const region of regions()) region.textContent = "";
+    silence();
     await act(async () => screen.rerender(<FavoriteEditorFallback />));
     refuse();
     await pressOpenFavorite();
