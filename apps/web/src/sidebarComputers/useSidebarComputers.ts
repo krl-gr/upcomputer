@@ -3,7 +3,7 @@ import { isMacPlatform } from "@t3tools/shared/keybindings";
 
 import { isElectron } from "../env";
 import { isWindowsPlatform } from "../lib/utils";
-import { useQuietThreadShells } from "../state/entities";
+import { useDelegatedUnderParent, useQuietThreadShells } from "../state/entities";
 import {
   useEnvironmentMachines,
   useEnvironments,
@@ -92,8 +92,9 @@ export function useSidebarComputers(
   const machines = useEnvironmentMachines();
   const primaryId = usePrimaryEnvironmentId();
   const threads = useQuietThreadShells();
+  const delegatedUnderParent = useDelegatedUnderParent();
   const localLastVisitedAt = useUiStateStore((store) => store.threadLastVisitedAtById);
-  const counts = countComputerRuns(threads, localLastVisitedAt);
+  const counts = countComputerRuns(threads, delegatedUnderParent, localLastVisitedAt);
   const byId = new Map(environments.map((environment) => [environment.environmentId, environment]));
   return computerIds.flatMap((environmentId) => {
     const presentation = byId.get(environmentId);
