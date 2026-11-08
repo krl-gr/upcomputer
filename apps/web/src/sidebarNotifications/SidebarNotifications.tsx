@@ -25,6 +25,7 @@ import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
 import { SidebarUpdatePill } from "../components/sidebar/SidebarUpdatePill";
 import { SidebarUpdateReleaseNotes } from "../components/sidebar/SidebarUpdateReleaseNotes";
 import { UpdateEverythingDialog } from "../components/sidebar/UpdateEverythingDialog";
+import { dismissSettledUpdateRunMachines } from "../components/sidebar/updateEverythingRun";
 import { InlineButton } from "../components/ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
 import { SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
@@ -283,6 +284,7 @@ function NotificationsPanel({
           tone="info"
           icon={<RefreshCwIcon />}
           {...describeUpdateRun(run)}
+          onDismiss={updateRunFailed(run) ? dismissSettledUpdateRunMachines : undefined}
           below={
             // Upstream's capsule keeps the run's own actions: retry, Later and Restart.
             <ul className="flex">

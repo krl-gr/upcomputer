@@ -133,18 +133,24 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("desktop app upda
     }),
   );
 
-  it.effect("succeeds without an install when a track switch finds the host current", () =>
+  it.effect("succeeds without an install when the host is already current", () =>
     Effect.gen(function* () {
-      const { service } = yield* makeHarness({
-        reports: (requestId) => [
-          report(requestId, makeState({ status: "up-to-date", currentVersion: "1.2.3" }), {
-            outcome: "up-to-date",
-          }),
-        ],
-      });
+      const current = () =>
+        makeHarness({
+          reports: (requestId) => [
+            report(requestId, makeState({ status: "up-to-date", currentVersion: "1.2.3" }), {
+              outcome: "up-to-date",
+            }),
+          ],
+        });
       const trackSwitch = { channel: "latest" as const, targetVersion: "1.2.3" };
 
-      expect(yield* service.run(() => Effect.void, trackSwitch)).toEqual({
+      expect(yield* (yield* current()).service.run(() => Effect.void, trackSwitch)).toEqual({
+        targetVersion: "1.2.3",
+        method: "desktop-app",
+      });
+      // A plain update its own feed has nothing for is no failure either.
+      expect(yield* (yield* current()).service.run(() => Effect.void)).toEqual({
         targetVersion: "1.2.3",
         method: "desktop-app",
       });

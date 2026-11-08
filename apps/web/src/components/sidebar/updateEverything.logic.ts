@@ -424,6 +424,24 @@ export function closeFinishedUpdateRun(run: UpdateEverythingRun): UpdateEverythi
     : run;
 }
 
+/** A failed server that is no longer behind, say after a manual update, has nothing to retry. */
+export function withoutRecoveredMachines(
+  run: UpdateEverythingRun,
+  serverVersionOf: (environmentId: EnvironmentId) => string | null,
+): UpdateEverythingRun | null {
+  const machines = run.machines.filter((machine) => {
+    if (machine.result !== "failed" || machine.server === null) return true;
+    const serverVersion = serverVersionOf(machine.environmentId);
+    return (
+      serverVersion === null ||
+      resolveVersionMismatch(serverVersion, machine.server.targetVersion) !== null
+    );
+  });
+  return machines.length === run.machines.length
+    ? run
+    : closeFinishedUpdateRun({ ...run, machines });
+}
+
 const UPDATE_SLOW_AFTER_MS = 3 * 60 * 1000;
 
 export function formatUpdateElapsed(ms: number): string {

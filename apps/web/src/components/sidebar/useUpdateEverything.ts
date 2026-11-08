@@ -10,7 +10,17 @@ import { environmentUpdateStatesAtom } from "~/state/server";
 import { environmentSessionStatesAtom } from "~/state/session";
 import { getProviderUpdateRunOutcome } from "../ProviderUpdateLaunchNotification.logic";
 import { useProviderUpdates } from "../ProviderUpdatesAction";
-import { canUpdateServer, type ServerUpdateOutcome, useServerUpdate } from "../ServerUpdateAction";
+import {
+  isStillUpToDate,
+  SERVER_UP_TO_DATE_NOTE,
+  useServerUpToDateReports,
+} from "~/serverUpToDate/serverUpToDate";
+import {
+  canUpdateServer,
+  type ServerUpdateOutcome,
+  type ServerUpdateTarget,
+  useServerUpdate,
+} from "../ServerUpdateAction";
 import {
   type ChannelSwitchRelease,
   closeFinishedUpdateRun,
@@ -72,7 +82,18 @@ export function useUpdateEverything(
     : collectServerUpdateTargets(machines, targetVersion);
   // Up.computer: a server updates here only through its desktop app's update feed. Upstream's
   // other servers install `t3` from npm, which Up.computer does not publish.
-  const servers = candidateServers.filter((server) => server.selfUpdate === "desktop-managed");
+  const upToDate = useServerUpToDateReports();
+  const stillUpToDate = (server: ServerUpdateTarget) =>
+    channelSwitch === undefined &&
+    isStillUpToDate(
+      upToDate[server.environmentId],
+      machines.find((machine) => machine.environmentId === server.environmentId)?.serverConfig
+        ?.environment.serverVersion,
+      server.targetVersion,
+    );
+  const servers = candidateServers.filter(
+    (server) => server.selfUpdate === "desktop-managed" && !stillUpToDate(server),
+  );
   const skipped: ReadonlyArray<SkippedMachine> = [
     ...unreachable,
     ...candidateServers
@@ -80,7 +101,7 @@ export function useUpdateEverything(
       .map((server) => ({
         environmentId: server.environmentId,
         label: server.serverLabel,
-        reason: "Update it on that machine",
+        reason: stillUpToDate(server) ? SERVER_UP_TO_DATE_NOTE : "Update it on that machine",
       })),
   ];
   // Track-only hosts save a setting and restart nothing, so they are neither listed nor counted.

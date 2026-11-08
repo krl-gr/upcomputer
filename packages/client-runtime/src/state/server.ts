@@ -19,6 +19,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
@@ -331,6 +332,22 @@ export function isLegacyUpdateHandoffLoss(cause: Cause.Cause<unknown>): boolean 
   return (
     cause.reasons.length > 0 &&
     cause.reasons.every((reason) => Cause.isFailReason(reason) && isRpcSocketError(reason.error))
+  );
+}
+
+// Desktop hosts before 0.0.38 answer an update their own feed has nothing for with this failure.
+// It is the no-restart result a host already current returns now.
+const DESKTOP_ALREADY_CURRENT_REASON = /desktop app on this machine is already up to date on /;
+
+/** A desktop host refused the update only because its own update feed has nothing newer. */
+function isDesktopAlreadyCurrentFailure(cause: Cause.Cause<unknown>): boolean {
+  return cause.reasons.some(
+    (reason) =>
+      Cause.isFailReason(reason) &&
+      Predicate.isTagged(reason.error, "ServerSelfUpdateError") &&
+      Predicate.hasProperty(reason.error, "reason") &&
+      typeof reason.error.reason === "string" &&
+      DESKTOP_ALREADY_CURRENT_REASON.test(reason.error.reason),
   );
 }
 
@@ -931,6 +948,12 @@ export function createServerEnvironmentAtoms<R, E>(
                     (selfUpdateMethod === "boot-service" || selfUpdateMethod === "respawn")
                       ? { targetVersion, method: selfUpdateMethod }
                       : undefined;
+                  if (
+                    Exit.isFailure(streamExit) &&
+                    isDesktopAlreadyCurrentFailure(streamExit.cause)
+                  ) {
+                    return { targetVersion: fromVersion, method: "desktop-app" as const };
+                  }
                   return yield* resolveServerUpdateProgressResult(
                     targetVersion,
                     yield* Ref.get(terminal),
@@ -954,6 +977,9 @@ export function createServerEnvironmentAtoms<R, E>(
                     // unary acknowledgement arrives. Treat only that transport
                     // loss as a handoff, then prove it by waiting for target ready.
                     return { targetVersion, method: selfUpdateMethod };
+                  }
+                  if (isDesktopAlreadyCurrentFailure(exit.cause)) {
+                    return { targetVersion: fromVersion, method: "desktop-app" as const };
                   }
                   return yield* Effect.failCause(exit.cause);
                 });
@@ -991,8 +1017,8 @@ export function createServerEnvironmentAtoms<R, E>(
           }),
         );
 
-        // A track switch's desktop host already on its track's newest build only saved the
-        // track; nothing restarts.
+        // A desktop host already on its track's newest build has nothing to install (a track
+        // switch only saved the track); nothing restarts.
         if (
           result.method === "desktop-app" &&
           result.desktopUpdateToken === undefined &&

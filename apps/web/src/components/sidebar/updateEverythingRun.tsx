@@ -19,6 +19,7 @@ import {
   type UpdateEverythingResult,
   type UpdateEverythingRun,
   type UpdateRunMachine,
+  withoutRecoveredMachines,
 } from "./updateEverything.logic";
 
 const updateEverythingRunAtom = Atom.make<UpdateEverythingRun | null>(null).pipe(
@@ -26,8 +27,20 @@ const updateEverythingRunAtom = Atom.make<UpdateEverythingRun | null>(null).pipe
   Atom.withLabel("update-everything-run"),
 );
 
+export const visibleUpdateEverythingRunAtom = Atom.make((get) => {
+  const run = get(updateEverythingRunAtom);
+  return (
+    run &&
+    withoutRecoveredMachines(
+      run,
+      (environmentId) =>
+        get(serverEnvironment.configValueAtom(environmentId))?.environment.serverVersion ?? null,
+    )
+  );
+}).pipe(Atom.withLabel("update-everything-run-visible"));
+
 export function useUpdateEverythingRun(): UpdateEverythingRun | null {
-  return useAtomValue(updateEverythingRunAtom);
+  return useAtomValue(visibleUpdateEverythingRunAtom);
 }
 
 export function setUpdateEverythingRun(
@@ -69,7 +82,7 @@ export function retryFailedUpdateRunServers(
     options: { readonly quiet: boolean },
   ) => Promise<ServerUpdateOutcome>,
 ): void {
-  const failed = (appAtomRegistry.get(updateEverythingRunAtom)?.machines ?? []).flatMap(
+  const failed = (appAtomRegistry.get(visibleUpdateEverythingRunAtom)?.machines ?? []).flatMap(
     (machine) =>
       machine.result === "failed" && machine.server !== null
         ? [{ target: machine.server, providerFailure: machine.providerFailure }]
@@ -87,12 +100,12 @@ export function retryFailedUpdateRunServers(
     void update(target, { quiet: true }).then((outcome) =>
       settleUpdateRunMachine(
         target.environmentId,
-        outcome.status === "updated"
+        outcome.status === "updated" || outcome.status === "current"
           ? providerFailure
           : outcome.status === "failed"
             ? outcome.message
             : "Could not start the update",
-        { serverUpdated: outcome.status === "updated" },
+        { serverUpdated: outcome.status === "updated" || outcome.status === "current" },
       ),
     );
   }

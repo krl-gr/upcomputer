@@ -237,6 +237,8 @@ describe("accepted server update recovery", () => {
     { loss: "cancel", resumes: false },
     { loss: "socket", method: "respawn", resumes: true },
     { loss: "socket", method: "desktop-managed", resumes: false },
+    // A desktop host from before 0.0.38 refuses an update its own feed has nothing for.
+    { loss: "already_current", method: "desktop-managed", resumes: false },
   ] as const)("handles $loss with $method and recovery=$resumes", (scenario) =>
     Effect.gen(function* () {
       const { loss, resumes } = scenario;
@@ -285,9 +287,14 @@ describe("accepted server update recovery", () => {
                           ? new ServerSelfUpdateError({
                               reason: "Archive verification failed.",
                             })
-                          : new RpcClientError.RpcClientError({
-                              reason: new Socket.SocketCloseError({ code: 1006 }),
-                            }),
+                          : loss === "already_current"
+                            ? new ServerSelfUpdateError({
+                                reason:
+                                  "The Up.computer desktop app on this machine is already up to date on 0.0.30.",
+                              })
+                            : new RpcClientError.RpcClientError({
+                                reason: new Socket.SocketCloseError({ code: 1006 }),
+                              }),
                       ),
               ),
             ),
@@ -350,6 +357,19 @@ describe("accepted server update recovery", () => {
         Effect.promise(() => pending).pipe(Effect.as("settled")),
         Deferred.await(observing).pipe(Effect.as("observing")),
       );
+      if (loss === "already_current") {
+        // Nothing restarts, and Settings shows no failure.
+        expect(first).toBe("settled");
+        const settled = yield* Effect.promise(() => pending);
+        expect(AsyncResult.isSuccess(settled) && settled.value).toEqual({
+          targetVersion: "0.0.30",
+          method: "desktop-app",
+        });
+        expect(registry.get(serverUpdateStateAtom(TARGET.environmentId))).toEqual({
+          status: "idle",
+        });
+        return;
+      }
       if (!resumes) {
         expect(first).toBe("settled");
         expect(AsyncResult.isFailure(yield* Effect.promise(() => pending))).toBe(true);
