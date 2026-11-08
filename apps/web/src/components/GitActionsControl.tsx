@@ -1420,6 +1420,7 @@ export default function GitActionsControl({
           type: "error",
           title: "Couldn't set up Git",
           description: errorToastDescription(error),
+          timeout: resolveGitActionResultToastTiming("error").timeout,
           ...(threadToastData !== undefined ? { data: threadToastData } : {}),
         }),
       );
