@@ -174,7 +174,9 @@ const KEYBINDING_SEARCH_ITEMS = STATIC_KEYBINDING_COMMANDS.toSorted((left, right
   );
   return {
     id: keybindingSearchAnchorId(command),
-    title: commandLabel(command),
+    get title() {
+      return commandLabel(command);
+    },
     to: "/settings/keybindings" as const,
     searchTerms: [command, ...defaultKeys],
     secondary: true,
@@ -222,6 +224,11 @@ const SOURCE_CONTROL_HOST_LABELS = sourceControlClients.definitions
 const SOURCE_CONTROL_HOST_TERMS = sourceControlClients.definitions
   .flatMap((definition) => [definition.label, ...(definition.searchKeywords ?? [])])
   .join(" ");
+
+/** Search words for a row whose words name pull requests, which stay out while they are hidden. */
+function pullRequestSearchTerms(withPullRequests: string, withoutPullRequests: string) {
+  return [isProductFeatureShown("pullRequests") ? withPullRequests : withoutPullRequests];
+}
 
 export const SETTINGS_SEARCH_ITEMS = [
   {
@@ -353,9 +360,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "thread-details-items",
     title: "Thread details",
     to: "/settings/appearance",
-    searchTerms: [
-      "customize show hide panel card environment editor scripts branch pull request git changes servers automations lineage usage limits 5 hour weekly quota tokens context window",
-    ],
+    get searchTerms() {
+      return pullRequestSearchTerms(
+        "customize show hide panel card environment editor scripts branch pull request git changes servers automations lineage usage limits 5 hour weekly quota tokens context window",
+        "customize show hide panel card environment editor scripts branch git changes servers automations lineage usage limits 5 hour weekly quota tokens context window",
+      );
+    },
   },
   {
     id: "effort-display",
@@ -485,7 +495,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "boring-sidebar-multiline",
     title: "Two-line folder rows",
     to: "/settings/labs",
-    searchTerms: ["beta boring sidebar folder rows multiline branch pull request details"],
+    get searchTerms() {
+      return pullRequestSearchTerms(
+        "beta boring sidebar folder rows multiline branch pull request details",
+        "beta boring sidebar folder rows multiline branch details",
+      );
+    },
   },
   {
     id: "tool-call-visibility",
@@ -696,7 +711,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "default-diff-file-state",
     title: "Default diff file state",
     to: "/settings/diffs",
-    searchTerms: ["collapsed expanded collapse expand files pull request pr code tab"],
+    get searchTerms() {
+      return pullRequestSearchTerms(
+        "collapsed expanded collapse expand files pull request pr code tab",
+        "collapsed expanded collapse expand files",
+      );
+    },
   },
   {
     id: "diff-layout",
@@ -1181,7 +1201,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "follow-change-request-templates",
     title: "Follow change request templates",
     to: "/settings/source-control",
-    searchTerms: ["repository pr pull request description structure"],
+    // Create PR in the git actions menu still follows templates while pull requests are hidden.
+    get searchTerms() {
+      return pullRequestSearchTerms(
+        "repository pr pull request description structure",
+        "repository description structure",
+      );
+    },
     environmentOnly: true,
   },
   {

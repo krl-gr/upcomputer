@@ -8,7 +8,10 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { RightPanelTabs } from "../components/RightPanelTabs";
 import { SidebarThreadHeader } from "../components/sidebar/SidebarThreadHeader";
 import { SidebarProvider } from "../components/ui/sidebar";
-import { filterAvailableSettingsSearchItems } from "../components/settings/settingsSearch";
+import {
+  filterAvailableSettingsSearchItems,
+  searchSettings,
+} from "../components/settings/settingsSearch";
 import {
   isProductFeatureShown,
   isProductKeybindingShown,
@@ -165,6 +168,46 @@ describe("hidden upstream features in the web app", () => {
     expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(15);
     expect(all.find((item) => item.id === "code-font")).toBeDefined();
     expect(isProductSettingsSearchItemVisible({ id: "code-font" })).toBe(true);
+  });
+
+  it("finds no pull request settings when searching for pull while pull requests are hidden", () => {
+    const all = filterAvailableSettingsSearchItems({
+      hasCloudPublicConfig: true,
+      hasEnvironment: true,
+      hasProviderSettingsEnvironment: true,
+      hasMacProviderSettingsEnvironment: true,
+      canManageLocalBackend: true,
+      isWslSettingsRowVisible: true,
+      hasThreadAutoSettlement: true,
+    });
+    const search = (query: string) =>
+      searchSettings(query, all.filter(isProductSettingsSearchItemVisible)).map((item) => ({
+        id: item.id,
+        title: item.title,
+      }));
+    const upstreamResults = search("pull").map((item) => item.id);
+    expect(upstreamResults).toEqual(
+      expect.arrayContaining([
+        "default-diff-file-state",
+        "thread-details-items",
+        "boring-sidebar-multiline",
+        "follow-change-request-templates",
+        "keybinding-thread.copyReference",
+      ]),
+    );
+    expect(
+      search("pull").find((item) => item.id === "keybinding-thread.copyReference")?.title,
+    ).toBe("Pull Request: Copy Link or Thread");
+
+    product.hidden = true;
+    // Automatically pull is git pull.
+    expect(search("pull")).toEqual([{ id: "automatic-pull", title: "Automatically pull" }]);
+    expect(search("copy thread link")).toEqual([
+      { id: "keybinding-thread.copyReference", title: "Copy Thread Link" },
+    ]);
+    expect(search("change request templates").map((item) => item.id)).toEqual([
+      "follow-change-request-templates",
+    ]);
   });
 
   it("finds Thread list in settings search only where the product offers it", () => {
