@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 /** Each environment's answer to the bots list. */
 const servers = vi.hoisted(() => ({
   lists: new Map<string, () => Promise<unknown>>(),
-  /** Drops the live-update stream, as the real one reports before it retries. */
+  /** Reports a stream failure, as the real one does to a listener that has had no event yet. */
   dropStream: undefined as (() => void) | undefined,
 }));
 

@@ -152,13 +152,19 @@ function subscribeBots(environmentId: EnvironmentId, listener: () => void) {
     // Bots change through this client's writes, which refresh on their own, or through agent and
     // run changes; task edits never do. A dropped stream keeps the last list without an error:
     // its reconnect resyncs, which also asks a server without bots again (it may have updated).
-    store.stopChanges = readTasksWebClient(environmentId).tasks.subscribe((change) => {
-      if (
-        change.kind === "sync" ||
-        (!store.list.unsupported && (change.runsChanged || change.agentsChanged))
-      )
-        void refresh(environmentId, store);
-    });
+    // A stream that never connected still asks for the list, which loads or says it couldn't.
+    store.stopChanges = readTasksWebClient(environmentId).tasks.subscribe(
+      (change) => {
+        if (
+          change.kind === "sync" ||
+          (!store.list.unsupported && (change.runsChanged || change.agentsChanged))
+        )
+          void refresh(environmentId, store);
+      },
+      () => {
+        if (!store.list.loaded) void refresh(environmentId, store);
+      },
+    );
   }
   return () => {
     store.listeners.delete(listener);

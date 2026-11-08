@@ -272,6 +272,35 @@ test("a stream that never connected reports its failure, so a first load stops w
   off();
 });
 
+test("a listener that subscribes while the stream reconnects hears the failure", async (context) => {
+  const opens: { listener: TaskChangeListener; fail: (error: unknown) => void }[] = [];
+  const subscribe = createTaskChangeSubscription(
+    (_signal, listener) =>
+      new Promise<void>((_resolve, reject) => {
+        opens.push({ listener, fail: reject });
+      }),
+    1,
+  );
+  const early: unknown[] = [],
+    late: unknown[] = [];
+  const offEarly = subscribe(
+    () => undefined,
+    (error) => early.push(error),
+  );
+  context.onTestFinished(() => offEarly());
+  opens[0]!.listener(sync);
+  opens[0]!.fail(new Error("Disconnected"));
+  await until(() => opens.length === 2);
+  const offLate = subscribe(
+    () => undefined,
+    (error) => late.push(error),
+  );
+  context.onTestFinished(() => offLate());
+  opens[1]!.fail(new Error("Unavailable"));
+  await until(() => late.length === 1);
+  NodeAssert.deepEqual(early, [], "a served listener keeps its data without an error");
+});
+
 test("a gap resyncs but still delivers the event's reminders", () => {
   let emit: TaskChangeListener | undefined;
   const subscribe = createTaskChangeSubscription((_signal, listener) => {
