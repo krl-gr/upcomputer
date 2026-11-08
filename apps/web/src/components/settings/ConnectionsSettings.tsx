@@ -140,6 +140,7 @@ import {
 } from "./SavedEnvironmentRows";
 import { AddEnvironmentDialog } from "./AddEnvironmentDialog";
 import { isProductFeatureShown } from "../../product/productFlags";
+import { useIsServerStillUpToDate } from "../../serverUpToDate/serverUpToDate";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 const EMPTY_ADVERTISED_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
@@ -279,12 +280,13 @@ function ConnectionsSettingsContent({
       environmentIdsKey(savedEnvironments.map(({ environmentId }) => environmentId)),
     ),
   );
+  const isServerStillUpToDate = useIsServerStillUpToDate();
   const savedServerUpdateStates = savedEnvironments.map((environment, index) => ({
     environment,
     updateStatus: savedUpdateStates[index]!.status,
   }));
-  const savedServerUpdateTargets = savedServerUpdateStates.flatMap(
-    ({ environment, updateStatus }): ServerUpdateTarget[] => {
+  const savedServerUpdateTargets = savedServerUpdateStates
+    .flatMap(({ environment, updateStatus }): ServerUpdateTarget[] => {
       const mismatch = resolveServerConfigVersionMismatch(environment.serverConfig);
       const selfUpdate = resolveServerSelfUpdateCapability(environment.serverConfig);
       const desktopAppUpdate = supportsDesktopAppUpdate(environment.serverConfig);
@@ -309,8 +311,8 @@ function ConnectionsSettingsContent({
           targetVersion: mismatch.clientVersion,
         },
       ];
-    },
-  );
+    })
+    .filter((target) => !isServerStillUpToDate(target));
   const loadBalancingEnvironments = [
     ...(primaryEnvironment ? [primaryEnvironment] : []),
     ...savedEnvironments.filter((environment) => environment.entry.enabled),
