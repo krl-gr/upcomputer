@@ -50,7 +50,9 @@ export function createTaskChangeSubscription(
     function retry(error: unknown) {
       if (active.signal.aborted || listeners.size === 0) return;
       connected = false;
-      for (const onError of listeners.values()) onError?.(error);
+      // A stream that dropped resyncs on reconnect, so views keep their data and show no error;
+      // only one that never connected is.
+      if (lastSequence === undefined) for (const onError of listeners.values()) onError?.(error);
       // Backoff only on connection failures, never periodic data polling.
       timer = setTimeout(start, Math.min(retryDelay * 2 ** attempts++, 30_000));
     }

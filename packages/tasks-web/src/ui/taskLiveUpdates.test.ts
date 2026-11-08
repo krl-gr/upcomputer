@@ -230,8 +230,12 @@ test("a reconnect uses one shared stream, detects gaps, retries failures, and re
     1,
   );
   const one: TaskChange[] = [],
-    two: TaskChange[] = [];
-  const offOne = subscribe((event) => one.push(event));
+    two: TaskChange[] = [],
+    errors: unknown[] = [];
+  const offOne = subscribe(
+    (event) => one.push(event),
+    (error) => errors.push(error),
+  );
   opens[0]!.listener(sync);
   const offTwo = subscribe((event) => two.push(event));
   await NodeTimersPromises.setTimeout(0);
@@ -242,6 +246,7 @@ test("a reconnect uses one shared stream, detects gaps, retries failures, and re
   NodeAssert.equal(one.at(-1)?.kind, "sync", "a bounded stream gap forces reconciliation");
   opens[0]!.fail(new Error("Disconnected"));
   await until(() => opens.length === 2);
+  NodeAssert.deepEqual(errors, [], "a dropped stream retries and resyncs without an error");
   opens[1]!.listener({ ...sync, sequence: 0 });
   NodeAssert.equal(one.at(-1)?.sequence, 0, "server restart resets the stream sequence via sync");
   offOne();
@@ -251,6 +256,20 @@ test("a reconnect uses one shared stream, detects gaps, retries failures, and re
   opens[1]!.fail(new Error("Cancelled"));
   await NodeTimersPromises.setTimeout(10);
   NodeAssert.equal(opens.length, 2);
+});
+
+test("a stream that never connected reports its failure, so a first load stops waiting", async () => {
+  const errors: unknown[] = [];
+  const subscribe = createTaskChangeSubscription(
+    () => Promise.reject(new Error("Unavailable")),
+    60_000,
+  );
+  const off = subscribe(
+    () => undefined,
+    (error) => errors.push(error),
+  );
+  await until(() => errors.length === 1);
+  off();
 });
 
 test("a gap resyncs but still delivers the event's reminders", () => {

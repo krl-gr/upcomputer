@@ -117,7 +117,7 @@ async function refresh(environmentId: EnvironmentId, store: BotListStore) {
       store,
       isUnknownMethodError(cause)
         ? { ...EMPTY, loaded: true, unsupported: true }
-        : { ...store.list, error: errorText(cause) },
+        : { ...store.list, error: "Couldn't load bots." },
     );
   } finally {
     store.fetching = false;
@@ -149,20 +149,16 @@ function subscribeBots(environmentId: EnvironmentId, listener: () => void) {
   const store = storeFor(environmentId);
   store.listeners.add(listener);
   if (store.listeners.size === 1) {
-    // Bots change through this client's writes, which refresh on their own; other clients,
-    // agents' tools and background runs reach the list through agent and run changes. Task
-    // edits never do. A server without bots is asked again only on a resync, which follows a
-    // reconnect, such as after that computer updates.
-    store.stopChanges = readTasksWebClient(environmentId).tasks.subscribe(
-      (change) => {
-        if (
-          change.kind === "sync" ||
-          (!store.list.unsupported && (change.runsChanged || change.agentsChanged))
-        )
-          void refresh(environmentId, store);
-      },
-      (cause) => publish(store, { ...store.list, error: errorText(cause) }),
-    );
+    // Bots change through this client's writes, which refresh on their own, or through agent and
+    // run changes; task edits never do. A dropped stream keeps the last list without an error:
+    // its reconnect resyncs, which also asks a server without bots again (it may have updated).
+    store.stopChanges = readTasksWebClient(environmentId).tasks.subscribe((change) => {
+      if (
+        change.kind === "sync" ||
+        (!store.list.unsupported && (change.runsChanged || change.agentsChanged))
+      )
+        void refresh(environmentId, store);
+    });
   }
   return () => {
     store.listeners.delete(listener);
