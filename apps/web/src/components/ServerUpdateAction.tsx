@@ -30,6 +30,11 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useServerConfigs } from "~/state/entities";
 import { useManagedPolicy } from "~/state/managedPolicy";
 import { environmentPresentations } from "~/state/presentation";
+import {
+  reportServerUpToDate,
+  SERVER_UP_TO_DATE_NOTE,
+  useIsServerStillUpToDate,
+} from "~/serverUpToDate/serverUpToDate";
 import { ManagedControl } from "./ManagedPolicy";
 import { manualServerUpdateCommand } from "~/versionSkew";
 import { crossesReleaseTrack } from "@t3tools/shared/cliRelease";
@@ -105,6 +110,7 @@ type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size" 
 
 export type ServerUpdateOutcome =
   | { readonly status: "updated" | "skipped" }
+  | { readonly status: "current"; readonly version: string }
   | { readonly status: "failed"; readonly message: string };
 
 /** Toasts its success or failure unless `quiet`; never rejects. */
@@ -132,6 +138,9 @@ export function useServerUpdate() {
     )
       return { status: "skipped" };
     pendingUpdateEnvironmentIds.add(environmentId);
+    const fromVersion = appAtomRegistry
+      .get(environmentPresentations.serverConfigsAtom)
+      .get(environmentId)?.environment.serverVersion;
     const result = await updateServer({
       environmentId,
       input: {
@@ -154,6 +163,15 @@ export function useServerUpdate() {
         });
       }
       return { status: "failed", message };
+    }
+    // No commit token and no new version: the host's desktop app had nothing newer to install.
+    if (
+      result.value.method === "desktop-app" &&
+      result.value.desktopUpdateToken === undefined &&
+      result.value.targetVersion === fromVersion &&
+      target.channel === undefined
+    ) {
+      return reportServerUpToDate(target, result.value.targetVersion);
     }
     if (!quiet) {
       toastManager.add({
@@ -274,6 +292,7 @@ export function ServerUpdateAction({
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
   const canUpdate = useAtomValue(sessionStateAtom, canUpdateServer);
   const updatesDenial = managedUpdatesDenial(useManagedPolicy(environmentId));
+  const upToDate = useIsServerStillUpToDate()({ environmentId, targetVersion });
   const update = useServerUpdate();
   const { copyToClipboard } = useCopyToClipboard<{ command: string }>({
     target: installation?.kind === "npm-global" ? "update command" : "relaunch command",
@@ -332,6 +351,12 @@ export function ServerUpdateAction({
       </ManagedControl>
     ) : (
       <span className="text-muted-foreground text-xs">{updatesDenial}</span>
+    );
+  }
+
+  if (upToDate) {
+    return appearance === "icon" ? null : (
+      <span className="text-muted-foreground text-xs">{SERVER_UP_TO_DATE_NOTE}</span>
     );
   }
 

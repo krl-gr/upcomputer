@@ -3,7 +3,8 @@ import { isMacPlatform } from "@t3tools/shared/keybindings";
 
 import { isElectron } from "../env";
 import { isWindowsPlatform } from "../lib/utils";
-import { useQuietThreadShells } from "../state/entities";
+import { useIsServerStillUpToDate } from "../serverUpToDate/serverUpToDate";
+import { useDelegatedUnderParent, useQuietThreadShells } from "../state/entities";
 import {
   useEnvironmentMachines,
   useEnvironments,
@@ -53,10 +54,11 @@ function computerName(
   return presentation.label;
 }
 
-function computerStatus(presentation: EnvironmentPresentation): ComputerStatus {
+/** A host on another track that already answered it is current is online, not behind. */
+function computerStatus(presentation: EnvironmentPresentation, upToDate: boolean): ComputerStatus {
   switch (presentation.connection.phase) {
     case "connected":
-      return resolveServerConfigVersionMismatch(presentation.serverConfig) === null
+      return upToDate || resolveServerConfigVersionMismatch(presentation.serverConfig) === null
         ? "online"
         : "outdated";
     case "unsupported":
@@ -69,10 +71,15 @@ function computerStatus(presentation: EnvironmentPresentation): ComputerStatus {
   }
 }
 
-function describeComputer(presentation: EnvironmentPresentation, status: ComputerStatus): string {
+function describeComputer(
+  presentation: EnvironmentPresentation,
+  status: ComputerStatus,
+  upToDate: boolean,
+): string {
   const version = presentation.serverConfig?.environment.serverVersion ?? null;
   switch (status) {
     case "online":
+      if (upToDate && version) return `Online, ${version}, up to date on its track`;
       return version ? `Online, ${version}` : "Online";
     case "outdated":
       if (presentation.connection.phase === "unsupported") return "Update needed";
@@ -92,13 +99,19 @@ export function useSidebarComputers(
   const machines = useEnvironmentMachines();
   const primaryId = usePrimaryEnvironmentId();
   const threads = useQuietThreadShells();
+  const delegatedUnderParent = useDelegatedUnderParent();
   const localLastVisitedAt = useUiStateStore((store) => store.threadLastVisitedAtById);
-  const counts = countComputerRuns(threads, localLastVisitedAt);
+  const counts = countComputerRuns(threads, delegatedUnderParent, localLastVisitedAt);
+  const isServerStillUpToDate = useIsServerStillUpToDate();
   const byId = new Map(environments.map((environment) => [environment.environmentId, environment]));
   return computerIds.flatMap((environmentId) => {
     const presentation = byId.get(environmentId);
     if (presentation === undefined) return [];
-    const status = computerStatus(presentation);
+    const mismatch = resolveServerConfigVersionMismatch(presentation.serverConfig);
+    const upToDate =
+      mismatch !== null &&
+      isServerStillUpToDate({ environmentId, targetVersion: mismatch.clientVersion });
+    const status = computerStatus(presentation, upToDate);
     return [
       {
         environmentId,
@@ -110,7 +123,7 @@ export function useSidebarComputers(
           status === "offline" ||
           (status === "outdated" && presentation.connection.phase === "unsupported"),
         serverVersion: presentation.serverConfig?.environment.serverVersion ?? null,
-        description: describeComputer(presentation, status),
+        description: describeComputer(presentation, status, upToDate),
         counts: counts.get(environmentId) ?? NO_COMPUTER_RUNS,
         presentation,
       },

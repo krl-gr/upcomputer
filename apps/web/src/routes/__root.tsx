@@ -24,6 +24,7 @@ import { DevReplayHost } from "../components/DevReplayHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
 import { BootSplash } from "../components/BootSplash";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
+import { ConnectSignIn } from "../connectSignIn/ConnectSignIn";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { SnapShotCoordinator } from "../components/desktop/SnapShotCoordinator";
@@ -216,7 +217,11 @@ function RootRouteBranch() {
         ) : null}
         {isElectron ? <RunningThreadKeepAlive /> : null}
         <RelayClientInstallDialog />
-        <ConnectOnboardingDialog />
+        {productSurface("connectOnboarding") === "upcomputer" ? (
+          <ConnectSignIn />
+        ) : (
+          <ConnectOnboardingDialog />
+        )}
         <SshPasswordPromptDialog />
         <SnapShotCoordinator />
         {primaryEnvironmentAuthenticated ? <ProductCoordinators /> : null}

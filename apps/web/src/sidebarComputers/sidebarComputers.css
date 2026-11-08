@@ -9,3 +9,16 @@
 [data-app-sidebar]:has([data-sidebar-computers][data-stale="true"]) [data-slot="sidebar-content"] {
   opacity: 0.55;
 }
+
+/*
+ * The status dot sits in a gap cut out of the machine icon, not on a ring in the
+ * sidebar colour, so it reads cleanly on wallpaper themes and on hovered or
+ * selected rows. The circle is the dot's centre (size-1.75, 2px outside) plus a gap.
+ */
+[data-computer-status-cutout] {
+  mask-image: radial-gradient(
+    circle at calc(100% - 1.5px) calc(100% - 1.5px),
+    transparent 5px,
+    #000 5.5px
+  );
+}

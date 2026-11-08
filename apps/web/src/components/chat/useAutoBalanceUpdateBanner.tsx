@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import type { EnvironmentPresentation } from "~/state/environments";
+import { useIsServerStillUpToDate } from "~/serverUpToDate/serverUpToDate";
 import { environmentUpdateStatesAtom } from "~/state/server";
 import {
   buildVersionMismatchDismissalKey,
@@ -40,6 +41,7 @@ export function useAutoBalanceUpdateBanner(
   const [dismissedNotices, setDismissedNotices] = useState<ReadonlySet<string | ServerUpdateState>>(
     () => new Set(),
   );
+  const isServerStillUpToDate = useIsServerStillUpToDate();
   const machines = states.flatMap(({ environment, state }) => {
     const mismatch = resolveServerConfigVersionMismatch(environment.serverConfig);
     const dismissKey = mismatch
@@ -48,6 +50,10 @@ export function useAutoBalanceUpdateBanner(
     if (
       state.status === "idle"
         ? !mismatch ||
+          isServerStillUpToDate({
+            environmentId: environment.environmentId,
+            targetVersion: mismatch.clientVersion,
+          }) ||
           (dismissKey !== null && dismissedNotices.has(dismissKey)) ||
           isVersionMismatchDismissed(dismissKey)
         : dismissedNotices.has(state) || isServerUpdateFailureDismissed(state)

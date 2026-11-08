@@ -72,7 +72,6 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
     reportProgress: (
       stage: ServerSelfUpdateProgressStage,
     ) => Effect.Effect<void, ServerSelfUpdateError>,
-    trackSwitch: boolean,
   ) {
     const lastStage = yield* Ref.make<ServerSelfUpdateProgressStage | null>(null);
     const emitStage = (
@@ -124,14 +123,10 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
       return { targetVersion, method: "desktop-app" as const, desktopUpdateToken: requestId };
     }
     if (report.outcome === "up-to-date") {
-      // A switch's host already on the newest build of its track only saved the track.
-      if (trackSwitch) {
-        yield* Ref.set(inFlight, false);
-        return { targetVersion: report.state.currentVersion, method: "desktop-app" as const };
-      }
-      return yield* failWith(
-        `The Up.computer desktop app on this machine is already up to date on ${report.state.currentVersion}.`,
-      );
+      // Nothing to install, which is no failure; a switch's host only saved the track. The
+      // missing commit token tells the client that nothing restarts.
+      yield* Ref.set(inFlight, false);
+      return { targetVersion: report.state.currentVersion, method: "desktop-app" as const };
     }
     return yield* failWith(
       report.reason ?? report.state.message ?? "The desktop app update failed.",
@@ -167,12 +162,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
                 failWith("Could not reach the Up.computer desktop app on this machine.", error),
               ),
             );
-          return yield* consumeReports(
-            requestId,
-            changes,
-            reportProgress,
-            trackSwitch !== undefined,
-          ).pipe(
+          return yield* consumeReports(requestId, changes, reportProgress).pipe(
             Effect.onInterrupt(() => receiver.cancelDesktopUpdate(requestId).pipe(Effect.ignore)),
           );
         }),

@@ -1,3 +1,4 @@
+import { threadKey } from "@t3tools/client-runtime/state/entities";
 import { presentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
   EnvironmentId,
@@ -114,7 +115,11 @@ describe("countComputerRuns", () => {
         shell(studio, "failed-seen", failed("2026-06-20T02:00:00.000Z")),
         shell(studio, "failed-before-visit", failed("2026-06-20T00:30:00.000Z")),
         shell(studio, "archived", { ...failed(null), archivedAt: failedAt }),
+        // A task agent run's thread is hidden from the sidebar; Tasks shows its result.
+        shell(studio, "task-run", { ...request("user_input"), sidebarHidden: true }),
+        shell(studio, "delegated", failed(null)),
       ],
+      new Set([threadKey({ environmentId: studio, threadId: ThreadId.make("delegated") })]),
       {},
     );
     expect(counts.get(mac)).toEqual({ working: 1, input: 0, approval: 0, failed: 0 });
@@ -132,11 +137,11 @@ describe("countComputerRuns", () => {
   it("treats a local visit as seen on servers without visit tracking", () => {
     const { lastVisitedAt: _omitted, ...withoutVisits } = failed(null);
     const thread = shell(studio, "failed-local", withoutVisits);
-    expect(countComputerRuns([thread], {}).get(studio)?.failed).toBe(1);
+    expect(countComputerRuns([thread], new Set(), {}).get(studio)?.failed).toBe(1);
     expect(
-      countComputerRuns([thread], { [`${studio}:failed-local`]: "2026-06-20T02:00:00.000Z" }).get(
-        studio,
-      ),
+      countComputerRuns([thread], new Set(), {
+        [`${studio}:failed-local`]: "2026-06-20T02:00:00.000Z",
+      }).get(studio),
     ).toBeUndefined();
   });
 });

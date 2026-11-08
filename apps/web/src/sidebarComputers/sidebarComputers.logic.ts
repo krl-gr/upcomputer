@@ -2,6 +2,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import {
+  filterSidebarV2VisibleThreads,
   resolveSidebarThreadStatus,
   resolveThreadLastVisitedAt,
 } from "../components/Sidebar.logic";
@@ -111,17 +112,18 @@ export interface ComputerRunCounts {
 export const NO_COMPUTER_RUNS: ComputerRunCounts = { working: 0, input: 0, approval: 0, failed: 0 };
 
 /**
- * Each computer's runs by the status its thread rows show. Subagent children
- * report through their parent, so only top-level threads count. A failed run
+ * Each computer's runs by the status its thread rows show. Only threads the
+ * sidebar lists count: children report through their parent, and hidden
+ * threads (task agent runs, which Tasks shows) not at all. A failed run
  * counts until its thread is opened: one already seen asks nothing more.
  */
 export function countComputerRuns(
   threads: ReadonlyArray<EnvironmentThreadShell>,
+  delegatedUnderParent: ReadonlySet<string>,
   localLastVisitedAtByKey: Readonly<Record<string, string>>,
 ): ReadonlyMap<EnvironmentId, ComputerRunCounts> {
   const counts = new Map<EnvironmentId, ComputerRunCounts>();
-  for (const thread of threads) {
-    if (thread.archivedAt !== null || thread.lineage.relationshipToParent === "subagent") continue;
+  for (const thread of filterSidebarV2VisibleThreads(threads, null, delegatedUnderParent)) {
     const status = resolveSidebarThreadStatus(thread);
     const kind: keyof ComputerRunCounts | null =
       status === "working"

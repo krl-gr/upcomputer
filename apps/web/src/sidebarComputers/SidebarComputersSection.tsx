@@ -71,21 +71,25 @@ const STATUS_DOT_CLASS: Record<ComputerStatus, string> = {
   online: "bg-success",
   outdated: "bg-warning",
   connecting: "bg-info",
-  offline: "bg-sidebar ring-1 ring-inset ring-muted-foreground",
+  offline: "ring-1 ring-inset ring-muted-foreground",
 };
 
 /** A computer's machine icon with its status dot; All computers shows four tiles. */
-function ComputerIcon(props: { readonly computer: SidebarComputer | null }) {
+export function ComputerIcon(props: { readonly computer: SidebarComputer | null }) {
   const { computer } = props;
   if (computer === null) return <AllProjectsIcon />;
   return (
     <span className={cn("relative flex shrink-0 items-center justify-center", SIDEBAR_ICON_SIZE)}>
-      <EnvironmentMachineIcon kind={computer.machine} className={SIDEBAR_ICON_SIZE} />
+      <EnvironmentMachineIcon
+        kind={computer.machine}
+        data-computer-status-cutout=""
+        className={SIDEBAR_ICON_SIZE}
+      />
       <span
         aria-hidden
         data-computer-status={computer.status}
         className={cn(
-          "absolute -right-0.5 -bottom-0.5 size-1.75 rounded-full ring-2 ring-sidebar",
+          "absolute -right-0.5 -bottom-0.5 size-1.75 rounded-full",
           STATUS_DOT_CLASS[computer.status],
         )}
       />

@@ -10,6 +10,7 @@ import {
 } from "../components/desktopUpdate.logic";
 import { errorToastDescription } from "../components/errors/ErrorDetails";
 import { downloadLocalUpdate, installLocalUpdate } from "../components/sidebar/SidebarUpdatePill";
+import { runningThreadCountAtom } from "../components/sidebar/UpdateEverythingDialog";
 import { useUpdateEverythingRun } from "../components/sidebar/updateEverythingRun";
 import { useUpdateEverything } from "../components/sidebar/useUpdateEverything";
 import {
@@ -19,6 +20,7 @@ import {
 } from "../components/ProviderUpdateLaunchNotification.logic";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { ensureLocalApi } from "../localApi";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
 import { useServerConfigs } from "../state/entities";
 import { useEnvironmentProviders, useEnvironments } from "../state/environments";
@@ -165,6 +167,18 @@ export function useSidebarUpdates() {
     setPending(false);
   };
 
+  // The dialog only warns that running threads stop or this app restarts; without either, go.
+  const updateEverything = () => {
+    const restartsThisApp = everything.rows.some((row) => row.app === "this-app");
+    const runningThreads = appAtomRegistry.get(
+      runningThreadCountAtom(
+        everything.restarts.map((machine) => machine.environmentId).join("\n"),
+      ),
+    );
+    if (restartsThisApp || runningThreads > 0) setConfirmingEverything(true);
+    else void runEverything();
+  };
+
   return {
     state,
     action,
@@ -186,6 +200,7 @@ export function useSidebarUpdates() {
     confirmingEverything,
     setConfirmingEverything,
     runEverything: () => void runEverything(),
+    updateEverything,
   };
 }
 

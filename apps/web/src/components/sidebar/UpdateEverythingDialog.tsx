@@ -23,7 +23,7 @@ import type { RestartingMachine, UpdateEverythingRow } from "./updateEverything.
 const isRunning = (status: string) =>
   status === "preparing" || status === "starting" || status === "running";
 
-const runningThreadCountAtom = Atom.family((environmentIds: string) =>
+export const runningThreadCountAtom = Atom.family((environmentIds: string) =>
   Atom.make((get) =>
     environmentIds
       .split("\n")
