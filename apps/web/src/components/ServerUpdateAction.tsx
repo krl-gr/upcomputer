@@ -139,6 +139,9 @@ export function useServerUpdate() {
     )
       return { status: "skipped" };
     pendingUpdateEnvironmentIds.add(environmentId);
+    const fromVersion = appAtomRegistry
+      .get(environmentPresentations.serverConfigsAtom)
+      .get(environmentId)?.environment.serverVersion;
     const result = await updateServer({
       environmentId,
       input: {
@@ -162,10 +165,11 @@ export function useServerUpdate() {
       }
       return { status: "failed", message };
     }
-    // No commit token: the host's desktop app had nothing newer to install.
+    // No commit token and no new version: the host's desktop app had nothing newer to install.
     if (
       result.value.method === "desktop-app" &&
       result.value.desktopUpdateToken === undefined &&
+      result.value.targetVersion === fromVersion &&
       target.channel === undefined
     ) {
       return reportServerUpToDate(target, result.value.targetVersion);
