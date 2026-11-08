@@ -1,7 +1,10 @@
 import { useState } from "react";
 
 import { useClientSettings } from "../hooks/useSettings";
-import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
+import {
+  resolveSidebarProjectScopeKey,
+  type SidebarProjectSnapshot,
+} from "../sidebarProjectGrouping";
 import { useUiStateStore } from "../uiStateStore";
 import { useIsPrimaryProjectGroup, useIsScratchProjectGroup } from "./sidebarProjectIcons";
 import {
@@ -55,7 +58,12 @@ export function useSidebarProjectsList(projectGroups: ReadonlyArray<SidebarProje
           ),
         })
       : 0;
-  const selectedKey = scopeKey ?? ALL_PROJECTS_ROW_KEY;
+  // A key of no listed project (not listed yet, or gone) reads as All projects, as Threads does.
+  const resolvedKey = resolveSidebarProjectScopeKey({ groups: projectGroups, key: scopeKey });
+  const selectedKey =
+    resolvedKey !== null && projectGroups.some((group) => group.projectKey === resolvedKey)
+      ? resolvedKey
+      : ALL_PROJECTS_ROW_KEY;
   const rows = buildSidebarProjectsRows({
     projects: projectGroups,
     allProjectsIndex,

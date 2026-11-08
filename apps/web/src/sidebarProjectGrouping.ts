@@ -9,6 +9,7 @@ import {
   resolveScratchProjectScopeKey,
   type ProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
+import { scopedProjectKey } from "@t3tools/client-runtime/environment";
 import type { Project } from "./types";
 
 export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
@@ -103,6 +104,10 @@ export function resolveSidebarProjectScopeKey(input: {
         candidate.isScratch &&
         resolveScratchProjectScopeKey(input.key, candidate.memberProjects, input.settings) ===
           candidate.projectKey,
+    ) ??
+    // UpComputer: a project just added is selected by its ref (`selectAddedProjectInSidebar`).
+    input.groups.find((candidate) =>
+      candidate.memberProjectRefs.some((ref) => scopedProjectKey(ref) === input.key),
     );
   return group?.projectKey ?? (input.canClearMissingScope ? null : input.key);
 }

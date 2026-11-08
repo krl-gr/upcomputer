@@ -16,6 +16,7 @@ import { useEnvironmentShellHasSnapshot } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { reportProjectFailure } from "../../hooks/useProjectGroupUpdate";
+import { selectAddedProjectInSidebar } from "../../sidebarProjects/sidebarProjectScope";
 
 export function DesktopAppActivationCoordinator() {
   const primaryEnvironment = usePrimaryEnvironment();
@@ -90,6 +91,7 @@ export function DesktopAppActivationCoordinator() {
             input: { projectId: projectRef.projectId, archived: false },
           }).then((result) => reportProjectFailure("Failed to unarchive project", result));
         }
+        selectAddedProjectInSidebar(projectRef);
         return openThread(projectRef);
       },
     }),

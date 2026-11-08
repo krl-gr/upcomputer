@@ -28,7 +28,6 @@ import {
 } from "@t3tools/client-runtime/operations/projects";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
-import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
@@ -110,6 +109,7 @@ import {
   claimDraftMoveForAddedProject,
   disarmDraftMoveIntoAddedProject,
 } from "../composerContextRow/draftIntoAddedProject";
+import { selectAddedProjectInSidebar } from "../sidebarProjects/sidebarProjectScope";
 import { readLocalApi } from "../localApi";
 import { threadLinkOrigin } from "../threadLinks/threadLinkOrigin";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
@@ -166,7 +166,10 @@ import {
   useCommandPaletteStore,
 } from "../commandPaletteStore";
 import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
-import { isProductFeatureShown } from "../product/productFlags";
+import {
+  isProductFeatureShown,
+  resolveProductThreadReferenceCopyTarget,
+} from "../product/productFlags";
 import { useThreadProjectMovePaletteItem } from "../threadProjectMove/useThreadProjectMovePaletteItem";
 import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
@@ -502,7 +505,7 @@ function OpenCommandPaletteDialog(props: {
   const activeThreadReferenceCopyTarget =
     referenceThreadRef === null || (pathname === "/pull-requests" && !openPanelPullRequestUrl)
       ? null
-      : resolveThreadReferenceCopyTarget({
+      : resolveProductThreadReferenceCopyTarget({
           threadRef: referenceThreadRef,
           title: activeThread?.title ?? "",
           openPanelPullRequestUrl,
@@ -1857,6 +1860,7 @@ function OpenCommandPaletteDialog(props: {
           input: { projectId: existing.id, archived: false },
         }).then((result) => reportProjectFailure("Failed to unarchive project", result));
       }
+      selectAddedProjectInSidebar(scopeProjectRef(existing.environmentId, existing.id));
       const latestThread = getLatestThreadForProject(
         threads.filter((thread) => thread.environmentId === existing.environmentId),
         existing.id,
@@ -1926,6 +1930,7 @@ function OpenCommandPaletteDialog(props: {
 
     // UpComputer: a draft armed to move into the project added here takes this one.
     claimDraftMoveForAddedProject(scopeProjectRef(input.environmentId, projectId));
+    selectAddedProjectInSidebar(scopeProjectRef(input.environmentId, projectId));
     const navigationResult = await settlePromise(() =>
       handleNewThread(scopeProjectRef(input.environmentId, projectId)),
     );
@@ -2182,6 +2187,7 @@ function OpenCommandPaletteDialog(props: {
     const projectRef = scopeProjectRef(addProjectCloneFlow.environmentId, projectId);
     // UpComputer: claimed before the palette closes, which disarms an unclaimed draft move.
     claimDraftMoveForAddedProject(projectRef);
+    selectAddedProjectInSidebar(projectRef);
     setOpen(false);
     await waitForProject(projectRef, 3_000).catch(() => null);
     const navigationResult = await settlePromise(() => handleNewThread(projectRef));

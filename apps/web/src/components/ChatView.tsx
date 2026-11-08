@@ -117,7 +117,6 @@ import {
 import { formatModelSlugName, resolveSelectableModel } from "@t3tools/shared/model";
 import { projectScriptCwd, resolveProjectScripts } from "@t3tools/shared/projectScripts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { useAtomValue } from "@effect/atom-react";
 import { type SetStateAction, use, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -186,7 +185,10 @@ import { threadPullRequestPanelTarget } from "./pullRequest/pullRequestDetail.lo
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { GuestPendingMessages } from "./chat/GuestShareControls";
 import { useDeviceState } from "~/state/device";
-import { isProductFeatureShown } from "~/product/productFlags";
+import {
+  isProductFeatureShown,
+  resolveProductThreadReferenceCopyTarget,
+} from "~/product/productFlags";
 import { showsUpComputerComposerContextRow } from "~/composerContextRow/composerContextRowSurface";
 import { UpComputerComposerContextRow } from "~/composerContextRow/UpComputerComposerContextRow";
 import {
@@ -2371,7 +2373,7 @@ export default function ChatView(props: ChatViewProps) {
   const activeThreadReferenceCopyTarget =
     activeThreadRef === null || !isServerThread
       ? null
-      : resolveThreadReferenceCopyTarget({
+      : resolveProductThreadReferenceCopyTarget({
           threadRef: activeThreadRef,
           title: activeThread?.title ?? "",
           openPanelPullRequestUrl,

@@ -4,7 +4,11 @@ import { create } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 /** Each environment's answer to the bots list. */
-const servers = vi.hoisted(() => ({ lists: new Map<string, () => Promise<unknown>>() }));
+const servers = vi.hoisted(() => ({
+  lists: new Map<string, () => Promise<unknown>>(),
+  /** Reports a stream failure, as the real one does to a listener that has had no event yet. */
+  dropStream: undefined as (() => void) | undefined,
+}));
 
 vi.mock("../environmentApi.ts", () => {
   const access = { availability: "enabled", canReadAgents: true };
@@ -18,7 +22,11 @@ vi.mock("../environmentApi.ts", () => {
       },
       // Like the real stream, a subscription starts with a sync, which loads the list.
       tasks: {
-        subscribe: (listener: (change: { kind: "sync" }) => void) => {
+        subscribe: (
+          listener: (change: { kind: "sync" }) => void,
+          onError?: (error: unknown) => void,
+        ) => {
+          servers.dropStream = () => onError?.(new Error("Task change stream disconnected."));
           listener({ kind: "sync" });
           return () => {};
         },
@@ -46,6 +54,7 @@ async function render(environmentIds: ReadonlyArray<EnvironmentId>) {
 
 afterEach(() => {
   servers.lists.clear();
+  servers.dropStream = undefined;
 });
 
 describe("Bots section lists", () => {
@@ -64,8 +73,17 @@ describe("Bots section lists", () => {
     servers.lists.set(failing, () => Promise.reject(new Error("The database is locked")));
     const { seen, view } = await render([failing]);
     expect(seen.at(-1)).toEqual([
-      { environmentId: failing, bots: [], error: "The database is locked." },
+      { environmentId: failing, bots: [], error: "Couldn't load bots." },
     ]);
+    view.unmount();
+  });
+
+  it("keeps the last list without an error while the live-update stream reconnects", async () => {
+    const here = EnvironmentId.make("sections-reconnecting");
+    servers.lists.set(here, () => Promise.resolve([]));
+    const { seen, view } = await render([here]);
+    await act(async () => servers.dropStream?.());
+    expect(seen.at(-1)).toEqual([{ environmentId: here, bots: [], error: "" }]);
     view.unmount();
   });
 

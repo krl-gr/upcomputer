@@ -7,21 +7,23 @@ const state = vi.hoisted(() => ({
   settings: null as UnifiedSettings | null,
   update: vi.fn(),
   confirm: vi.fn(),
+  theme: "",
+  setTheme: vi.fn(() => true),
 }));
 
 vi.mock(import("../../hooks/useTheme"), async (original) => ({
   ...(await original()),
   useTheme: () =>
     ({
-      theme: "system",
+      theme: state.theme,
       followSystem: true,
       themeHalves: null,
-      setTheme: vi.fn(),
+      setTheme: state.setTheme,
       setFollowSystem: vi.fn(),
       setThemeHalf: vi.fn(),
       clearThemeHalves: vi.fn(),
     }) as never,
-  readThemePreference: () => "system",
+  readThemePreference: () => state.theme,
   readThemeHalves: () => null,
   readAppearanceModePreference: () => "system",
 }));
@@ -35,6 +37,7 @@ vi.mock(import("../../localApi"), async (original) => ({
   readLocalApi: () => ({ dialogs: { confirm: state.confirm } }) as never,
 }));
 
+import { DEFAULT_THEME_PREFERENCE } from "../../themePalette";
 import { useSettingsRestore } from "./SettingsPanels";
 
 async function renderRestore() {
@@ -57,10 +60,30 @@ async function renderRestore() {
 function setup() {
   vi.clearAllMocks();
   state.settings = { ...DEFAULT_UNIFIED_SETTINGS };
+  state.theme = DEFAULT_THEME_PREFERENCE;
   state.confirm.mockResolvedValue(true);
 }
 
 describe("restoring V2 settings", () => {
+  it("lists nothing on a fresh install, which wears the default theme", async () => {
+    setup();
+    await using screen = await renderRestore();
+
+    expect(screen.restore.changedSettingLabels).toEqual([]);
+  });
+
+  it("restores the default theme, not the stock system theme", async () => {
+    setup();
+    state.theme = "system";
+    await using screen = await renderRestore();
+    const { restore } = screen;
+
+    expect(restore.changedSettingLabels).toEqual(["Theme"]);
+    await act(() => restore.restoreDefaults());
+
+    expect(state.setTheme).toHaveBeenCalledWith(DEFAULT_THEME_PREFERENCE);
+  });
+
   it("restores waking a chat when tasks complete after it was turned off", async () => {
     setup();
     state.settings = { ...DEFAULT_UNIFIED_SETTINGS, wakeChatOnTaskCompletion: false };

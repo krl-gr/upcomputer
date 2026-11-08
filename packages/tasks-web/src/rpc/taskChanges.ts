@@ -12,6 +12,8 @@ export function createTaskChangeSubscription(
   retryDelay = 1_000,
 ): SubscribeTaskChanges {
   const listeners = new Map<TaskChangeListener, ((error: unknown) => void) | undefined>();
+  // Listeners that have had an event since subscribing; a drop is silent only for them.
+  const served = new Set<TaskChangeListener>();
   let controller: AbortController | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastSequence: number | undefined;
@@ -42,7 +44,10 @@ export function createTaskChangeSubscription(
       const delivered: TaskChange = gap
         ? { ...sync(event.sequence), ...(event.reminders ? { reminders: event.reminders } : {}) }
         : event;
-      for (const listener of listeners.keys()) listener(delivered);
+      for (const listener of listeners.keys()) {
+        served.add(listener);
+        listener(delivered);
+      }
     }).then(
       () => retry(new Error("Task change stream disconnected.")),
       (error) => retry(error),
@@ -50,7 +55,9 @@ export function createTaskChangeSubscription(
     function retry(error: unknown) {
       if (active.signal.aborted || listeners.size === 0) return;
       connected = false;
-      for (const onError of listeners.values()) onError?.(error);
+      // A served listener resyncs on reconnect and keeps its data; one still waiting for its first
+      // load hears the failure, so it stops waiting.
+      for (const [listener, onError] of listeners) if (!served.has(listener)) onError?.(error);
       // Backoff only on connection failures, never periodic data polling.
       timer = setTimeout(start, Math.min(retryDelay * 2 ** attempts++, 30_000));
     }
@@ -60,10 +67,13 @@ export function createTaskChangeSubscription(
     if (listeners.size === 1) start();
     else if (connected)
       queueMicrotask(() => {
-        if (listeners.has(listener) && connected) listener(sync(lastSequence!));
+        if (!listeners.has(listener) || !connected) return;
+        served.add(listener);
+        listener(sync(lastSequence!));
       });
     return () => {
       listeners.delete(listener);
+      served.delete(listener);
       if (listeners.size === 0) {
         controller?.abort();
         clearTimeout(timer);

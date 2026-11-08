@@ -1,3 +1,4 @@
+import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import {
   isProductKeybindingCommandShown,
   isProductRightPanelSurfaceShown,
@@ -17,6 +18,23 @@ import { WEB_PRODUCT } from "./productEntry";
 
 export function isProductFeatureShown(flag: ProductFlag): boolean {
   return WEB_PRODUCT.flags[flag];
+}
+
+/**
+ * What "Copy Thread Link" copies. A build that hides pull requests ignores the PR links agents
+ * still attach to threads, so it always copies the thread and never says "PR".
+ */
+export function resolveProductThreadReferenceCopyTarget(
+  input: Parameters<typeof resolveThreadReferenceCopyTarget>[0],
+): ReturnType<typeof resolveThreadReferenceCopyTarget> {
+  if (WEB_PRODUCT.flags.pullRequests) return resolveThreadReferenceCopyTarget(input);
+  const {
+    openPanelPullRequestUrl: _panel,
+    pullRequests: _links,
+    linkedPullRequestUrl: _linked,
+    ...thread
+  } = input;
+  return resolveThreadReferenceCopyTarget(thread);
 }
 
 /**
