@@ -159,6 +159,12 @@ export interface ProductSurfaces {
    * which has the Connect step it needs.
    */
   readonly onboarding: ProductSurfaceVariant;
+  /**
+   * What a fresh UpComputer Connect sign-in opens. With `upcomputer` the
+   * desktop app shows no wizard: it publishes this environment and adds the
+   * account's other computers. Web clients keep upstream's dialog.
+   */
+  readonly connectOnboarding: ProductSurfaceVariant;
 }
 
 export type ProductSurface = keyof ProductSurfaces;
@@ -174,6 +180,7 @@ export const UPSTREAM_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   sidebarLayout: "upstream",
   threadDetailsCard: "upstream",
   onboarding: "upstream",
+  connectOnboarding: "upstream",
 });
 
 export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
@@ -187,6 +194,7 @@ export const UPCOMPUTER_PRODUCT_SURFACES: ProductSurfaces = Object.freeze({
   sidebarLayout: "upcomputer",
   threadDetailsCard: "upcomputer",
   onboarding: "upcomputer",
+  connectOnboarding: "upcomputer",
 });
 
 type CapabilityKey = {
