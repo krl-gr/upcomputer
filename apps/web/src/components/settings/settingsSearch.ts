@@ -1214,9 +1214,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "source-control-writer-model",
     title: "Source control writer model",
     to: "/settings/source-control",
-    searchTerms: [
-      "override generated commit change request pr titles descriptions branch bookmark",
-    ],
+    get searchTerms() {
+      return pullRequestSearchTerms(
+        "override generated commit change request pr titles descriptions branch bookmark",
+        "override generated commit change request titles descriptions branch bookmark",
+      );
+    },
     environmentOnly: true,
     scope: "project-defaults",
   },

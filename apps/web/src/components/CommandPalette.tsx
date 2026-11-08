@@ -28,7 +28,6 @@ import {
 } from "@t3tools/client-runtime/operations/projects";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
-import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
@@ -167,7 +166,10 @@ import {
   useCommandPaletteStore,
 } from "../commandPaletteStore";
 import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
-import { isProductFeatureShown } from "../product/productFlags";
+import {
+  isProductFeatureShown,
+  resolveProductThreadReferenceCopyTarget,
+} from "../product/productFlags";
 import { useThreadProjectMovePaletteItem } from "../threadProjectMove/useThreadProjectMovePaletteItem";
 import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
@@ -503,7 +505,7 @@ function OpenCommandPaletteDialog(props: {
   const activeThreadReferenceCopyTarget =
     referenceThreadRef === null || (pathname === "/pull-requests" && !openPanelPullRequestUrl)
       ? null
-      : resolveThreadReferenceCopyTarget({
+      : resolveProductThreadReferenceCopyTarget({
           threadRef: referenceThreadRef,
           title: activeThread?.title ?? "",
           openPanelPullRequestUrl,

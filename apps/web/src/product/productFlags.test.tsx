@@ -1,3 +1,4 @@
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   DEFAULT_RESOLVED_KEYBINDINGS,
   mergeWithDefaultKeybindings,
@@ -17,6 +18,7 @@ import {
   isProductKeybindingShown,
   isProductSettingsSearchItemVisible,
   productSurface,
+  resolveProductThreadReferenceCopyTarget,
   withoutHiddenProductKeybindings,
 } from "./productFlags";
 
@@ -199,6 +201,8 @@ describe("hidden upstream features in the web app", () => {
       search("pull").find((item) => item.id === "keybinding-thread.copyReference")?.title,
     ).toBe("Pull Request: Copy Link or Thread");
 
+    expect(search("pr titles").map((item) => item.id)).toContain("source-control-writer-model");
+
     product.hidden = true;
     // Automatically pull is git pull.
     expect(search("pull")).toEqual([{ id: "automatic-pull", title: "Automatically pull" }]);
@@ -208,6 +212,22 @@ describe("hidden upstream features in the web app", () => {
     expect(search("change request templates").map((item) => item.id)).toEqual([
       "follow-change-request-templates",
     ]);
+    expect(search("pr titles").map((item) => item.id)).not.toContain("source-control-writer-model");
+    expect(search("commit titles").map((item) => item.id)).toContain("source-control-writer-model");
+  });
+
+  it("copies the thread link, not an agent-linked PR, while pull requests are hidden", () => {
+    const copyTarget = () =>
+      resolveProductThreadReferenceCopyTarget({
+        threadRef: { environmentId: EnvironmentId.make("env-1"), threadId: ThreadId.make("t-1") },
+        title: "Fix the login flow",
+        openPanelPullRequestUrl: undefined,
+        pullRequests: [],
+        linkedPullRequestUrl: "https://github.com/acme/app/pull/7",
+      });
+    expect(copyTarget()?.kind).toBe("pull-request");
+    product.hidden = true;
+    expect(copyTarget()).toMatchObject({ kind: "thread", successTitle: "Thread copied" });
   });
 
   it("finds Thread list in settings search only where the product offers it", () => {
