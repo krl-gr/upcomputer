@@ -234,9 +234,9 @@ function NotificationsPanel({
 }) {
   const navigate = useNavigate();
   const { state, action, run, pending } = updates;
-  const confirmEverything = () => {
+  const updateEverything = () => {
     onClose();
-    updates.setConfirmingEverything(true);
+    updates.updateEverything();
   };
   const cards: ListedCard[] = notices.map((notice) => ({
     key: backgroundNoticeDismissalKey(notice),
@@ -418,7 +418,7 @@ function NotificationsPanel({
             action={
               // Update everything is the one way to update a server from here.
               updates.runsEverything ? (
-                <NotificationButton tone="secondary" disabled={pending} onClick={confirmEverything}>
+                <NotificationButton tone="secondary" disabled={pending} onClick={updateEverything}>
                   Update
                 </NotificationButton>
               ) : null
@@ -446,7 +446,7 @@ function NotificationsPanel({
           </span>
         ) : null}
         {showsUpdateAll ? (
-          <NotificationButton tone="secondary" disabled={pending} onClick={confirmEverything}>
+          <NotificationButton tone="secondary" disabled={pending} onClick={updateEverything}>
             Update all
           </NotificationButton>
         ) : null}
