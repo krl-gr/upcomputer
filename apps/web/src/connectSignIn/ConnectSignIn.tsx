@@ -24,8 +24,8 @@ import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments"
 import { usePrimaryManagedPolicy } from "../state/managedPolicy";
 import { environmentSession, useEnvironmentScope } from "../state/session";
 import {
-  freshSignIn,
-  type ObservedAccount,
+  NO_SIGN_IN_REQUESTS,
+  nextSignInRequests,
   observedClerkAccount,
   signInPublishStep,
 } from "./connectSignIn.logic";
@@ -60,39 +60,31 @@ function DesktopConnectSignIn() {
     managedCapabilityDenial(usePrimaryManagedPolicy(), "connect") === undefined;
   const controller = useCloudLinkController(primaryEnvironmentId);
 
-  const [observed, setObserved] = useState<ObservedAccount>(undefined);
-  const [publishFor, setPublishFor] = useState<string | null>(null);
-  const [addingFor, setAddingFor] = useState<string | null>(null);
+  const [requests, setRequests] = useState(NO_SIGN_IN_REQUESTS);
   const [publishFailedFor, setPublishFailedFor] = useState<string | null>(null);
 
   const account = observedClerkAccount({ isLoaded, isSignedIn, userId });
-  if (account !== undefined && account !== observed) {
-    setObserved(account);
-    const fresh = freshSignIn(observed, account);
-    if (fresh !== null) {
-      setPublishFor(fresh);
-      setAddingFor(fresh);
-      setPublishFailedFor(null);
-    }
+  const nextRequests = nextSignInRequests(requests, account);
+  if (nextRequests !== requests) setRequests(nextRequests);
+  const { publishFor, addingFor } = nextRequests;
+  if (account !== undefined && publishFailedFor !== null && publishFailedFor !== account) {
+    setPublishFailedFor(null);
   }
-  const current = account ?? null;
-  if (publishFor !== null && publishFor !== current) setPublishFor(null);
-  if (addingFor !== null && addingFor !== current) setAddingFor(null);
-  if (publishFailedFor !== null && publishFailedFor !== current) setPublishFailedFor(null);
 
   const step =
     publishFor === null
       ? null
       : signInPublishStep({
+          account: publishFor,
           scopesKnown:
             primaryEnvironmentId === null
               ? environmentsReady
               : primarySessionState._tag !== "Initial",
           canManageRelay: canReadRelay && canWriteRelay && connectAllowed,
           hasTarget: controller.linkState.target !== null,
-          linkStateKnown: controller.linkState.data !== null || controller.linkState.error !== null,
+          linkState: controller.linkState,
         });
-  if (step === "skip") setPublishFor(null);
+  if (step === "skip") setRequests({ ...nextRequests, publishFor: null });
 
   // The dialog's defaults: this environment and its agent activity.
   const publish = useEffectEvent(async (forAccount: string) => {
@@ -108,12 +100,27 @@ function DesktopConnectSignIn() {
         "Your other devices can reach this computer. Turn it off in Settings, Sharing & access.",
     });
   });
+  const reportOtherAccount = useEffectEvent(() => {
+    toastManager.add({
+      type: "warning",
+      title: "This computer is on another UpComputer Connect account",
+      description:
+        "To move it to this account, turn UpComputer Connect off and on again in Settings, Sharing & access.",
+      timeout: 0,
+      actionProps: {
+        children: "Open Sharing & access",
+        onClick: () => void navigate({ to: "/settings/access" }),
+      },
+      data: { actionLayout: "stacked-end" },
+    });
+  });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- links this environment on the relay once the sign-in's publish step is decided
   useEffect(() => {
-    if (step !== "publish" || publishFor === null) return;
+    if ((step !== "publish" && step !== "other-account") || publishFor === null) return;
     // oxlint-disable-next-line react/set-state-in-effect -- Clearing the request as the publish starts keeps a later render from starting it again.
-    setPublishFor(null);
-    void publish(publishFor);
+    setRequests((current) => ({ ...current, publishFor: null }));
+    if (step === "publish") void publish(publishFor);
+    else reportOtherAccount();
   }, [step, publishFor]);
 
   // Other failures already toast from the controller; the tunnel cap is left to its caller.
