@@ -10,11 +10,7 @@ import { environmentUpdateStatesAtom } from "~/state/server";
 import { environmentSessionStatesAtom } from "~/state/session";
 import { getProviderUpdateRunOutcome } from "../ProviderUpdateLaunchNotification.logic";
 import { useProviderUpdates } from "../ProviderUpdatesAction";
-import {
-  isStillUpToDate,
-  SERVER_UP_TO_DATE_NOTE,
-  useServerUpToDateReports,
-} from "~/serverUpToDate/serverUpToDate";
+import { SERVER_UP_TO_DATE_NOTE, useIsServerStillUpToDate } from "~/serverUpToDate/serverUpToDate";
 import {
   canUpdateServer,
   type ServerUpdateOutcome,
@@ -82,15 +78,9 @@ export function useUpdateEverything(
     : collectServerUpdateTargets(machines, targetVersion);
   // Up.computer: a server updates here only through its desktop app's update feed. Upstream's
   // other servers install `t3` from npm, which Up.computer does not publish.
-  const upToDate = useServerUpToDateReports();
+  const isStillUpToDate = useIsServerStillUpToDate();
   const stillUpToDate = (server: ServerUpdateTarget) =>
-    channelSwitch === undefined &&
-    isStillUpToDate(
-      upToDate[server.environmentId],
-      machines.find((machine) => machine.environmentId === server.environmentId)?.serverConfig
-        ?.environment.serverVersion,
-      server.targetVersion,
-    );
+    channelSwitch === undefined && isStillUpToDate(server);
   const servers = candidateServers.filter(
     (server) => server.selfUpdate === "desktop-managed" && !stillUpToDate(server),
   );

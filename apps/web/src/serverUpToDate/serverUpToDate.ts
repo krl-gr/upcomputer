@@ -1,27 +1,30 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 
-import { APP_VERSION } from "../branding";
 import { getLocalStorageItem, setLocalStorageItem } from "../hooks/useLocalStorage";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { useServerConfigs } from "../state/entities";
 import { serverEnvironment } from "../state/server";
+import {
+  describeServerUpToDate,
+  isStillUpToDate,
+  type UpToDateReport,
+  upToDateReportToRemember,
+} from "./serverUpToDate.logic";
 
 /*
- * Desktop hosts whose own update feed had nothing newer than the version they
- * run (UpComputer). Asking again cannot succeed until that version or the
+ * Desktop hosts on another track whose own update feed had nothing newer
+ * (UpComputer). Asking again cannot succeed until the host's version or the
  * version this app offers changes, so the update is not offered until then.
  */
 
-const UpToDateReport = Schema.Struct({
-  serverVersion: Schema.String,
-  targetVersion: Schema.String,
-});
-type UpToDateReport = typeof UpToDateReport.Type;
-const UpToDateReports = Schema.Record(Schema.String, UpToDateReport);
+const UpToDateReports = Schema.Record(
+  Schema.String,
+  Schema.Struct({ serverVersion: Schema.String, targetVersion: Schema.String }),
+);
 type UpToDateReports = typeof UpToDateReports.Type;
 
 const STORAGE_KEY = "upcomputer:server-up-to-date:v1";
@@ -47,33 +50,19 @@ function recordServerUpToDate(environmentId: EnvironmentId, report: UpToDateRepo
   } catch {}
 }
 
-/** The host's last answer still holds: neither its version nor the offered one changed since. */
-export function isStillUpToDate(
-  report: UpToDateReport | undefined,
-  serverVersion: string | null | undefined,
-  targetVersion: string,
-): boolean {
-  return (
-    report !== undefined &&
-    report.serverVersion === serverVersion &&
-    report.targetVersion === targetVersion
-  );
-}
-
-export function useServerUpToDateReports(): UpToDateReports {
-  return useAtomValue(reportsAtom);
-}
-
-const trackLabel = (version: string) =>
-  desktopUpdateChannelOf(version) === "nightly" ? "Nightly" : "Stable";
-
-/** Where the host stays, and its track when this app runs another one. */
-function describeServerUpToDate(version: string, appVersion: string = APP_VERSION): string {
-  const track = trackLabel(version);
-  const appTrack = trackLabel(appVersion);
-  return track === appTrack
-    ? `It has ${version}, the newest build its update feed offers.`
-    : `It is on ${track} ${version}, the newest build on that track. This app runs ${appTrack}.`;
+/** Whether an update for this host is one it already answered it can never get. */
+export function useIsServerStillUpToDate(): (target: {
+  readonly environmentId: EnvironmentId;
+  readonly targetVersion: string;
+}) => boolean {
+  const reports = useAtomValue(reportsAtom);
+  const configs = useServerConfigs();
+  return (target) =>
+    isStillUpToDate(
+      reports[target.environmentId],
+      configs.get(target.environmentId)?.environment.serverVersion,
+      target.targetVersion,
+    );
 }
 
 export const SERVER_UP_TO_DATE_NOTE = "Up to date on its track";
@@ -93,16 +82,11 @@ export function reportServerUpToDate(
   const serverVersion =
     appAtomRegistry.get(serverEnvironment.configValueAtom(target.environmentId))?.environment
       .serverVersion ?? version;
-  recordServerUpToDate(target.environmentId, {
-    serverVersion,
-    targetVersion: target.targetVersion,
-  });
+  const report = { serverVersion, targetVersion: target.targetVersion };
+  const remembered = upToDateReportToRemember(report);
+  if (remembered !== null) recordServerUpToDate(target.environmentId, remembered);
   toastManager.add(
-    stackedThreadToast({
-      type: "info",
-      title: `${target.serverLabel} is up to date`,
-      description: describeServerUpToDate(serverVersion),
-    }),
+    stackedThreadToast({ type: "info", ...describeServerUpToDate(target.serverLabel, report) }),
   );
   return { status: "current", version: serverVersion };
 }

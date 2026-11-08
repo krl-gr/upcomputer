@@ -31,10 +31,9 @@ import { useServerConfigs } from "~/state/entities";
 import { useManagedPolicy } from "~/state/managedPolicy";
 import { environmentPresentations } from "~/state/presentation";
 import {
-  isStillUpToDate,
   reportServerUpToDate,
   SERVER_UP_TO_DATE_NOTE,
-  useServerUpToDateReports,
+  useIsServerStillUpToDate,
 } from "~/serverUpToDate/serverUpToDate";
 import { ManagedControl } from "./ManagedPolicy";
 import { manualServerUpdateCommand } from "~/versionSkew";
@@ -293,11 +292,7 @@ export function ServerUpdateAction({
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
   const canUpdate = useAtomValue(sessionStateAtom, canUpdateServer);
   const updatesDenial = managedUpdatesDenial(useManagedPolicy(environmentId));
-  const upToDate = isStillUpToDate(
-    useServerUpToDateReports()[environmentId],
-    serverVersion,
-    targetVersion,
-  );
+  const upToDate = useIsServerStillUpToDate()({ environmentId, targetVersion });
   const update = useServerUpdate();
   const { copyToClipboard } = useCopyToClipboard<{ command: string }>({
     target: installation?.kind === "npm-global" ? "update command" : "relaunch command",
