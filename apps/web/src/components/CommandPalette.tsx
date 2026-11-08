@@ -110,6 +110,7 @@ import {
   claimDraftMoveForAddedProject,
   disarmDraftMoveIntoAddedProject,
 } from "../composerContextRow/draftIntoAddedProject";
+import { selectAddedProjectInSidebar } from "../sidebarProjects/sidebarProjectScope";
 import { readLocalApi } from "../localApi";
 import { threadLinkOrigin } from "../threadLinks/threadLinkOrigin";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
@@ -1926,6 +1927,7 @@ function OpenCommandPaletteDialog(props: {
 
     // UpComputer: a draft armed to move into the project added here takes this one.
     claimDraftMoveForAddedProject(scopeProjectRef(input.environmentId, projectId));
+    selectAddedProjectInSidebar(scopeProjectRef(input.environmentId, projectId));
     const navigationResult = await settlePromise(() =>
       handleNewThread(scopeProjectRef(input.environmentId, projectId)),
     );
@@ -2182,6 +2184,7 @@ function OpenCommandPaletteDialog(props: {
     const projectRef = scopeProjectRef(addProjectCloneFlow.environmentId, projectId);
     // UpComputer: claimed before the palette closes, which disarms an unclaimed draft move.
     claimDraftMoveForAddedProject(projectRef);
+    selectAddedProjectInSidebar(projectRef);
     setOpen(false);
     await waitForProject(projectRef, 3_000).catch(() => null);
     const navigationResult = await settlePromise(() => handleNewThread(projectRef));

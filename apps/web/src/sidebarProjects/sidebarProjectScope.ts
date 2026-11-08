@@ -1,9 +1,11 @@
 import { selectProjectGroupingSettings } from "@t3tools/client-runtime/state/project-grouping";
+import { scopedProjectKey } from "@t3tools/client-runtime/environment";
 import type { ScopedProjectRef } from "@t3tools/contracts";
 
 import { useClientSettings } from "../hooks/useSettings";
 import { useProjects } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
+import { productSurface } from "../product/productFlags";
 import { useUiStateStore } from "../uiStateStore";
 import {
   buildSidebarProjectSnapshots,
@@ -31,4 +33,13 @@ export function useSidebarProjectScope(): ReadonlyArray<ScopedProjectRef> | null
   const chosen = groups.filter((group) => scoped.includes(group.projectKey));
   if (chosen.length === 0) return null;
   return chosen.flatMap((group) => group.memberProjectRefs);
+}
+/**
+ * Selects a project just added, as the main view opens its new thread. Its group
+ * key is only known once the project is listed, so the scope holds its ref, which
+ * `resolveSidebarProjectScopeKey` resolves to the group.
+ */
+export function selectAddedProjectInSidebar(projectRef: ScopedProjectRef): void {
+  if (productSurface("sidebarProjects") !== "upcomputer") return;
+  useUiStateStore.getState().setSidebarProjectScopeKeys([scopedProjectKey(projectRef)]);
 }

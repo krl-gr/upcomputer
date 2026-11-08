@@ -75,6 +75,8 @@ const { SidebarProvider } = await import("../components/ui/sidebar");
 const { DEFAULT_CLIENT_SETTINGS } = await import("@t3tools/contracts/settings");
 const { __setClientSettingsForTests } = await import("../hooks/useSettings");
 const { ALL_PROJECTS_ROW_KEY } = await import("./sidebarProjects.logic");
+const { resolveSidebarProjectScopeKeys } = await import("../sidebarProjectGrouping");
+const { selectAddedProjectInSidebar } = await import("./sidebarProjectScope");
 const { useUiStateStore } = await import("../uiStateStore");
 const { SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, SidebarProjectsSection } =
   await import("./SidebarProjectsSection");
@@ -126,7 +128,10 @@ const THREADS = [
 
 /** The threads upstream's sidebar shows under the persisted scope, derived as the sidebar does. */
 function visibleThreadIds() {
-  const scopeKey = useUiStateStore.getState().sidebarProjectScopeKeys[0] ?? null;
+  const [scopeKey] = resolveSidebarProjectScopeKeys({
+    groups: PROJECTS,
+    keys: useUiStateStore.getState().sidebarProjectScopeKeys,
+  });
   const scoped = PROJECTS.find((project) => project.projectKey === scopeKey);
   const keys = scoped
     ? new Set(scoped.memberProjectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`))
@@ -274,6 +279,17 @@ describe("SidebarProjectsSection", () => {
     await click(rowButton("No project"));
     expect(useUiStateStore.getState().sidebarProjectScopeKeys[0] ?? null).toBe("key-scratch");
     expect(visibleThreadIds()).toEqual(["scratch-linked-to-upcomputer", "in-scratch"]);
+  });
+
+  it("selects a project added from No project once the project is listed", async () => {
+    await render(PROJECTS.filter((project) => project.id !== "site"));
+    await click(rowButton("No project"));
+    // Its group key is only known once the project is listed, so the add stores its ref.
+    selectAddedProjectInSidebar({ environmentId, projectId: "site" } as never);
+    await render();
+    expect(rowButton("Site").dataset.active).toBe("true");
+    expect(rowLabels()).toEqual(["All projects", "UpComputer", "Site", "More"]);
+    expect(visibleThreadIds()).toEqual(["in-site"]);
   });
 
   it("lists the remaining rows under More and keeps a chosen one visible", async () => {
