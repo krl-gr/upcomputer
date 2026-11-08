@@ -123,12 +123,13 @@ function DesktopConnectSignIn() {
     toastManager.add({
       type: "warning",
       title: "This computer is not on UpComputer Connect",
-      description: `Your account already has ${limit} computers on UpComputer Connect, the most it allows. Remove one you no longer use, then turn UpComputer Connect on in Settings, Sharing & access.`,
+      description: `Your account already has ${limit} computers on UpComputer Connect, its limit. Remove one you no longer use, then turn it on in Settings, Sharing & access.`,
       timeout: 0,
       actionProps: {
         children: "Open Sharing & access",
         onClick: () => void navigate({ to: "/settings/access" }),
       },
+      data: { actionLayout: "stacked-end" },
     });
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the controller reports the tunnel cap as state after its publish call returns
