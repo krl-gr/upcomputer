@@ -58,8 +58,12 @@ export function useSidebarProjectsList(projectGroups: ReadonlyArray<SidebarProje
           ),
         })
       : 0;
+  // A key of no listed project (not listed yet, or gone) reads as All projects, as Threads does.
+  const resolvedKey = resolveSidebarProjectScopeKey({ groups: projectGroups, key: scopeKey });
   const selectedKey =
-    resolveSidebarProjectScopeKey({ groups: projectGroups, key: scopeKey }) ?? ALL_PROJECTS_ROW_KEY;
+    resolvedKey !== null && projectGroups.some((group) => group.projectKey === resolvedKey)
+      ? resolvedKey
+      : ALL_PROJECTS_ROW_KEY;
   const rows = buildSidebarProjectsRows({
     projects: projectGroups,
     allProjectsIndex,

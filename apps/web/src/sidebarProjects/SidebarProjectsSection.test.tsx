@@ -286,6 +286,9 @@ describe("SidebarProjectsSection", () => {
     await click(rowButton("No project"));
     // Its group key is only known once the project is listed, so the add stores its ref.
     selectAddedProjectInSidebar({ environmentId, projectId: "site" } as never);
+    // Until then, or for good if it never is, the list shows all projects and says so.
+    await render(PROJECTS.filter((project) => project.id !== "site"));
+    expect(rowButton("All projects").dataset.active).toBe("true");
     await render();
     expect(rowButton("Site").dataset.active).toBe("true");
     expect(rowLabels()).toEqual(["All projects", "UpComputer", "Site", "More"]);

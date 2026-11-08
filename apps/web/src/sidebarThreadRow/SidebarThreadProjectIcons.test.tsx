@@ -70,6 +70,7 @@ vi.mock("../components/ProjectFavicon", () => ({
     <span data-testid="project-icon">{project.title.slice(0, 2).toUpperCase()}</span>
   ),
 }));
+vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => environmentId }));
 vi.mock("../state/entities", () => ({
   useProjects: () => state.projects,
   useServerConfigs: () => new Map([[environmentId, { scratchWorkspaceRoot: SCRATCH_ROOT }]]),
@@ -225,9 +226,14 @@ describe("SidebarThreadProjectIcons", () => {
   });
 
   it("hides the icons in a project-scoped list, as V1's filtered list did", async () => {
-    useUiStateStore.setState({ sidebarProjectScopeKeys: ["key-life"] });
+    useUiStateStore.setState({ sidebarProjectScopeKeys: [`${environmentId}:life`] });
     await render(rowProps("scratch", ["life"]));
     expect(leadingIcons()).toMatchObject({ initials: [], chatIcon: false, label: null });
+
+    // A scope of no listed project lists every thread, so the rows keep their icons.
+    useUiStateStore.setState({ sidebarProjectScopeKeys: [`${environmentId}:gone`] });
+    await render(rowProps("scratch", ["life"]));
+    expect(leadingIcons()).toMatchObject({ initials: ["LI"], chatIcon: false });
   });
 });
 
