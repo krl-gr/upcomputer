@@ -22,6 +22,7 @@ import * as ElectronPowerMonitor from "../electron/ElectronPowerMonitor.ts";
 import * as DesktopTelemetryPublisher from "./DesktopTelemetryPublisher.ts";
 import * as DesktopRendererHistory from "./DesktopRendererHistory.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
+import * as DesktopKeepAwake from "../power/DesktopKeepAwake.ts";
 
 const layerHistory = Layer.succeed(DesktopRendererHistory.DesktopRendererHistory, {
   register: () => Effect.void,
@@ -88,6 +89,7 @@ describe("DesktopTelemetryPublisher", () => {
               layerElectronApp([]),
               layerPower,
               layerHistory,
+              Layer.succeed(DesktopKeepAwake.DesktopKeepAwake, { setForSource: () => Effect.void }),
               Layer.succeed(DesktopShellEnvironment.DesktopShellEnvironment, {
                 installIntoProcess: Effect.succeed(true),
                 awaitDiscovery: Effect.succeed(true),

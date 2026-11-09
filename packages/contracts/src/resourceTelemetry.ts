@@ -402,8 +402,16 @@ export const DesktopTelemetryCancelDesktopUpdate = Schema.Struct({
 });
 export type DesktopTelemetryCancelDesktopUpdate = typeof DesktopTelemetryCancelDesktopUpdate.Type;
 
+/** Holds the desktop app's system sleep blocker while `active`; the backend's exit releases it. */
+export const DesktopTelemetrySetKeepAwake = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("setKeepAwake"),
+  active: Schema.Boolean,
+});
+
 export const DesktopTelemetryControlMessage = Schema.Union([
   DesktopTelemetrySetDiagnosticsDemand,
+  DesktopTelemetrySetKeepAwake,
   DesktopTelemetrySetHostPowerIntervals,
   DesktopTelemetryRequestDesktopUpdate,
   DesktopTelemetryCommitDesktopUpdate,
