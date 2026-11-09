@@ -290,3 +290,37 @@ it("moves a <picture>'s color-scheme sources onto its <img>, which the renderer 
     { dataLocalSrc: String.raw`C:\shots\light.png`, dataDarkSrc: "file:///C:/shots/dark.png" },
   ]);
 });
+
+it("renders a reply's single line breaks as lines without touching code, lists, or tables", () => {
+  const processor = unified()
+    .use(remarkParse)
+    .use(CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS)
+    .use(remarkRehype, { allowDangerousHtml: true })
+    .use(CHAT_MARKDOWN_REHYPE_PLUGINS);
+  type Node = { type: string; value?: string; tagName?: string; children?: Node[] };
+  const shape = (node: Node): string => {
+    if (node.type === "text") return node.value ?? "";
+    const children = (node.children ?? []).map(shape).join("");
+    if (!node.tagName) return children;
+    return node.tagName === "br" ? "<br>" : `<${node.tagName}>${children}</${node.tagName}>`;
+  };
+  const render = (markdown: string) => shape(processor.runSync(processor.parse(markdown)) as Node);
+
+  expect(render("Carrot\nSpinach\nCauliflower")).toBe(
+    "<p>Carrot<br>\nSpinach<br>\nCauliflower</p>",
+  );
+  expect(render("First paragraph\n\nSecond paragraph")).toBe(
+    "<p>First paragraph</p>\n<p>Second paragraph</p>",
+  );
+  expect(render("```ts\nconst a = 1;\nconst b = 2;\n```")).toBe(
+    "<pre><code>const a = 1;\nconst b = 2;\n</code></pre>",
+  );
+  expect(render("Run `a\nb` now")).toBe("<p>Run <code>a b</code> now</p>");
+  expect(render("Shopping:\n- milk\n- bread\n  wholegrain\n\n1. one\n2. two")).toBe(
+    "<p>Shopping:</p>\n<ul>\n<li>milk</li>\n<li>bread<br>\nwholegrain</li>\n</ul>\n<ol>\n<li>one</li>\n<li>two</li>\n</ol>",
+  );
+  expect(render("| Fruit | Count |\n|---|---:|\n| Apple | 2 |\n| Pear | 3 |")).toBe(
+    "<table>\n<thead>\n<tr>\n<th>Fruit</th>\n<th>Count</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Apple</td>\n<td>2</td>\n</tr>\n<tr>\n<td>Pear</td>\n<td>3</td>\n</tr>\n</tbody>\n</table>",
+  );
+  expect(render("> quoted\n> lines")).toBe("<blockquote>\n<p>quoted<br>\nlines</p>\n</blockquote>");
+});
