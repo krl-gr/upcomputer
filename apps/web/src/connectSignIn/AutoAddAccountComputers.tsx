@@ -21,8 +21,11 @@ import { relayEnvironmentDiscovery } from "../state/relay";
 import { useAtomCommand } from "../state/use-atom-command";
 import { computersToAdd, type DiscoveredComputer } from "./connectSignIn.logic";
 
-/** Discovery lists the account's computers only when asked, so the app asks again on focus. */
-const FOCUS_REFRESH_MIN_INTERVAL_MS = 60_000;
+/**
+ * Discovery lists the account's computers only when asked, so the app asks again on focus.
+ * Each refresh clears the shared list and checks every computer, so not on every focus.
+ */
+const FOCUS_REFRESH_MIN_INTERVAL_MS = 5 * 60_000;
 
 const KnownComputers = Schema.Array(EnvironmentId);
 const knownComputersKey = (account: string) => `upcomputer:connect-known-computers:${account}`;
