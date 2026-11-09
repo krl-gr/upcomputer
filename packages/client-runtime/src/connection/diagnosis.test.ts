@@ -65,6 +65,41 @@ describe("presentConnectionDiagnosis", () => {
     ]);
   });
 
+  it("names a stale host key or a host clock instead of an unexpected answer", () => {
+    const invalidAnswer = (proofFailure?: "key_mismatch" | "clock_skew") =>
+      fromRelay(
+        new RelayEnvironmentEndpointUnavailableError({
+          code: "environment_endpoint_unavailable",
+          reason: "endpoint_response_invalid",
+          ...(proofFailure ? { proofFailure } : {}),
+          traceId: "trace-1",
+        }),
+      );
+
+    expect(diagnose(backoff(invalidAnswer()))?.headline).toBe(
+      "Up.computer on Mac mini sent an unexpected answer",
+    );
+
+    const staleKey = invalidAnswer("key_mismatch");
+    // The host can re-link itself, so the client keeps retrying.
+    expect(staleKey._tag).toBe("ConnectionTransientError");
+    const diagnosis = diagnose(backoff(staleKey));
+    expect(diagnosis?.headline).toBe("Mac mini needs to reconnect to UpComputer Connect");
+    expect(diagnosis?.steps.join(" ")).toContain(
+      "on Mac mini and turn UpComputer Connect off and on",
+    );
+    expect(results(backoff(staleKey))).toEqual([
+      "device:ok",
+      "relay:ok",
+      "tunnel:ok",
+      "server:failed",
+    ]);
+
+    expect(diagnose(backoff(invalidAnswer("clock_skew")))?.headline).toBe(
+      "Mac mini's clock is off",
+    );
+  });
+
   it("blames this device when it cannot reach a tunnel the relay already reached", () => {
     const failure = mapRemoteEnvironmentError(
       new RemoteEnvironmentAuthFetchError({ message: "Failed to fetch", cause: new TypeError() }),

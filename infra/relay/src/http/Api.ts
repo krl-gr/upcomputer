@@ -41,6 +41,7 @@ import {
   RelayEnvironmentConnectNotAuthorizedError,
   RelayEnvironmentEndpointTimedOutError,
   RelayEnvironmentEndpointUnavailableError,
+  RelayEnvironmentKeyMismatchError,
   RelayEnvironmentLinkFailedError,
   RelayEnvironmentLinkProofExpiredError,
   RelayEnvironmentLinkProofInvalidError,
@@ -587,7 +588,21 @@ export const verifyEnvironmentTunnelRecoveryProof = Effect.fn(
     typ: RELAY_MANAGED_TUNNEL_RECOVERY_TYP,
     issuer: `t3-env:${input.environmentId}`,
     audience: normalizeRelayIssuer(config.relayIssuer),
-  }).pipe(Effect.mapError(() => new HttpApiError.Unauthorized({})));
+  }).pipe(
+    Effect.catch(
+      (
+        error,
+      ): Effect.Effect<never, RelayEnvironmentKeyMismatchError | HttpApiError.Unauthorized> =>
+        // The host's credential matched, so a signature its linked key rejects means its key changed.
+        EnvironmentConnector.classifyEnvironmentProofFailure(error) === "key_mismatch"
+          ? Effect.flatMap(currentTraceId, (traceId) =>
+              Effect.fail(
+                new RelayEnvironmentKeyMismatchError({ code: "environment_key_mismatch", traceId }),
+              ),
+            )
+          : Effect.fail(new HttpApiError.Unauthorized({})),
+    ),
+  );
 
   if (
     verified.environmentId !== input.environmentId ||
@@ -1146,10 +1161,11 @@ export const layerDpopClientApi = HttpApiBuilder.group(
                 code: "environment_endpoint_timed_out",
                 traceId,
               }),
-            EnvironmentMintResponseInvalid: (_error, traceId) =>
+            EnvironmentMintResponseInvalid: (error, traceId) =>
               new RelayEnvironmentEndpointUnavailableError({
                 code: "environment_endpoint_unavailable",
                 reason: "endpoint_response_invalid",
+                ...(error.proofFailure ? { proofFailure: error.proofFailure } : {}),
                 traceId,
               }),
           }),
@@ -1191,10 +1207,11 @@ export const layerDpopClientApi = HttpApiBuilder.group(
                 code: "environment_endpoint_timed_out",
                 traceId,
               }),
-            EnvironmentMintResponseInvalid: (_error, traceId) =>
+            EnvironmentMintResponseInvalid: (error, traceId) =>
               new RelayEnvironmentEndpointUnavailableError({
                 code: "environment_endpoint_unavailable",
                 reason: "endpoint_response_invalid",
+                ...(error.proofFailure ? { proofFailure: error.proofFailure } : {}),
                 traceId,
               }),
           }),

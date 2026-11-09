@@ -83,6 +83,7 @@ export type ConnectionHop = typeof ConnectionHop.Type;
 export const ConnectionFailureCause = Schema.Literals([
   ...RelayEnvironmentEndpointFailure.literals,
   "clock_skew",
+  "key_mismatch",
   "not_linked",
   "relay_error",
   "tunnel_pending",

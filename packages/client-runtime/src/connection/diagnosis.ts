@@ -104,7 +104,10 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
     case "outdated":
       return `${host} runs an older Up.computer`;
     case "clock_skew":
-      return "This device's clock is off";
+      // The relay checked the host's signed times; other clock failures are this device's.
+      return located.hop === "server" ? `${host}'s clock is off` : "This device's clock is off";
+    case "key_mismatch":
+      return `${host} needs to reconnect to UpComputer Connect`;
     case "not_linked":
       return `${host} is not linked to your UpComputer Connect account`;
     case "relay_error":
@@ -167,6 +170,11 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
       return [`Update Up.computer on ${host}.`];
     case "clock_skew":
       return [`Turn on automatic date and time on this device and on ${host}, then retry.`];
+    case "key_mismatch":
+      return [
+        `Open Up.computer on ${host}. Signed in to UpComputer Connect, it reconnects on its own.`,
+        `If it still fails, open Settings > Sharing & access on ${host} and turn UpComputer Connect off and on.`,
+      ];
     case "not_linked":
       return [
         "Check that this device is signed in to the same UpComputer Connect account as the host.",
@@ -244,6 +252,7 @@ function helpSection(
       return "the-clock-is-off";
     case "session_pending":
     case "not_linked":
+    case "key_mismatch":
     case "tunnel_not_enabled":
       return "sign-in-account-or-link-problems";
     case "relay_error":

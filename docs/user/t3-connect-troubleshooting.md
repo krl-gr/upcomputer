@@ -108,6 +108,12 @@ an active link between your account and the host.
 - **UpComputer Connect is off on the host, or the host only publishes agent activity.**
   On the host, open **Settings > Sharing & access** and turn **UpComputer Connect** on, or
   run `up connect`.
+- **The host needs to reconnect to UpComputer Connect.** The host signs with a
+  different key than the one UpComputer Connect stored when it was linked. Open
+  Up.computer on the host while signed in to UpComputer Connect, and it links
+  itself again; a host set up with `up connect` does this when it starts. If it
+  still fails, on the host open **Settings > Sharing & access** and turn
+  **UpComputer Connect** off and on.
 - **The host was linked, but the server did not apply the link yet.** Restart
   the server on the host: quit and reopen the Up.computer desktop app, run
   `up service restart`, or stop `up serve` and run it again.

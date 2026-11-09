@@ -85,6 +85,14 @@ function relayProtectedError(error: RelayProtectedError): ConnectionAttemptError
         hop: "relay",
         ...(error.reason === "environment_link_not_found" ? { failureCause: "not_linked" } : {}),
       });
+    case "RelayEnvironmentKeyMismatchError":
+      return new ConnectionBlockedError({
+        reason: "authentication",
+        detail,
+        traceId,
+        hop: "server",
+        failureCause: "key_mismatch",
+      });
     case "RelayEnvironmentLinkProofInvalidError":
     case "RelayEnvironmentLinkLimitExceededError":
     case "RelayWebPushSubscriptionConflictError":
@@ -98,6 +106,18 @@ function relayProtectedError(error: RelayProtectedError): ConnectionAttemptError
         failureCause: "timeout",
       });
     case "RelayEnvironmentEndpointUnavailableError": {
+      // The host answered, but its signature or its clock did not check out. Both
+      // can heal on the host (it re-links itself), so keep retrying.
+      if (error.proofFailure !== undefined) {
+        return new ConnectionTransientError({
+          reason: "endpoint-unavailable",
+          detail,
+          traceId,
+          hop: "server",
+          via: "relay",
+          failureCause: error.proofFailure,
+        });
+      }
       const endpointFailure =
         error.endpointFailure ??
         (error.reason === "endpoint_response_invalid" ? "invalid_response" : undefined);
