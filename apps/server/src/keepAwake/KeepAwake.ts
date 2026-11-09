@@ -13,9 +13,9 @@ import * as ServerSettings from "../serverSettings.ts";
 
 /**
  * Up.computer: tells the desktop app to block system sleep while any run on this
- * server works, so a long thread or task agent run is not cut off when the person
- * walks away. Run events only trigger a re-check; the runs table is the truth, so
- * a missed or reordered event cannot leave the blocker on.
+ * server works. Run and runtime-request events only trigger a re-check; the
+ * projection tables are the truth, so a missed or reordered event cannot leave the
+ * blocker on.
  */
 export const make = Effect.fn("KeepAwake.make")(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -38,10 +38,21 @@ export const make = Effect.fn("KeepAwake.make")(function* () {
       ),
     );
 
+  // A run that waits on an approval or a question stays `running`, but nothing works
+  // until someone answers, so its pending request lets the computer sleep. Requests
+  // the server answers itself are not a wait. The IN list repeats the predicate of
+  // orchestration_v2_projection_runs_recovery_idx so SQLite searches that partial index.
   const hasWorkingRun = sql<{ readonly working: number }>`
     SELECT EXISTS (
-      SELECT 1 FROM orchestration_v2_projection_runs
-      WHERE status IN ('preparing', 'starting', 'running', 'waiting')
+      SELECT 1 FROM orchestration_v2_projection_runs run
+      WHERE run.status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
+        AND run.status <> 'queued'
+        AND NOT EXISTS (
+          SELECT 1 FROM orchestration_v2_projection_runtime_requests request
+          WHERE request.thread_id = run.thread_id
+            AND request.status = 'pending'
+            AND request.kind NOT IN ('dynamic_tool_call', 'auth_refresh')
+        )
     ) AS working
   `.pipe(Effect.map((rows) => rows[0]?.working === 1));
 
@@ -66,7 +77,10 @@ export const make = Effect.fn("KeepAwake.make")(function* () {
     .stream({ afterSequence })
     .pipe(
       Stream.filter(
-        (stored) => stored.event.type === "run.created" || stored.event.type === "run.updated",
+        (stored) =>
+          stored.event.type === "run.created" ||
+          stored.event.type === "run.updated" ||
+          stored.event.type === "runtime-request.updated",
       ),
     );
 

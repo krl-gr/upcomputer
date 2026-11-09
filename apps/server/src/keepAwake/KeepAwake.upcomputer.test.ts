@@ -3,10 +3,13 @@ import {
   EventId,
   MessageId,
   type ModelSelection,
+  NodeId,
   type OrchestrationV2AppThread,
   type OrchestrationV2Run,
   ProviderInstanceId,
   RunId,
+  RuntimeRequestId,
+  type OrchestrationV2RuntimeRequest,
   type ServerSettings,
   ThreadId,
   ProjectId,
@@ -138,6 +141,37 @@ const writeRun = (ordinal: number, status: OrchestrationV2Run["status"]) =>
     });
   });
 
+const writeRequest = (
+  name: string,
+  kind: OrchestrationV2RuntimeRequest["kind"],
+  status: OrchestrationV2RuntimeRequest["status"],
+) =>
+  Effect.gen(function* () {
+    const eventSink = yield* EventSink.EventSinkV2;
+    const now = yield* DateTime.now;
+    yield* eventSink.write({
+      events: [
+        {
+          id: EventId.make(`keep-awake:request:${name}:${status}`),
+          type: "runtime-request.updated",
+          threadId,
+          occurredAt: now,
+          payload: {
+            id: RuntimeRequestId.make(`request:keep-awake:${name}`),
+            nodeId: NodeId.make(`node:keep-awake:${name}`),
+            providerTurnId: null,
+            nativeRequestRef: null,
+            kind,
+            status,
+            responseCapability: { type: "message" },
+            createdAt: now,
+            resolvedAt: status === "pending" ? null : now,
+          },
+        },
+      ],
+    });
+  });
+
 const startKeepAwake = Effect.gen(function* () {
   const reports = yield* Queue.unbounded<boolean>();
   yield* KeepAwake.make().pipe(
@@ -179,6 +213,19 @@ it.layer(layerTest)("KeepAwake", (it) => {
           assert.isFalse(yield* Queue.take(reports));
 
           yield* writeRun(4, "preparing");
+          assert.isTrue(yield* Queue.take(reports));
+
+          // A run waiting on a person does no work, so the computer may sleep.
+          yield* writeRun(4, "running");
+          yield* writeRequest("approval", "command", "pending");
+          assert.isFalse(yield* Queue.take(reports));
+          yield* writeRequest("approval", "command", "resolved");
+          assert.isTrue(yield* Queue.take(reports));
+          // A request the server answers itself is not a wait.
+          yield* writeRequest("tool", "dynamic_tool_call", "pending");
+          yield* writeRequest("question", "user_input", "pending");
+          assert.isFalse(yield* Queue.take(reports));
+          yield* writeRequest("question", "user_input", "cancelled");
           assert.isTrue(yield* Queue.take(reports));
           return reports;
         }),

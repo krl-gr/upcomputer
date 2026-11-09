@@ -81,7 +81,7 @@ Yes, all three. Desktop app, CLI, the works. One catch: there is no `up` binary 
 
 ## Will my computer sleep in the middle of a long run?
 
-Not with the desktop app. While an agent works, it keeps the computer from going to sleep and lets it sleep again once nothing is running. The screen can still turn off, and closing a laptop lid still sleeps it. Turn this off in **Settings → Maintenance → Keep computer awake**. The `up` background service does not do this; on a host that runs it, set the system never to sleep, or start the server under `caffeinate -i` (macOS) or `systemd-inhibit` (Linux).
+Not with the desktop app. While an agent works, it keeps the computer from going to sleep and lets it sleep again once nothing is running. An agent waiting for your approval or answer does not count as working. The screen can still turn off, and closing a laptop lid still sleeps it. Turn this off in **Settings → Maintenance → Keep computer awake**. The `up` background service does not do this; on a host that runs it, set the system never to sleep, or start the server under `caffeinate -i` (macOS) or `systemd-inhibit` (Linux).
 
 ## Why is my provider not showing up?
 
