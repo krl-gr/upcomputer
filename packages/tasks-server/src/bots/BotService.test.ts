@@ -45,6 +45,7 @@ import { BotService, layer as BotServiceLayer, type MemoryPage } from "./BotServ
 const timestamp = "2026-10-23T10:00:00.000Z";
 interface Dispatched {
   readonly type: string;
+  readonly modelSelection?: unknown;
   readonly title?: string | undefined;
   readonly regenerateTitle?: boolean | undefined;
   readonly runtimeMode?: string | undefined;
@@ -504,6 +505,66 @@ it.effect("an explicit Supervised choice is kept, and a changed one moves the ch
       assert.deepStrictEqual(modeChanges(), []);
       yield* bots.save(newBot("full-access"));
       assert.deepStrictEqual(modeChanges(), ["full-access"]);
+    }),
+  ),
+);
+
+it.effect("a model picked in the chat stays until the bot's model setting changes", () =>
+  runRecorded((dispatched) =>
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      const newer = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.5" };
+      const modelChanges = () =>
+        dispatched.flatMap((command) =>
+          command.type === "thread.model-selection.set" ? [command.modelSelection] : [],
+        );
+      // The mock chat stays on gpt-5.4, as if picked in its composer after each save.
+      const created = yield* bots.save({
+        ...newBot(),
+        config: { ...config, modelSelection: newer },
+      });
+      assert.deepStrictEqual(modelChanges(), [newer]);
+      yield* bots.save({ ...newBot(), config: { ...created.agent.config, instructions: "Hi." } });
+      assert.deepStrictEqual(modelChanges(), [newer]);
+      yield* bots.save({ ...newBot(), config: { ...created.agent.config, modelSelection } });
+      yield* bots.save({ ...newBot(), config: { ...created.agent.config, modelSelection: newer } });
+      assert.deepStrictEqual(modelChanges(), [newer, newer]);
+    }),
+  ),
+);
+
+it.effect("a busy bot chat on another provider still saves settings that keep the model", () =>
+  runRecorded(() =>
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      const repository = yield* TaskRepository;
+      const sql = yield* SqlClient.SqlClient;
+      const id = TaskAgentId.make("bot:busy");
+      const claude = { instanceId: ProviderInstanceId.make("claudeAgent"), model: "opus" };
+      // The bot is set to Claude; its running chat was switched to Codex in the composer.
+      const saved = { ...config, modelSelection: claude, runtimeMode: "full-access" as const };
+      yield* repository.upsertAgent({
+        id,
+        projectId: null,
+        name: "Busy bot",
+        enabled: true,
+        startStatuses: ["To Do"],
+        startTags: [],
+        startRunStatuses: [],
+        config: saved,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted)
+        VALUES (${id}, ${busyChat}, ${project}, ${JSON.stringify([project])}, 0)`;
+      const save = (changes: Partial<typeof saved>) =>
+        bots.save({ ...newBot(), id, name: "Busy bot", config: { ...saved, ...changes } });
+      yield* save({ instructions: "Be brief." });
+      const refused = yield* Effect.flip(save({ modelSelection: { ...claude, model: "sonnet" } }));
+      assert.equal(
+        refused.message,
+        "Wait until the bot is idle to change its working project or provider.",
+      );
     }),
   ),
 );

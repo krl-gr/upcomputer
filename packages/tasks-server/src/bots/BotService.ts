@@ -683,6 +683,9 @@ const make = Effect.gen(function* () {
         return yield* cannotAdopt("it is a background task run", "Choose a main chat");
     }
     const previous = existing ? yield* decode(existing, true) : null;
+    const modelSettingChanged =
+      previous === null ||
+      canonical(previous.agent.config.modelSelection) !== canonical(input.config.modelSelection);
     if (existing && previous) {
       yield* ensureThread(previous, existing.adopted === 1);
       const state = yield* threads.getThreadRecords(threadId, ["runs", "runtimeRequests"]);
@@ -697,7 +700,8 @@ const make = Effect.gen(function* () {
       if (
         busy &&
         (moving ||
-          state.thread.modelSelection.instanceId !== input.config.modelSelection.instanceId)
+          (modelSettingChanged &&
+            state.thread.modelSelection.instanceId !== input.config.modelSelection.instanceId))
       )
         return yield* fail("Wait until the bot is idle to change its working project or provider.");
       if (moving && state.thread.worktreePath !== null)
@@ -783,7 +787,12 @@ const make = Effect.gen(function* () {
         threadId,
         title: input.name,
       });
-    if (canonical(thread.modelSelection) !== canonical(input.config.modelSelection))
+    // Like the permission mode below: a model picked in the chat's composer stays until the
+    // bot's model setting changes, so saving another field does not undo it.
+    if (
+      modelSettingChanged &&
+      canonical(thread.modelSelection) !== canonical(input.config.modelSelection)
+    )
       yield* threads.dispatch({
         type: "thread.model-selection.set",
         commandId: CommandId.make(`bot:model:${input.id}:${commandSuffix}`),
