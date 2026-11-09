@@ -1,9 +1,13 @@
+import type { EnvironmentId } from "@t3tools/contracts";
+import type { Discovery } from "@t3tools/client-runtime/relay";
+
 /*
- * UpComputer Connect sign-in on the desktop app (UpComputer): a fresh sign-in
- * publishes this computer and adds the account's other computers, with no
- * wizard. Launching while already signed in changes nothing, so a user who
- * turned publishing off stays off.
+ * UpComputer Connect sign-in on the desktop app: a fresh sign-in publishes this computer and
+ * adds the account's other computers, with no wizard. Launching signed in publishes nothing, so
+ * publishing turned off stays off; while this computer is on Connect, later computers are added.
  */
+
+type RelayEnvironmentAvailability = Discovery.RelayEnvironmentAvailability;
 
 /** The signed-in account, null when signed out, undefined while Clerk's snapshot is incomplete. */
 export type ObservedAccount = string | null | undefined;
@@ -90,4 +94,56 @@ export function signInPublishStep(input: {
     data.cloudUserId !== input.account
     ? "other-account"
     : "publish";
+}
+
+/** Whether this computer is on UpComputer Connect for the signed-in account. */
+export function connectIsOnFor(
+  account: string,
+  linkData: {
+    readonly linked: boolean;
+    readonly linkRevoked?: boolean | undefined;
+    readonly cloudUserId: string | null;
+  } | null,
+): boolean {
+  return (
+    linkData !== null &&
+    linkData.linked &&
+    linkData.linkRevoked !== true &&
+    linkData.cloudUserId === account
+  );
+}
+
+export interface DiscoveredComputer {
+  readonly environmentId: EnvironmentId;
+  readonly availability: RelayEnvironmentAvailability;
+  /** False when its server version cannot serve this client. */
+  readonly compatible: boolean;
+}
+
+/**
+ * The account's computers to add on this device. `known` holds every computer
+ * this device has saved for the account, so one that is known but no longer
+ * saved was removed by the user and stays removed.
+ */
+export function computersToAdd(input: {
+  readonly discovered: Iterable<DiscoveredComputer>;
+  readonly primaryEnvironmentId: EnvironmentId | null;
+  readonly saved: ReadonlySet<EnvironmentId>;
+  readonly known: ReadonlySet<EnvironmentId>;
+  readonly attempted: ReadonlySet<EnvironmentId>;
+}): EnvironmentId[] {
+  const ids: EnvironmentId[] = [];
+  for (const { environmentId, availability, compatible } of input.discovered) {
+    if (
+      environmentId === input.primaryEnvironmentId ||
+      input.saved.has(environmentId) ||
+      input.known.has(environmentId) ||
+      input.attempted.has(environmentId)
+    )
+      continue;
+    // Compatibility is known only once the relay answered for the computer.
+    if (availability === "checking" || availability === "error" || !compatible) continue;
+    ids.push(environmentId);
+  }
+  return ids;
 }
