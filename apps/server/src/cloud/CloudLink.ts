@@ -544,18 +544,35 @@ const make = Effect.gen(function* () {
   const staleKeyCredential = yield* Ref.make<string | null>(null);
 
   const LINK_KEY_STALE_NOTICE = "remote-access:link-key-stale";
+  const LINK_REVOKED_NOTICE = "remote-access:link-revoked";
 
   const markLinkKeyStale = Effect.fn("CloudLink.markLinkKeyStale")(function* (
     credential: string,
     cause: RelayRequestError,
   ) {
-    yield* Ref.set(staleKeyCredential, credential);
+    const marked = yield* endpointRuntime.withLinkStateLock(
+      Effect.gen(function* () {
+        const current = yield* secrets.get(RELAY_ENVIRONMENT_CREDENTIAL_SECRET);
+        if (Option.isNone(current) || bytesToString(current.value) !== credential) {
+          return false;
+        }
+        // The relay names a key mismatch only after this credential authenticated
+        // against a live link, so the link is not revoked. Hosts that met this before
+        // the relay told the two apart stored a revocation for it; drop it so the
+        // stale key can be repaired.
+        yield* secrets.remove(CLOUD_LINK_REVOKED);
+        yield* Ref.set(staleKeyCredential, credential);
+        return true;
+      }),
+    );
+    if (!marked) return;
     yield* Effect.logWarning(
       "UpComputer Connect holds an older key for this environment. Link it again to restore remote access.",
       { cause },
     );
     const notices = yield* Effect.serviceOption(BackgroundNotices.BackgroundNotices);
     if (Option.isSome(notices)) {
+      yield* notices.value.resolve(LINK_REVOKED_NOTICE);
       yield* notices.value.report({
         id: LINK_KEY_STALE_NOTICE,
         area: "remote-access",
@@ -1046,7 +1063,7 @@ const make = Effect.gen(function* () {
         const notices = yield* Effect.serviceOption(BackgroundNotices.BackgroundNotices);
         if (Option.isSome(notices)) {
           yield* notices.value.report({
-            id: "remote-access:link-revoked",
+            id: LINK_REVOKED_NOTICE,
             area: "remote-access",
             severity: "warning",
             title: "Remote access turned off",

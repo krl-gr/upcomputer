@@ -580,12 +580,15 @@ describe("releaseManagedTunnelOnShutdown", () => {
       [RELAY_URL_SECRET, "https://relay.example.test"],
       [CLOUD_LINKED_USER_ID, "user-123"],
       [RELAY_ENVIRONMENT_CREDENTIAL_SECRET, "environment-credential"],
+      // Stored by an older host, which read the relay's plain 401 for a stale key as a revocation.
+      [CLOUD_LINK_REVOKED, "true"],
     ]);
     const cloudMintPublicKey =
       "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAqZ2u2LjMoAyG2QTHXmITJ9w6RzZtVUAv394XCcPV0zE=\n-----END PUBLIC KEY-----";
 
     return Effect.gen(function* () {
       const link = yield* CloudLink.CloudLink;
+      expect((yield* link.linkState()).linkRevoked).toBe(true);
       const registration = yield* link.registerManagedTunnelRecovery("http://127.0.0.1:3773");
       expect(registration).toEqual({ status: "key_stale" });
       expect(yield* link.linkState()).toMatchObject({
