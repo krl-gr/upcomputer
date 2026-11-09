@@ -31,22 +31,25 @@ const RETRY_FEEDBACK_MS = 1_000;
 /**
  * Set once a new user's window opens, so the composer shows setup at once.
  * `start` is `wait` until the starter decides, then latched for the session,
- * so a remount (for example after /welcome) never decides again.
+ * so a remount (for example after /welcome) never decides again. Kept per
+ * environment: only the one the starter sets up is waiting on a first agent.
  */
-const firstRunAgentAtom = Atom.make<{
-  readonly start: "wait" | FirstRunAgentStart | null;
-  readonly startError: string | null;
-  readonly activation: FirstRunAgentActivation | null;
-  /** When this window finished first-run onboarding, if it did. */
-  readonly onboardedAt: number | null;
-  readonly firstScreenIdleReported: boolean;
-}>({
-  start: null,
-  startError: null,
-  activation: null,
-  onboardedAt: null,
-  firstScreenIdleReported: false,
-}).pipe(Atom.keepAlive, Atom.withLabel("web-first-run-agent"));
+const firstRunAgentAtom = Atom.family((_environmentId: EnvironmentId) =>
+  Atom.make<{
+    readonly start: "wait" | FirstRunAgentStart | null;
+    readonly startError: string | null;
+    readonly activation: FirstRunAgentActivation | null;
+    /** When this window finished first-run onboarding, if it did. */
+    readonly onboardedAt: number | null;
+    readonly firstScreenIdleReported: boolean;
+  }>({
+    start: null,
+    startError: null,
+    activation: null,
+    onboardedAt: null,
+    firstScreenIdleReported: false,
+  }).pipe(Atom.keepAlive, Atom.withLabel("web-first-run-agent")),
+);
 
 /**
  * Install operations whose `started` or `failed` event this window already
@@ -55,7 +58,7 @@ const firstRunAgentAtom = Atom.make<{
 const reportedOperations = new Set<string>();
 
 function useStartFirstRunAgent(environmentId: EnvironmentId) {
-  const setSetup = useAtomSet(firstRunAgentAtom);
+  const setSetup = useAtomSet(firstRunAgentAtom(environmentId));
   const recordClientEvent = useRecordClientEvent();
   const startInstall = useAtomCommand(serverEnvironment.startProviderInstall, {
     reportFailure: false,
@@ -99,8 +102,8 @@ let activationWait: { readonly operationId: string; readonly until: number } | n
  */
 export function FirstRunAgentStarter({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const start = useStartFirstRunAgent(environmentId);
-  const setup = useAtomValue(firstRunAgentAtom);
-  const setSetup = useAtomSet(firstRunAgentAtom);
+  const setup = useAtomValue(firstRunAgentAtom(environmentId));
+  const setSetup = useAtomSet(firstRunAgentAtom(environmentId));
   const onboardingCompleted = useClientSettings(
     (settings) => settings.onboardingCompletedAt !== null,
   );
@@ -231,7 +234,7 @@ export function useFirstRunAgentStatus(
   readonly retrying: boolean;
   readonly retry: () => void;
 } {
-  const setup = useAtomValue(firstRunAgentAtom);
+  const setup = useAtomValue(firstRunAgentAtom(environmentId));
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
   const install = useEnvironmentQuery(
     active
