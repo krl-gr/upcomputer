@@ -14,7 +14,8 @@ import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPane
 import { useProject, useQuietThreadShell } from "../../state/entities";
 import { readEnvironmentScope } from "../../state/session";
 import { terminalEnvironment } from "../../state/terminal";
-import { holdTerminalSpawn, useKnownTerminalSessions } from "../../state/terminalSessions";
+import { useKnownTerminalSessions } from "../../state/terminalSessions";
+import { holdTerminalSpawn } from "../../state/terminalSpawnGate.upcomputer";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../../terminalUiStateStore";
 

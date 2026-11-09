@@ -33,9 +33,9 @@ vi.mock("../state/entities", () => ({
   useProject: () => null,
   readThreadShell: () => null,
 }));
-vi.mock("../state/terminalSessions", () => ({
+vi.mock("../state/terminalSessions", () => ({ useKnownTerminalSessions: () => null }));
+vi.mock("../state/terminalSpawnGate.upcomputer", () => ({
   holdTerminalSpawn: () => ({ grid: Promise.resolve(null), release: () => undefined }),
-  useKnownTerminalSessions: () => null,
 }));
 vi.mock("../composerDraftStore", async () => {
   const Schema = await import("effect/Schema");
