@@ -60,7 +60,7 @@ import {
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { TaskCard } from "./TaskCard.tsx";
 import { TaskFilterRow, TaskFiltersButton } from "./TaskFilters.tsx";
-import { taskListLayout } from "./taskListLayout.ts";
+import { taskListLayout, type TaskListLayout } from "./taskListLayout.ts";
 import { isInboxRoot, type PlannerProject } from "../planner/ui/ProjectChip.tsx";
 import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
@@ -281,17 +281,19 @@ export function TasksView(props: TasksViewProps) {
   const panel = props.layout === "panel";
   // The list's own width picks table or cards; the first measurement lands before paint.
   const [listElement, setListElement] = useState<HTMLDivElement | null>(null);
-  const [listWidth, setListWidth] = useState<number | null>(null);
+  // Before the list is measured the page shows the table; the right panel always shows cards.
+  const [listLayout, setListLayout] = useState<TaskListLayout>("table");
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- follows the list element's DOM width
   useLayoutEffect(() => {
     if (!listElement) return;
-    setListWidth(listElement.getBoundingClientRect().width);
+    const measure = (width: number) => setListLayout((shown) => taskListLayout(width, shown));
+    measure(listElement.getBoundingClientRect().width);
     return observeResize(listElement, (entries) => {
       const entry = entries.at(-1);
-      if (entry) setListWidth(entry.contentRect.width);
+      if (entry) measure(entry.contentRect.width);
     });
   }, [listElement]);
-  const cards = taskListLayout({ panel, width: listWidth }) === "cards";
+  const cards = panel || listLayout === "cards";
   const statusFilter = filters.status;
   const archiveFilter: TaskArchiveFilter = filters.archive ?? "active";
   const [history, setHistory] = useState<{
