@@ -2109,7 +2109,7 @@ export function MaintenanceSettingsPanel() {
           serverScoped
           settingKeys={["keepAwakeWhileAgentsWork"]}
           {...searchableSetting("keep-computer-awake")}
-          description="While agents work, the desktop app stops the computer from going to sleep, so long runs finish when you step away. The screen can still turn off."
+          description="While agents work, the desktop app keeps the computer from sleeping, so long runs finish. The screen can still turn off. Works only for the desktop app's own server, not WSL, remote or up service."
           resetAction={
             settings.keepAwakeWhileAgentsWork !==
             DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork ? (
