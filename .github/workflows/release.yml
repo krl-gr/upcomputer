@@ -1011,7 +1011,10 @@ jobs:
           git config user.email "${{ steps.app_bot.outputs.email }}"
 
           git add apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json pnpm-lock.yaml apps/marketing/src/lib/releases.ts
-          git commit -m "chore(release): prepare $RELEASE_TAG"
+          # Skip the repo's pre-commit hook (vp staged): this job installs only
+          # the release scripts, so its checks cannot load the app configs.
+          # The commit touches version strings only.
+          git commit --no-verify -m "chore(release): prepare $RELEASE_TAG"
           git push origin HEAD:main
 
   announce_discord:
