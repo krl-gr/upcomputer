@@ -192,7 +192,7 @@ export function AutomationsView(props: {
   return (
     <WorkspaceViewLayout
       variant={props.panel ? "panel" : "page"}
-      title={props.panel ? "" : "Tasks"}
+      switches={props.viewSwitch}
       action={
         ready && windows
           ? {
@@ -204,7 +204,6 @@ export function AutomationsView(props: {
       }
       toolbar={
         <>
-          {props.viewSwitch}
           <span className="min-w-0 flex-1" />
           {environmentOptions.length > 1 && environmentId ? (
             <Select

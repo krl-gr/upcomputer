@@ -822,7 +822,11 @@ export function TasksView(props: TasksViewProps) {
   return (
     <WorkspaceViewLayout
       variant={props.layout}
-      title={selectedTask || !createModeOpen ? "" : "New task"}
+      {...(selectedTask
+        ? {}
+        : createModeOpen
+          ? { title: "New task" }
+          : { switches: props.viewSwitch })}
       action={
         selectedTask
           ? props.canMutateEnvironment(selectedTask.environmentId)
@@ -887,7 +891,6 @@ export function TasksView(props: TasksViewProps) {
           </>
         ) : createModeOpen ? undefined : (
           <>
-            {props.viewSwitch}
             <span className="min-w-0 flex-1" />
             {cards ? (
               <TaskFiltersButton

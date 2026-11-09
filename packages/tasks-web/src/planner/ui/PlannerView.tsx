@@ -503,12 +503,11 @@ export function PlannerView(props: {
   return (
     <WorkspaceViewLayout
       variant={props.panel ? "panel" : "page"}
-      title={props.panel ? "" : "Tasks"}
+      switches={props.viewSwitch}
       // Until the planner shows, the page header keeps the title bar and the view switch.
       header={!ready}
       toolbar={
         <>
-          {props.viewSwitch}
           <span className="min-w-0 flex-1" />
           {environmentOptions.length > 1 && environmentId ? (
             <Select
