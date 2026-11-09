@@ -48,9 +48,18 @@ function HeaderAction(props: { readonly action: WorkspaceViewAction }) {
 const WORKSPACE_CONTENT_GUTTER_CLASS = "pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)";
 
 /**
+ * What leads the header: the Tasks workspace's switches (Me / Workers and the
+ * section switch), or a title for a view without them, such as a create mode.
+ * Never both, so a view with the switches cannot add a page title beside them.
+ */
+type WorkspaceViewHeading =
+  | { readonly switches: ReactNode; readonly title?: never }
+  | { readonly title?: string; readonly switches?: never };
+
+/**
  * Shared main-area shell of the Tasks, Agents and Automations routes: upstream's
- * page header (title or back control on the left, controls on the right) over
- * content inside the same gutters. The sidebar toggle is upstream's shared one.
+ * page header (switches, title or back control on the left, controls on the right)
+ * over content inside the same gutters. The sidebar toggle is upstream's shared one.
  *
  * The `panel` variant fits a right-panel surface: the header is the planner
  * list header's frame without title bar duties, appears only with something
@@ -58,6 +67,7 @@ const WORKSPACE_CONTENT_GUTTER_CLASS = "pl-(--workspace-gutter-start) pr-(--work
  */
 export function WorkspaceViewLayout({
   title,
+  switches,
   action,
   leadingAction,
   toolbar,
@@ -67,8 +77,7 @@ export function WorkspaceViewLayout({
   inset = true,
   header = true,
   variant = "page",
-}: {
-  readonly title: string;
+}: WorkspaceViewHeading & {
   readonly action?: WorkspaceViewAction | undefined;
   readonly leadingAction?: WorkspaceViewAction | undefined;
   readonly toolbar?: ReactNode | undefined;
@@ -112,7 +121,7 @@ export function WorkspaceViewLayout({
           {title}
         </h1>
       ) : null}
-      {toolbar ? (
+      {switches || toolbar ? (
         <div
           className={
             panel
@@ -120,6 +129,10 @@ export function WorkspaceViewLayout({
               : "flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           }
         >
+          {switches ? (
+            // The planner list header's spacing, so the switches sit alike on every tab.
+            <div className="flex shrink-0 items-center gap-1.5">{switches}</div>
+          ) : null}
           {toolbar}
         </div>
       ) : null}
@@ -144,7 +157,7 @@ export function WorkspaceViewLayout({
           navigateBack();
         }}
       >
-        {header && (leadingAction || title || toolbar || action) ? (
+        {header && (leadingAction || title || switches || toolbar || action) ? (
           // The planner list header's frame, so Me and Workers share one header.
           <WorkspacePageHeader clearCollapsedSidebar={false} className="border-b border-border">
             <div className="flex min-w-0 flex-1 items-center gap-1">{headerContent}</div>
