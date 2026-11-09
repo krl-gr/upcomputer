@@ -7,6 +7,7 @@ import {
   type OrchestrationV2AppThread,
   type OrchestrationV2Run,
   ProviderInstanceId,
+  ProviderSessionId,
   RunId,
   RuntimeRequestId,
   type OrchestrationV2RuntimeRequest,
@@ -145,6 +146,10 @@ const writeRequest = (
   name: string,
   kind: OrchestrationV2RuntimeRequest["kind"],
   status: OrchestrationV2RuntimeRequest["status"],
+  responseCapability: OrchestrationV2RuntimeRequest["responseCapability"] = {
+    type: "live",
+    providerSessionId: ProviderSessionId.make("session:keep-awake"),
+  },
 ) =>
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
@@ -163,7 +168,7 @@ const writeRequest = (
             nativeRequestRef: null,
             kind,
             status,
-            responseCapability: { type: "message" },
+            responseCapability,
             createdAt: now,
             resolvedAt: status === "pending" ? null : now,
           },
@@ -226,6 +231,12 @@ it.layer(layerTest)("KeepAwake", (it) => {
           yield* writeRequest("question", "user_input", "pending");
           assert.isFalse(yield* Queue.take(reports));
           yield* writeRequest("question", "user_input", "cancelled");
+          assert.isTrue(yield* Queue.take(reports));
+          // An async question does not block the run: the agent keeps working.
+          yield* writeRequest("async", "user_input", "pending", { type: "message" });
+          yield* settings.updateSettings({ keepAwakeWhileAgentsWork: false });
+          assert.isFalse(yield* Queue.take(reports));
+          yield* settings.updateSettings({ keepAwakeWhileAgentsWork: true });
           assert.isTrue(yield* Queue.take(reports));
           return reports;
         }),

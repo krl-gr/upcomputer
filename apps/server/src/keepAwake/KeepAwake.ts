@@ -38,10 +38,10 @@ export const make = Effect.fn("KeepAwake.make")(function* () {
       ),
     );
 
-  // A run that waits on an approval or a question stays `running`, but nothing works
-  // until someone answers, so its pending request lets the computer sleep. Requests
-  // the server answers itself are not a wait. The IN list repeats the predicate of
-  // orchestration_v2_projection_runs_recovery_idx so SQLite searches that partial index.
+  // A run blocked on an approval or a live question does no work, so the computer may sleep.
+  // Server-answered requests and message-answered questions (the agent keeps working) are
+  // not a wait. The IN list repeats orchestration_v2_projection_runs_recovery_idx's
+  // predicate so SQLite searches that partial index.
   const hasWorkingRun = sql<{ readonly working: number }>`
     SELECT EXISTS (
       SELECT 1 FROM orchestration_v2_projection_runs run
@@ -52,6 +52,7 @@ export const make = Effect.fn("KeepAwake.make")(function* () {
           WHERE request.thread_id = run.thread_id
             AND request.status = 'pending'
             AND request.kind NOT IN ('dynamic_tool_call', 'auth_refresh')
+            AND json_extract(request.payload_json, '$.responseCapability.type') <> 'message'
         )
     ) AS working
   `.pipe(Effect.map((rows) => rows[0]?.working === 1));
