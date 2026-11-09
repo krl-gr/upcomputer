@@ -264,7 +264,7 @@ export function AppearanceSettingsPanel() {
           resetAction={
             settings.threadDetailsEnabled !== DEFAULT_UNIFIED_SETTINGS.threadDetailsEnabled ? (
               <SettingResetButton
-                label="thread details"
+                label="thread details button"
                 onClick={() =>
                   updateSettings({
                     threadDetailsEnabled: DEFAULT_UNIFIED_SETTINGS.threadDetailsEnabled,
