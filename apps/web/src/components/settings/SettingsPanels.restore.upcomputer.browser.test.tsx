@@ -102,7 +102,7 @@ describe("restoring V2 settings", () => {
     await using screen = await renderRestore();
     const { restore } = screen;
 
-    expect(restore.changedSettingLabels).toEqual(["Thread details"]);
+    expect(restore.changedSettingLabels).toEqual(["Thread details button"]);
     await act(() => restore.restoreDefaults());
 
     expect(state.update.mock.calls[0]?.[0].threadDetailsEnabled).toBe(true);

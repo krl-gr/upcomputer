@@ -518,7 +518,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Composer context"]
       : []),
     ...(settings.threadDetailsEnabled !== DEFAULT_UNIFIED_SETTINGS.threadDetailsEnabled
-      ? ["Thread details"]
+      ? ["Thread details button"]
       : []),
     ...getChangedTypographySettingLabels(settings),
     ...(settings.diffFilesCollapsed !== DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed

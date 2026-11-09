@@ -204,9 +204,11 @@ describe("searchSettings", () => {
     }
   });
 
-  it("keeps catalog result ids unique", () => {
+  it("keeps catalog result ids unique, and titles unique per page", () => {
     const ids = SETTINGS_SEARCH_ITEMS.map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);
+    const titles = SETTINGS_SEARCH_ITEMS.map((item) => `${item.to} ${item.title}`);
+    expect(titles.filter((title, index) => titles.indexOf(title) !== index)).toEqual([]);
   });
 });
 
