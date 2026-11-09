@@ -27,12 +27,14 @@ const FOCUS_REFRESH_MIN_INTERVAL_MS = 60_000;
 const KnownComputers = Schema.Array(EnvironmentId);
 const knownComputersKey = (account: string) => `upcomputer:connect-known-computers:${account}`;
 
-function readKnownComputers(account: string): ReadonlySet<EnvironmentId> {
+/** Null when this device has no memory for the account yet. */
+function readKnownComputers(account: string): ReadonlySet<EnvironmentId> | null {
   try {
-    return new Set(getLocalStorageItem(knownComputersKey(account), KnownComputers) ?? []);
+    const known = getLocalStorageItem(knownComputersKey(account), KnownComputers);
+    return known === null ? null : new Set(known);
   } catch (error) {
     console.error("[t3-connect] Could not read this device's computers", error);
-    return new Set();
+    return null;
   }
 }
 
@@ -77,18 +79,27 @@ export function AutoAddAccountComputers({
     reportFailure: false,
   });
   const [attempted] = useState(() => new Set<EnvironmentId>());
-  const [known, setKnown] = useState(() =>
-    fresh ? new Set<EnvironmentId>() : readKnownComputers(account),
-  );
+  const [stored] = useState(() => (fresh ? null : readKnownComputers(account)));
+  const [known, setKnown] = useState<ReadonlySet<EnvironmentId>>(() => stored ?? new Set());
+  // Launching signed in with no memory (first launch after this update): the computers the
+  // account lists now may include ones the user removed, so they count as known, not new.
+  const [needsBaseline, setNeedsBaseline] = useState(!fresh && stored === null);
 
   const saved = new Set(environments.map((environment) => environment.environmentId));
   const unrecorded = isReady ? [...saved].filter((id) => !known.has(id)) : [];
   if (unrecorded.length > 0) setKnown(new Set([...known, ...unrecorded]));
+  if (needsBaseline && isReady && discovery.listed) {
+    const listed = [...discovery.environments.values()].map(
+      (entry) => entry.environment.environmentId,
+    );
+    setKnown(new Set([...known, ...saved, ...listed]));
+    setNeedsBaseline(false);
+  }
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists this device's computers so a removed one stays removed after a restart
   useEffect(() => {
-    writeKnownComputers(account, known);
-  }, [account, known]);
+    if (!needsBaseline) writeKnownComputers(account, known);
+  }, [account, known, needsBaseline]);
 
   const addComputer = useEffectEvent(async (environmentId: EnvironmentId) => {
     const entry = discovery.environments.get(environmentId);
@@ -119,7 +130,7 @@ export function AutoAddAccountComputers({
   });
   const addNewComputers = useEffectEvent(
     (discovered: typeof discovery.environments, catalogReady: boolean) => {
-      if (!catalogReady) return;
+      if (!catalogReady || needsBaseline) return;
       const ids = computersToAdd({
         discovered: [...discovered.values()].map(discoveredComputer),
         primaryEnvironmentId,
