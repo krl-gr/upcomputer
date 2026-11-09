@@ -514,6 +514,8 @@ export const EnvironmentCloudLinkStateResult = Schema.Struct({
   publishAgentActivity: Schema.Boolean,
   holdWebhooksWhileOffline: Schema.optional(Schema.Boolean),
   linkRevoked: Schema.optional(Schema.Boolean),
+  /** The relay holds an older signing key for this environment; linking it again replaces the key. */
+  linkKeyStale: Schema.optional(Schema.Boolean),
   /** The latest check the server ran on its own, absent until one finishes. */
   reachability: Schema.optional(EnvironmentConnectReachability),
 });
