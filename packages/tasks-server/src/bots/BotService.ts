@@ -783,7 +783,14 @@ const make = Effect.gen(function* () {
         threadId,
         title: input.name,
       });
-    if (canonical(thread.modelSelection) !== canonical(input.config.modelSelection))
+    // Like the permission mode below: a model picked in the chat's composer stays until the
+    // bot's model setting changes, so saving another field does not undo it.
+    if (
+      (previous === null ||
+        canonical(previous.agent.config.modelSelection) !==
+          canonical(input.config.modelSelection)) &&
+      canonical(thread.modelSelection) !== canonical(input.config.modelSelection)
+    )
       yield* threads.dispatch({
         type: "thread.model-selection.set",
         commandId: CommandId.make(`bot:model:${input.id}:${commandSuffix}`),

@@ -45,6 +45,7 @@ import { BotService, layer as BotServiceLayer, type MemoryPage } from "./BotServ
 const timestamp = "2026-10-23T10:00:00.000Z";
 interface Dispatched {
   readonly type: string;
+  readonly modelSelection?: unknown;
   readonly title?: string | undefined;
   readonly regenerateTitle?: boolean | undefined;
   readonly runtimeMode?: string | undefined;
@@ -504,6 +505,30 @@ it.effect("an explicit Supervised choice is kept, and a changed one moves the ch
       assert.deepStrictEqual(modeChanges(), []);
       yield* bots.save(newBot("full-access"));
       assert.deepStrictEqual(modeChanges(), ["full-access"]);
+    }),
+  ),
+);
+
+it.effect("a model picked in the chat stays until the bot's model setting changes", () =>
+  runRecorded((dispatched) =>
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      const newer = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.5" };
+      const modelChanges = () =>
+        dispatched.flatMap((command) =>
+          command.type === "thread.model-selection.set" ? [command.modelSelection] : [],
+        );
+      // The mock chat stays on gpt-5.4, as if picked in its composer after each save.
+      const created = yield* bots.save({
+        ...newBot(),
+        config: { ...config, modelSelection: newer },
+      });
+      assert.deepStrictEqual(modelChanges(), [newer]);
+      yield* bots.save({ ...newBot(), config: { ...created.agent.config, instructions: "Hi." } });
+      assert.deepStrictEqual(modelChanges(), [newer]);
+      yield* bots.save({ ...newBot(), config: { ...created.agent.config, modelSelection } });
+      yield* bots.save({ ...newBot(), config: { ...created.agent.config, modelSelection: newer } });
+      assert.deepStrictEqual(modelChanges(), [newer, newer]);
     }),
   ),
 );
