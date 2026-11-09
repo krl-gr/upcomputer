@@ -5,9 +5,12 @@ import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult, AtomRegistry } from "effect/reactivity";
 
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import {
   attachedTerminalSessionAtom,
+  holdTerminalSpawn,
   knownTerminalSessionsAtom,
+  reportTerminalViewportGrid,
   selectKnownTerminalSessions,
 } from "./terminalSessions";
 
@@ -144,19 +147,62 @@ describe("knownTerminalSessionsAtom", () => {
 });
 
 describe("attachedTerminalSessionAtom", () => {
-  it("attaches with the launch input it was keyed by", () => {
+  const launchInput = (terminalId: string) => ({
+    threadId: threadA,
+    terminalId,
+    cwd: "/repo",
+    worktreePath: null,
+    env: { T3CODE_PROJECT_ROOT: "/repo" },
+  });
+
+  it("attaches with the launch input it was keyed by, at the viewport's first grid", () => {
     attachCalls.length = 0;
-    const input = {
-      threadId: threadA,
-      terminalId: "terminal-1",
-      cwd: "/repo",
-      worktreePath: null,
-      env: { T3CODE_PROJECT_ROOT: "/repo" },
-    };
+    const input = launchInput("terminal-1");
     const atom = attachedTerminalSessionAtom(environmentA, input);
     expect(attachedTerminalSessionAtom(environmentA, { ...input })).toBe(atom);
 
-    AtomRegistry.make().get(atom);
-    expect(attachCalls).toEqual([{ environmentId: environmentA, input }]);
+    const unsubscribe = appAtomRegistry.subscribe(atom, () => undefined, { immediate: true });
+    // The shell would start at the server's default size, so attaching waits for a grid.
+    expect(attachCalls).toEqual([]);
+    reportTerminalViewportGrid(environmentA, input, { cols: 48, rows: 20 });
+    // Later grids reach the PTY as resizes; the attach keeps its first one.
+    reportTerminalViewportGrid(environmentA, input, { cols: 90, rows: 30 });
+    expect(attachCalls).toEqual([
+      { environmentId: environmentA, input: { ...input, cols: 48, rows: 20 } },
+    ]);
+    unsubscribe();
+  });
+
+  it("lets a launch open the shell at the viewport's grid before the viewport attaches", async () => {
+    attachCalls.length = 0;
+    const input = launchInput("terminal-2");
+    const spawn = holdTerminalSpawn(environmentA, input, 60_000);
+    const unsubscribe = appAtomRegistry.subscribe(
+      attachedTerminalSessionAtom(environmentA, input),
+      () => undefined,
+      { immediate: true },
+    );
+    reportTerminalViewportGrid(environmentA, input, { cols: 48, rows: 20 });
+
+    await expect(spawn.grid).resolves.toEqual({ cols: 48, rows: 20 });
+    expect(attachCalls).toEqual([]);
+    spawn.release();
+    expect(attachCalls).toEqual([
+      { environmentId: environmentA, input: { ...input, cols: 48, rows: 20 } },
+    ]);
+    unsubscribe();
+  });
+
+  it("gives up on the grid after the timeout, so the launch opens at the default size", async () => {
+    vi.useFakeTimers();
+    try {
+      const input = launchInput("terminal-3");
+      const spawn = holdTerminalSpawn(environmentA, input, 2_000);
+      vi.advanceTimersByTime(2_000);
+      await expect(spawn.grid).resolves.toBeNull();
+      spawn.release();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

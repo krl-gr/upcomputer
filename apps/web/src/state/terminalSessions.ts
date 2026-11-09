@@ -5,6 +5,7 @@ import {
   EMPTY_TERMINAL_SESSION_STATE,
   selectRunningSubprocessTerminalIds,
   type KnownTerminalSession,
+  type TerminalGridSize,
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
 import {
@@ -20,6 +21,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import { isProductFeatureShown } from "../product/productFlags";
 import { formatEnvironmentQueryError } from "./query";
 import { terminalEnvironment } from "./terminal";
@@ -131,6 +133,91 @@ const EMPTY_TERMINAL_SESSION_ATOM = Atom.make(EMPTY_TERMINAL_SESSION_STATE).pipe
   Atom.withLabel("web-terminal-session:empty"),
 );
 
+/**
+ * A shell draws its first prompt at the PTY's starting grid. Starting it at a
+ * default size and resizing it to the viewport afterwards leaves a stale copy of
+ * a long, wrapped prompt above the redrawn one, so a new shell waits for this.
+ */
+interface TerminalSpawnGate {
+  /** The grid the first visible viewport measured; set once per mount. */
+  readonly grid: TerminalGridSize | null;
+  /** Launch opens in flight. The viewport attaches after them so the launch's open starts the shell. */
+  readonly launches: number;
+}
+
+const INITIAL_TERMINAL_SPAWN_GATE: TerminalSpawnGate = { grid: null, launches: 0 };
+
+// Not kept alive: the gate resets once no viewport or launch holds it.
+const terminalSpawnGateFamily = Atom.family((key: string) =>
+  Atom.make(INITIAL_TERMINAL_SPAWN_GATE).pipe(Atom.withLabel(`web-terminal-spawn-gate:${key}`)),
+);
+
+interface TerminalTarget {
+  readonly threadId: string;
+  readonly terminalId: string;
+}
+
+function terminalSpawnGateAtom(environmentId: EnvironmentId, terminal: TerminalTarget) {
+  return terminalSpawnGateFamily(
+    JSON.stringify([environmentId, terminal.threadId, terminal.terminalId]),
+  );
+}
+
+/** A viewport measured its grid; the first one sets the size a new shell starts at. */
+export function reportTerminalViewportGrid(
+  environmentId: EnvironmentId,
+  terminal: TerminalTarget,
+  grid: TerminalGridSize,
+): void {
+  const atom = terminalSpawnGateAtom(environmentId, terminal);
+  const gate = appAtomRegistry.get(atom);
+  if (gate.grid === null) appAtomRegistry.set(atom, { ...gate, grid });
+}
+
+/**
+ * Holds a new terminal's viewport attach until `release`, so the launch's own
+ * open starts the shell. `grid` waits up to `timeoutMs` for the viewport's
+ * measured grid; null means the open falls back to the server's default size.
+ */
+export function holdTerminalSpawn(
+  environmentId: EnvironmentId,
+  terminal: TerminalTarget,
+  timeoutMs: number,
+): { readonly grid: Promise<TerminalGridSize | null>; readonly release: () => void } {
+  const atom = terminalSpawnGateAtom(environmentId, terminal);
+  const update = (change: number) => {
+    const gate = appAtomRegistry.get(atom);
+    appAtomRegistry.set(atom, { ...gate, launches: Math.max(0, gate.launches + change) });
+  };
+  let stopWaiting = () => {};
+  const grid = new Promise<TerminalGridSize | null>((resolve) => {
+    const timer = setTimeout(() => stopWaiting(), timeoutMs);
+    let unsubscribe: (() => void) | null = null;
+    stopWaiting = () => {
+      clearTimeout(timer);
+      unsubscribe?.();
+      unsubscribe = null;
+      resolve(appAtomRegistry.get(atom).grid);
+    };
+    // Subscribing also keeps the gate alive before the viewport mounts.
+    unsubscribe = appAtomRegistry.subscribe(atom, (gate) => {
+      if (gate.grid !== null) stopWaiting();
+    });
+  });
+  // The subscription above mounted the gate, so the count survives until release.
+  update(1);
+  let released = false;
+  return {
+    grid,
+    release: () => {
+      if (released) return;
+      released = true;
+      update(-1);
+      stopWaiting();
+    },
+  };
+}
+
 const decodeAttachKey = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Tuple([EnvironmentId, TerminalAttachInput])),
 );
@@ -150,8 +237,17 @@ const attachedTerminalSessionFamily = Atom.family((key: string) => {
     const session = get(environmentSession.sessionStateAtom(environmentId));
     const canRead = sessionHasScope(session, AuthTerminalReadScope);
     const canOperate = sessionHasScope(session, AuthTerminalOperateScope);
+    // Attaching can start the shell, so it waits for the viewport's grid and any launch open.
+    const gate = canOperate ? get(terminalSpawnGateAtom(environmentId, terminal)) : null;
     const attach = canOperate
-      ? get(terminalEnvironment.attach({ environmentId, input: terminal }))
+      ? gate?.grid && gate.launches === 0
+        ? get(
+            terminalEnvironment.attach({
+              environmentId,
+              input: { ...terminal, cols: gate.grid.cols, rows: gate.grid.rows },
+            }),
+          )
+        : null
       : canRead
         ? get(
             terminalEnvironment.observe({
