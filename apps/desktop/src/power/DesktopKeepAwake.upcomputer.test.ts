@@ -35,12 +35,12 @@ describe("DesktopKeepAwake", () => {
 
       yield* keepAwake.setForSource("primary", true);
       yield* keepAwake.setForSource("primary", true);
-      yield* keepAwake.setForSource("wsl", true);
-      yield* keepAwake.setForSource("primary", false);
+      // Every backend's exit releases its own source; a WSL backend's exit keeps the primary claim.
+      yield* keepAwake.setForSource("wsl", false);
       assert.deepStrictEqual(calls, ["start:1"]);
 
-      yield* keepAwake.setForSource("wsl", false);
-      yield* keepAwake.setForSource("wsl", false);
+      yield* keepAwake.setForSource("primary", false);
+      yield* keepAwake.setForSource("primary", false);
       assert.deepStrictEqual(calls, ["start:1", "stop:1"]);
 
       yield* keepAwake.setForSource("primary", true);

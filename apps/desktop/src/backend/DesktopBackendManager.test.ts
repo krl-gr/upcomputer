@@ -434,6 +434,45 @@ describe("DesktopBackendManager", () => {
     ),
   );
 
+  it.effect("releases a keep-awake claim when the control stream ends after the exit", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const keepAwake = yield* Queue.unbounded<boolean>();
+        const controlMessage = encodeDesktopTelemetryControl({
+          version: 1,
+          type: "setKeepAwake",
+          active: true,
+        });
+        const layerSpawner = Layer.succeed(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() =>
+            Effect.succeed(
+              makeProcess({
+                // A buffered claim drains after the backend is gone.
+                getOutputFd: (fd) =>
+                  fd === 5 ? Stream.encodeText(Stream.make(`${controlMessage}\n`)) : Stream.empty,
+                exitCode: Effect.never,
+              }),
+            ),
+          ),
+        );
+        const instance = yield* makeTestInstance({
+          spawnerLayer: layerSpawner,
+          desktopTelemetryPublisher: {
+            handleControlForSource: (_sourceId, message) =>
+              message.type === "setKeepAwake"
+                ? Queue.offer(keepAwake, message.active).pipe(Effect.asVoid)
+                : Effect.void,
+          },
+        });
+
+        yield* instance.start;
+        assert.isTrue(yield* Queue.take(keepAwake));
+        assert.isFalse(yield* Queue.take(keepAwake));
+      }),
+    ),
+  );
+
   it.effect("records an unexpected exit with its code or signal, and the restart", () =>
     Effect.scoped(
       Effect.gen(function* () {

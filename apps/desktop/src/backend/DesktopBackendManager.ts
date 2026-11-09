@@ -531,7 +531,10 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
           version: 1,
           type: "setDiagnosticsDemand",
           enabled: false,
-        }),
+        }).pipe(
+          // Up.computer: a keep-awake line read after the exit handler must not outlive the backend.
+          Effect.andThen(handleControl({ version: 1, type: "setKeepAwake", active: false })),
+        ),
       ),
       Effect.forkScoped,
     );
