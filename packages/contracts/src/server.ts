@@ -668,6 +668,9 @@ export const BackgroundNotice = Schema.Struct({
 });
 export type BackgroundNotice = typeof BackgroundNotice.Type;
 
+/** Reported while UpComputer Connect holds an older key for the environment, so clients read its link state again. */
+export const LINK_KEY_STALE_NOTICE_ID = "remote-access:link-key-stale";
+
 export const ServerConfig = Schema.Struct({
   environment: ExecutionEnvironmentDescriptor,
   auth: ServerAuthDescriptor,

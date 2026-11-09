@@ -5,6 +5,7 @@ import {
   type EnvironmentCloudLinkStateResult,
   type EnvironmentCloudPreferencesRequest,
   type EnvironmentCloudRelayConfigResult,
+  LINK_KEY_STALE_NOTICE_ID,
 } from "@t3tools/contracts";
 import {
   RelayCloudEnvironmentHealthProofPayload,
@@ -543,7 +544,6 @@ const make = Effect.gen(function* () {
   // and a new link brings a new credential, so it needs no persistence or cleanup.
   const staleKeyCredential = yield* Ref.make<string | null>(null);
 
-  const LINK_KEY_STALE_NOTICE = "remote-access:link-key-stale";
   const LINK_REVOKED_NOTICE = "remote-access:link-revoked";
 
   const markLinkKeyStale = Effect.fn("CloudLink.markLinkKeyStale")(function* (
@@ -574,7 +574,7 @@ const make = Effect.gen(function* () {
     if (Option.isSome(notices)) {
       yield* notices.value.resolve(LINK_REVOKED_NOTICE);
       yield* notices.value.report({
-        id: LINK_KEY_STALE_NOTICE,
+        id: LINK_KEY_STALE_NOTICE_ID,
         area: "remote-access",
         severity: "warning",
         title: "Other devices can't reach this computer",
@@ -587,7 +587,7 @@ const make = Effect.gen(function* () {
   const clearLinkKeyStale = Effect.gen(function* () {
     if ((yield* Ref.getAndSet(staleKeyCredential, null)) === null) return;
     const notices = yield* Effect.serviceOption(BackgroundNotices.BackgroundNotices);
-    if (Option.isSome(notices)) yield* notices.value.resolve(LINK_KEY_STALE_NOTICE);
+    if (Option.isSome(notices)) yield* notices.value.resolve(LINK_KEY_STALE_NOTICE_ID);
   });
 
   const withSecrets = Effect.provideService(ServerSecretStore.ServerSecretStore, secrets);
