@@ -797,6 +797,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "keep-computer-awake",
+    title: "Keep computer awake",
+    to: "/settings/maintenance",
+    scope: "environment-defaults",
+    searchTerms: ["sleep prevent power caffeinate idle laptop battery long runs agents working"],
+  },
+  {
     id: "new-threads",
     title: "New threads",
     to: "/settings/threads",
