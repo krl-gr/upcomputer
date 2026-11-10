@@ -2,6 +2,8 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   type AssetCreateUrlResult,
   type AssetResource,
+  AssetSigningKeyLoadError,
+  AssetWorkspaceAssetNotFoundError,
   EnvironmentId,
   ThreadId,
   WS_METHODS,
@@ -23,9 +25,11 @@ import {
 } from "../connection/model.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
+import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import type * as RpcSession from "../rpc/session.ts";
 import {
   ASSET_URL_MAX_IN_FLIGHT,
+  assetUrlStateFromResult,
   createAssetEnvironmentAtoms,
   createProjectFaviconUrlAtomFamily,
   makeRevisionedAssetUrlFamily,
@@ -71,7 +75,9 @@ describe("project favicon URL cache", () => {
  */
 const makeAssetUrlHarness = Effect.fn("TestAssetUrl.makeHarness")(function* (
   environmentIds: ReadonlyArray<EnvironmentId>,
+  options: { readonly expiresAt?: number } = {},
 ) {
+  const wakes = new Set<() => void>();
   const started = yield* Queue.unbounded<EnvironmentId>();
   const inFlight = new Map<EnvironmentId, number>();
   const maxInFlight = new Map<EnvironmentId, number>();
@@ -94,7 +100,10 @@ const makeAssetUrlHarness = Effect.fn("TestAssetUrl.makeHarness")(function* (
             maxInFlight.set(environmentId, Math.max(maxInFlight.get(environmentId) ?? 0, now));
             yield* Queue.offer(started, environmentId);
             yield* Queue.take(releases.get(environmentId)!);
-            return { relativeUrl: "/api/assets/token/image.png", expiresAt: 4_000_000_000_000 };
+            return {
+              relativeUrl: "/api/assets/token/image.png",
+              expiresAt: options.expiresAt ?? 4_000_000_000_000,
+            };
           }).pipe(
             Effect.ensuring(
               Effect.sync(() =>
@@ -156,8 +165,18 @@ const makeAssetUrlHarness = Effect.fn("TestAssetUrl.makeHarness")(function* (
   yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
   const atoms = createAssetEnvironmentAtoms(
     Atom.runtime(Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry)),
+    undefined,
+    {
+      subscribeWake: (wake) => {
+        wakes.add(wake);
+        return () => wakes.delete(wake);
+      },
+    },
   );
   return {
+    wake: () => {
+      for (const wake of wakes) wake();
+    },
     started,
     inFlight: (environmentId: EnvironmentId) => inFlight.get(environmentId) ?? 0,
     maxInFlight: (environmentId: EnvironmentId) => maxInFlight.get(environmentId) ?? 0,
@@ -235,6 +254,87 @@ describe("asset URL requests", () => {
       }),
     ),
   );
+
+  // The refresh interval is a timer that stops while the computer sleeps, and a loopback
+  // session survives the sleep, so only the wake can catch URLs that expired meanwhile.
+  it.effect("re-mints a URL that expired while the computer slept once the app wakes", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeAssetUrlHarness([remote], { expiresAt: 0 });
+        harness.mountImages(remote, 1);
+        yield* Queue.take(harness.started);
+        yield* harness.release(remote);
+        yield* Effect.yieldNow;
+
+        harness.wake();
+        expect(yield* Queue.take(harness.started)).toBe(remote);
+        // A second wake while that mint is in flight joins it.
+        harness.wake();
+        expect(harness.inFlight(remote)).toBe(1);
+      }),
+    ),
+  );
+
+  it.effect("leaves a URL with time left alone when the app wakes", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeAssetUrlHarness([remote]);
+        harness.mountImages(remote, 1);
+        yield* Queue.take(harness.started);
+        yield* harness.release(remote);
+        yield* Effect.yieldNow;
+
+        harness.wake();
+        expect(harness.inFlight(remote)).toBe(0);
+        expect(yield* Queue.poll(harness.started)).toEqual(Option.none());
+      }),
+    ),
+  );
+});
+
+describe("assetUrlStateFromResult", () => {
+  const previous = AsyncResult.success<AssetCreateUrlResult>({
+    relativeUrl: "/api/assets/token/image.png",
+    expiresAt: 4_000_000_000_000,
+  });
+  const failedAfter = (error: unknown) =>
+    AsyncResult.failure<AssetCreateUrlResult, unknown>(Cause.fail(error), {
+      previousSuccess: Option.some(previous),
+    });
+  const resource: AssetResource = { _tag: "attachment", attachmentId: "image-1" };
+  const remoteId = "asset-remote";
+
+  it("keeps the last URL while a re-mint cannot reach the environment", () => {
+    const lost = new EnvironmentRpcUnavailableError({ environmentId: remoteId, message: "lost" });
+    expect(assetUrlStateFromResult(failedAfter(lost), "https://remote.test")).toMatchObject({
+      _tag: "Success",
+      url: "https://remote.test/api/assets/token/image.png",
+    });
+  });
+
+  it("keeps the last URL while the environment cannot load its signing key", () => {
+    const keyLoad = new AssetSigningKeyLoadError({ resource, cause: new Error("keychain locked") });
+    expect(assetUrlStateFromResult(failedAfter(keyLoad), "https://remote.test")).toMatchObject({
+      _tag: "Success",
+    });
+  });
+
+  it("reports a file the environment says is gone", () => {
+    const gone = new AssetWorkspaceAssetNotFoundError({ resource, checkedPath: "/image.png" });
+    expect(assetUrlStateFromResult(failedAfter(gone), "https://remote.test")).toEqual({
+      _tag: "Failure",
+    });
+  });
+
+  it("reports a lost connection once the last URL has expired", () => {
+    const lost = new EnvironmentRpcUnavailableError({ environmentId: remoteId, message: "lost" });
+    const expired = AsyncResult.failure<AssetCreateUrlResult, unknown>(Cause.fail(lost), {
+      previousSuccess: Option.some(
+        AsyncResult.success({ relativeUrl: "/api/assets/old/image.png", expiresAt: 0 }),
+      ),
+    });
+    expect(assetUrlStateFromResult(expired, "https://remote.test")).toEqual({ _tag: "Failure" });
+  });
 });
 
 const revisionedEnvironmentId = EnvironmentId.make("environment-1");
@@ -296,11 +396,20 @@ function setup(initial: MintResult) {
     };
   };
   const settle = (fileRevision?: string) => registry.set(server, minted(mints + 1, fileRevision));
+  const fail = () =>
+    registry.set(
+      server,
+      AsyncResult.failure(Cause.die("connection lost"), {
+        previousSuccess: Option.some(minted(mints) as AsyncResult.Success<never, never>),
+      }),
+    );
   const url = (revision: string | null) => {
     const result = registry.get(atom(revision));
-    return result._tag === "Success" ? result.value.relativeUrl : null;
+    const shown =
+      result._tag === "Failure" ? Option.getOrUndefined(result.previousSuccess) : result;
+    return shown?._tag === "Success" ? shown.value.relativeUrl : null;
   };
-  return { mount, settle, url, mints: () => mints };
+  return { mount, settle, fail, url, mints: () => mints };
 }
 
 describe("makeRevisionedAssetUrlFamily", () => {
@@ -382,5 +491,20 @@ describe("makeRevisionedAssetUrlFamily", () => {
     settle("file-b");
     expect(url("mutation-4")).toBe("/a/5");
     edited();
+  });
+
+  it("keeps the shown URL behind a failed re-mint, not the one it never showed", () => {
+    const { mount, settle, fail, url } = setup(minted(0, "file-a"));
+
+    const first = mount("mutation-1");
+    settle("file-a");
+    first();
+
+    const unchanged = mount("mutation-2");
+    settle("file-a");
+    expect(url("mutation-2")).toBe("/a/0");
+    fail();
+    expect(url("mutation-2")).toBe("/a/0");
+    unchanged();
   });
 });

@@ -1,8 +1,12 @@
 import {
+  AssetAccessError,
   type AssetCreateUrlInput,
   type AssetCreateUrlResult,
   type AssetImageDimensions,
   AssetResource,
+  AssetSigningKeyLoadError,
+  AssetWorkspaceContextResolutionError,
+  EnvironmentAuthorizationError,
   EnvironmentId,
   type ProjectCloneSnapshot,
   WS_METHODS,
@@ -111,10 +115,36 @@ export function blockedAssetUrlState(
     : { _tag: "Failure" };
 }
 
-export function assetUrlStateFromResult(
+const isAssetAccessAnswer = Schema.is(
+  Schema.Union([AssetAccessError, EnvironmentAuthorizationError]),
+);
+// Internal environment failures, such as a store read or the signing key, not the file.
+const isEnvironmentFault = Schema.is(
+  Schema.Union([AssetSigningKeyLoadError, AssetWorkspaceContextResolutionError]),
+);
+const isFinalAnswer = (error: unknown) => isAssetAccessAnswer(error) && !isEnvironmentFault(error);
+
+/**
+ * A re-mint that could not reach the environment says nothing about the file, so the
+ * last URL stays while it is still valid. An answer from the environment is final.
+ */
+function lastUsableResult(
   result: AsyncResult.AsyncResult<AssetCreateUrlResult, unknown>,
+  now: number,
+) {
+  if (result._tag !== "Failure" || Option.isNone(result.previousSuccess)) return result;
+  const previous = result.previousSuccess.value;
+  return previous.value.expiresAt > now && !isFinalAnswer(Cause.squash(result.cause))
+    ? previous
+    : result;
+}
+
+export function assetUrlStateFromResult(
+  input: AsyncResult.AsyncResult<AssetCreateUrlResult, unknown>,
   httpBaseUrl: string | null,
+  now: () => number = Date.now,
 ): AssetUrlState {
+  const result = lastUsableResult(input, now());
   if (result._tag === "Failure") return { _tag: "Failure" };
   if (httpBaseUrl === null || result._tag !== "Success") return { _tag: "Loading" };
   const url = resolveAssetUrl(httpBaseUrl, result.value.relativeUrl);
@@ -136,6 +166,8 @@ type AssetUrlTarget = {
   readonly input: { readonly resource: AssetResource };
 };
 
+const decodeAssetUrlKey = Schema.decodeUnknownSync(Schema.Tuple([EnvironmentId, AssetResource]));
+
 const decodeRevisionedAssetUrlKey = Schema.decodeUnknownSync(
   Schema.Tuple([EnvironmentId, AssetResource, Schema.NullOr(Schema.String)]),
 );
@@ -154,6 +186,12 @@ function keepUnchangedFile(
   next: AsyncResult.AsyncResult<AssetCreateUrlResult, unknown>,
   now: number,
 ) {
+  if (shown._tag === "Success" && next._tag === "Failure") {
+    return AsyncResult.failure(next.cause, {
+      previousSuccess: Option.some(shown),
+      waiting: next.waiting,
+    });
+  }
   if (
     shown._tag !== "Success" ||
     next._tag !== "Success" ||
@@ -238,12 +276,60 @@ export function makeRevisionedAssetUrlFamily(
     family(JSON.stringify([target.environmentId, target.input.resource, target.revision]));
 }
 
+const isExpiring = (result: AsyncResult.AsyncResult<AssetCreateUrlResult, unknown>, now: number) =>
+  result._tag === "Success" &&
+  !result.waiting &&
+  result.value.expiresAt - now <= KEEP_URL_MIN_LIFE_MS;
+
+/**
+ * The refresh interval runs on a timer that stops while the computer sleeps, and a
+ * loopback session survives the sleep, so URLs that expired meanwhile stay cached.
+ * Mounting and waking re-mint a URL that has expired or is about to.
+ */
+function remintExpiringOnWake(
+  createUrl: (
+    target: AssetUrlTarget,
+  ) => Atom.Atom<AsyncResult.AsyncResult<AssetCreateUrlResult, unknown>>,
+  subscribeWake: (wake: () => void) => () => void,
+  now: () => number = Date.now,
+) {
+  const wakes = Atom.make((get) => {
+    let count = 0;
+    get.addFinalizer(subscribeWake(() => get.setSelf((count += 1))));
+    return count;
+  });
+  const family = Atom.family((key: string) => {
+    const [environmentId, resource] = decodeAssetUrlKey(JSON.parse(key));
+    const query = createUrl({ environmentId, input: { resource } });
+    return Atom.transform(
+      query,
+      (get) => {
+        const remintIfExpiring = () => {
+          if (isExpiring(get.once(query), now())) get.refresh(query);
+        };
+        get.subscribe(query, (value) => get.setSelf(value));
+        get.subscribe(wakes, remintIfExpiring);
+        remintIfExpiring();
+        return get.once(query);
+      },
+      { initialValueTarget: query },
+      // Only URLs on screen re-mint on a wake; a cached one re-mints when mounted again.
+    ).pipe(Atom.setIdleTTL(0));
+  });
+  return (target: AssetUrlTarget) =>
+    family(JSON.stringify([target.environmentId, target.input.resource]));
+}
+
 export function createAssetEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, E>,
   localMediaEnvironment?: Atom.Atom<{
     readonly environmentId: EnvironmentId;
     readonly httpBaseUrl: string;
   } | null>,
+  options?: {
+    /** Calls `wake` when the app returns to the foreground, such as after the computer sleeps. */
+    readonly subscribeWake?: (wake: () => void) => () => void;
+  },
 ) {
   // A thread with hundreds of images asks for hundreds of URLs at once. Over a slow remote
   // they would all wait on one socket and read as stalled, so each environment gets a few
@@ -286,7 +372,7 @@ export function createAssetEnvironmentAtoms<R, E>(
       .pipe(Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, () => error))));
     return { ...asset, relativeUrl: new URL(asset.relativeUrl, local.httpBaseUrl).href };
   });
-  const createUrl = createEnvironmentQueryAtomFamily(runtime, {
+  const createUrlQuery = createEnvironmentQueryAtomFamily(runtime, {
     label: "environment-data:assets:create-url",
     execute,
     staleTimeMs: ASSET_URL_STALE_TIME_MS,
@@ -295,6 +381,11 @@ export function createAssetEnvironmentAtoms<R, E>(
     refreshTrigger: ({ input }) =>
       input.resource._tag === "media-file" ? localMediaEnvironment : undefined,
   });
+  const subscribeWake = options?.subscribeWake;
+  const createUrl =
+    subscribeWake === undefined
+      ? createUrlQuery
+      : remintExpiringOnWake(createUrlQuery, subscribeWake);
   const createUrlsFamily = Atom.family((key: string) => {
     const [environmentId, resources] = parseAssetCollectionKey(key);
     return Atom.make((get) =>

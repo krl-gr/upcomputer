@@ -3,6 +3,7 @@ import { AsyncResult } from "effect/reactivity";
 import { PlayIcon, RotateCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 
+import { useUnmountSignal } from "../../assets/assetSrcRecovery";
 import { observeIntersection } from "../../lib/observeIntersection";
 import { cn } from "../../lib/utils";
 import { prepareVideoFirstFrame } from "../../lib/videoFirstFrame";
@@ -24,7 +25,7 @@ interface MediaVideoPlayerProps {
   readonly stateClassName?: string | undefined;
   readonly style?: CSSProperties | undefined;
   readonly copyMarkdown?: string | undefined;
-  readonly onRetry?: (() => Promise<unknown>) | undefined;
+  readonly onRetry?: ((signal?: AbortSignal) => Promise<unknown>) | undefined;
   readonly actionsSource?: MediaActionSource | undefined;
 }
 
@@ -52,6 +53,10 @@ export function MediaVideoPlayer({
   const [playing, setPlaying] = useState(false);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  // One automatic re-mint per mounted source: a stream that fails after its metadata
+  // loads would otherwise re-mint and re-download on every autoplay.
+  const [autoRetried, setAutoRetried] = useState(false);
+  const unmountSignal = useUnmountSignal();
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [preloadedSrc, setPreloadedSrc] = useState<string | null>(null);
   const src = playbackSource?.src ?? latestSrc;
@@ -109,7 +114,7 @@ export function MediaVideoPlayer({
     if (retrying) return;
     setRetrying(true);
     const result = await settlePromise(async () => {
-      await onRetry?.();
+      await onRetry?.(unmountSignal());
     });
     if (AsyncResult.isSuccess(result)) {
       setPlaybackSource(null);
@@ -186,7 +191,13 @@ export function MediaVideoPlayer({
           onError={() => {
             setPlaying(false);
             setPlaybackSource(null);
-            if (latestSrc === null || src === latestSrc) setFailedSrc(src);
+            if (latestSrc !== null && src !== latestSrc) return;
+            if (onRetry && !autoRetried) {
+              setAutoRetried(true);
+              void retry();
+              return;
+            }
+            setFailedSrc(src);
           }}
         />
       ) : (

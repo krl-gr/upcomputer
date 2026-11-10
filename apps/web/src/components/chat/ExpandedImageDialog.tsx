@@ -7,6 +7,7 @@ import { MorphIcon } from "~/components/MorphIcon";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import type { ExpandedImageItem, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { resolveExternalWebLinkHost } from "./externalLinkContextMenu";
+import { useAssetSrcRecovery } from "../../assets/assetSrcRecovery";
 import { useAssetUrlRefresh, useAssetUrlState } from "../../assets/assetUrls";
 import { OpenMediaLink } from "../media/OpenMediaLink";
 import { MediaActions, type MediaActionSource } from "../media/MediaActions";
@@ -54,6 +55,12 @@ function itemMimeType(item: ExpandedImageItem): string | undefined {
   return mediaMimeType(item.src ?? "") ?? undefined;
 }
 
+// Gallery items carry the fragment inside `src`, so a re-minted URL takes it from there.
+function srcFragment(src: string | null): string {
+  const hash = src?.indexOf("#") ?? -1;
+  return src === null || hash < 0 ? "" : src.slice(hash);
+}
+
 function ExpandedVideo({ item }: { readonly item: ExpandedImageItem }) {
   const asset = item.actionsSource?.asset;
   const assetUrl = useAssetUrlState(asset?.environmentId ?? null, asset?.resource ?? null);
@@ -84,7 +91,6 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   onClose,
 }: ExpandedImageDialogProps) {
   const [imageOffset, setImageOffset] = useState(0);
-  const [failedImageSrc, setFailedImageSrc] = useState<string | null>(null);
   const [accessibilityDetailsSrc, setAccessibilityDetailsSrc] = useState<string | null>(null);
   const zoomableImageRef = useRef<ZoomableImageHandle>(null);
   const [returnFocusTarget] = useState(() =>
@@ -102,6 +108,22 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   const index =
     imageCount > 0 ? (((preview.index + imageOffset) % imageCount) + imageCount) % imageCount : 0;
   const item = preview.images[index];
+  const imageAsset = item?.type === "video" ? undefined : item?.actionsSource?.asset;
+  const refreshImageUrl = useAssetUrlRefresh(
+    imageAsset?.environmentId ?? null,
+    imageAsset?.resource ?? null,
+  );
+  const image = useAssetSrcRecovery(
+    item?.src ?? null,
+    imageAsset
+      ? async (signal) => {
+          const url = await refreshImageUrl(signal);
+          return url === null ? null : url + srcFragment(item?.src ?? null);
+        }
+      : undefined,
+    String(index),
+  );
+  const imageSrc = image.src;
   const source: MediaActionSource = item?.actionsSource ?? {
     kind: item?.type === "video" ? "video" : "image",
     name: item?.name ?? "Media",
@@ -219,7 +241,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                   className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-140 ease-out starting:opacity-0 rounded-lg border border-border/70 bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
                 />
               ) : null
-            ) : item.src === null || failedImageSrc === item.src ? (
+            ) : item.src === null || image.failed ? (
               <ExpandedMediaFailure>
                 <p>
                   {openOriginalLink
@@ -228,14 +250,21 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                 </p>
                 {openOriginalLink}
               </ExpandedMediaFailure>
+            ) : imageSrc === null ? (
+              <div
+                role="status"
+                aria-label="Loading image"
+                className={EXPANDED_MEDIA_STATE_CLASS_NAME}
+              />
             ) : (
               <ZoomableImage
                 ref={zoomableImageRef}
-                key={`${index}:${item.src}`}
-                src={item.src}
+                key={`${index}:${imageSrc}`}
+                src={imageSrc}
                 name={item.name}
                 mimeType={itemMimeType(item)}
-                onError={() => setFailedImageSrc(item.src)}
+                onError={() => image.onError(imageSrc)}
+                onLoad={image.onLoad}
               />
             )}
             <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80 max-sm:px-10">

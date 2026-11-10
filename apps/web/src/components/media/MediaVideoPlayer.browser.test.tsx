@@ -90,4 +90,64 @@ describe("MediaVideoPlayer", () => {
 
     expect(pause).not.toHaveBeenCalled();
   });
+
+  it("re-mints once when its signed URL fails, then reports the video unavailable", async () => {
+    using _observer = stubGlobal("IntersectionObserver", HiddenIntersectionObserver);
+    const onRetry = vi.fn(async () => {});
+    await using screen = await render(
+      <MediaVideoPlayer src="/asset/expired/clip.mp4" label="clip" onRetry={onRetry} />,
+    );
+    const fail = () =>
+      act(() => {
+        screen.getByLabelText("clip").element().dispatchEvent(new Event("error"));
+      });
+
+    await fail();
+    await expect.poll(() => onRetry.mock.calls.length).toBe(1);
+    await expect.element(screen.getByLabelText("clip")).toBeInTheDocument();
+
+    await fail();
+    await expect.element(screen.getByText("Video unavailable · clip")).toBeInTheDocument();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-mints on its own only once, even when a later load gets as far as metadata", async () => {
+    using _observer = stubGlobal("IntersectionObserver", HiddenIntersectionObserver);
+    const onRetry = vi.fn(async () => {});
+    await using screen = await render(
+      <MediaVideoPlayer src="/asset/broken/clip.mp4" label="clip" onRetry={onRetry} />,
+    );
+    const dispatch = (type: string) =>
+      act(() => {
+        screen.getByLabelText("clip").element().dispatchEvent(new Event(type));
+      });
+
+    await loadMetadata(screen);
+    await dispatch("error");
+    await expect.poll(() => onRetry.mock.calls.length).toBe(1);
+    await loadMetadata(screen);
+    await dispatch("error");
+
+    await expect.element(screen.getByText("Video unavailable · clip")).toBeInTheDocument();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels a re-mint still waiting when the player unmounts", async () => {
+    using _observer = stubGlobal("IntersectionObserver", HiddenIntersectionObserver);
+    let signal: AbortSignal | undefined;
+    const onRetry = vi.fn((abort?: AbortSignal) => {
+      signal = abort;
+      return new Promise<void>(() => {});
+    });
+    {
+      await using screen = await render(
+        <MediaVideoPlayer src="/asset/expired/clip.mp4" label="clip" onRetry={onRetry} />,
+      );
+      await act(() => {
+        screen.getByLabelText("clip").element().dispatchEvent(new Event("error"));
+      });
+      await expect.poll(() => onRetry.mock.calls.length).toBe(1);
+    }
+    expect(signal?.aborted).toBe(true);
+  });
 });

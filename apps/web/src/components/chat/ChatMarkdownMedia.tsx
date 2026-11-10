@@ -13,6 +13,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
+import { useAssetSrcRecovery } from "../../assets/assetSrcRecovery";
 import { useAssetUrlRefresh, useAssetUrlState } from "../../assets/assetUrls";
 import { cn } from "../../lib/utils";
 import { useRightPanelStore } from "../../rightPanelStore";
@@ -169,11 +170,13 @@ export function ChatMarkdownImage(props: {
   readonly actionsSource: MediaActionSource;
   readonly originalUrl?: string | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
+  /** Signs a fresh URL for `src` when it fails to load. */
+  readonly refreshSrc?: ((signal: AbortSignal | undefined) => Promise<string | null>) | undefined;
 }) {
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const src = props.src ?? loadedSrc;
-  const failed = props.sourceFailed === true || (src !== null && failedSrc === src);
+  const recovery = useAssetSrcRecovery(props.src, props.refreshSrc);
+  const src = recovery.src ?? loadedSrc;
+  const failed = props.sourceFailed === true || recovery.failed;
   const settled = src !== null && !failed && (!props.standalone || loadedSrc !== null);
   // Cached images are complete before `onLoad` can fire.
   const markLoadedIfComplete = (image: HTMLImageElement | null) => {
@@ -189,10 +192,10 @@ export function ChatMarkdownImage(props: {
   const imageEvents = (loadingSrc: string) => ({
     onLoad: () => {
       setLoadedSrc(loadingSrc);
-      setFailedSrc(null);
+      recovery.onLoad();
     },
     onError: () => {
-      setFailedSrc(loadingSrc);
+      recovery.onError(loadingSrc);
       setLoadedSrc(null);
     },
   });
@@ -284,7 +287,7 @@ export function ChatMarkdownVideo(props: {
   readonly style?: CSSProperties | undefined;
   readonly mediaIdentity?: string | undefined;
   readonly actionsSource?: MediaActionSource | undefined;
-  readonly onRetry?: (() => Promise<unknown>) | undefined;
+  readonly onRetry?: ((signal?: AbortSignal) => Promise<unknown>) | undefined;
 }) {
   return (
     <MediaVideoPlayer
@@ -354,6 +357,10 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       : undefined,
   );
   const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, resource);
+  const refreshSrc = async (signal: AbortSignal | undefined) => {
+    const url = await refreshAssetUrl(signal);
+    return url === null ? null : url + (props.srcFragment ?? "");
+  };
   const path =
     resource._tag === "media-file"
       ? resource.path
@@ -443,6 +450,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       actionsSource={actionsSource}
       originalUrl={props.originalUrl}
       onImageExpand={props.onImageExpand}
+      refreshSrc={fallbackSrc === undefined ? refreshSrc : undefined}
     />
   );
 });
