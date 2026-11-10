@@ -36,6 +36,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { useShownPathname } from "../../hooks/useShownPathname";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
+import { SidebarFooterNotices } from "./SidebarFooterNotices.upcomputer";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarNotifications } from "~/sidebarNotifications/SidebarNotifications";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
@@ -310,11 +311,14 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           />
         </>
       )}
-      <SidebarThreadUndoNotice />
+      {/* UpComputer: the row holds only buttons; notices sit above it (SidebarFooterNotices). */}
       {productSurface("sidebarNotifications") === "upcomputer" ? (
         <SidebarNotifications />
       ) : (
-        <SidebarUpdatePill />
+        <>
+          <SidebarThreadUndoNotice />
+          <SidebarUpdatePill />
+        </>
       )}
     </SidebarMenu>
   );
@@ -324,7 +328,11 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
     <SidebarFooter ref={observeSidebarFooterHeight}>
       <SidebarProviderUpdatePill />
-      <SidebarUpdateArchitectureWarning />
+      {productSurface("sidebarNotifications") === "upcomputer" ? (
+        <SidebarFooterNotices />
+      ) : (
+        <SidebarUpdateArchitectureWarning />
+      )}
       <SidebarUtilityMenu />
     </SidebarFooter>
   );
