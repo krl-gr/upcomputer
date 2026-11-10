@@ -4,6 +4,8 @@ import {
   type AssetCreateUrlResult,
   type AssetImageDimensions,
   AssetResource,
+  AssetSigningKeyLoadError,
+  AssetWorkspaceContextResolutionError,
   EnvironmentAuthorizationError,
   EnvironmentId,
   type ProjectCloneSnapshot,
@@ -116,6 +118,11 @@ export function blockedAssetUrlState(
 const isAssetAccessAnswer = Schema.is(
   Schema.Union([AssetAccessError, EnvironmentAuthorizationError]),
 );
+// Internal environment failures, such as a store read or the signing key, not the file.
+const isEnvironmentFault = Schema.is(
+  Schema.Union([AssetSigningKeyLoadError, AssetWorkspaceContextResolutionError]),
+);
+const isFinalAnswer = (error: unknown) => isAssetAccessAnswer(error) && !isEnvironmentFault(error);
 
 /**
  * A re-mint that could not reach the environment says nothing about the file, so the
@@ -127,7 +134,7 @@ function lastUsableResult(
 ) {
   if (result._tag !== "Failure" || Option.isNone(result.previousSuccess)) return result;
   const previous = result.previousSuccess.value;
-  return previous.value.expiresAt > now && !isAssetAccessAnswer(Cause.squash(result.cause))
+  return previous.value.expiresAt > now && !isFinalAnswer(Cause.squash(result.cause))
     ? previous
     : result;
 }

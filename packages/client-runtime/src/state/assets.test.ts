@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   type AssetCreateUrlResult,
   type AssetResource,
+  AssetSigningKeyLoadError,
   AssetWorkspaceAssetNotFoundError,
   EnvironmentId,
   ThreadId,
@@ -308,6 +309,13 @@ describe("assetUrlStateFromResult", () => {
     expect(assetUrlStateFromResult(failedAfter(lost), "https://remote.test")).toMatchObject({
       _tag: "Success",
       url: "https://remote.test/api/assets/token/image.png",
+    });
+  });
+
+  it("keeps the last URL while the environment cannot load its signing key", () => {
+    const keyLoad = new AssetSigningKeyLoadError({ resource, cause: new Error("keychain locked") });
+    expect(assetUrlStateFromResult(failedAfter(keyLoad), "https://remote.test")).toMatchObject({
+      _tag: "Success",
     });
   });
 
