@@ -26,6 +26,8 @@ const mocks = await vi.hoisted(async () => {
     atoms: {
       providers: Atom.make<ReadonlyArray<ServerProvider> | null>(null).pipe(Atom.keepAlive),
       install: Atom.make<ProviderInstallState | null>(null).pipe(Atom.keepAlive),
+      otherProviders: Atom.make<ReadonlyArray<ServerProvider> | null>(null).pipe(Atom.keepAlive),
+      otherInstall: Atom.make<ProviderInstallState | null>(null).pipe(Atom.keepAlive),
       threads: Atom.make<ReadonlyArray<{ latestUserMessageAt: string | null }>>([]).pipe(
         Atom.keepAlive,
       ),
@@ -35,8 +37,10 @@ const mocks = await vi.hoisted(async () => {
 
 vi.mock("../state/server", () => ({
   serverEnvironment: {
-    providersValueAtom: () => mocks.atoms.providers,
-    providerInstallState: () => mocks.atoms.install,
+    providersValueAtom: (environmentId: string) =>
+      environmentId === "other" ? mocks.atoms.otherProviders : mocks.atoms.providers,
+    providerInstallState: ({ environmentId }: { environmentId: string }) =>
+      environmentId === "other" ? mocks.atoms.otherInstall : mocks.atoms.install,
     startProviderInstall: "startProviderInstall",
     refreshProviders: "refreshProviders",
   },
@@ -47,7 +51,9 @@ vi.mock("../state/threads", () => ({
 vi.mock("../state/query", async () => {
   const { useAtomValue } = await import("@effect/atom-react");
   return {
-    useEnvironmentQuery: () => ({ data: useAtomValue(mocks.atoms.install) }),
+    useEnvironmentQuery: (query: typeof mocks.atoms.install | null) => ({
+      data: useAtomValue(query ?? mocks.atoms.install),
+    }),
   };
 });
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => mocks.startInstall }));
@@ -66,6 +72,7 @@ import {
 
 const testAtoms = mocks.atoms;
 const environmentId = EnvironmentId.make("env");
+const otherEnvironmentId = EnvironmentId.make("other");
 
 function openCode(overrides: Partial<ServerProvider> = {}): ServerProvider {
   return {
@@ -101,12 +108,22 @@ function installState(operationId: string, overrides: Partial<ProviderInstallSta
 
 /** Every status a committed render showed, as the composer's effects would see it. */
 let committed: Array<ReturnType<typeof useFirstRunAgentStatus>["status"]>;
+let otherCommitted: Array<ReturnType<typeof useFirstRunAgentStatus>["status"]>;
 
 function Composer() {
   const { status } = useFirstRunAgentStatus(environmentId, true);
   useAtomValue(testAtoms.providers);
   useEffect(() => {
     committed.push(status);
+  });
+  return null;
+}
+
+/** The composer on another computer, which this window's first run does not set up. */
+function OtherComposer() {
+  const { status } = useFirstRunAgentStatus(otherEnvironmentId, true);
+  useEffect(() => {
+    otherCommitted.push(status);
   });
   return null;
 }
@@ -118,10 +135,12 @@ let registry: AtomRegistry.AtomRegistry;
 beforeEach(() => {
   vi.useFakeTimers();
   committed = [];
+  otherCommitted = [];
   mocks.events.length = 0;
   registry = AtomRegistry.make();
   registry.set(testAtoms.threads, []);
   registry.set(testAtoms.providers, [openCode({ enabled: false, status: "disabled" })]);
+  registry.set(testAtoms.otherProviders, [openCode({ enabled: false, status: "disabled" })]);
   mocks.startInstall.mockResolvedValue({
     _tag: "Success",
     value: { operationId: null, phase: "downloading" },
@@ -143,6 +162,7 @@ async function render() {
       <RegistryContext.Provider value={registry}>
         <FirstRunAgentStarter environmentId={environmentId} />
         <Composer />
+        <OtherComposer />
       </RegistryContext.Provider>,
     );
   });
@@ -178,6 +198,17 @@ it("falls back to provider settings once OpenCode stays off past the activation 
 
   await update(() => vi.advanceTimersByTime(FIRST_RUN_AGENT_ACTIVATION_WAIT_MS));
   expect(committed.at(-1)).toBeNull();
+});
+
+it("sets up only its own computer, so another one without an agent offers provider settings", async () => {
+  await render();
+  expect(committed.at(-1)).toEqual({ kind: "preparing", progress: null });
+  expect(new Set(otherCommitted)).toEqual(new Set([null]));
+
+  await update(() =>
+    registry.set(testAtoms.otherInstall, installState("other-own", { phase: "succeeded" })),
+  );
+  expect(new Set(otherCommitted)).toEqual(new Set([null]));
 });
 
 const idleEvents = () =>
