@@ -1,6 +1,10 @@
+import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  computersToAdd,
+  connectIsOnFor,
+  type DiscoveredComputer,
   freshSignIn,
   NO_SIGN_IN_REQUESTS,
   nextSignInRequests,
@@ -79,6 +83,74 @@ describe("signInPublishStep", () => {
     expect(signInPublishStep({ ...ready, linkState: linked("user_a") })).toBe("publish");
     expect(signInPublishStep({ ...ready, linkState: linked("user_b") })).toBe("other-account");
     expect(signInPublishStep({ ...ready, linkState: linked("user_b", true) })).toBe("publish");
+  });
+});
+
+describe("computersToAdd", () => {
+  const mac = EnvironmentId.make("env-mac");
+  const windows = EnvironmentId.make("env-windows");
+  const linux = EnvironmentId.make("env-linux");
+  const computer = (
+    environmentId: EnvironmentId,
+    overrides: Partial<DiscoveredComputer> = {},
+  ): DiscoveredComputer => ({
+    environmentId,
+    availability: "online",
+    compatible: true,
+    ...overrides,
+  });
+  const none = new Set<EnvironmentId>();
+  const onMac = {
+    discovered: [computer(mac), computer(windows)],
+    primaryEnvironmentId: mac,
+    saved: new Set([mac]),
+    known: new Set([mac]),
+    attempted: none,
+  };
+
+  it("adds a computer that joined the account later, once its relay status is in", () => {
+    expect(computersToAdd(onMac)).toEqual([windows]);
+    expect(
+      computersToAdd({ ...onMac, discovered: [computer(windows, { availability: "offline" })] }),
+    ).toEqual([windows]);
+    expect(
+      computersToAdd({ ...onMac, discovered: [computer(windows, { availability: "checking" })] }),
+    ).toEqual([]);
+    expect(
+      computersToAdd({ ...onMac, discovered: [computer(windows, { availability: "error" })] }),
+    ).toEqual([]);
+    // Already saved, or already being added in this session.
+    expect(computersToAdd({ ...onMac, saved: new Set([mac, windows]) })).toEqual([]);
+    expect(computersToAdd({ ...onMac, attempted: new Set([windows]) })).toEqual([]);
+  });
+
+  it("keeps a computer the user removed on this device removed", () => {
+    expect(computersToAdd({ ...onMac, known: new Set([mac, windows]) })).toEqual([]);
+    expect(
+      computersToAdd({
+        ...onMac,
+        discovered: [computer(windows), computer(linux)],
+        known: new Set([mac, windows]),
+      }),
+    ).toEqual([linux]);
+  });
+
+  it("waits for a computer whose version cannot serve this client", () => {
+    expect(
+      computersToAdd({ ...onMac, discovered: [computer(windows, { compatible: false })] }),
+    ).toEqual([]);
+  });
+});
+
+describe("connectIsOnFor", () => {
+  it("is on only while this computer is linked to the signed-in account", () => {
+    const link = { linked: true, linkRevoked: false, cloudUserId: "user_a" };
+    expect(connectIsOnFor("user_a", link)).toBe(true);
+    // Connect turned off on this computer, a revoked link, or another account's link.
+    expect(connectIsOnFor("user_a", { linked: false, cloudUserId: null })).toBe(false);
+    expect(connectIsOnFor("user_a", { ...link, linkRevoked: true })).toBe(false);
+    expect(connectIsOnFor("user_a", { ...link, cloudUserId: "user_b" })).toBe(false);
+    expect(connectIsOnFor("user_a", null)).toBe(false);
   });
 });
 

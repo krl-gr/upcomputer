@@ -4,7 +4,6 @@ import {
   AuthRelayReadScope,
   AuthRelayWriteScope,
   type AuthSessionState,
-  type EnvironmentId,
   managedCapabilityDenial,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
@@ -13,17 +12,15 @@ import { useEffect, useEffectEvent, useState } from "react";
 
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { useCloudLinkController } from "../cloud/useCloudLinkController";
-import {
-  CloudEnvironmentConnectRows,
-  type SavedCloudEnvironmentConnection,
-} from "../components/cloud/CloudEnvironmentConnectList";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
 import { toastManager } from "../components/ui/toast";
 import { isElectron } from "../env";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { usePrimaryManagedPolicy } from "../state/managedPolicy";
 import { environmentSession, useEnvironmentScope } from "../state/session";
+import { AutoAddAccountComputers } from "./AutoAddAccountComputers";
 import {
+  connectIsOnFor,
   NO_SIGN_IN_REQUESTS,
   nextSignInRequests,
   observedClerkAccount,
@@ -48,7 +45,7 @@ function DesktopConnectSignIn() {
   // Pending Clerk sessions must not look signed out or activation would look like a new sign-in.
   const { isLoaded, isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
   const navigate = useNavigate();
-  const { environments, isReady: environmentsReady } = useEnvironments();
+  const { isReady: environmentsReady } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const primarySessionState = useAtomValue(
     primaryEnvironmentId === null
@@ -181,46 +178,18 @@ function DesktopConnectSignIn() {
     if (tunnelLimit !== null) reportTunnelLimit(tunnelLimit);
   }, [tunnelLimit]);
 
-  return addingFor === null ? null : (
-    <AddAccountComputers
-      key={addingFor}
+  // After a fresh sign-in, or while this computer is on Connect: Connect turned off stays off.
+  const autoAddFor =
+    addingFor ??
+    (typeof account === "string" && connectIsOnFor(account, controller.linkState.data)
+      ? account
+      : null);
+  return autoAddFor === null ? null : (
+    <AutoAddAccountComputers
+      key={`${autoAddFor}:${addingFor !== null}`}
+      account={autoAddFor}
+      fresh={addingFor !== null}
       primaryEnvironmentId={primaryEnvironmentId}
-      savedEnvironments={environments}
     />
-  );
-}
-
-/**
- * Adds the account's other compatible computers through the hosted app's
- * auto-selection (`autoSelectedComputers`), mounted without its rows: each
- * added computer reports itself in a toast and then shows under Computers.
- */
-function AddAccountComputers({
-  primaryEnvironmentId,
-  savedEnvironments,
-}: {
-  readonly primaryEnvironmentId: EnvironmentId | null;
-  readonly savedEnvironments: ReadonlyArray<SavedCloudEnvironmentConnection>;
-}) {
-  const [autoSelectedComputers] = useState(() => new Set<EnvironmentId>());
-  const [selectedIds, setSelectedIds] = useState<ReadonlySet<EnvironmentId>>(() => new Set());
-  return (
-    <div hidden>
-      <CloudEnvironmentConnectRows
-        primaryEnvironmentId={primaryEnvironmentId}
-        savedEnvironments={savedEnvironments}
-        selection={{
-          autoSelectedComputers,
-          selectedIds,
-          onChange: (environmentId, selected) =>
-            setSelectedIds((ids) => {
-              const next = new Set(ids);
-              if (selected) next.add(environmentId);
-              else next.delete(environmentId);
-              return next;
-            }),
-        }}
-      />
-    </div>
   );
 }

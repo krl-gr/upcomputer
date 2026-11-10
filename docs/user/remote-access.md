@@ -9,10 +9,11 @@ UpComputer Connect makes an environment available to your other devices without 
 up router forwarding. In the desktop app on the host, open **Settings →
 Sharing & access** and sign in. Signing in to the desktop app turns on UpComputer
 Connect and agent activity for this computer, and adds the other computers on your
-account, which then show under **Computers**. If your account already has as many
-computers as it allows, the app says so and leaves this one off. To stop sharing
-this computer, turn **UpComputer Connect** off in the same place; signing in again
-later turns it back on.
+account, which then show under **Computers**. While UpComputer Connect is on, computers
+that join your account later are added too, except one you removed on this computer. If
+your account already has as many computers as it allows, the app says so and leaves this
+one off. To stop sharing this computer, turn **UpComputer Connect** off in the same place;
+signing in again later turns it back on.
 
 For a command-line host, run:
 
