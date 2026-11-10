@@ -441,7 +441,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "thread-details",
-    title: "Thread details",
+    title: "Thread details button",
     to: "/settings/appearance",
     searchTerms: [
       "environment open in editor git initialize workspace card toggle composer header",
