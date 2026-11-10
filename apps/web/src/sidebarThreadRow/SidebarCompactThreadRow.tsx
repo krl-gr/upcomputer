@@ -15,6 +15,7 @@ import {
 
 import { makeWorkspaceFileDropHandlers } from "../components/chat/workspaceFileDrop";
 import { useThreadHasUnsentDraft } from "../composerDraftStore";
+import { useNowMinute } from "../hooks/useNowMinute";
 import {
   hasUnseenCompletion,
   resolveSidebarRowAccessibility,
@@ -89,15 +90,15 @@ export interface SidebarCompactThreadRowProps {
 
 const MENU_CLOSING_KEYS = new Set(["Escape", "Enter", " ", "Tab"]);
 
-/** Upstream's compact relative time ("3h", "now"). */
-export function compactRelativeTimeLabel(iso: string): string {
-  const label = formatRelativeTimeLabel(iso);
+/**
+ * Upstream's compact relative time ("3h", "now"). It subscribes to the minute
+ * tick itself, so it advances inside the memoized rows.
+ */
+export function CompactRelativeTime(props: { readonly timestamp: string }) {
+  const nowMinute = useNowMinute();
+  const label = formatRelativeTimeLabel(props.timestamp, Date.parse(`${nowMinute}:00.000Z`));
   if (label === "just now") return "now";
   return label.endsWith(" ago") ? label.slice(0, -4) : label;
-}
-
-function threadTimeLabel(thread: SidebarThreadSummary): string {
-  return compactRelativeTimeLabel(thread.latestUserMessageAt ?? thread.updatedAt);
 }
 
 /**
@@ -353,7 +354,9 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
                 threadId={thread.id}
                 fallback={
                   <span data-fading-label className={sidebarListRowFadingLabelClassName(menuOpen)}>
-                    {threadTimeLabel(thread)}
+                    <CompactRelativeTime
+                      timestamp={thread.latestUserMessageAt ?? thread.updatedAt}
+                    />
                   </span>
                 }
               />

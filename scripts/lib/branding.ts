@@ -68,7 +68,11 @@ export const COPY_RULES: ReadonlyArray<CopyRule> = [
   { pattern: /\bT3 Code\b/g, replacement: "Up.computer" },
   { pattern: /\b(a|A) Up\.computer\b/g, replacement: "$1n Up.computer" },
   { pattern: /\ba T3 thread\b/g, replacement: "an Up.computer thread" },
-  { pattern: /\bT3 (thread|threads|server|home)\b/g, replacement: "Up.computer $1" },
+  {
+    pattern: /\bT3 (thread|threads|server|home|process|system footprint)\b/g,
+    replacement: "Up.computer $1",
+  },
+  { pattern: /\bT3 Server\b/g, replacement: "Up.computer server" },
   { pattern: /\bT3 Connect\b/g, replacement: "UpComputer Connect" },
   // The HTML render tools and their errors, which agents read and repeat to the user.
   {
