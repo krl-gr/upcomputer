@@ -117,3 +117,11 @@ it("indexes the citation chip label instead of its link text", () => {
     "my note",
   ]);
 });
+
+it("indexes an assistant reply's single line breaks as the lines it shows", () => {
+  expect(assistantSegments("Carrot\nSpinach\nCauliflower")).toEqual([
+    "Carrot",
+    " Spinach",
+    " Cauliflower",
+  ]);
+});

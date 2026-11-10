@@ -462,10 +462,6 @@ function remarkNormalizeLinksAndTagInlineCode() {
   };
 }
 
-export function shouldPreserveAssistantLineBreaks(text: string): boolean {
-  return /^★ Insight(?:\s|─)/mu.test(text);
-}
-
 const imageSourceProcessor = unified()
   .use(remarkParse)
   .use(CHAT_MARKDOWN_REMARK_PLUGINS)

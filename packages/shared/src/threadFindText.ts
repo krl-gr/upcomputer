@@ -32,7 +32,6 @@ import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import {
-  shouldPreserveAssistantLineBreaks,
   CHAT_MARKDOWN_REHYPE_PLUGINS,
   CHAT_MARKDOWN_REMARK_PLUGINS,
   CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS,
@@ -230,6 +229,7 @@ export function searchableMessageSegments(
     false,
     cwd,
     skills,
-    shouldPreserveAssistantLineBreaks(message.text),
+    // Assistant rows render single line breaks as lines.
+    true,
   );
 }
