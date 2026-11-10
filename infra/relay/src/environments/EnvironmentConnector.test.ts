@@ -455,17 +455,17 @@ describe("EnvironmentConnector", () => {
 
     return Effect.gen(function* () {
       const connector = yield* EnvironmentConnector.EnvironmentConnector;
-      const result = yield* Effect.exit(
+      const error = yield* Effect.flip(
         connector.status({
           userId: "user_123",
           environmentId: "env-connector-test",
         }),
       );
 
-      expect(result._tag).toBe("Failure");
-      if (result._tag === "Failure") {
-        expect(result.cause.toString()).toContain("EnvironmentMintResponseInvalid");
-      }
+      expect(error).toMatchObject({
+        _tag: "EnvironmentMintResponseInvalid",
+        proofFailure: "clock_skew",
+      });
     }).pipe(Effect.provide(layerConnectorTest(execute)));
   });
 
@@ -578,17 +578,15 @@ describe("EnvironmentConnector", () => {
 
     return Effect.gen(function* () {
       const connector = yield* EnvironmentConnector.EnvironmentConnector;
-      const result = yield* Effect.exit(
+      const error = yield* Effect.flip(
         connector.status({
           userId: "user_123",
           environmentId: "env-connector-test",
         }),
       );
 
-      expect(result._tag).toBe("Failure");
-      if (result._tag === "Failure") {
-        expect(result.cause.toString()).toContain("EnvironmentMintResponseInvalid");
-      }
+      expect(error._tag).toBe("EnvironmentMintResponseInvalid");
+      expect(error).not.toHaveProperty("proofFailure");
     }).pipe(
       Effect.provide(
         layerConnectorTest(execute, {
@@ -645,31 +643,46 @@ describe("EnvironmentConnector", () => {
     }).pipe(Effect.provide(layerConnectorTest(execute)));
   });
 
-  it.effect("only accepts mint responses signed by the user's linked environment key", () => {
+  it.effect("names a stale key when answers are signed by another environment key", () => {
     const execute = (request: HttpClientRequest.HttpClientRequest) =>
       Effect.sync(() => {
-        const mintRequest = decodeMintRequestBody(requestBodyText(request));
+        const body = requestBodyText(request);
         return HttpClientResponse.fromWeb(
           request,
-          Response.json(signMintResponse(mintRequest, {}, otherEnvironmentKeyPair.privateKey), {
-            status: 200,
-          }),
+          Response.json(
+            request.url.endsWith("/mint-credential")
+              ? signMintResponse(
+                  decodeMintRequestBody(body),
+                  {},
+                  otherEnvironmentKeyPair.privateKey,
+                )
+              : signHealthResponse(
+                  decodeHealthRequestBody(body),
+                  otherEnvironmentKeyPair.privateKey,
+                ),
+            { status: 200 },
+          ),
         );
       });
 
     return Effect.gen(function* () {
       const connector = yield* EnvironmentConnector.EnvironmentConnector;
-      const result = yield* Effect.exit(
+      const connectError = yield* Effect.flip(
         connector.connect({
           userId: "user_123",
           environmentId: "env-connector-test",
           clientProofKeyThumbprint: "client-proof-key-thumbprint",
         }),
       );
+      const statusError = yield* Effect.flip(
+        connector.status({ userId: "user_123", environmentId: "env-connector-test" }),
+      );
 
-      expect(result._tag).toBe("Failure");
-      if (result._tag === "Failure") {
-        expect(result.cause.toString()).toContain("EnvironmentMintResponseInvalid");
+      for (const error of [connectError, statusError]) {
+        expect(error).toMatchObject({
+          _tag: "EnvironmentMintResponseInvalid",
+          proofFailure: "key_mismatch",
+        });
       }
     }).pipe(Effect.provide(layerConnectorTest(execute)));
   });

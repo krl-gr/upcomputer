@@ -27,6 +27,7 @@ import {
   NO_SIGN_IN_REQUESTS,
   nextSignInRequests,
   observedClerkAccount,
+  shouldRelinkStaleKey,
   signInPublishStep,
 } from "./connectSignIn.logic";
 
@@ -62,6 +63,9 @@ function DesktopConnectSignIn() {
 
   const [requests, setRequests] = useState(NO_SIGN_IN_REQUESTS);
   const [publishFailedFor, setPublishFailedFor] = useState<string | null>(null);
+  // Once per launch: the host finds a stale key at startup, and a failed relink
+  // already toasts, so retrying in a loop would only repeat that toast.
+  const [staleKeyRelinkStarted, setStaleKeyRelinkStarted] = useState(false);
 
   const account = observedClerkAccount({ isLoaded, isSignedIn, userId });
   const nextRequests = nextSignInRequests(requests, account);
@@ -119,9 +123,41 @@ function DesktopConnectSignIn() {
     if ((step !== "publish" && step !== "other-account") || publishFor === null) return;
     // oxlint-disable-next-line react/set-state-in-effect -- Clearing the request as the publish starts keeps a later render from starting it again.
     setRequests((current) => ({ ...current, publishFor: null }));
-    if (step === "publish") void publish(publishFor);
-    else reportOtherAccount();
+    if (step === "publish") {
+      // Publishing links this computer again, which also replaces a stale key.
+      setStaleKeyRelinkStarted(true);
+      void publish(publishFor);
+    } else reportOtherAccount();
   }, [step, publishFor]);
+
+  const linkData = controller.linkState.data;
+  const relinkStaleKey =
+    !staleKeyRelinkStarted &&
+    shouldRelinkStaleKey({
+      account,
+      canManageRelay: canReadRelay && canWriteRelay && connectAllowed,
+      linkState: controller.linkState.error === null ? linkData : null,
+    });
+  const relink = useEffectEvent(async () => {
+    if (linkData === null) return;
+    const ok = await controller.reconcileCloudState({
+      managedTunnel: linkData.managedTunnelActive ?? true,
+      publish: linkData.publishAgentActivity,
+    });
+    if (!ok) return;
+    toastManager.add({
+      type: "success",
+      title: "UpComputer Connect reconnected this computer",
+      description: "Your other devices can reach it again.",
+    });
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- relinks once when the host reports that the relay holds an older key for it
+  useEffect(() => {
+    if (!relinkStaleKey) return;
+    // oxlint-disable-next-line react/set-state-in-effect -- Marking the relink as started keeps a later render from starting it again.
+    setStaleKeyRelinkStarted(true);
+    void relink();
+  }, [relinkStaleKey]);
 
   // Other failures already toast from the controller; the tunnel cap is left to its caller.
   const tunnelLimit = publishFailedFor === null ? null : controller.tunnelLimit;

@@ -183,6 +183,8 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
       if (
         !currentLinkState.linked ||
         currentLinkState.linkRevoked === true ||
+        // Linking again replaces the key the relay holds for this computer.
+        currentLinkState.linkKeyStale === true ||
         currentManagedTunnel !== desired.managedTunnel
       ) {
         const linkResult = await linkEnvironment({

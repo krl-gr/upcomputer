@@ -5,6 +5,7 @@ import {
   type EnvironmentCloudLinkStateResult,
   type EnvironmentCloudPreferencesRequest,
   type EnvironmentCloudRelayConfigResult,
+  LINK_KEY_STALE_NOTICE_ID,
 } from "@t3tools/contracts";
 import {
   RelayCloudEnvironmentHealthProofPayload,
@@ -53,6 +54,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import type * as PlatformError from "effect/PlatformError";
+import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -411,7 +413,7 @@ type CloudLinkBackgroundError =
   | PlatformError.PlatformError;
 
 type ManagedTunnelRegistration =
-  | { readonly status: "not_linked" | "superseded" | "revoked" }
+  | { readonly status: "not_linked" | "superseded" | "revoked" | "key_stale" }
   | { readonly status: "recovery_required"; readonly config: RelayManagedEndpointRuntimeConfig }
   | {
       readonly status: "ready";
@@ -538,6 +540,55 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const managedPolicy = yield* ManagedPolicy.ManagedPolicy;
+  // The credential the relay refused for a stale key. Startup detects it again,
+  // and a new link brings a new credential, so it needs no persistence or cleanup.
+  const staleKeyCredential = yield* Ref.make<string | null>(null);
+
+  const LINK_REVOKED_NOTICE = "remote-access:link-revoked";
+
+  const markLinkKeyStale = Effect.fn("CloudLink.markLinkKeyStale")(function* (
+    credential: string,
+    cause: RelayRequestError,
+  ) {
+    const marked = yield* endpointRuntime.withLinkStateLock(
+      Effect.gen(function* () {
+        const current = yield* secrets.get(RELAY_ENVIRONMENT_CREDENTIAL_SECRET);
+        if (Option.isNone(current) || bytesToString(current.value) !== credential) {
+          return false;
+        }
+        // The relay names a key mismatch only after this credential authenticated
+        // against a live link, so the link is not revoked. Hosts that met this before
+        // the relay told the two apart stored a revocation for it; drop it so the
+        // stale key can be repaired.
+        yield* secrets.remove(CLOUD_LINK_REVOKED);
+        yield* Ref.set(staleKeyCredential, credential);
+        return true;
+      }),
+    );
+    if (!marked) return;
+    yield* Effect.logWarning(
+      "UpComputer Connect holds an older key for this environment. Link it again to restore remote access.",
+      { cause },
+    );
+    const notices = yield* Effect.serviceOption(BackgroundNotices.BackgroundNotices);
+    if (Option.isSome(notices)) {
+      yield* notices.value.resolve(LINK_REVOKED_NOTICE);
+      yield* notices.value.report({
+        id: LINK_KEY_STALE_NOTICE_ID,
+        area: "remote-access",
+        severity: "warning",
+        title: "Other devices can't reach this computer",
+        message:
+          "This computer needs to reconnect to UpComputer Connect. Up.computer does it on its own while you're signed in to UpComputer Connect here. If that doesn't help, turn UpComputer Connect off and on in Settings, Sharing & access.",
+      });
+    }
+  });
+
+  const clearLinkKeyStale = Effect.gen(function* () {
+    if ((yield* Ref.getAndSet(staleKeyCredential, null)) === null) return;
+    const notices = yield* Effect.serviceOption(BackgroundNotices.BackgroundNotices);
+    if (Option.isSome(notices)) yield* notices.value.resolve(LINK_KEY_STALE_NOTICE_ID);
+  });
 
   const withSecrets = Effect.provideService(ServerSecretStore.ServerSecretStore, secrets);
   const withRuntimeFiles = <A, E>(
@@ -800,6 +851,7 @@ const make = Effect.gen(function* () {
         stringToBytes(payload.environmentCredential),
       );
       yield* secrets.remove(CLOUD_LINK_REVOKED);
+      yield* clearLinkKeyStale;
       yield* secrets.set(CLOUD_MINT_PUBLIC_KEY, stringToBytes(payload.cloudMintPublicKey));
       yield* awarenessRelay.requestCatchUp();
       if (endpointRuntimeJson !== null) {
@@ -1011,7 +1063,7 @@ const make = Effect.gen(function* () {
         const notices = yield* Effect.serviceOption(BackgroundNotices.BackgroundNotices);
         if (Option.isSome(notices)) {
           yield* notices.value.report({
-            id: "remote-access:link-revoked",
+            id: LINK_REVOKED_NOTICE,
             area: "remote-access",
             severity: "warning",
             title: "Remote access turned off",
@@ -1083,17 +1135,20 @@ const make = Effect.gen(function* () {
     ).pipe(
       Effect.catchTags({
         RelayRequestError: (error) =>
-          error.rejection === "unauthorized"
-            ? markLinkRevoked(credential, error).pipe(
-                Effect.map((marked) => (marked ? ("revoked" as const) : ("superseded" as const))),
-              )
-            : Effect.fail(error),
+          error.rejection === "key_mismatch"
+            ? markLinkKeyStale(credential, error).pipe(Effect.as("key_stale" as const))
+            : error.rejection === "unauthorized"
+              ? markLinkRevoked(credential, error).pipe(
+                  Effect.map((marked) => (marked ? ("revoked" as const) : ("superseded" as const))),
+                )
+              : Effect.fail(error),
       }),
     );
-    if (registered === "revoked" || registered === "superseded") {
+    if (registered === "revoked" || registered === "superseded" || registered === "key_stale") {
       return { status: registered };
     }
     yield* secrets.remove(CLOUD_LINK_REVOKED);
+    yield* clearLinkKeyStale;
     if (registered.status === "recovery_required") {
       return { status: registered.status, config };
     }
@@ -1174,7 +1229,11 @@ const make = Effect.gen(function* () {
         }),
     ).pipe(
       Effect.tapErrorTag("RelayRequestError", (error) =>
-        error.rejection === "unauthorized" ? markLinkRevoked(credential, error) : Effect.void,
+        error.rejection === "key_mismatch"
+          ? markLinkKeyStale(credential, error)
+          : error.rejection === "unauthorized"
+            ? markLinkRevoked(credential, error)
+            : Effect.void,
       ),
     );
     if (recovered.endpointRuntime.providerKind !== "cloudflare_tunnel") {
@@ -1198,6 +1257,7 @@ const make = Effect.gen(function* () {
         yield* secrets.set(CLOUD_ENDPOINT_RUNTIME_CONFIG, stringToBytes(encoded));
         yield* secrets.remove(CLOUD_ENDPOINT_CONFIRMED_ORIGIN);
         yield* secrets.remove(CLOUD_LINK_REVOKED);
+        yield* clearLinkKeyStale;
         return true;
       }),
     );
@@ -1324,6 +1384,8 @@ const make = Effect.gen(function* () {
       holdWebhooks,
       revoked,
       latestReachability,
+      credential,
+      staleCredential,
     ] = yield* Effect.all(
       [
         secrets.get(CLOUD_LINKED_USER_ID),
@@ -1334,8 +1396,10 @@ const make = Effect.gen(function* () {
         secrets.get(HOLD_WEBHOOKS_WHILE_OFFLINE_SECRET),
         secrets.get(CLOUD_LINK_REVOKED),
         reachability.latest,
+        secrets.get(RELAY_ENVIRONMENT_CREDENTIAL_SECRET),
+        Ref.get(staleKeyCredential),
       ],
-      { concurrency: 8 },
+      { concurrency: 10 },
     );
     // A not-linked check predates the stored tunnel config; the next check replaces it.
     const currentReachability = Option.filter(
@@ -1347,6 +1411,10 @@ const make = Effect.gen(function* () {
     return {
       linked: Option.isSome(cloudUserId),
       linkRevoked: Option.isSome(cloudUserId) && Option.isSome(revoked),
+      linkKeyStale:
+        Option.isSome(cloudUserId) &&
+        Option.isSome(credential) &&
+        bytesToString(credential.value) === staleCredential,
       cloudUserId: Option.isSome(cloudUserId) ? bytesToString(cloudUserId.value) : null,
       relayUrl: Option.isSome(relayUrl) ? bytesToString(relayUrl.value) : null,
       relayIssuer: Option.isSome(relayIssuer) ? bytesToString(relayIssuer.value) : null,
