@@ -65,6 +65,8 @@ const DOWNLOADED: DesktopUpdateState = {
   downloadPercent: 100,
 };
 const INTEL_BUILD: DesktopUpdateState = { ...IDLE, appArch: "x64" };
+const INTEL_BUILD_UPDATE_AVAILABLE: DesktopUpdateState = { ...AVAILABLE, appArch: "x64" };
+const INTEL_BUILD_UPDATE_DOWNLOADED: DesktopUpdateState = { ...DOWNLOADED, appArch: "x64" };
 
 function notice(severity: BackgroundNotice["severity"], title: string, message: string) {
   return {
@@ -292,6 +294,12 @@ export const FULL_FOOTER_STATES: ReadonlyArray<FooterState> = [
   footer("provider updating: its pill above the row", { providers: [UPDATING_CLAUDE] }),
   footer("Intel build on Apple Silicon: the warning above the row", {
     update: INTEL_BUILD,
+  }),
+  footer("Intel build, update available: Download on the warning", {
+    update: INTEL_BUILD_UPDATE_AVAILABLE,
+  }),
+  footer("Intel build, update downloaded: Restart on the warning", {
+    update: INTEL_BUILD_UPDATE_DOWNLOADED,
   }),
   footer("utility page (Pull requests): Back and notifications", {
     pathname: "/pull-requests",

@@ -1,7 +1,11 @@
 import { expect, it, vi } from "vite-plus/test";
 
 import { act, render } from "../../../test/render";
-import { FULL_FOOTER_STATES, type FooterState } from "../../uiStates/sidebarFooter.fixture";
+import {
+  COMPACT_FOOTER_STATES,
+  FULL_FOOTER_STATES,
+  type FooterState,
+} from "../../uiStates/sidebarFooter.fixture";
 
 // The same data sources sidebar-footer.states.tsx mocks, so both draw the same states.
 vi.mock("../../state/desktopUpdate", async (importOriginal) => {
@@ -43,17 +47,23 @@ vi.mock("../../hooks/useShownPathname", async () => {
   return { useShownPathname: () => footerSource.pathname };
 });
 
+/** The notices a state shows above the row, each as its label and its action, if any. */
 function expectedNotices(options: FooterState["options"]) {
-  return [
-    ...(options.providers?.length ? ["Updating Claude"] : []),
-    ...(options.update?.appArch === "x64" ? ["Intel build on Apple Silicon"] : []),
-    // A fading notice is still on screen until its exit timer ends.
-    ...(options.undo === "showing" || options.undo === "fading" ? ["Archived"] : []),
-    ...(options.undo === "showing-two" ? ["Archived 2"] : []),
-  ];
+  const notices: Array<readonly [label: string, action: string | null]> = [];
+  if (options.providers?.length) notices.push(["Updating Claude", null]);
+  if (options.update?.appArch === "x64") {
+    const status = options.update.status;
+    const action = status === "available" ? "Download" : status === "downloaded" ? "Restart" : null;
+    notices.push(["Intel build on Apple Silicon", action]);
+  }
+  if (options.undo === "showing") notices.push(["Archived", "Undo"]);
+  if (options.undo === "showing-two") notices.push(["Archived 2", "Undo"]);
+  return notices;
 }
 
-it.each(FULL_FOOTER_STATES.map((state) => [state.name, state] as const))(
+const STATES = [...FULL_FOOTER_STATES, ...COMPACT_FOOTER_STATES];
+
+it.each(STATES.map((state) => [state.name, state] as const))(
   "footer, %s: the utility row holds only buttons, notices sit above it",
   async (_name, state) => {
     const undo = state.setup?.();
@@ -79,9 +89,22 @@ it.each(FULL_FOOTER_STATES.map((state) => [state.name, state] as const))(
       expect(rowText.trim()).toBe("");
       expect(row.querySelector("[inert]")).toBeNull();
 
+      // A notice that ended is inert while it fades out; only a fading state may have one.
       const notices = [...footer.children].filter((child) => child !== row);
-      expect(notices.map((notice) => notice.textContent?.trim())).toEqual(
-        expectedNotices(state.options).map((label) => expect.stringContaining(label)),
+      const leaving = notices.filter((notice) => notice.hasAttribute("inert"));
+      expect(leaving.length).toBeLessThanOrEqual(state.options.undo === "fading" ? 1 : 0);
+      const shown = notices.filter((notice) => !leaving.includes(notice));
+      expect(
+        shown.map((notice) => [
+          notice.textContent,
+          // The provider pill's label is a button of its own.
+          notice.querySelector("button:not([data-provider-update-main])")?.textContent ?? null,
+        ]),
+      ).toEqual(
+        expectedNotices(state.options).map(([label, action]) => [
+          expect.stringContaining(label),
+          action === null ? null : expect.stringContaining(action),
+        ]),
       );
     } finally {
       if (undo) await act(undo);
