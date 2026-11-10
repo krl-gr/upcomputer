@@ -7,6 +7,7 @@ import { Atom } from "effect/reactivity";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { projectFaviconCache } from "../assets/projectFaviconCache";
 import { isElectron } from "../env";
+import { subscribeDocumentReturn } from "../lib/documentActivity";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentProjectClonesAtom } from "./projectClones";
 import { environmentSession } from "./session";
@@ -25,6 +26,7 @@ const localMediaEnvironment = Atom.make((get) => {
 export const assetEnvironment = createAssetEnvironmentAtoms(
   connectionAtomRuntime,
   localMediaEnvironment,
+  { subscribeWake: subscribeDocumentReturn },
 );
 
 export const projectFaviconUrlAtom = createProjectFaviconUrlAtomFamily({
