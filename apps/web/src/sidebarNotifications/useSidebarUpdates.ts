@@ -1,5 +1,9 @@
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
-import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
+import {
+  type DesktopBridge,
+  type DesktopUpdateState,
+  PROVIDER_DISPLAY_NAMES,
+} from "@t3tools/contracts";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { type ReactNode, useState } from "react";
 
@@ -30,6 +34,21 @@ import { resolveSidebarUpdateSignal } from "./sidebarNotifications.logic";
 
 function toastError(title: string, description: ReactNode) {
   toastManager.add(stackedThreadToast({ type: "error", title, description }));
+}
+
+/** Installs the downloaded app update, which quits the app, once the user confirms it. */
+export async function confirmAndInstallLocalUpdate(
+  bridge: DesktopBridge,
+  state: DesktopUpdateState,
+) {
+  try {
+    const confirmed = await ensureLocalApi().dialogs.confirm(
+      getDesktopUpdateInstallConfirmationMessage(state),
+    );
+    if (confirmed) await installLocalUpdate(bridge);
+  } catch (error) {
+    toastError("Could not confirm update", plainErrorSentence(error));
+  }
 }
 
 export interface ProviderUpdateCard {
@@ -131,14 +150,7 @@ export function useSidebarUpdates() {
   const install = async () => {
     if (!bridge || !state) return;
     setPending(true);
-    try {
-      const confirmed = await ensureLocalApi().dialogs.confirm(
-        getDesktopUpdateInstallConfirmationMessage(state),
-      );
-      if (confirmed) await installLocalUpdate(bridge);
-    } catch (error) {
-      toastError("Could not confirm update", plainErrorSentence(error));
-    }
+    await confirmAndInstallLocalUpdate(bridge, state);
     setPending(false);
   };
 
