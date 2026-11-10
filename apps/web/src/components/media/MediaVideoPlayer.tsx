@@ -52,6 +52,8 @@ export function MediaVideoPlayer({
   const [playing, setPlaying] = useState(false);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  // One automatic re-mint per failure; a load in between earns the next one.
+  const [autoRetried, setAutoRetried] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [preloadedSrc, setPreloadedSrc] = useState<string | null>(null);
   const src = playbackSource?.src ?? latestSrc;
@@ -174,6 +176,7 @@ export function MediaVideoPlayer({
           )}
           style={style}
           onLoadedMetadata={(event) => {
+            setAutoRetried(false);
             prepareVideoFirstFrame(event.currentTarget);
             if (sourceRevision !== null) setPlaybackSource({ src, revision: sourceRevision });
           }}
@@ -186,7 +189,13 @@ export function MediaVideoPlayer({
           onError={() => {
             setPlaying(false);
             setPlaybackSource(null);
-            if (latestSrc === null || src === latestSrc) setFailedSrc(src);
+            if (latestSrc !== null && src !== latestSrc) return;
+            if (onRetry && !autoRetried) {
+              setAutoRetried(true);
+              void retry();
+              return;
+            }
+            setFailedSrc(src);
           }}
         />
       ) : (

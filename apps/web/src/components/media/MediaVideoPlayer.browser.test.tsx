@@ -90,4 +90,24 @@ describe("MediaVideoPlayer", () => {
 
     expect(pause).not.toHaveBeenCalled();
   });
+
+  it("re-mints once when its signed URL fails, then reports the video unavailable", async () => {
+    using _observer = stubGlobal("IntersectionObserver", HiddenIntersectionObserver);
+    const onRetry = vi.fn(async () => {});
+    await using screen = await render(
+      <MediaVideoPlayer src="/asset/expired/clip.mp4" label="clip" onRetry={onRetry} />,
+    );
+    const fail = () =>
+      act(() => {
+        screen.getByLabelText("clip").element().dispatchEvent(new Event("error"));
+      });
+
+    await fail();
+    await expect.poll(() => onRetry.mock.calls.length).toBe(1);
+    await expect.element(screen.getByLabelText("clip")).toBeInTheDocument();
+
+    await fail();
+    await expect.element(screen.getByText("Video unavailable · clip")).toBeInTheDocument();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
 });
