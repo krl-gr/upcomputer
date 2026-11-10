@@ -27,6 +27,9 @@ export function dpopFailureMessage(message: string, reason: DpopFailureReason | 
 
 const CLOCK_SYNC_HINT = "Sync the date and time in system settings, then try again.";
 
+const STALE_KEY_MESSAGE =
+  "That computer needs to reconnect to UpComputer Connect. On that computer, turn UpComputer Connect off and on in Settings, Sharing & access.";
+
 const LINK_PROOF_CLOCK_MESSAGE = `UpComputer Connect rejected that computer's link because its clock is probably wrong. ${CLOCK_SYNC_HINT}`;
 
 // The relay tolerates a minute; past that, its checks fail.
@@ -119,7 +122,13 @@ export function relayProtectedErrorMessage(error: RelayProtectedError): string {
       }
       return "UpComputer Connect didn't allow a connection to that computer. Check that you're signed in to the same account on both devices.";
     case "RelayEnvironmentEndpointUnavailableError":
+      if (error.proofFailure === "key_mismatch") return STALE_KEY_MESSAGE;
+      if (error.proofFailure === "clock_skew") {
+        return `UpComputer Connect rejected that computer's answer because its clock is probably wrong. ${CLOCK_SYNC_HINT}`;
+      }
       return "UpComputer Connect couldn't reach that computer. Make sure it's on, awake and running Up.computer, then try again.";
+    case "RelayEnvironmentKeyMismatchError":
+      return STALE_KEY_MESSAGE;
     case "RelayEnvironmentEndpointTimedOutError":
       return "That computer didn't answer in time. Make sure it's on, awake and running Up.computer, then try again.";
     case "RelayEnvironmentLinkFailedError":

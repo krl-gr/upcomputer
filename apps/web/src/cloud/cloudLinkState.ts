@@ -8,6 +8,7 @@ import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
+import { linkKeyStaleNoticedAtom } from "../connectSignIn/linkKeyStaleNotice";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
@@ -16,7 +17,10 @@ import { hasCloudPublicConfig } from "./publicConfig";
 
 const cloudLinkStateAtom = Atom.family((environmentId: EnvironmentId) =>
   connectionAtomRuntime
-    .atom(readCloudLinkState({ target: { environmentId } }))
+    .atom((get) => {
+      get(linkKeyStaleNoticedAtom(environmentId));
+      return readCloudLinkState({ target: { environmentId } });
+    })
     .pipe(
       Atom.swr({ staleTime: 5_000, revalidateOnMount: true }),
       Atom.setIdleTTL(5 * 60_000),

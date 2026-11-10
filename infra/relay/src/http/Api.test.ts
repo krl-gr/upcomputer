@@ -636,6 +636,21 @@ describe("relay managed tunnel recovery", () => {
         }),
       );
       expect(wrongAction).toMatchObject({ _tag: "Unauthorized" });
+
+      const otherKey = NodeCrypto.generateKeyPairSync("ed25519", {
+        publicKeyEncoding: { format: "pem", type: "spki" },
+        privateKeyEncoding: { format: "pem", type: "pkcs8" },
+      });
+      const staleKey = yield* Effect.flip(
+        verifyEnvironmentTunnelRecoveryProof({
+          ...request,
+          environmentPublicKey: otherKey.publicKey,
+        }),
+      );
+      expect(staleKey).toMatchObject({
+        _tag: "RelayEnvironmentKeyMismatchError",
+        code: "environment_key_mismatch",
+      });
     }).pipe(
       Effect.provideService(RelayConfiguration.RelayConfiguration, relaySettings),
       Effect.provide(NodeCryptoLayer.layerSignature),

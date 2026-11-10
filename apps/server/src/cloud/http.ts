@@ -41,6 +41,7 @@ const relayFailure = (error: RelayRequestError) => {
   const message = error.message;
   switch (error.rejection) {
     case "unauthorized":
+    case "key_mismatch":
       return Effect.fail(new EnvironmentHttpUnauthorizedError({ message }));
     case "forbidden":
       return Effect.fail(new EnvironmentHttpForbiddenError({ message }));

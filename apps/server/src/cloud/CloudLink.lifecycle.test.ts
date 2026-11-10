@@ -571,6 +571,66 @@ describe("releaseManagedTunnelOnShutdown", () => {
     );
   });
 
+  it.effect("marks a stale key apart from a revocation, and linking again clears it", () => {
+    const { store, values } = makeMemorySecretStore([
+      [
+        CLOUD_ENDPOINT_RUNTIME_CONFIG,
+        '{"providerKind":"cloudflare_tunnel","connectorToken":"existing-token","tunnelId":"existing-tunnel"}',
+      ],
+      [RELAY_URL_SECRET, "https://relay.example.test"],
+      [CLOUD_LINKED_USER_ID, "user-123"],
+      [RELAY_ENVIRONMENT_CREDENTIAL_SECRET, "environment-credential"],
+      // Stored by an older host, which read the relay's plain 401 for a stale key as a revocation.
+      [CLOUD_LINK_REVOKED, "true"],
+    ]);
+    const cloudMintPublicKey =
+      "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAqZ2u2LjMoAyG2QTHXmITJ9w6RzZtVUAv394XCcPV0zE=\n-----END PUBLIC KEY-----";
+
+    return Effect.gen(function* () {
+      const link = yield* CloudLink.CloudLink;
+      expect((yield* link.linkState()).linkRevoked).toBe(true);
+      const registration = yield* link.registerManagedTunnelRecovery("http://127.0.0.1:3773");
+      expect(registration).toEqual({ status: "key_stale" });
+      expect(yield* link.linkState()).toMatchObject({
+        linked: true,
+        linkRevoked: false,
+        linkKeyStale: true,
+      });
+      expect(values.has(CLOUD_LINK_REVOKED)).toBe(false);
+      // A host that may link itself relinks with its current key on startup.
+      expect(managedTunnelStartupAction({ wantsCliLink: true, registration })).toEqual({
+        action: "reconcile_link",
+      });
+      expect(managedTunnelStartupAction({ wantsCliLink: false, registration })).toEqual({
+        action: "none",
+      });
+
+      yield* link.applyRelayConfig({
+        relayUrl: "https://relay.example.test",
+        cloudUserId: "user-123",
+        environmentCredential: "fresh-credential",
+        cloudMintPublicKey,
+        endpointRuntime: null,
+      });
+      expect((yield* link.linkState()).linkKeyStale).toBe(false);
+    }).pipe(
+      provideReleaseHarness({
+        store,
+        applyConfigCalls: [],
+        requests: [],
+        respond: () =>
+          Response.json(
+            {
+              _tag: "RelayEnvironmentKeyMismatchError",
+              code: "environment_key_mismatch",
+              traceId: "trace-key",
+            },
+            { status: 401 },
+          ),
+      }),
+    );
+  });
+
   it.effect("does not mark a link that was replaced while its rejection was in flight", () => {
     const { store, values } = makeMemorySecretStore([
       [

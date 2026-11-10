@@ -15,6 +15,7 @@ import {
   RelayCloudMintCredentialProofPayload,
   RelayEnvironmentConnectNotAuthorizedReason,
   RelayEnvironmentEndpointFailure,
+  RelayEnvironmentProofFailure,
   type RelayEnvironmentConnectResponse,
   type RelayEnvironmentStatusResponse,
   type RelayManagedEndpoint,
@@ -25,6 +26,7 @@ import {
   RELAY_HEALTH_RESPONSE_TYP,
   RELAY_MINT_REQUEST_TYP,
   RELAY_MINT_RESPONSE_TYP,
+  type RelayJwtError,
   verifyRelayJwt,
 } from "@t3tools/shared/relayJwt";
 import { stableStringify } from "@t3tools/shared/relaySigning";
@@ -34,6 +36,7 @@ import * as Signature from "effect/crypto/Signature";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as JoseError from "effect/jose/JoseError";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -117,6 +120,7 @@ export class EnvironmentMintResponseInvalid extends Schema.TaggedError<Environme
   {
     environmentId: Schema.String,
     operation: Schema.Literals(["connect", "status"]),
+    proofFailure: Schema.optionalKey(RelayEnvironmentProofFailure),
   },
 ) {
   override get message(): string {
@@ -194,6 +198,29 @@ const currentTraceId = Effect.currentSpan.pipe(
 export const withoutRedirects = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }));
 
+const CLOCK_CLAIM_FAILURES: ReadonlySet<JoseError.ClaimValidationFailed["reason"]> = new Set([
+  "expired",
+  "notYetValid",
+  "tooOld",
+  "future",
+]);
+
+/** Names a verification failure the user can act on; anything else stays a plain invalid answer. */
+export function classifyEnvironmentProofFailure(
+  error: RelayJwtError,
+): RelayEnvironmentProofFailure | undefined {
+  if (!JoseError.isJoseError(error.cause)) return undefined;
+  const reason = error.cause.reason;
+  if (reason._tag === "SignatureVerificationFailed") return "key_mismatch";
+  return reason._tag === "ClaimValidationFailed" && CLOCK_CLAIM_FAILURES.has(reason.reason)
+    ? "clock_skew"
+    : undefined;
+}
+
+type EnvironmentProofVerification<A> =
+  | { readonly proof: A }
+  | { readonly proof: null; readonly failure: RelayEnvironmentProofFailure | undefined };
+
 const verifyWithEnvironmentKeys = Effect.fnUntraced(function* <A>(input: {
   readonly token: string;
   readonly typ: string;
@@ -203,15 +230,22 @@ const verifyWithEnvironmentKeys = Effect.fnUntraced(function* <A>(input: {
   readonly schema: Schema.ConstraintDecoder<A>;
 }) {
   const { schema, environmentPublicKeys: _keys, ...rest } = input;
+  // A stale key only when no key accepts the signature.
+  let failure: RelayEnvironmentProofFailure | undefined = "key_mismatch";
   for (const publicKey of input.environmentPublicKeys) {
-    const proof = yield* verifyRelayJwt(schema, { ...rest, publicKey }).pipe(Effect.option);
-    if (Option.isSome(proof)) {
-      return proof.value;
+    const result = yield* verifyRelayJwt(schema, { ...rest, publicKey }).pipe(Effect.result);
+    if (Result.isSuccess(result)) {
+      return { proof: result.success } satisfies EnvironmentProofVerification<A>;
     }
+    const keyFailure = classifyEnvironmentProofFailure(result.failure);
+    if (keyFailure !== "key_mismatch") failure = keyFailure;
     // A linked environment can have rotated keys; try the remaining active keys.
   }
-  return null;
+  return { proof: null, failure } satisfies EnvironmentProofVerification<A>;
 });
+
+/** Why the relay refused an environment's answer; verifiers return null for a valid one. */
+type EnvironmentAnswerRejection = { readonly failure: RelayEnvironmentProofFailure | undefined };
 
 function verifyEnvironmentResponse(input: {
   readonly response: RelayEnvironmentMintResponse;
@@ -229,9 +263,10 @@ function verifyEnvironmentResponse(input: {
     environmentPublicKeys: input.environmentPublicKeys,
     schema: RelayEnvironmentMintResponseProofPayload,
   }).pipe(
-    Effect.map(
-      (proof) =>
-        proof !== null &&
+    Effect.map((verified): EnvironmentAnswerRejection | null => {
+      const proof = verified.proof;
+      if (proof === null) return { failure: verified.failure };
+      const valid =
         proof.environmentId === input.environmentId &&
         proof.requestNonce === input.requestNonce &&
         proof.clientProofKeyThumbprint === input.clientProofKeyThumbprint &&
@@ -239,8 +274,9 @@ function verifyEnvironmentResponse(input: {
         Option.match(DateTime.make(input.response.expiresAt), {
           onNone: () => false,
           onSome: (expiresAt) => Math.floor(expiresAt.epochMilliseconds / 1_000) === proof.exp,
-        }),
-    ),
+        });
+      return valid ? null : { failure: undefined };
+    }),
   );
 }
 
@@ -261,9 +297,10 @@ function verifyEnvironmentHealthResponse(input: {
     environmentPublicKeys: input.environmentPublicKeys,
     schema: RelayEnvironmentHealthResponseProofPayload,
   }).pipe(
-    Effect.map((proof) => {
+    Effect.map((verified): EnvironmentAnswerRejection | null => {
+      const proof = verified.proof;
+      if (proof === null) return { failure: verified.failure };
       if (
-        proof === null ||
         input.response.environmentId !== input.environmentId ||
         proof.environmentId !== input.environmentId ||
         proof.requestNonce !== input.requestNonce ||
@@ -271,18 +308,18 @@ function verifyEnvironmentHealthResponse(input: {
         proof.checkedAt !== input.response.checkedAt ||
         stableStringify(proof.descriptor) !== stableStringify(input.response.descriptor)
       ) {
-        return false;
+        return { failure: undefined };
       }
       const checkedAt = DateTime.make(input.response.checkedAt);
       if (Option.isNone(checkedAt)) {
-        return false;
+        return { failure: undefined };
       }
-      return (
-        checkedAt.value.epochMilliseconds >=
-          input.requestIssuedAt.epochMilliseconds - ENVIRONMENT_HEALTH_CLOCK_SKEW_MILLIS &&
+      return checkedAt.value.epochMilliseconds >=
+        input.requestIssuedAt.epochMilliseconds - ENVIRONMENT_HEALTH_CLOCK_SKEW_MILLIS &&
         checkedAt.value.epochMilliseconds <=
           input.now.epochMilliseconds + ENVIRONMENT_HEALTH_CLOCK_SKEW_MILLIS
-      );
+        ? null
+        : { failure: "clock_skew" };
     }),
   );
 }
@@ -367,6 +404,27 @@ export function validateManagedEndpoint(input: {
   }
   return Result.succeed(endpoint);
 }
+
+const rejectEnvironmentAnswer = Effect.fnUntraced(function* (input: {
+  readonly environmentId: string;
+  readonly operation: "connect" | "status";
+  readonly rejection: EnvironmentAnswerRejection;
+}) {
+  const proofFailure = input.rejection.failure;
+  yield* Effect.annotateCurrentSpan({
+    "relay.environment_answer.proof_failure": proofFailure ?? "invalid",
+  });
+  yield* Effect.logWarning("Environment answer failed verification", {
+    environmentId: input.environmentId,
+    operation: input.operation,
+    proofFailure: proofFailure ?? "invalid",
+  });
+  return yield* new EnvironmentMintResponseInvalid({
+    environmentId: input.environmentId,
+    operation: input.operation,
+    ...(proofFailure ? { proofFailure } : {}),
+  });
+});
 
 const make = Effect.gen(function* () {
   const links = yield* EnvironmentLinks.EnvironmentLinks;
@@ -538,7 +596,7 @@ const make = Effect.gen(function* () {
         };
       }
       const decoded = responseOption.value.response;
-      const verified = yield* verifyEnvironmentHealthResponse({
+      const rejection = yield* verifyEnvironmentHealthResponse({
         response: decoded,
         environmentId: input.environmentId,
         requestNonce: nonce,
@@ -547,10 +605,11 @@ const make = Effect.gen(function* () {
         relayIssuer,
         now: yield* DateTime.now,
       }).pipe(Effect.provideService(Signature.Signature, signature));
-      if (!verified) {
-        return yield* new EnvironmentMintResponseInvalid({
+      if (rejection !== null) {
+        return yield* rejectEnvironmentAnswer({
           environmentId: input.environmentId,
           operation: "status",
+          rejection,
         });
       }
       return {
@@ -677,7 +736,7 @@ const make = Effect.gen(function* () {
             }),
           ),
         );
-      const verified = yield* verifyEnvironmentResponse({
+      const rejection = yield* verifyEnvironmentResponse({
         response: decoded,
         environmentId: input.environmentId,
         requestNonce: nonce,
@@ -685,10 +744,11 @@ const make = Effect.gen(function* () {
         environmentPublicKeys: [link.environmentPublicKey],
         relayIssuer,
       }).pipe(Effect.provideService(Signature.Signature, signature));
-      if (!verified) {
-        return yield* new EnvironmentMintResponseInvalid({
+      if (rejection !== null) {
+        return yield* rejectEnvironmentAnswer({
           environmentId: input.environmentId,
           operation: "connect",
+          rejection,
         });
       }
       return {

@@ -10,7 +10,14 @@ import { isHttpClientError } from "effect/http/HttpClientError";
 export class RelayRequestError extends Schema.TaggedError<RelayRequestError>()(
   "RelayRequestError",
   {
-    rejection: Schema.Literals(["unauthorized", "forbidden", "rejected", "unavailable"]),
+    /** `key_mismatch`: the relay holds a different signing key for this environment. */
+    rejection: Schema.Literals([
+      "unauthorized",
+      "key_mismatch",
+      "forbidden",
+      "rejected",
+      "unavailable",
+    ]),
     description: Schema.String,
     /** How long the relay asked callers to wait (`Retry-After`) before retrying. */
     retryAfterMillis: Schema.optionalKey(Schema.Number),
@@ -68,6 +75,8 @@ function recoveryHint(error: RelayProtectedError): string {
     case "RelayEnvironmentLinkProofExpiredError":
     case "RelayEnvironmentLinkProofInvalidError":
       return "Check this machine's date and time, update Up.computer, then restart it.";
+    case "RelayEnvironmentKeyMismatchError":
+      return "Link this machine again: turn UpComputer Connect off and on in Settings, Sharing & access, or run `up connect`.";
     default:
       return "Retry when the relay is available. If this continues, include the trace ID when reporting it.";
   }
@@ -95,7 +104,12 @@ export const filterRelayResponse = Effect.fn("cloud.filter_relay_response")(func
     return yield* new RelayRequestError({ rejection: "unavailable", description });
   }
   if (response.status === 401) {
-    return yield* new RelayRequestError({ rejection: "unauthorized", description });
+    const keyMismatch =
+      Option.isSome(decoded) && decoded.value._tag === "RelayEnvironmentKeyMismatchError";
+    return yield* new RelayRequestError({
+      rejection: keyMismatch ? "key_mismatch" : "unauthorized",
+      description,
+    });
   }
   if (response.status === 403) {
     return yield* new RelayRequestError({ rejection: "forbidden", description });

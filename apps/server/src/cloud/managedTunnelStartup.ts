@@ -8,8 +8,17 @@ import * as Semaphore from "effect/Semaphore";
 import { isRelayUnavailable, relayRetryAfterMillis } from "./relayResponse.ts";
 
 // Relinking revoked environments is the user's choice; startup takes no action.
+// A stale key is not a revocation: a host that may link itself does so again.
 export type ManagedTunnelRegistrationResult =
-  | { readonly status: "not_linked" | "ready" | "unavailable" | "superseded" | "revoked" }
+  | {
+      readonly status:
+        | "not_linked"
+        | "ready"
+        | "unavailable"
+        | "superseded"
+        | "revoked"
+        | "key_stale";
+    }
   | {
       readonly status: "recovery_required";
       readonly config: RelayManagedEndpointRuntimeConfig;
@@ -33,7 +42,10 @@ export function managedTunnelStartupAction(input: {
       config: input.registration.config,
     };
   }
-  if (input.wantsCliLink && input.registration.status === "not_linked") {
+  if (
+    input.wantsCliLink &&
+    (input.registration.status === "not_linked" || input.registration.status === "key_stale")
+  ) {
     return { action: "reconcile_link" };
   }
   return { action: "none" };

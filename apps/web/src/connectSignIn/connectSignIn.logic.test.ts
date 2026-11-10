@@ -9,6 +9,7 @@ import {
   NO_SIGN_IN_REQUESTS,
   nextSignInRequests,
   observedClerkAccount,
+  shouldRelinkStaleKey,
   signInPublishStep,
 } from "./connectSignIn.logic";
 
@@ -150,5 +151,44 @@ describe("connectIsOnFor", () => {
     expect(connectIsOnFor("user_a", { ...link, linkRevoked: true })).toBe(false);
     expect(connectIsOnFor("user_a", { ...link, cloudUserId: "user_b" })).toBe(false);
     expect(connectIsOnFor("user_a", null)).toBe(false);
+  });
+});
+
+describe("shouldRelinkStaleKey", () => {
+  const stale = {
+    linked: true,
+    linkRevoked: false,
+    linkKeyStale: true,
+    cloudUserId: "user_a",
+  };
+
+  it("relinks only the signed-in owner's link whose key the relay no longer accepts", () => {
+    expect(
+      shouldRelinkStaleKey({ account: "user_a", canManageRelay: true, linkState: stale }),
+    ).toBe(true);
+    // Another account's link, a revoked link, or no relay management stay the user's call.
+    expect(
+      shouldRelinkStaleKey({ account: "user_b", canManageRelay: true, linkState: stale }),
+    ).toBe(false);
+    expect(
+      shouldRelinkStaleKey({
+        account: "user_a",
+        canManageRelay: true,
+        linkState: { ...stale, linkRevoked: true },
+      }),
+    ).toBe(false);
+    expect(
+      shouldRelinkStaleKey({ account: "user_a", canManageRelay: false, linkState: stale }),
+    ).toBe(false);
+    expect(shouldRelinkStaleKey({ account: null, canManageRelay: true, linkState: stale })).toBe(
+      false,
+    );
+    expect(
+      shouldRelinkStaleKey({
+        account: "user_a",
+        canManageRelay: true,
+        linkState: { ...stale, linkKeyStale: false },
+      }),
+    ).toBe(false);
   });
 });

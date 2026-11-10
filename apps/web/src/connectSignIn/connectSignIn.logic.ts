@@ -62,6 +62,33 @@ export function nextSignInRequests(
     : { observed: account, publishFor, addingFor };
 }
 
+/**
+ * The relay holds an older key for this computer, so other devices can't reach
+ * it. Linking it again with the signed-in owner's account replaces the key, as
+ * turning Connect off and on does. Another account's link stays the user's call.
+ */
+export function shouldRelinkStaleKey(input: {
+  readonly account: ObservedAccount;
+  readonly canManageRelay: boolean;
+  readonly linkState: {
+    readonly linked: boolean;
+    readonly linkRevoked?: boolean | undefined;
+    readonly linkKeyStale?: boolean | undefined;
+    readonly cloudUserId: string | null;
+  } | null;
+}): boolean {
+  const { account, linkState } = input;
+  return (
+    typeof account === "string" &&
+    input.canManageRelay &&
+    linkState !== null &&
+    linkState.linked &&
+    linkState.linkRevoked !== true &&
+    linkState.linkKeyStale === true &&
+    linkState.cloudUserId === account
+  );
+}
+
 /** `other-account`: this computer is still linked to another Connect account. */
 export type SignInPublishStep = "wait" | "skip" | "publish" | "other-account";
 

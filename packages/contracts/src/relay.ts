@@ -476,6 +476,13 @@ export const RelayEnvironmentEndpointFailure = Schema.Literals([
 ]);
 export type RelayEnvironmentEndpointFailure = typeof RelayEnvironmentEndpointFailure.Type;
 
+/**
+ * Why the relay refused an environment's signed answer: a signature its linked
+ * key rejects (`key_mismatch`) or signed times outside the window (`clock_skew`).
+ */
+export const RelayEnvironmentProofFailure = Schema.Literals(["key_mismatch", "clock_skew"]);
+export type RelayEnvironmentProofFailure = typeof RelayEnvironmentProofFailure.Type;
+
 export const RelayAgentActivityPublishProofInvalidReason = Schema.Literals([
   "invalid_signature_or_payload",
   "replayed_nonce",
@@ -580,12 +587,27 @@ export class RelayEnvironmentEndpointUnavailableError extends Schema.TaggedError
     reason: RelayEnvironmentEndpointUnavailableReason,
     endpointFailure: Schema.optionalKey(RelayEnvironmentEndpointFailure),
     endpointStatus: Schema.optionalKey(Schema.Number),
+    proofFailure: Schema.optionalKey(RelayEnvironmentProofFailure),
     traceId: TrimmedNonEmptyString,
   },
   { httpApiStatus: 502 },
 ) {
   override get message(): string {
     return `Relay environment endpoint is unavailable: ${this.reason}`;
+  }
+}
+
+/** The environment signed with a key other than the one its link holds; linking it again fixes it. */
+export class RelayEnvironmentKeyMismatchError extends Schema.TaggedError<RelayEnvironmentKeyMismatchError>()(
+  "RelayEnvironmentKeyMismatchError",
+  {
+    code: Schema.Literal("environment_key_mismatch"),
+    traceId: TrimmedNonEmptyString,
+  },
+  { httpApiStatus: 401 },
+) {
+  override get message(): string {
+    return "Relay environment key does not match the linked key";
   }
 }
 
@@ -705,6 +727,7 @@ export const RelayProtectedError = Schema.Union([
   RelayEnvironmentLinkProofInvalidError,
   RelayEnvironmentConnectNotAuthorizedError,
   RelayEnvironmentEndpointUnavailableError,
+  RelayEnvironmentKeyMismatchError,
   RelayEnvironmentEndpointTimedOutError,
   RelayEnvironmentLinkFailedError,
   RelayEnvironmentLinkUnavailableError,
@@ -717,6 +740,11 @@ export const RelayProtectedError = Schema.Union([
 export type RelayProtectedError = typeof RelayProtectedError.Type;
 
 const RelayAuthAndInternalErrors = [RelayAuthInvalidError, RelayInternalError] as const;
+
+const RelayManagedEndpointRecoveryErrors = [
+  ...RelayAuthAndInternalErrors,
+  RelayEnvironmentKeyMismatchError,
+] as const;
 
 const RelayEnvironmentLinkErrors = [
   RelayAuthInvalidError,
@@ -1322,7 +1350,7 @@ const RelayServerGroup = HttpApiGroup.make("server")
         }),
         payload: RelayManagedEndpointRecoveryRegistrationRequest,
         success: RelayManagedEndpointRecoveryRegistrationResponse,
-        error: RelayAuthAndInternalErrors,
+        error: RelayManagedEndpointRecoveryErrors,
       },
     ).annotate(OpenApi.Summary, "Register managed tunnel recovery without provisioning"),
     HttpApiEndpoint.post("recoverManagedEndpoint", "/v1/environments/:environmentId/tunnel", {
@@ -1331,7 +1359,7 @@ const RelayServerGroup = HttpApiGroup.make("server")
       }),
       payload: RelayManagedEndpointRecoveryRequest,
       success: RelayManagedEndpointRecoveryResponse,
-      error: RelayAuthAndInternalErrors,
+      error: RelayManagedEndpointRecoveryErrors,
     }).annotate(OpenApi.Summary, "Recover an environment's managed tunnel"),
     HttpApiEndpoint.post(
       "publishAgentActivity",
