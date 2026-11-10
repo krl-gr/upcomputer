@@ -188,6 +188,7 @@ export class DesktopTelemetryReceiver extends Context.Service<
     readonly setDiagnosticsDemand: (
       enabled: boolean,
     ) => Effect.Effect<void, DesktopTelemetryControlError>;
+    readonly setKeepAwake: (active: boolean) => Effect.Effect<void, DesktopTelemetryControlError>;
     readonly requestDesktopUpdate: (
       requestId: string,
       trackSwitch?: DesktopTrackSwitch,
@@ -733,6 +734,9 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
     health: Ref.get(health),
     subscribeHealth: subscribeBeforeSnapshotWithoutMutex(healthChanges, Ref.get(health)),
     setDiagnosticsDemand,
+    setKeepAwake: Effect.fn("DesktopTelemetryReceiver.setKeepAwake")(function (active) {
+      return sendControlMessage({ version: 1, type: "setKeepAwake", active });
+    }),
     requestDesktopUpdate: Effect.fn("DesktopTelemetryReceiver.requestDesktopUpdate")(
       function (requestId, trackSwitch) {
         return sendControlMessage({
@@ -801,6 +805,9 @@ export const layerTest = (
           })),
         ),
       setDiagnosticsDemand: Effect.fn("DesktopTelemetryReceiver.setDiagnosticsDemand")(function () {
+        return Effect.void;
+      }),
+      setKeepAwake: Effect.fn("DesktopTelemetryReceiver.setKeepAwake")(function () {
         return Effect.void;
       }),
       requestDesktopUpdate: Effect.fn("DesktopTelemetryReceiver.requestDesktopUpdate")(function () {
