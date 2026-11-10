@@ -22,7 +22,7 @@ import {
   sidebarListRowFadingLabelClassName,
   sidebarListRowTitleClassName,
 } from "./sidebarListRow";
-import { compactRelativeTimeLabel } from "./SidebarCompactThreadRow";
+import { CompactRelativeTime } from "./SidebarCompactThreadRow";
 import { SidebarThreadProjectIcons } from "./SidebarThreadProjectIcons";
 import { DRAFT_STATUS_LABEL, ThreadStatusLabel } from "./ThreadStatusLabel";
 
@@ -155,7 +155,7 @@ export const SidebarCompactDraftRow = memo(function SidebarCompactDraftRow(props
           }
         >
           <span data-fading-label className={sidebarListRowFadingLabelClassName(menuOpen)}>
-            {compactRelativeTimeLabel(props.session.createdAt)}
+            <CompactRelativeTime timestamp={props.session.createdAt} />
           </span>
         </SidebarListRowEnd>
       </div>

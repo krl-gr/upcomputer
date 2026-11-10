@@ -70,8 +70,9 @@ function thread(id: string, overrides: Record<string, unknown> = {}) {
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     runtime: null,
-    latestUserMessageAt: new Date(Date.now() - 3 * HOUR).toISOString(),
-    updatedAt: new Date(Date.now() - 3 * HOUR).toISOString(),
+    // The label counts from the start of the current minute.
+    latestUserMessageAt: new Date(Date.now() - 3 * HOUR - 60_000).toISOString(),
+    updatedAt: new Date(Date.now() - 3 * HOUR - 60_000).toISOString(),
     titleRegeneration: null,
     ...overrides,
   } as unknown as SidebarCompactThreadRowProps["thread"];
@@ -203,6 +204,25 @@ describe("SidebarCompactThreadRow", () => {
     expect(row?.textContent).toContain("3h");
     expect(row?.getAttribute("aria-label")).toBe("Thread plain, UpComputer");
     expect(row?.querySelector("[data-testid='sidebar-row-status']")).toBeNull();
+  });
+
+  it("advances the relative time each minute without a re-mount", async () => {
+    vi.useFakeTimers({ now: Date.UTC(2026, 10, 10, 12, 0, 30), toFake: ["setTimeout", "Date"] });
+    try {
+      await render([
+        rowProps({
+          thread: thread("recent", { latestUserMessageAt: "2026-11-10T11:51:00.000Z" }),
+        }),
+      ]);
+      const [row] = compactRows();
+      expect(row?.textContent).toContain("9m");
+
+      await act(async () => vi.advanceTimersByTime(30_000));
+      expect(compactRows()[0]).toBe(row);
+      expect(row?.textContent).toContain("10m");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows upstream's statuses as V1's text labels before the title, without an icon", async () => {
