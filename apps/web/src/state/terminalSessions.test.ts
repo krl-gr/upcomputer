@@ -30,6 +30,12 @@ vi.mock("./terminal", async () => {
     },
   };
 });
+// Up.computer: the spawn gate has its own tests.
+vi.mock("./terminalSpawnGate.upcomputer", async () => {
+  const { Atom } = await import("effect/reactivity");
+  const ready = Atom.make(true);
+  return { terminalAttachReadyAtom: () => ready };
+});
 vi.mock("./session", async () => {
   const { AsyncResult, Atom } = await import("effect/reactivity");
   const granted = Atom.make(AsyncResult.success({}));

@@ -31,8 +31,31 @@ import {
 } from "./terminalSession.ts";
 import { terminalOutputText } from "./terminalOutput.ts";
 
+export interface TerminalEnvironmentAtomsOptions {
+  /** Up.computer: the grid an unanswered first attach starts a new shell at. */
+  readonly firstAttachGrid?: (
+    environmentId: EnvironmentId,
+    input: TerminalAttachInput,
+  ) => TerminalGridSize | null;
+}
+
+/**
+ * Only an unanswered first attach can open the shell, so only it carries the
+ * first-attach grid. A resubscription after a reconnect is a new viewer to the
+ * server, and a grid there would resize the running PTY to a stale size.
+ */
+export function terminalAttachRequest<Input extends TerminalAttachInput>(
+  input: Input,
+  replied: boolean,
+  firstAttachGrid: TerminalGridSize | null,
+): Input {
+  if (replied) return { ...input, resume: true };
+  return firstAttachGrid ? { ...input, ...firstAttachGrid } : input;
+}
+
 export function createTerminalEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
+  options: TerminalEnvironmentAtomsOptions = {},
 ) {
   const lifecycleScheduler = createAtomCommandScheduler();
   const resizeScheduler = createAtomCommandScheduler();
@@ -63,11 +86,20 @@ export function createTerminalEnvironmentAtoms<R, E>(
     }),
     attach: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:attach",
-      subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>) => {
+      subscribe: (
+        input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>,
+        environmentId: EnvironmentId,
+      ) => {
         // Retry an unanswered first attach unchanged so it can still open the shell.
         let replied = false;
         return subscribeDynamic(WS_METHODS.terminalAttach, () =>
-          Effect.sync(() => (replied ? { ...input, resume: true } : input)),
+          Effect.sync(() =>
+            terminalAttachRequest(
+              input,
+              replied,
+              options.firstAttachGrid?.(environmentId, input) ?? null,
+            ),
+          ),
         ).pipe(
           Stream.onFirst(() =>
             Effect.sync(() => {

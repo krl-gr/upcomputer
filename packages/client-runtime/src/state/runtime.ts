@@ -120,7 +120,7 @@ export type QueryAnswerHandler<Input, A> = (
 interface EnvironmentSubscriptionAtomOptions<Input, A, E, R> {
   readonly sensitiveInput?: boolean;
   readonly label: string;
-  readonly subscribe: (input: Input) => Stream.Stream<A, E, R>;
+  readonly subscribe: (input: Input, environmentId: EnvironmentIdType) => Stream.Stream<A, E, R>;
   readonly completeWhen?: (value: A) => boolean;
   readonly idleTtlMs?: number;
 }
@@ -832,7 +832,10 @@ export function createEnvironmentSubscriptionAtomFamily<R, ER, Input, A, E>(
     return runtime
       .atom(
         Stream.suspend(() =>
-          followStreamInEnvironment(target.environmentId, options.subscribe(target.input)),
+          followStreamInEnvironment(
+            target.environmentId,
+            options.subscribe(target.input, target.environmentId),
+          ),
         ).pipe(options.completeWhen ? Stream.takeUntil(options.completeWhen) : (stream) => stream),
       )
       .pipe(

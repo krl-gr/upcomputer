@@ -86,6 +86,7 @@ import { getFileMetadataQueryAtom } from "../hooks/useFileMetadata";
 import { FileMetadataThreadContext } from "../hooks/FileMetadataThreadProvider";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { attachedTerminalSessionAtom } from "../state/terminalSessions";
+import { reportTerminalViewportGrid } from "../state/terminalSpawnGate.upcomputer";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { serverEnvironment } from "../state/server";
 import { previewEnvironment } from "../state/preview";
@@ -645,6 +646,11 @@ function TerminalSessionViewport({
       input: { threadId, terminalId, cols, rows },
     });
   });
+  // A new shell starts at this viewport's grid; see `reportTerminalViewportGrid`.
+  const reportViewportGrid = useEffectEvent(() => {
+    const grid = terminalRef.current?.measuredGrid();
+    if (grid) reportTerminalViewportGrid(environmentId, { threadId, terminalId }, grid);
+  });
   const outputCursorRef = useRef<TerminalOutputCursor>(INITIAL_TERMINAL_OUTPUT_CURSOR);
   const synchronizedStatusRef = useRef<TerminalSessionState["status"]>("closed");
   const synchronizeTerminalStatus = useEffectEvent(
@@ -695,6 +701,7 @@ function TerminalSessionViewport({
   useLayoutEffect(() => {
     visibleRef.current = visible;
     terminalRef.current?.setVisible(visible);
+    if (visible) reportViewportGrid();
     // A request made while this viewport was hidden could not focus it.
     if (visible) consumePendingTerminalFocus(threadRef, terminalId);
   }, [terminalId, threadRef, visible]);
@@ -725,7 +732,10 @@ function TerminalSessionViewport({
         theme: terminalThemeFromApp(mount),
         font: terminalFontOptions(setupFont.family, setupFont.size),
         onData: (data) => handleData(data),
-        onResize: (cols, rows) => void resizeTerminal(cols, rows),
+        onResize: (cols, rows) => {
+          reportViewportGrid();
+          void resizeTerminal(cols, rows);
+        },
         onSelectionChange: () => handleSelectionChange(),
         beforeKey: (event) => handleBeforeKey(event),
         onLinkActivate: (text, event) => handleLinkActivate(text, event),
@@ -747,6 +757,7 @@ function TerminalSessionViewport({
       terminal.setTheme(terminalThemeFromApp(mount));
       setupTerminal = terminal;
       terminalRef.current = terminal;
+      reportViewportGrid();
       terminal.input.setAttribute("data-workspace-focus-default", "");
       terminal.input.readOnly = !hasTerminalWriteAccess();
       // Reapply font settings hydrated during loading, when terminalRef was null.

@@ -860,6 +860,12 @@ export class GhosttyTerminalSurface {
     this.applyFontMetrics();
   };
 
+  /** The grid that fits the mount, or null while hidden or unsized. */
+  measuredGrid(): { readonly cols: number; readonly rows: number } | null {
+    if (this.disposed || !this.visible || !this.hasSize) return null;
+    return { cols: this.measuredCols, rows: this.measuredRows };
+  }
+
   resendSize(): void {
     this.resizeNotified = false;
     this.fit();

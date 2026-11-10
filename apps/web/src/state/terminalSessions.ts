@@ -23,6 +23,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { isProductFeatureShown } from "../product/productFlags";
 import { formatEnvironmentQueryError } from "./query";
 import { terminalEnvironment } from "./terminal";
+import { terminalAttachReadyAtom } from "./terminalSpawnGate.upcomputer";
 import { environmentSession, sessionHasScope, useEnvironmentScope } from "./session";
 
 const EMPTY_KNOWN_TERMINAL_SESSIONS = Object.freeze<ReadonlyArray<KnownTerminalSession>>([]);
@@ -151,7 +152,9 @@ const attachedTerminalSessionFamily = Atom.family((key: string) => {
     const canRead = sessionHasScope(session, AuthTerminalReadScope);
     const canOperate = sessionHasScope(session, AuthTerminalOperateScope);
     const attach = canOperate
-      ? get(terminalEnvironment.attach({ environmentId, input: terminal }))
+      ? get(terminalAttachReadyAtom(environmentId, terminal))
+        ? get(terminalEnvironment.attach({ environmentId, input: terminal }))
+        : null
       : canRead
         ? get(
             terminalEnvironment.observe({

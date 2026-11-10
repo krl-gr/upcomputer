@@ -15,8 +15,12 @@ import { useProject, useQuietThreadShell } from "../../state/entities";
 import { readEnvironmentScope } from "../../state/session";
 import { terminalEnvironment } from "../../state/terminal";
 import { useKnownTerminalSessions } from "../../state/terminalSessions";
+import { holdTerminalSpawn } from "../../state/terminalSpawnGate.upcomputer";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../../terminalUiStateStore";
+
+// Long enough for a first viewport to load the terminal renderer and measure itself.
+const VIEWPORT_GRID_TIMEOUT_MS = 2_000;
 
 /** Where a new terminal starts. Omitted fields fall back to the thread's project and worktree. */
 export interface TerminalLaunchLocation {
@@ -97,23 +101,34 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
     const location = input.location ?? defaultLaunchLocation();
     if (!location) return null;
     const terminalId = input.terminalId ?? allocateTerminalId();
+    const { environmentId, threadId } = threadRef;
+    // A new shell starts at the grid of the viewport `place` mounts, so its first prompt is not
+    // redrawn after a resize. A reused id may already be attached, so it opens at once.
+    const spawn =
+      input.terminalId === undefined && input.size === undefined
+        ? holdTerminalSpawn(environmentId, { threadId, terminalId }, VIEWPORT_GRID_TIMEOUT_MS)
+        : null;
     input.place(terminalId);
-    const result = openTerminalCommand({
-      environmentId: threadRef.environmentId,
-      input: {
-        threadId: threadRef.threadId,
-        terminalId,
-        cwd: location.cwd,
-        ...(location.worktreePath !== null ? { worktreePath: location.worktreePath } : {}),
-        env: projectScriptRuntimeEnv({
-          project: { cwd: project.workspaceRoot },
-          worktreePath: location.worktreePath,
-          ...(input.extraEnv ? { extraEnv: input.extraEnv } : {}),
-        }),
-        ...input.size,
-        ...(input.stopOnSettle !== undefined ? { stopOnSettle: input.stopOnSettle } : {}),
-      },
-    });
+    const open = async () => {
+      const size = input.size ?? (await spawn?.grid) ?? undefined;
+      return openTerminalCommand({
+        environmentId,
+        input: {
+          threadId,
+          terminalId,
+          cwd: location.cwd,
+          ...(location.worktreePath !== null ? { worktreePath: location.worktreePath } : {}),
+          env: projectScriptRuntimeEnv({
+            project: { cwd: project.workspaceRoot },
+            worktreePath: location.worktreePath,
+            ...(input.extraEnv ? { extraEnv: input.extraEnv } : {}),
+          }),
+          ...size,
+          ...(input.stopOnSettle !== undefined ? { stopOnSettle: input.stopOnSettle } : {}),
+        },
+      });
+    };
+    const result = open().finally(() => spawn?.release());
     return { terminalId, result };
   };
 
