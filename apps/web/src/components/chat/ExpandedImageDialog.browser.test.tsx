@@ -1,4 +1,4 @@
-import type { SnapShotSource } from "@t3tools/contracts";
+import { EnvironmentId, type SnapShotSource, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
@@ -6,8 +6,15 @@ import "~/index.css";
 import { render } from "../../../test/render";
 import { ExpandedImageDialog } from "./ExpandedImageDialog";
 
-const PIXEL =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+const PIXEL = vi.hoisted(
+  () =>
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+);
+
+vi.mock(import("../../assets/assetUrls"), async (original) => ({
+  ...(await original()),
+  useAssetUrlRefresh: () => async () => PIXEL,
+}));
 
 const snapShotSource: SnapShotSource = {
   kind: "snap-shot",
@@ -78,5 +85,42 @@ describe("ExpandedImageDialog", () => {
     (screen.getByRole("button", { name: "Close image preview" }).element() as HTMLElement).focus();
     await userEvent.keyboard("{Escape}");
     await vi.waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  });
+
+  it("keeps the source fragment when it re-mints a gallery image that failed to load", async () => {
+    const expired = "data:image/png;base64,AAAA#t=1";
+    await using screen = await render(
+      <ExpandedImageDialog
+        preview={{
+          images: [
+            {
+              src: expired,
+              name: "Shot",
+              actionsSource: {
+                kind: "image",
+                name: "Shot",
+                src: expired,
+                asset: {
+                  environmentId: EnvironmentId.make("environment-1"),
+                  resource: {
+                    _tag: "media-file",
+                    threadId: ThreadId.make("thread-1"),
+                    path: "/work/shot.png",
+                  },
+                },
+              },
+            },
+          ],
+          index: 0,
+        }}
+        onClose={vi.fn()}
+      />,
+      // The dialog renders no links and reads no route.
+      { router: false },
+    );
+
+    await expect
+      .element(screen.getByRole("img", { name: "Shot" }))
+      .toHaveAttribute("src", `${PIXEL}#t=1`);
   });
 });

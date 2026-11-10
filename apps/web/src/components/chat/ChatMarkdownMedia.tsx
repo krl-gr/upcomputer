@@ -171,7 +171,7 @@ export function ChatMarkdownImage(props: {
   readonly originalUrl?: string | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
   /** Signs a fresh URL for `src` when it fails to load. */
-  readonly refreshSrc?: (() => Promise<string | null>) | undefined;
+  readonly refreshSrc?: ((signal: AbortSignal | undefined) => Promise<string | null>) | undefined;
 }) {
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
   const recovery = useAssetSrcRecovery(props.src, props.refreshSrc);
@@ -190,7 +190,10 @@ export function ChatMarkdownImage(props: {
     });
   };
   const imageEvents = (loadingSrc: string) => ({
-    onLoad: () => setLoadedSrc(loadingSrc),
+    onLoad: () => {
+      setLoadedSrc(loadingSrc);
+      recovery.onLoad();
+    },
     onError: () => {
       recovery.onError(loadingSrc);
       setLoadedSrc(null);
@@ -284,7 +287,7 @@ export function ChatMarkdownVideo(props: {
   readonly style?: CSSProperties | undefined;
   readonly mediaIdentity?: string | undefined;
   readonly actionsSource?: MediaActionSource | undefined;
-  readonly onRetry?: (() => Promise<unknown>) | undefined;
+  readonly onRetry?: ((signal?: AbortSignal) => Promise<unknown>) | undefined;
 }) {
   return (
     <MediaVideoPlayer
@@ -354,8 +357,8 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       : undefined,
   );
   const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, resource);
-  const refreshSrc = async () => {
-    const url = await refreshAssetUrl();
+  const refreshSrc = async (signal: AbortSignal | undefined) => {
+    const url = await refreshAssetUrl(signal);
     return url === null ? null : url + (props.srcFragment ?? "");
   };
   const path =

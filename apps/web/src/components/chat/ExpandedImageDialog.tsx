@@ -55,6 +55,12 @@ function itemMimeType(item: ExpandedImageItem): string | undefined {
   return mediaMimeType(item.src ?? "") ?? undefined;
 }
 
+// Gallery items carry the fragment inside `src`, so a re-minted URL takes it from there.
+function srcFragment(src: string | null): string {
+  const hash = src?.indexOf("#") ?? -1;
+  return src === null || hash < 0 ? "" : src.slice(hash);
+}
+
 function ExpandedVideo({ item }: { readonly item: ExpandedImageItem }) {
   const asset = item.actionsSource?.asset;
   const assetUrl = useAssetUrlState(asset?.environmentId ?? null, asset?.resource ?? null);
@@ -110,11 +116,12 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   const image = useAssetSrcRecovery(
     item?.src ?? null,
     imageAsset
-      ? async () => {
-          const url = await refreshImageUrl();
-          return url === null ? null : url + (item?.srcFragment ?? "");
+      ? async (signal) => {
+          const url = await refreshImageUrl(signal);
+          return url === null ? null : url + srcFragment(item?.src ?? null);
         }
       : undefined,
+    String(index),
   );
   const imageSrc = image.src;
   const source: MediaActionSource = item?.actionsSource ?? {
@@ -257,6 +264,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                 name={item.name}
                 mimeType={itemMimeType(item)}
                 onError={() => image.onError(imageSrc)}
+                onLoad={image.onLoad}
               />
             )}
             <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80 max-sm:px-10">

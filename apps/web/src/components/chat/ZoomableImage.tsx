@@ -43,12 +43,14 @@ export function ZoomableImage({
   name,
   mimeType,
   onError,
+  onLoad,
   ref,
 }: {
   src: string;
   name: string;
   mimeType?: string | undefined;
   onError: () => void;
+  onLoad?: (() => void) | undefined;
   ref?: Ref<ZoomableImageHandle>;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -248,6 +250,7 @@ export function ZoomableImage({
               width: event.currentTarget.naturalWidth,
               height: event.currentTarget.naturalHeight,
             });
+            onLoad?.();
           }}
           onError={onError}
         />
