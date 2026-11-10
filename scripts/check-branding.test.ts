@@ -58,6 +58,7 @@ describe("apply-branding rules", () => {
       'const label = "Open a T3 Code terminal";',
       'const connect = "Sign in to T3 Connect";',
       'const hint = "Run `t3 up --lan`, then `t3 update`.";',
+      'const heading = "T3 system footprint: not a child of the T3 Server";',
       'const CODEX_CLIENT_NAME = "T3 Code";',
     ].join("\n");
 
@@ -68,6 +69,7 @@ describe("apply-branding rules", () => {
         'const label = "Open an Up.computer terminal";',
         'const connect = "Sign in to UpComputer Connect";',
         'const hint = "Run `up remote --lan`, then `up update`.";',
+        'const heading = "Up.computer system footprint: not a child of the Up.computer server";',
         'const CODEX_CLIENT_NAME = "T3 Code";',
       ].join("\n"),
     );

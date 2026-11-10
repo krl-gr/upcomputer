@@ -876,7 +876,8 @@ function DiagnosticsSettingsBody() {
         toastManager.add({
           type: "info",
           title: "Process already exited",
-          description: "The process is not a child of the T3 Server. It might already have exited.",
+          description:
+            "The process is not a child of the Up.computer server. It might already have exited.",
         });
         return;
       }
