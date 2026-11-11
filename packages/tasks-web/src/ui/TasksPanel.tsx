@@ -175,6 +175,7 @@ function TablePanel(props: {
       runs={data.agents.runs}
       providerEntriesByEnvironment={providerEntriesByEnvironment}
       status={pages.status}
+      offlineEnvironmentIds={pages.offlineEnvironmentIds}
       {...(props.selectedTaskKey === undefined
         ? {}
         : { initialSelectedTaskKey: props.selectedTaskKey })}

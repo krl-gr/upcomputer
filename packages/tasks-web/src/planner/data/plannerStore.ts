@@ -369,7 +369,13 @@ export class PlannerStore {
       const lane: Lane = {
         key,
         list,
-        state: { page: cached, initialLoading: !cached, loadingMore: false, error: undefined },
+        state: {
+          page: cached,
+          initialLoading: !cached,
+          loadingMore: false,
+          error: undefined,
+          disconnected: false,
+        },
         loader: new TaskPageLoader(
           this.target,
           search,

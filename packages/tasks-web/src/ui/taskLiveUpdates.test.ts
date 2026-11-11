@@ -1,6 +1,7 @@
 import * as NodeAssert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import * as NodeTimersPromises from "node:timers/promises";
+import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
 import type {
   TaskChange,
   TaskPageInput,
@@ -299,6 +300,48 @@ test("a listener that subscribes while the stream reconnects hears the failure",
   opens[1]!.fail(new Error("Unavailable"));
   await until(() => late.length === 1);
   NodeAssert.deepEqual(early, [], "a served listener keeps its data without an error");
+});
+
+test("a lane whose computer is not connected loads by itself when the computer reconnects", async (context) => {
+  const opens: { listener: TaskChangeListener; fail: (error: unknown) => void }[] = [];
+  const subscribe = createTaskChangeSubscription(
+    (_signal, listener) =>
+      new Promise<void>((_resolve, reject) => {
+        opens.push({ listener, fail: reject });
+      }),
+    1,
+  );
+  const h = harness();
+  context.onTestFinished(() => h.loader.dispose());
+  const off = subscribe(
+    (change) => h.loader.change(change),
+    (error) => h.loader.fail(error),
+  );
+  context.onTestFinished(off);
+  opens[0]!.fail(
+    new EnvironmentRpcUnavailableError({ environmentId: "pc", message: "PC is not connected." }),
+  );
+  await until(() => h.latest()?.disconnected === true);
+  NodeAssert.equal(h.latest().page, undefined);
+  NodeAssert.equal(h.latest().initialLoading, false);
+  await until(() => opens.length === 2);
+  opens[1]!.listener(sync);
+  await until(() => !!h.latest().page);
+  NodeAssert.equal(h.latest().disconnected, false);
+  NodeAssert.equal(h.latest().error, undefined);
+  NodeAssert.deepEqual(
+    h.latest().page!.tasks.map((task) => task.id),
+    ["a", "b"],
+  );
+});
+
+test("a real failure is not taken for a disconnected computer", async (context) => {
+  const h = harness();
+  context.onTestFinished(() => h.loader.dispose());
+  h.pages(() => Promise.reject(new Error("Database is locked.")));
+  h.loader.change(sync);
+  await until(() => h.latest()?.error === "Database is locked.");
+  NodeAssert.equal(h.latest().disconnected, false);
 });
 
 test("a gap resyncs but still delivers the event's reminders", () => {

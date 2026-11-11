@@ -63,6 +63,51 @@ export function resolveEnvironmentsViewStatus(input: {
   return failure?.message ? { status: "error", message: failure.message } : { status: "ready" };
 }
 
+/**
+ * UpComputer: the Tasks list's status from its query lanes, one or more per
+ * environment. A disconnected environment, or one whose access probe still
+ * retries after the initial wait, is offline: it is named in a quiet note
+ * while the others show their tasks, and its change stream reloads it on
+ * reconnect. Only a real failure is an error.
+ */
+export function resolveTaskPagesStatus(input: {
+  readonly lanes: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly accessPending: boolean;
+    readonly state:
+      | {
+          readonly initialLoading: boolean;
+          readonly error: string | undefined;
+          readonly disconnected: boolean;
+        }
+      | undefined;
+  }>;
+  readonly initialWaitOver: boolean;
+}): {
+  readonly status: "loading" | "ready" | "error" | "offline";
+  readonly errorMessage: string;
+  readonly offlineEnvironmentIds: readonly EnvironmentId[];
+} {
+  const offline = new Set<EnvironmentId>();
+  const errors = new Set<string>();
+  let loading = false;
+  let answered = false;
+  for (const lane of input.lanes) {
+    const { state } = lane;
+    if (state?.disconnected || (lane.accessPending && input.initialWaitOver))
+      offline.add(lane.environmentId);
+    else if (!state || state.initialLoading) loading = true;
+    else if (state.error) errors.add(state.error);
+    else answered = true;
+  }
+  const allOffline = offline.size > 0 && !answered;
+  return {
+    status: loading ? "loading" : errors.size > 0 ? "error" : allOffline ? "offline" : "ready",
+    errorMessage: [...errors].join(" "),
+    offlineEnvironmentIds: [...offline],
+  };
+}
+
 let initialWaitEndsAt: number | null = null;
 
 /** Whether the session's first Tasks view has waited `TASKS_INITIAL_WAIT_MS`. */
