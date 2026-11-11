@@ -279,10 +279,11 @@ export function useSidebarFooterTooltipSide(): "top" | "right" {
 export function SidebarCompactTooltip(props: {
   readonly label: string;
   readonly children: ReactElement<Record<string, unknown>>;
+  readonly disabled?: boolean;
 }) {
   const compact = useSidebarCompact();
   return (
-    <Tooltip disabled={!compact}>
+    <Tooltip disabled={!compact || props.disabled === true}>
       {/* The tooltip names nothing, and compact rows hide their text. A row's own aria-label wins. */}
       <TooltipTrigger render={props.children} aria-label={compact ? props.label : undefined} />
       <TooltipPopup side="right">{props.label}</TooltipPopup>
