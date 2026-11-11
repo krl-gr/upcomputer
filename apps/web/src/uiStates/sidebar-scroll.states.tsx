@@ -2,7 +2,7 @@ import "../adaptiveSidebar/adaptiveSidebar.css";
 
 import { DndContext } from "@dnd-kit/core";
 import { SortableContext } from "@dnd-kit/sortable";
-import { BotRow } from "@t3tools/tasks-web/bots";
+import { BotsSection } from "@t3tools/tasks-web/bots";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
@@ -13,22 +13,10 @@ import {
   SidebarSectionPlaceholder,
 } from "../components/sidebar/SidebarListMarkers";
 import { SidebarThreadHeader } from "../components/sidebar/SidebarThreadHeader";
-import {
-  SidebarContent,
-  SidebarGroup,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarProvider,
-} from "../components/ui/sidebar";
+import { SidebarContent, SidebarGroup, SidebarProvider } from "../components/ui/sidebar";
 import { ProductSidebarNavigation } from "../product/ProductSlots";
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
-import {
-  SIDEBAR_MENU_SCOPE,
-  SIDEBAR_SECTION_GAP,
-  SIDEBAR_SECTION_HEADER_GAP,
-} from "../sidebarMetrics/sidebarMetrics";
 import { SidebarProjectsSection } from "../sidebarProjects/SidebarProjectsSection";
-import { SidebarSectionHeader } from "../sidebarProjects/SidebarSectionHeader";
 import {
   SidebarPinnedSectionHeader,
   SidebarThreadsSectionHeader,
@@ -44,7 +32,7 @@ import { captureUiStateSheet, type UiState } from "./uiStateSheet";
 /*
  * The whole thread sidebar in a short window. It copies the composition of
  * `components/Sidebar.tsx`, whose data and stores a sheet cannot load, and draws
- * the Bots section as tasks-web's `SidebarBots` does.
+ * tasks-web's Bots section over a fixture list, as `SidebarBots` does.
  */
 
 // Data sources, not UI, as in the sidebar-rows sheet: the projects, server config and
@@ -235,24 +223,9 @@ function WholeSidebar(props: {
               />
               <ProductSidebarNavigation />
               <SidebarProjectsSection projectGroups={PROJECT_GROUPS} onAddProject={noop} loaded />
-              <div className={SIDEBAR_SECTION_GAP}>
-                <SidebarSectionHeader title="Bots" open onToggle={noop} />
-              </div>
-              <div className={`${SIDEBAR_SECTION_HEADER_GAP} ${SIDEBAR_MENU_SCOPE}`}>
-                <SidebarMenu>
-                  {(props.bots ?? BOTS).map((shown) => (
-                    <SidebarMenuItem key={shown.agent.id}>
-                      <BotRow
-                        environmentId={ENVIRONMENT_ID}
-                        bot={shown}
-                        active={false}
-                        onOpen={noop}
-                        onSettings={noop}
-                      />
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </div>
+              <BotsSection
+                lists={[{ environmentId: ENVIRONMENT_ID, bots: props.bots ?? BOTS, error: "" }]}
+              />
               <SidebarThreadsSectionHeader
                 onNewThread={noop}
                 currentEnvironmentId={null}
