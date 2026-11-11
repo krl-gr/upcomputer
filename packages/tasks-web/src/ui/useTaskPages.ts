@@ -8,7 +8,7 @@ import {
 } from "../state/taskPages.ts";
 import type { TaskArchiveFilter } from "@t3tools/tasks-contracts/v1";
 import { planTaskQueryLanes, type TaskQueryLane, type ViewProjectFilter } from "./projectFilter.ts";
-import { useTasksInitialWaitOver } from "../planner/ui/tasksViewGate.ts";
+import { resolveTaskPagesStatus, useTasksInitialWaitOver } from "../planner/ui/tasksViewGate.ts";
 
 const PAGE_SIZE = 100;
 
@@ -17,7 +17,7 @@ function recentPage(lane: TaskQueryLane) {
 }
 
 function loadedState(page: TaskPageState): TaskPageLoadState {
-  return { page, initialLoading: false, loadingMore: false, error: undefined };
+  return { page, initialLoading: false, loadingMore: false, error: undefined, disconnected: false };
 }
 
 /**
@@ -85,6 +85,7 @@ export function useTaskPages(
                   initialLoading: true,
                   loadingMore: false,
                   error: undefined,
+                  disconnected: false,
                 },
           ];
         }),
@@ -167,23 +168,22 @@ export function useTaskPages(
       nextTasks.some((task, index) => task !== taskCache.current[index]))
   )
     taskCache.current = nextTasks;
-  const errors = states.flatMap((state) => (state.error ? [state.error] : []));
-  const initialLoading =
-    states.length < lanes.length || states.some((state) => state.initialLoading);
-  const accessPending = lanes.some((lane) => lane.target.access.availability === "loading");
+  const { status, errorMessage, offlineEnvironmentIds } = resolveTaskPagesStatus({
+    lanes: lanes.map((lane) => ({
+      environmentId: lane.target.environmentId,
+      accessPending: lane.target.access.availability === "loading",
+      state: byLane[lane.key],
+    })),
+    initialWaitOver,
+  });
   return {
     tasks: taskCache.current,
     statuses: [...new Set(states.flatMap((state) => state.page?.statuses ?? []))],
     hasMore: states.some((state) => state.page?.nextCursor != null),
     loadingMore: states.some((state) => state.loadingMore),
-    errorMessage: [...new Set(errors)].join(" "),
-    status: initialLoading
-      ? accessPending && initialWaitOver
-        ? ("offline" as const)
-        : ("loading" as const)
-      : errors.length > 0
-        ? ("error" as const)
-        : ("ready" as const),
+    errorMessage,
+    status,
+    offlineEnvironmentIds,
     reload: useCallback(() => {
       for (const loader of loaders.current) loader.refresh();
     }, []),

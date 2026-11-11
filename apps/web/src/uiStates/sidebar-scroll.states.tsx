@@ -3,7 +3,8 @@ import "../adaptiveSidebar/adaptiveSidebar.css";
 import { DndContext } from "@dnd-kit/core";
 import { SortableContext } from "@dnd-kit/sortable";
 import { BotRow } from "@t3tools/tasks-web/bots";
-import { it, vi } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
+import { userEvent } from "vite-plus/test/browser";
 
 import { SIDEBAR_COMPACT_WIDTH } from "../adaptiveSidebar/sidebarWidthMode";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../components/sidebar/SidebarChrome";
@@ -108,6 +109,13 @@ const BOTS = [
   bot("bot-runs", "Planner"),
   bot("bot-writer", "Writer"),
 ];
+/** As many bots as the user who found the column could not scroll. */
+const MANY_BOTS = [
+  ...BOTS,
+  ...["Tester", "Designer", "Analyst", "Editor", "Scheduler", "Researcher", "Translator"].map(
+    (name) => bot(`bot-${name.toLowerCase()}`, name),
+  ),
+];
 
 const PINNED = ["Release checklist", "Weekly planning", "Pricing page copy"];
 const THREADS = [
@@ -175,6 +183,7 @@ function TrafficLights() {
 function WholeSidebar(props: {
   readonly height: number;
   readonly compact?: boolean;
+  readonly bots?: typeof BOTS;
   /** The desktop's translucent sidebar over a picture, as vibrancy shows it. */
   readonly translucent?: boolean;
 }) {
@@ -231,7 +240,7 @@ function WholeSidebar(props: {
               </div>
               <div className={`${SIDEBAR_SECTION_HEADER_GAP} ${SIDEBAR_MENU_SCOPE}`}>
                 <SidebarMenu>
-                  {BOTS.map((shown) => (
+                  {(props.bots ?? BOTS).map((shown) => (
                     <SidebarMenuItem key={shown.agent.id}>
                       <BotRow
                         environmentId={ENVIRONMENT_ID}
@@ -367,6 +376,37 @@ const STATES: ReadonlyArray<UiState> = [
   },
 ];
 
+/** Wheels over the row, as a mouse or trackpad does, and checks the whole column scrolled. */
+function wheelOver(row: (cell: HTMLElement) => HTMLElement, deltaY: number) {
+  return async (cell: HTMLElement) => {
+    const column = scroller(cell);
+    const before = column.scrollTop;
+    await userEvent.wheel(row(cell), { delta: { y: deltaY } });
+    await vi.waitFor(() => expect(column.scrollTop).toBeGreaterThan(before));
+  };
+}
+
+async function wheelToEnd(cell: HTMLElement) {
+  const column = scroller(cell);
+  await wheelOver(nthListRow(2), 4000)(cell);
+  await vi.waitFor(() => expect(column.scrollTop).toBe(column.scrollHeight - column.clientHeight));
+  const box = column.getBoundingClientRect();
+  const bots = cell.querySelectorAll<HTMLElement>("[data-sidebar-list-row]");
+  const footerButtons = cell.querySelectorAll<HTMLElement>(
+    "[data-sidebar=footer] [data-sidebar=menu-button]",
+  );
+  for (const target of [
+    bots[bots.length - 1]!,
+    cell.querySelector<HTMLElement>("[data-sidebar-compact-new-thread]")!,
+    cell.querySelector<HTMLElement>("[data-track='sidebar.settings']")!,
+    footerButtons[footerButtons.length - 1]!,
+  ]) {
+    const rect = target.getBoundingClientRect();
+    expect(rect.top).toBeGreaterThanOrEqual(box.top);
+    expect(rect.bottom).toBeLessThanOrEqual(box.bottom);
+  }
+}
+
 const COMPACT_STATES: ReadonlyArray<UiState> = [
   {
     name: "icon column, 700px tall, at the top: no fade",
@@ -381,6 +421,16 @@ const COMPACT_STATES: ReadonlyArray<UiState> = [
     name: "icon column, scrolled to the end: New thread, then the footer",
     render: () => <WholeSidebar height={700} compact />,
     settle: scrollToEnd,
+  },
+  {
+    name: "icon column, 700px tall, 12 bots, wheeled over a bot: the whole column scrolls",
+    render: () => <WholeSidebar height={700} compact bots={MANY_BOTS} />,
+    settle: wheelOver(nthListRow(4), 160),
+  },
+  {
+    name: "icon column, 700px tall, 12 bots, wheeled to the end: the last bot, New thread and the footer",
+    render: () => <WholeSidebar height={700} compact bots={MANY_BOTS} />,
+    settle: wheelToEnd,
   },
 ];
 

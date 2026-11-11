@@ -3,7 +3,7 @@ import "./adaptiveSidebar.css";
 
 import { ArrowLeftIcon } from "lucide-react";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, render } from "../../test/render";
 import {
@@ -180,9 +180,9 @@ function SidebarFrame(props: { readonly compact: boolean }) {
             ))}
           </SidebarContent>
           <SidebarFooter ref={observeSidebarFooterHeight}>
-            <button type="button" className="h-8">
-              Settings
-            </button>
+            <SidebarMenu>
+              <SidebarMenuButton>Settings</SidebarMenuButton>
+            </SidebarMenu>
           </SidebarFooter>
         </div>
       </div>
@@ -245,5 +245,25 @@ describe("sidebar scroll under the titlebar row and footer", () => {
     expect(lastRow.getBoundingClientRect().bottom).toBeLessThanOrEqual(
       footer.getBoundingClientRect().top,
     );
+  });
+
+  it("scrolls the compact column as one under the wheel, over a row and over the footer", async () => {
+    await using screen = await render(<SidebarFrame compact />);
+    const column = screen.container.querySelector<HTMLElement>("[data-sidebar=sidebar]")!;
+    const settings = screen.getByRole("button", { name: "Settings" });
+    expect(column.scrollHeight).toBeGreaterThan(column.clientHeight);
+    await userEvent.wheel(screen.getByRole("button", { name: "Row 3" }), { delta: { y: 120 } });
+    await vi.waitFor(() => expect(column.scrollTop).toBeGreaterThan(0));
+    const scrolled = column.scrollTop;
+    await userEvent.wheel(settings, { delta: { y: 120 } });
+    await vi.waitFor(() => expect(column.scrollTop).toBeGreaterThan(scrolled));
+    await userEvent.wheel(screen.getByRole("button", { name: "Row 12" }), {
+      delta: { y: 4000 },
+    });
+    await vi.waitFor(() =>
+      expect(column.scrollTop).toBe(column.scrollHeight - column.clientHeight),
+    );
+    await expect.element(screen.getByRole("button", { name: "Row 29" })).toBeInViewport();
+    await expect.element(settings).toBeInViewport();
   });
 });

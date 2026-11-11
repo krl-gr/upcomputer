@@ -76,6 +76,7 @@ import { ListEmptyState } from "./ListEmptyState.tsx";
 import { useTaskArrivals } from "./taskArrivals.ts";
 import "./taskArrival.css";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
+import { useComputerName } from "../../../../apps/web/src/sidebarComputers/useSidebarComputers.ts";
 
 const STATUS_ORDER = [
   "new",
@@ -105,6 +106,25 @@ interface TaskFormState {
 const AUDIENCE_LABELS: Record<TaskAudience, string> = { agent: "Workers", person: "Me" };
 const TASKS_OFFLINE_TEXT =
   "The environment with Tasks is not reachable right now. Tasks show when it connects.";
+const OFFLINE_NOTE_CLASS =
+  "rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground";
+
+function OfflineComputerNote(props: {
+  readonly environmentId: EnvironmentId;
+  readonly showsRows: boolean;
+}) {
+  const name = useComputerName(props.environmentId);
+  const computer = name ?? "A computer";
+  return (
+    <div className={OFFLINE_NOTE_CLASS}>
+      {props.showsRows
+        ? `${computer} is not connected. Its tasks may be out of date.`
+        : name
+          ? `Tasks from ${name} will show when it reconnects.`
+          : "Tasks from a computer that is not connected will show when it reconnects."}
+    </div>
+  );
+}
 
 export interface TasksViewProps {
   readonly projects: readonly TasksWebProject[];
@@ -133,6 +153,8 @@ export interface TasksViewProps {
   >;
   readonly status: "loading" | "ready" | "error" | "offline";
   readonly errorMessage?: string;
+  /** Environments that are not connected while others answered: each gets a quiet note. */
+  readonly offlineEnvironmentIds?: readonly EnvironmentId[];
   readonly initialSelectedTaskKey?: string;
   readonly canMutateEnvironment: (environmentId: EnvironmentId) => boolean;
   readonly getClient: (environmentId: EnvironmentId) => TasksWebRpcClient | null;
@@ -376,7 +398,8 @@ export function TasksView(props: TasksViewProps) {
   // The loaded rows, not the optimistic copy, which trails a page by a render.
   const { arrivals, settle: settleArrival } = useTaskArrivals(
     props.tasks.map(taskKey),
-    JSON.stringify([projectFilter?.key ?? null, filters]),
+    // A computer going offline or coming back resets the baseline, so its rows don't replay as new.
+    JSON.stringify([projectFilter?.key ?? null, filters, props.offlineEnvironmentIds ?? []]),
     props.status === "ready",
     props.loadingMore,
   );
@@ -1416,10 +1439,17 @@ export function TasksView(props: TasksViewProps) {
                     </button>
                   </div>
                 ) : props.status === "offline" && props.tasks.length > 0 ? (
-                  <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-                    {TASKS_OFFLINE_TEXT}
-                  </div>
+                  <div className={OFFLINE_NOTE_CLASS}>{TASKS_OFFLINE_TEXT}</div>
                 ) : null}
+                {props.status === "offline"
+                  ? null
+                  : props.offlineEnvironmentIds?.map((environmentId) => (
+                      <OfflineComputerNote
+                        key={environmentId}
+                        environmentId={environmentId}
+                        showsRows={props.tasks.some((task) => task.environmentId === environmentId)}
+                      />
+                    ))}
               </div>
 
               {props.tasks.length === 0 || filteredTasks.length === 0 ? (

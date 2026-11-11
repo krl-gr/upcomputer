@@ -178,6 +178,15 @@
   > :has(> [data-slot="scroll-area-viewport"] > [data-slot="sidebar-content"]) {
   flex: 1 0 auto;
 }
+/*
+ * Its viewport, still a scroll container with nothing to scroll, would keep the
+ * wheel: `overscroll-behavior: contain` stops chaining even then.
+ */
+[data-sidebar-compact="true"]
+  [data-app-sidebar]
+  [data-slot="scroll-area-viewport"]:has(> [data-slot="sidebar-content"]) {
+  overscroll-behavior: auto;
+}
 /* At the end of the scroll the footer keeps the 28px gap below New thread. */
 [data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar-thread-list] {
   min-height: 1.75rem;

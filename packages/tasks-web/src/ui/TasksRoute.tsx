@@ -216,6 +216,7 @@ function TasksTableRoute(props: {
       runs={data.agents.runs}
       providerEntriesByEnvironment={providerEntriesByEnvironment}
       status={pages.status}
+      offlineEnvironmentIds={pages.offlineEnvironmentIds}
       {...(selectedTaskKey === undefined ? {} : { initialSelectedTaskKey: selectedTaskKey })}
       {...(pages.errorMessage === undefined ? {} : { errorMessage: pages.errorMessage })}
       canMutateEnvironment={data.canMutateTasks}

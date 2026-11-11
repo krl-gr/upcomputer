@@ -1,4 +1,6 @@
+import { EnvironmentRpcUnavailableError, isRpcClientError } from "@t3tools/client-runtime/rpc";
 import type { TaskChange, TaskId, TaskPageInput } from "@t3tools/tasks-contracts/v1";
+import * as Schema from "effect/Schema";
 import type { TasksStateTarget } from "./tasksState.ts";
 import { mergeTaskPage, reuseTaskPage, type TaskPageState } from "./taskPages.ts";
 
@@ -7,7 +9,11 @@ export interface TaskPageLoadState {
   readonly initialLoading: boolean;
   readonly loadingMore: boolean;
   readonly error: string | undefined;
+  /** The error is the environment being disconnected; its change stream reloads the lane on reconnect. */
+  readonly disconnected: boolean;
 }
+
+const isEnvironmentRpcUnavailable = Schema.is(EnvironmentRpcUnavailableError);
 
 /** A serialized, event-driven request lane for one environment/query.
  * A Load more click is queued, never dropped because a background read is busy.
@@ -18,6 +24,7 @@ export class TaskPageLoader {
     initialLoading: true,
     loadingMore: false,
     error: undefined,
+    disconnected: false,
   };
   private disposed = false;
   private busy = false;
@@ -52,7 +59,8 @@ export class TaskPageLoader {
       next.page === this.state.page &&
       next.initialLoading === this.state.initialLoading &&
       next.loadingMore === this.state.loadingMore &&
-      next.error === this.state.error
+      next.error === this.state.error &&
+      next.disconnected === this.state.disconnected
     )
       return;
     this.state = next;
@@ -69,6 +77,8 @@ export class TaskPageLoader {
     this.emit({
       initialLoading: false,
       error: error instanceof Error ? error.message : "Task updates are temporarily unavailable.",
+      // A request cut off by a dying socket fails as a transport error, not as unavailable.
+      disconnected: isEnvironmentRpcUnavailable(error) || isRpcClientError(error),
     });
   }
 
@@ -164,6 +174,7 @@ export class TaskPageLoader {
         page,
         initialLoading: false,
         error: undefined,
+        disconnected: false,
         ...(more ? { loadingMore: false } : {}),
       });
     } catch (error) {

@@ -29,7 +29,14 @@ vi.mock("../../../../packages/tasks-web/src/environmentApi.ts", async (importOri
   usePlannerAvailability: () => null,
 }));
 
+// A second computer, asleep, named as the sidebar's Computers section names it.
+vi.mock("../sidebarComputers/useSidebarComputers.ts", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useComputerName: () => "DESKTOP-UPI195K",
+}));
+
 const ENVIRONMENT_ID = EnvironmentId.make("environment-ui-states");
+const ASLEEP_ENVIRONMENT_ID = EnvironmentId.make("environment-ui-states-asleep");
 const PROJECT: TasksViewProps["projects"][number] = {
   environmentId: ENVIRONMENT_ID,
   id: ProjectId.make("project-ui-states"),
@@ -99,7 +106,11 @@ const workersSwitch = (section: "tasks" | "automations") => (
   </>
 );
 
-function TasksTable(props: { readonly frame: Frame; readonly selected?: boolean }) {
+function TasksTable(props: {
+  readonly frame: Frame;
+  readonly selected?: boolean;
+  readonly asleep?: boolean;
+}) {
   return (
     <TasksView
       layout={props.frame === "panel" ? "panel" : "page"}
@@ -118,6 +129,7 @@ function TasksTable(props: { readonly frame: Frame; readonly selected?: boolean 
       runs={[]}
       providerEntriesByEnvironment={new Map()}
       status="ready"
+      {...(props.asleep ? { offlineEnvironmentIds: [ASLEEP_ENVIRONMENT_ID] } : {})}
       {...(props.selected ? { initialSelectedTaskKey: `${TASK.environmentId}:${TASK.id}` } : {})}
       canMutateEnvironment={() => true}
       getClient={() => null}
@@ -192,6 +204,9 @@ function states(frame: Frame): ReadonlyArray<UiState> {
     framed("Workers · Tasks", () => <TasksTable frame={frame} />),
     framed("Workers · Tasks · New task", () => <TasksTable frame={frame} />, openCreateTask),
     framed("Workers · Tasks · a selected task", () => <TasksTable frame={frame} selected />),
+    framed("Workers · Tasks · another computer asleep: a quiet note, no error", () => (
+      <TasksTable frame={frame} asleep />
+    )),
     framed("Workers · Automations", () => (
       <AutomationsView
         panel={panel}

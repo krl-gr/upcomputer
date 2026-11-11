@@ -8,6 +8,7 @@ import { loadAgentsState } from "../../state/agentsState.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
 import {
   resolveEnvironmentsViewStatus,
+  resolveTaskPagesStatus,
   resolveTasksViewGate,
   tasksAccessPending,
 } from "./tasksViewGate.ts";
@@ -119,4 +120,56 @@ test("an environment that answered shows its agents while another is still probe
     resolveEnvironmentsViewStatus({ loading: true, states: [], initialWaitOver: true }),
     { status: "loading" },
   );
+});
+
+test("a disconnected computer does not turn the Tasks list into an error", () => {
+  // The user's sleeping PC put "Up.computer couldn't load your tasks. DESKTOP is
+  // not connected. Retry" over the Mac's tasks, and Retry could not clear it.
+  const PC = "pc" as EnvironmentId;
+  const lane = (
+    environmentId: EnvironmentId,
+    state: { initialLoading?: boolean; error?: string; disconnected?: boolean } | undefined,
+    accessPending = false,
+  ) => ({
+    environmentId,
+    accessPending,
+    state: state && {
+      initialLoading: state.initialLoading ?? false,
+      error: state.error,
+      disconnected: state.disconnected ?? false,
+    },
+  });
+  const notConnected = { error: "PC is not connected.", disconnected: true };
+  const resolve = (lanes: ReturnType<typeof lane>[], initialWaitOver = false) =>
+    resolveTaskPagesStatus({ lanes, initialWaitOver });
+
+  NodeAssert.deepEqual(resolve([lane(LOCAL, {}), lane(PC, notConnected)]), {
+    status: "ready",
+    errorMessage: "",
+    offlineEnvironmentIds: [PC],
+  });
+  NodeAssert.deepEqual(resolve([lane(LOCAL, notConnected), lane(PC, notConnected)]), {
+    status: "offline",
+    errorMessage: "",
+    offlineEnvironmentIds: [LOCAL, PC],
+  });
+  NodeAssert.deepEqual(
+    resolve([lane(LOCAL, { error: "Database is locked." }), lane(PC, notConnected)]),
+    { status: "error", errorMessage: "Database is locked.", offlineEnvironmentIds: [PC] },
+  );
+  // The other computer's first page still decides; then its tasks show beside the note.
+  NodeAssert.equal(
+    resolve([lane(LOCAL, { initialLoading: true }), lane(PC, notConnected)]).status,
+    "loading",
+  );
+  // A computer whose access probe still retries waits, then is offline like a disconnected one.
+  const probing = lane(PC, { initialLoading: true }, true);
+  NodeAssert.equal(resolve([lane(LOCAL, {}), probing]).status, "loading");
+  NodeAssert.deepEqual(resolve([lane(LOCAL, {}), probing], true), {
+    status: "ready",
+    errorMessage: "",
+    offlineEnvironmentIds: [PC],
+  });
+  NodeAssert.equal(resolve([probing], true).status, "offline");
+  NodeAssert.equal(resolve([]).status, "ready");
 });
