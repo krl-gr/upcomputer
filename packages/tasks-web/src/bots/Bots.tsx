@@ -1,4 +1,6 @@
 import {
+  createContext,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -316,18 +318,15 @@ export function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectio
                     key={botOrderKey(environmentId, bot)}
                     id={botOrderKey(environmentId, bot)}
                   >
-                    {(dragging) => (
-                      <BotRow
-                        environmentId={environmentId}
-                        bot={bot}
-                        active={isActive(environmentId, bot)}
-                        dragging={dragging}
-                        onOpen={() => openBotChat(navigate, environmentId, bot)}
-                        onSettings={() => {
-                          void navigate(botPage(environmentId, { bot: bot.agent.id }));
-                        }}
-                      />
-                    )}
+                    <BotRow
+                      environmentId={environmentId}
+                      bot={bot}
+                      active={isActive(environmentId, bot)}
+                      onOpen={() => openBotChat(navigate, environmentId, bot)}
+                      onSettings={() => {
+                        void navigate(botPage(environmentId, { bot: bot.agent.id }));
+                      }}
+                    />
                   </SortableBotItem>
                 ))}
               </SortableContext>
@@ -355,14 +354,15 @@ export function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectio
   );
 }
 
+/** Whether the row's bot is lifted under the pointer, which keeps its tooltips closed. */
+const BotDragging = createContext(false);
+
 /**
  * A Bots row the pointer drags, in both the full sidebar and its icon column. The rename
- * field keeps the pointer for selecting text.
+ * field keeps the pointer for selecting text. Its row is a stable child, so a pointer move
+ * re-renders only this item.
  */
-function SortableBotItem(props: {
-  readonly id: string;
-  readonly children: (dragging: boolean) => ReactNode;
-}) {
+function SortableBotItem(props: { readonly id: string; readonly children: ReactNode }) {
   const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: props.id,
   });
@@ -372,11 +372,12 @@ function SortableBotItem(props: {
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(isDragging && "relative z-20")}
+      data-dragging={isDragging || undefined}
       onPointerDown={(event) => {
         if ((event.target as Element).closest("input") === null) listeners?.onPointerDown?.(event);
       }}
     >
-      {props.children(isDragging)}
+      <BotDragging.Provider value={isDragging}>{props.children}</BotDragging.Provider>
     </SidebarMenuItem>
   );
 }
@@ -409,19 +410,17 @@ export function BotRow({
   environmentId,
   bot,
   active,
-  dragging = false,
   onOpen,
   onSettings,
 }: {
   readonly environmentId: EnvironmentId;
   readonly bot: Bot;
   readonly active: boolean;
-  /** Lifted under the pointer, as a dragged thread row is, with its tooltips closed. */
-  readonly dragging?: boolean;
   readonly onOpen: () => void;
   readonly onSettings: () => void;
 }) {
   const status = useBotStatus(environmentId, bot);
+  const dragging = useContext(BotDragging);
   const compact = useSidebarCompact();
   const canRename = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope) && !compact;
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
@@ -480,8 +479,8 @@ export function BotRow({
                 className={cn(
                   SIDEBAR_LIST_ROW,
                   active ? SIDEBAR_LIST_ROW_ACTIVE : SIDEBAR_LIST_ROW_REST,
-                  dragging &&
-                    "bg-sidebar bg-linear-to-b from-sidebar-row-active to-sidebar-row-active opacity-100 shadow-lg",
+                  // Lifted under the pointer, as a dragged thread row is.
+                  "group-data-[dragging]/menu-item:bg-sidebar group-data-[dragging]/menu-item:bg-linear-to-b group-data-[dragging]/menu-item:from-sidebar-row-active group-data-[dragging]/menu-item:to-sidebar-row-active group-data-[dragging]/menu-item:opacity-100 group-data-[dragging]/menu-item:shadow-lg",
                 )}
                 onClick={(event) => {
                   if (isRowEvent(event)) onOpen();

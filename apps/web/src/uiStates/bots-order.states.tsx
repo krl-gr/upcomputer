@@ -129,7 +129,7 @@ async function holdScoutOverPlanner(cell: HTMLElement) {
     await act(() => pointer("pointermove", point, document));
   }
   await vi.waitFor(() =>
-    expect(cell.querySelector("[data-sidebar-list-row].shadow-lg")).not.toBeNull(),
+    expect(cell.querySelector("[data-dragging] [data-sidebar-list-row]")).not.toBeNull(),
   );
   // A copy starts at its inline transforms, so it shows the rows at rest, not mid-slide.
   const frozen = cell.cloneNode(true) as HTMLElement;
