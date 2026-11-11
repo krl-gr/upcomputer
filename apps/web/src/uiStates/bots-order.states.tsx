@@ -96,6 +96,17 @@ const names = (cell: HTMLElement) =>
       [...BOTS, NEWBIE].find((shown) => row.textContent?.startsWith(shown.agent.name))?.agent.name,
   );
 
+/** Planner's run counts (the icon column's pill) and, while listed, Reviewer's attention load late. */
+async function badgesLoaded(cell: HTMLElement, { reviewer = true } = {}) {
+  await vi.waitFor(() => {
+    expect(cell.querySelector(`[data-task-run-counts="${PLANNER.threadId}"]`)).not.toBeNull();
+    expect(cell.querySelector(`[data-bot-run-pill="${PLANNER.threadId}"]`)).not.toBeNull();
+    if (reviewer) {
+      expect(rowOf(cell, "Reviewer").querySelector('[data-state="attention"]')).not.toBeNull();
+    }
+  });
+}
+
 const center = (element: Element) => {
   const rect = element.getBoundingClientRect();
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
@@ -121,6 +132,7 @@ function pointer(type: string, point: { x: number; y: number }, on: EventTarget)
  * cancelled so the next state starts without one.
  */
 async function holdScoutOverPlanner(cell: HTMLElement) {
+  await badgesLoaded(cell);
   const from = center(rowOf(cell, "Scout"));
   const to = center(rowOf(cell, "Planner"));
   await act(() => pointer("pointerdown", from, rowOf(cell, "Scout")));
@@ -145,6 +157,7 @@ async function dropScoutOnWriter(cell: HTMLElement) {
   await vi.waitFor(() =>
     expect(names(cell)).toEqual(["Builder", "Reviewer", "Planner", "Writer", "Scout"]),
   );
+  await badgesLoaded(cell);
 }
 
 const states = (compact: boolean): ReadonlyArray<UiState> => [
@@ -152,6 +165,7 @@ const states = (compact: boolean): ReadonlyArray<UiState> => [
     name: "nothing moved yet: the order the computer lists",
     setup: savedOrder(),
     render: () => <Bots compact={compact} />,
+    settle: (cell) => badgesLoaded(cell),
   },
   {
     name: "dragging Scout over Planner: Scout lifted under the pointer, the others make room",
@@ -169,6 +183,7 @@ const states = (compact: boolean): ReadonlyArray<UiState> => [
     name: "after a move, Newbie created and Reviewer deleted: Newbie goes to the end",
     setup: savedOrder([BUILDER, REVIEWER, PLANNER, WRITER, SCOUT]),
     render: () => <Bots compact={compact} bots={[SCOUT, BUILDER, PLANNER, WRITER, NEWBIE]} />,
+    settle: (cell) => badgesLoaded(cell, { reviewer: false }),
   },
 ];
 
