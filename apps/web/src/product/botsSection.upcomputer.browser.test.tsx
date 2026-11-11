@@ -66,6 +66,7 @@ describe("Bots section order", () => {
     async ({ compact }) => {
       const environmentId = EnvironmentId.make(`environment-${compact ? "compact" : "full"}`);
       localStorage.removeItem(BOTS_ORDER_STORAGE_KEY);
+      using _order = { [Symbol.dispose]: () => localStorage.removeItem(BOTS_ORDER_STORAGE_KEY) };
       const sidebar = () => <Sidebar environmentId={environmentId} compact={compact} />;
       await using screen = await render(sidebar());
       expect(names()).toEqual(["Scout", "Builder", "Writer"]);
@@ -73,7 +74,8 @@ describe("Bots section order", () => {
       // A real mouse: the button goes up over the dropped row, whose click must not open it.
       await userEvent.dragAndDrop(rowOf("Scout"), rowOf("Writer"), { steps: 8 });
       await expect.poll(names).toEqual(["Builder", "Writer", "Scout"]);
-      expect(screen.router!.state.location.pathname).toBe("/");
+      // The history moves as soon as a navigation starts; the router's state follows later.
+      expect(screen.router!.history.location.pathname).toBe("/");
 
       // A reload reads the order back.
       await screen.unmount();
