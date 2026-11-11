@@ -29,19 +29,21 @@ export function orderBots<T extends PlacedBot>(
 
 /**
  * The saved order after dropping `activeKey` on `overKey`'s place. It holds every bot of the
- * loaded lists and forgets their deleted ones; keys of computers not loaded now (offline or
- * filtered out) keep their places for when they show again.
+ * loaded lists and forgets their deleted ones; keys of computers not loaded now (offline,
+ * filtered out, or whose list failed) keep their places for when they show again.
  */
 export function moveBotInOrder(input: {
   readonly order: ReadonlyArray<string>;
   readonly lists: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
     readonly bots: ReadonlyArray<OrderedBot>;
+    readonly loaded: boolean;
   }>;
   readonly activeKey: string;
   readonly overKey: string;
 }): ReadonlyArray<string> {
-  const { order, lists, activeKey, overKey } = input;
+  const { order, activeKey, overKey } = input;
+  const lists = input.lists.filter((list) => list.loaded);
   const known = new Set(
     lists.flatMap(({ environmentId, bots }) => bots.map((bot) => botOrderKey(environmentId, bot))),
   );

@@ -44,7 +44,9 @@ function Sidebar(props: { readonly environmentId: EnvironmentId; readonly compac
         style={props.compact ? { width: SIDEBAR_COMPACT_WIDTH } : undefined}
       >
         <div data-sidebar="sidebar" className="bg-sidebar">
-          <BotsSection lists={[{ environmentId: props.environmentId, bots: BOTS, error: "" }]} />
+          <BotsSection
+            lists={[{ environmentId: props.environmentId, bots: BOTS, loaded: true, error: "" }]}
+          />
         </div>
       </div>
     </SidebarProvider>

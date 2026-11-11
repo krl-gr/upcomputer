@@ -224,7 +224,14 @@ function WholeSidebar(props: {
               <ProductSidebarNavigation />
               <SidebarProjectsSection projectGroups={PROJECT_GROUPS} onAddProject={noop} loaded />
               <BotsSection
-                lists={[{ environmentId: ENVIRONMENT_ID, bots: props.bots ?? BOTS, error: "" }]}
+                lists={[
+                  {
+                    environmentId: ENVIRONMENT_ID,
+                    bots: props.bots ?? BOTS,
+                    loaded: true,
+                    error: "",
+                  },
+                ]}
               />
               <SidebarThreadsSectionHeader
                 onNewThread={noop}

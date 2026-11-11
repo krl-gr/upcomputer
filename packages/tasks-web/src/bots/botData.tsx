@@ -197,6 +197,8 @@ export function useBots(environmentId: EnvironmentId) {
 export interface BotSectionList {
   readonly environmentId: EnvironmentId;
   readonly bots: ReadonlyArray<Bot>;
+  /** False while its first load failed: `bots` is then empty, not the computer's bots. */
+  readonly loaded: boolean;
   readonly error: string;
 }
 
@@ -254,8 +256,8 @@ export function useBotSectionLists(
       shown
         ? shown.split("\n").map((entry) => {
             const environmentId = entry.slice(0, entry.lastIndexOf("\t")) as EnvironmentId;
-            const { bots, error } = storeFor(environmentId).list;
-            return { environmentId, bots, error };
+            const { bots, loaded, error } = storeFor(environmentId).list;
+            return { environmentId, bots, loaded, error };
           })
         : [],
     [shown],

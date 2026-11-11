@@ -14,8 +14,10 @@ const key = (environmentId: EnvironmentId, id: string) =>
 const ids = (bots: ReadonlyArray<ReturnType<typeof placed>>) =>
   bots.map(({ environmentId, bot }) => `${environmentId === here ? "" : "there:"}${bot.agent.id}`);
 const lists = (hereIds: ReadonlyArray<string>, thereIds: ReadonlyArray<string> | null = null) => [
-  { environmentId: here, bots: hereIds.map((id) => ({ agent: { id } })) },
-  ...(thereIds ? [{ environmentId: there, bots: thereIds.map((id) => ({ agent: { id } })) }] : []),
+  { environmentId: here, bots: hereIds.map((id) => ({ agent: { id } })), loaded: true },
+  ...(thereIds
+    ? [{ environmentId: there, bots: thereIds.map((id) => ({ agent: { id } })), loaded: true }]
+    : []),
 ];
 
 describe("orderBots", () => {
@@ -57,11 +59,11 @@ describe("moveBotInOrder", () => {
 
   it("forgets deleted bots of loaded computers and keeps other computers' places", () => {
     const order = [key(there, "x"), key(here, "deleted"), key(here, "a"), key(here, "b")];
-    expect(move(order, lists(["a", "b"]), key(here, "b"), key(here, "a"))).toEqual([
-      key(there, "x"),
-      key(here, "b"),
-      key(here, "a"),
-    ]);
+    const expected = [key(there, "x"), key(here, "b"), key(here, "a")];
+    expect(move(order, lists(["a", "b"]), key(here, "b"), key(here, "a"))).toEqual(expected);
+    // A computer whose list failed to load shows no bots, but they still exist.
+    const failed = [...lists(["a", "b"]), { environmentId: there, bots: [], loaded: false }];
+    expect(move(order, failed, key(here, "b"), key(here, "a"))).toEqual(expected);
   });
 
   it("moves a bot between computers' bots", () => {
