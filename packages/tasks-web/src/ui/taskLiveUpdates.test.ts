@@ -2,6 +2,8 @@ import * as NodeAssert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import * as NodeTimersPromises from "node:timers/promises";
 import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
+import { RpcClientError } from "effect/rpc";
+import * as Socket from "effect/socket/Socket";
 import type {
   TaskChange,
   TaskPageInput,
@@ -333,6 +335,18 @@ test("a lane whose computer is not connected loads by itself when the computer r
     h.latest().page!.tasks.map((task) => task.id),
     ["a", "b"],
   );
+});
+
+test("a request cut off by a dying socket counts as a disconnected computer", async (context) => {
+  const h = harness();
+  context.onTestFinished(() => h.loader.dispose());
+  h.pages(() =>
+    Promise.reject(
+      new RpcClientError.RpcClientError({ reason: new Socket.SocketCloseError({ code: 1006 }) }),
+    ),
+  );
+  h.loader.change(sync);
+  await until(() => h.latest()?.disconnected === true);
 });
 
 test("a real failure is not taken for a disconnected computer", async (context) => {

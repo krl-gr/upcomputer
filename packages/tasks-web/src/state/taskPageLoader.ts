@@ -1,4 +1,4 @@
-import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
+import { EnvironmentRpcUnavailableError, isRpcClientError } from "@t3tools/client-runtime/rpc";
 import type { TaskChange, TaskId, TaskPageInput } from "@t3tools/tasks-contracts/v1";
 import * as Schema from "effect/Schema";
 import type { TasksStateTarget } from "./tasksState.ts";
@@ -77,7 +77,8 @@ export class TaskPageLoader {
     this.emit({
       initialLoading: false,
       error: error instanceof Error ? error.message : "Task updates are temporarily unavailable.",
-      disconnected: isEnvironmentRpcUnavailable(error),
+      // A request cut off by a dying socket fails as a transport error, not as unavailable.
+      disconnected: isEnvironmentRpcUnavailable(error) || isRpcClientError(error),
     });
   }
 
