@@ -62,7 +62,7 @@ describe("Bots section order", () => {
     { compact: false, where: "the full sidebar" },
     { compact: true, where: "the icon column" },
   ])(
-    "drags a bot to a new place in $where, keeps it, and still opens on a click",
+    "opens a bot on a click, and drags a bot to a new place in $where that it keeps",
     async ({ compact }) => {
       const environmentId = EnvironmentId.make(`environment-${compact ? "compact" : "full"}`);
       localStorage.removeItem(BOTS_ORDER_STORAGE_KEY);
@@ -70,22 +70,21 @@ describe("Bots section order", () => {
       const sidebar = () => <Sidebar environmentId={environmentId} compact={compact} />;
       await using screen = await render(sidebar());
       expect(names()).toEqual(["Scout", "Builder", "Writer"]);
+      // Before any drag: dnd-kit swallows clicks for 50 ms after a drop, on the whole document.
+      await userEvent.click(rowOf("Builder"));
+      const builderChat = `/${environmentId}/bot-builder-chat`;
+      await expect.poll(() => screen.router!.state.location.pathname).toBe(builderChat);
 
       // A real mouse: the button goes up over the dropped row, whose click must not open it.
       await userEvent.dragAndDrop(rowOf("Scout"), rowOf("Writer"), { steps: 8 });
       await expect.poll(names).toEqual(["Builder", "Writer", "Scout"]);
       // The history moves as soon as a navigation starts; the router's state follows later.
-      expect(screen.router!.history.location.pathname).toBe("/");
+      expect(screen.router!.history.location.pathname).toBe(builderChat);
 
       // A reload reads the order back.
       await screen.unmount();
-      await using again = await render(sidebar());
+      await using _again = await render(sidebar());
       expect(names()).toEqual(["Builder", "Writer", "Scout"]);
-
-      await userEvent.click(rowOf("Scout"));
-      await expect
-        .poll(() => again.router!.state.location.pathname)
-        .toBe(`/${environmentId}/bot-scout-chat`);
     },
   );
 });
