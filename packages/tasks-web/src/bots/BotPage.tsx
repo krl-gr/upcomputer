@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
-import { ArrowLeftIcon, BanIcon, InfoIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, BanIcon, DicesIcon, InfoIcon, XIcon } from "lucide-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { describeError } from "@t3tools/client-runtime/errors";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
@@ -430,7 +430,32 @@ function BotForm({
           </SettingsSection>
         ) : null}
         <SettingsSection title="Appearance">
-          <div className="flex flex-col items-center gap-2 px-3 pt-6 pb-4 sm:px-4">
+          <div className="relative flex flex-col items-center gap-2 px-3 pt-6 pb-4 sm:px-4">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost-muted"
+                    className="absolute top-3 right-3"
+                    aria-label="Randomize appearance"
+                    disabled={!editable}
+                    onClick={() => {
+                      const { shapes, colors, accessories } = botAppearanceCatalog;
+                      setAppearance({
+                        shape: shapes[Math.floor(Math.random() * shapes.length)]!.id,
+                        color: colors[Math.floor(Math.random() * colors.length)]!.id,
+                        accessory: accessories[Math.floor(Math.random() * accessories.length)]!.id,
+                      });
+                    }}
+                  >
+                    <DicesIcon />
+                  </Button>
+                }
+              />
+              <TooltipPopup side="top">Randomize appearance</TooltipPopup>
+            </Tooltip>
             <CharacterPreview appearance={appearance} state={status.state} />
             <div className="w-full max-w-sm text-lg font-semibold [&_input]:text-center">
               <Input
