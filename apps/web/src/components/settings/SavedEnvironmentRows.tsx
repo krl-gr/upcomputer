@@ -701,7 +701,7 @@ function ConfiguredCloudLinkRow({
       ) : isElectron ? (
         <SettingsRow
           title={searchableSetting("t3-connect").title}
-          description="Run `t3 connect link` on the host, then restart T3 Code there."
+          description="Run `up connect link` on the host, then restart Up.computer there."
         />
       ) : null}
       {signedOut && showSwitch ? null : (
@@ -747,11 +747,11 @@ function ConfiguredCloudLinkRow({
       {managedTunnelActive && connectDeviceApproval ? (
         <SettingsRow
           title={searchableSetting("connect-device-approval").title}
-          description="Devices that sign in to your T3 Connect account wait until someone already connected here approves them."
+          description="Devices that sign in to your UpComputer Connect account wait until someone already connected here approves them."
           managed={connectDenial}
           control={
             <CloudLinkSwitch
-              ariaLabel="Require approval for new T3 Connect devices"
+              ariaLabel="Require approval for new UpComputer Connect devices"
               checked={connectDeviceApproval.required}
               disabled={!connectDeviceApproval.canManage}
               disabledReason={

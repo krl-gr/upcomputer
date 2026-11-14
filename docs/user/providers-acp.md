@@ -98,7 +98,7 @@ backed by that native session. Importing the same agent session again returns th
 including when another client performs the import.
 
 The thread keeps the native session's title and last-update value as provider metadata without
-overwriting a title you set in T3 Code. Agents that report ACP context usage drive the thread details
+overwriting a title you set in Up.computer. Agents that report ACP context usage drive the thread details
 context window and cumulative cost metadata. See
 [commands and skills](./composer.md#commands-and-skills) to show it on web and desktop.
 Text resources and links render as assistant output;

@@ -21,11 +21,11 @@ For a command-line host, run:
 up remote
 ```
 
-It asks how your other devices reach the machine: T3 Connect, the local network,
-or both. Choose T3 Connect and follow the sign-in instructions. It then runs
-T3 Code as a [background service](./background-service.md).
-`t3 connect` is the same as `t3 up --connect`. Run `t3 up` again to change your
-choice, and `t3 status` to see it.
+It asks how your other devices reach the machine: UpComputer Connect, the local network,
+or both. Choose UpComputer Connect and follow the sign-in instructions. It then runs
+Up.computer as a [background service](./background-service.md).
+`up connect` is the same as `up remote --connect`. Run `up remote` again to change your
+choice, and `up status` to see it.
 
 Instead of the background service, you can keep the desktop app running with
 its local environment enabled. Closing the desktop app's last window stops its
@@ -46,27 +46,27 @@ disconnect an otherwise healthy conversation.
 
 ### Approve new devices
 
-By default, any device signed in to your T3 Connect account can open a linked
+By default, any device signed in to your UpComputer Connect account can open a linked
 machine. To require approval instead, turn on **Require approval for new
-devices** with the T3 Connect settings in **Settings → Sharing & access** on the
-host, or when you first set up T3 Connect. Then someone who takes over your T3
+devices** with the UpComputer Connect settings in **Settings → Sharing & access** on the
+host, or when you first set up UpComputer Connect. Then someone who takes over your Up.computer
 Connect account cannot reach the machine from a new device without your
 approval. Review the devices that are already approved, described below.
 
 A new device waits and shows a code such as `K7QM-2XFD`. Approve it from a
 device that is already connected, using the prompt or **Settings → Sharing &
 access**. Check that the code matches the one on the waiting device. On a
-headless host, run `t3 auth connect-device list` and then
-`t3 auth connect-device approve K7QM-2XFD`. A request expires after 10 minutes,
+headless host, run `up auth connect-device list` and then
+`up auth connect-device approve K7QM-2XFD`. A request expires after 10 minutes,
 and the device asks again when it retries. Deny keeps that device out until its
 request expires.
 
-Each device is approved once. Revoke it from **T3 Connect devices** in the same
-settings page, or with `t3 auth connect-device revoke <code>`. With approval on,
+Each device is approved once. Revoke it from **UpComputer Connect devices** in the same
+settings page, or with `up auth connect-device revoke <code>`. With approval on,
 it has to ask again. With approval off, it can connect again on its own, so
-revoking in the app offers to turn approval on first. Devices that connected through T3 Connect while approval was off stay
+revoking in the app offers to turn approval on first. Devices that connected through UpComputer Connect while approval was off stay
 approved and appear in that list for you to review. A device that has not
-connected since you updated T3 Code asks for approval like a new one. Older apps
+connected since you updated Up.computer asks for approval like a new one. Older apps
 cannot show the code, so update them before you turn approval on.
 
 ### Scripts and agents
@@ -330,8 +330,8 @@ sudo up browser setup
 ```
 
 The server shows the exact line for how you started it, and keeps your `PATH`
-when you started it with `npx` and Node is installed only for your user. Where `t3` is not on your `PATH`, such as with only the
-desktop app installed, it names the full path of the app's own `t3` instead. It allows Chrome's sandbox with an AppArmor profile and installs
+when you started it with `npx` and Node is installed only for your user. Where `up` is not on your `PATH`, such as with only the
+desktop app installed, it names the full path of the app's own `up` instead. It allows Chrome's sandbox with an AppArmor profile and installs
 any missing libraries and system fonts with apt; pages that load without text
 can mean the host has no fonts. It is safe to run again, and each run reloads
 the AppArmor profile: run it again if the browser reports a blocked sandbox on a
@@ -375,12 +375,12 @@ off, its result arrives once it is back on.
 
 On the machine you will work from, open **Settings → Environments → Linked environments**,
 choose **Link**, and pick the other machine or enter its address. The list
-holds the machines this app knows and those on your T3 Connect account. If this
+holds the machines this app knows and those on your UpComputer Connect account. If this
 app has an address for that machine and is connected to it with a session that
 manages access there, it makes the pairing code itself; otherwise paste one
 from that machine's **Settings → Sharing & access**. An address you type always
 needs a pasted code. From a terminal, use
-`t3 environment link <address> --pairing-code <code> --access <mode>`.
+`up environment link <address> --pairing-code <code> --access <mode>`.
 
 You can also ask an agent to link a machine by name, such as "delegate this to
 my vps". It shows a card in the thread where you pick the machine the same way
@@ -424,11 +424,11 @@ expires.
 To choose a token's permissions, pass `--scope` once for each scope you want:
 
 ```sh
-t3 pair --scope orchestration:read --scope relay:read
+up pair --scope orchestration:read --scope relay:read
 ```
 
 The selected scopes replace the default permissions. The same option works with
-`t3 auth pairing create` and `t3 auth session issue`; each command's
+`up auth pairing create` and `up auth session issue`; each command's
 `--help` lists the available scopes. Without `--scope`, pairing tokens and issued
 bearer sessions get every permission, including managing access and UpComputer Connect.
 A terminal or a full-access agent on the host can reach those as well, so a
@@ -507,8 +507,8 @@ If a computer should only drive work running elsewhere, turn off its local envir
 desktop app, open **Settings → Environments** and switch off **Local
 environment**. Up.computer restarts without a local server: no local agents or terminals run, WSL
 backends stay off, and other devices can no longer connect to this computer. Your projects,
-history, and saved connections are kept, and you keep working through pairing, T3 Connect, or SSH.
-If a [background service](./background-service.md) on this computer uses the same T3 home, the
+history, and saved connections are kept, and you keep working through pairing, UpComputer Connect, or SSH.
+If a [background service](./background-service.md) on this computer uses the same Up.computer home, the
 app still treats it as this computer: **Open in** and file reveal for its projects run here,
 whichever connection you reach it through.
 

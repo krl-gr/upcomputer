@@ -41,7 +41,7 @@ For presets that differ only in API keys or endpoints, use the instance's
 **Environment variables**. Variable assignments do not belong in **Launch arguments**.
 
 File paths in the `--settings` and `--append-system-prompt-file` launch arguments
-can start with `~` for the home directory of the machine running T3 Code. Any
+can start with `~` for the home directory of the machine running Up.computer. Any
 other relative path is read from the thread's project folder, or its worktree.
 
 Claude Code's verbose mode can stay enabled when you use Claude for text generation, including
@@ -112,7 +112,7 @@ row in the thread; open it to see every step.
 ## Claude in Chrome
 
 Claude threads can use the Claude in Chrome extension, which works in your own
-Chrome with its sign-ins. T3 Code sessions load it only when asked: add `--chrome`
+Chrome with its sign-ins. Up.computer sessions load it only when asked: add `--chrome`
 to **Launch arguments** in the Claude instance's settings in **Settings > Providers**.
 It applies to sessions that start after you save. Set up the extension as you would
 for Claude Code first; see Claude Code's [Chrome guide](https://code.claude.com/docs/en/chrome).

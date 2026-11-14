@@ -207,12 +207,12 @@ function formatCloudStatus(status: CloudCliStatus, options?: { readonly json?: b
         ? "Run `up connect link` to enable UpComputer Connect."
         : !status.linked
           ? publishOnly
-            ? "Start T3 to provision the environment link."
-            : "Start T3 to provision the environment link and launch its managed tunnel."
+            ? "Start Up.computer to provision the environment link."
+            : "Start Up.computer to provision the environment link and launch its managed tunnel."
           : undefined;
 
   return [
-    "T3 Connect",
+    "UpComputer Connect",
     `  Exposure: ${publishOnly ? "publish-only" : status.desired ? "enabled" : "disabled"}`,
     `  Authorization: ${status.authenticated ? "stored credential" : "missing"}`,
     `  Environment link: ${provisioned}`,
@@ -224,12 +224,12 @@ function formatCloudStatus(status: CloudCliStatus, options?: { readonly json?: b
       : publishOnly
         ? [
             "",
-            "This link only publishes agent activity. Remote access through T3 Connect is off, so other devices need their own route to this machine, such as LAN or Tailscale.",
+            "This link only publishes agent activity. Remote access through UpComputer Connect is off, so other devices need their own route to this machine, such as LAN or Tailscale.",
           ]
         : status.reachability === null
           ? [
               "",
-              "No running server answered, so reachability was not checked. Check the background service with `t3 service status`.",
+              "No running server answered, so reachability was not checked. Check the background service with `up service status`.",
             ]
           : status.reachability.status === "reachable"
             ? [

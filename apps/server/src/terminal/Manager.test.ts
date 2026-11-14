@@ -2235,7 +2235,7 @@ it.layer(
       runtimeEnv: { Term_Program: "", term_program_version: "custom-version" },
     },
   ] as const)(
-    "identifies as T3 Code unless the terminal env overrides it on $platform",
+    "identifies as Up.computer unless the terminal env overrides it on $platform",
     ({ platform, parentEnv, runtimeEnv }) =>
       Effect.gen(function* () {
         const originalEnv = { ...parentEnv };

@@ -1,6 +1,6 @@
 # Running Up.computer in the background
 
-On Linux, macOS, and Windows, T3 Code can run as a service for your user so you
+On Linux, macOS, and Windows, Up.computer can run as a service for your user so you
 do not need to keep a terminal open.
 
 ## Manage the service
@@ -148,8 +148,8 @@ that session open.
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `linger-unavailable`                    | Run `loginctl show-user "$(id -un)" --property=Linger` and check that systemd-logind is available.                             |
 | `user-manager-unavailable`              | Run `systemctl --user status` in a login session for the service user; check your distribution's systemd user-session support. |
-| `service-disabled` or `service-stopped` | Read the log and, on Linux, `systemctl --user status t3code.service`, then use the repair command printed by T3 Code.          |
-| `restart-pending`                       | A newer version is installed but the service still runs the previous one. Run `t3 service restart`.                            |
+| `service-disabled` or `service-stopped` | Read the log and, on Linux, `systemctl --user status t3code.service`, then use the repair command printed by Up.computer.      |
+| `restart-pending`                       | A newer version is installed but the service still runs the previous one. Run `up service restart`.                            |
 
 On macOS, check **System Settings → General → Login Items** if the service no
 longer starts at login. If agent work cannot access Desktop, Documents, or
@@ -169,13 +169,13 @@ and turns on automatic shrinking. Settings > Maintenance (web and desktop) or
 Settings > Maintenance (mobile) suggests the repair when at least 1 GiB can be
 reclaimed.
 
-When the desktop app or the background service runs T3 Code on that machine,
-select **Reclaim** in Settings on web or desktop. T3 Code checks for free disk
+When the desktop app or the background service runs Up.computer on that machine,
+select **Reclaim** in Settings on web or desktop. Up.computer checks for free disk
 space, then stops, repairs the database, and starts again. It is offline while
 the repair runs, and running agents stop. If the repair fails, Settings shows
 why.
 
-In other cases, such as a server you started by hand, run `t3 doctor` on the
+In other cases, such as a server you started by hand, run `up doctor` on the
 machine that hosts the environment. It reports the database size and the
 space it can reclaim, then asks which repairs to run;
 pass `--fix` to run the recommended ones without a prompt (for scripts), or
@@ -190,7 +190,7 @@ directory.
 
 The repair's time grows with the size of the whole database, not only the
 space it reclaims, and can exceed an hour on a large database or a slow disk;
-`t3 doctor` shows each step as it runs. It rebuilds the database through a
+`up doctor` shows each step as it runs. It rebuilds the database through a
 temporary copy, so it needs free space of about twice the data still in use
 (the database size minus the reclaimable space): once in the system temporary
 directory (on Linux and macOS, `TMPDIR`, or `/var/tmp` when it is not set) and

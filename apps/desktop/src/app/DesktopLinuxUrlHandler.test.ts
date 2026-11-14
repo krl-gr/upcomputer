@@ -219,7 +219,7 @@ describe("DesktopLinuxUrlHandler", () => {
     for (const dir of ["/home/alice/Applications", '/home/al ice/My "100%" $Apps\\x']) {
       const previous = dir + "/" + from;
       const previousEntry = DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
-        displayName: "T3 Code (Beta)",
+        displayName: "Up.computer (Beta)",
         execTarget: previous,
         scheme: "t3code",
       });

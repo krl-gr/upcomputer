@@ -658,7 +658,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                 message: couldNotVerify
                   ? "Update command completed, but Up.computer could not verify the provider version."
                   : stillOutdated
-                    ? "Update command completed, but T3 Code still detects an outdated provider version."
+                    ? "Update command completed, but Up.computer still detects an outdated provider version."
                     : needsOpenCodeServerRestart(verifiedProviders)
                       ? OPENCODE_SERVER_RESTART_MESSAGE
                       : "Provider updated.",

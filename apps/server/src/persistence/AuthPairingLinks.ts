@@ -483,7 +483,7 @@ export const make = Effect.gen(function* () {
     Result: Schema.Struct({ id: Schema.String }),
     execute: ({ proofKeyThumbprint, keepProofKeyThumbprint, revokedAt }) =>
       sql`
-        -- Only T3 Connect mints bind a proof key, so these are that key's connect credentials.
+        -- Only UpComputer Connect mints bind a proof key, so these are that key's connect credentials.
         UPDATE auth_pairing_links
         SET revoked_at = ${revokedAt}
         WHERE proof_key_thumbprint IS NOT NULL

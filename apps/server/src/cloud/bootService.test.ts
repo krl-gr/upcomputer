@@ -147,7 +147,7 @@ it.each([
   ["a single quote", "/home/theo/Theo's T3"],
   ["a backslash", "/home/theo/T3\\Data"],
   ["a newline", "/home/theo/T3\nData"],
-])("renders a loadable unit, or refuses, for a T3 home with %s", (_, baseDir) => {
+])("renders a loadable unit, or refuses, for an Up.computer home with %s", (_, baseDir) => {
   let unit: string;
   try {
     unit = BootService.renderBootServiceUnit({

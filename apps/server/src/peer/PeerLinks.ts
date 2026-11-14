@@ -205,7 +205,7 @@ const probeFailure = (
   }
   return new PeerLinkError({
     reason: "not_a_t3_environment",
-    message: `${origin} answered, but not as a T3 Code environment this version understands.`,
+    message: `${origin} answered, but not as an Up.computer environment this version understands.`,
   });
 };
 

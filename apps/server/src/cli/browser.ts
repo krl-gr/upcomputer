@@ -148,8 +148,8 @@ const browserSetupCommand = Command.make("setup", { baseDir: baseDirFlag }).pipe
         return yield* Console.log(
           rootWarning ??
             (Option.isSome(browser)
-              ? "This host is ready for T3's browser."
-              : "Chrome's sandbox is allowed here. T3's browser installs on first use; if it then reports missing libraries, run this again.") +
+              ? "This host is ready for Up.computer's browser."
+              : "Chrome's sandbox is allowed here. Up.computer's browser installs on first use; if it then reports missing libraries, run this again.") +
               reloadHint,
         );
       }
@@ -200,8 +200,8 @@ const browserSetupCommand = Command.make("setup", { baseDir: baseDirFlag }).pipe
         ]);
         yield* Console.log(
           profileOnDisk
-            ? `Reloaded the AppArmor profile at ${PreviewBrowserHost.APPARMOR_PROFILE_PATH} that allows Chrome's sandbox for T3's browser.`
-            : `Wrote and loaded the AppArmor profile at ${PreviewBrowserHost.APPARMOR_PROFILE_PATH} that allows Chrome's sandbox for T3's browser.`,
+            ? `Reloaded the AppArmor profile at ${PreviewBrowserHost.APPARMOR_PROFILE_PATH} that allows Chrome's sandbox for Up.computer's browser.`
+            : `Wrote and loaded the AppArmor profile at ${PreviewBrowserHost.APPARMOR_PROFILE_PATH} that allows Chrome's sandbox for Up.computer's browser.`,
         );
       }
 

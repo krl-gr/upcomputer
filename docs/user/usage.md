@@ -24,9 +24,9 @@ OpenCode reads its SQLite database and older JSON history. Antigravity reads loc
 databases, including Up.computer-managed profiles. Set `OPENCODE_DATA_DIR` or `ANTIGRAVITY_DATA_DIR` on the
 server to read a different data directory; comma-separated paths read multiple directories.
 
-Cursor reads account usage from Cursor's API for the account you signed in with in T3 or set as
-`CURSOR_API_KEY`. This includes headless T3 sessions and desktop usage across machines; the same
-account counts once across connected environments. T3 does not estimate missing tokens from
+Cursor reads account usage from Cursor's API for the account you signed in with in Up.computer or set as
+`CURSOR_API_KEY`. This includes headless Up.computer sessions and desktop usage across machines; the same
+account counts once across connected environments. Up.computer does not estimate missing tokens from
 conversation text.
 
 Usage includes each configured account's history, including disabled accounts. Custom homes follow
@@ -157,7 +157,7 @@ in OpenCode with an API key. A Console browser sign-in alone does not report the
 your Go API key as `OPENCODE_API_KEY` in the OpenCode instance's **Environment variables**, then
 refresh provider status. Cursor reports
 its monthly allowance, including separate Auto and API usage, for `CURSOR_AUTH_TOKEN` when it is set,
-otherwise for the account you signed in with in T3 or set as `CURSOR_API_KEY`.
+otherwise for the account you signed in with in Up.computer or set as `CURSOR_API_KEY`.
 Sign-in and API keys report limits only with Cursor's default API endpoint. If you configure a custom
 Cursor endpoint, use an explicit `CURSOR_AUTH_TOKEN` for limits.
 

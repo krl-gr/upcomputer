@@ -23,7 +23,7 @@ import {
 
 afterEach(() => vi.restoreAllMocks());
 
-it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("t3 uninstall command", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("up uninstall command", (it) => {
   it.effect("names another home's service it leaves installed", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

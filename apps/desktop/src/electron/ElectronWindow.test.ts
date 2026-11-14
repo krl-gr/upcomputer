@@ -128,7 +128,7 @@ describe("ElectronWindow", () => {
       assert.deepEqual(windowsForegroundPrepareMock.mock.calls[0]?.[0], {
         windowId: 41,
         processId: process.pid,
-        title: "T3 Code (Dev)",
+        title: "Up.computer (Dev)",
         bounds: { x: 200, y: 100, width: 2_400, height: 1_600 },
         contentBounds: { x: 216, y: 100, width: 2_368, height: 1_584 },
       });

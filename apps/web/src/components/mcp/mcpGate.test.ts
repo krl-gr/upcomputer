@@ -92,8 +92,8 @@ describe("resolveMcpGate", () => {
   });
 
   it.each([
-    ["no T3 Connect sign-in", { ...open, signedIn: false }, "sign-in"],
-    ["no permission to read T3 Connect", { ...open, canReadRelay: false }, "no-relay-read"],
+    ["no UpComputer Connect sign-in", { ...open, signedIn: false }, "sign-in"],
+    ["no permission to read UpComputer Connect", { ...open, canReadRelay: false }, "no-relay-read"],
     ["a server without approval codes", { ...open, approvalCodes: false }, "update"],
     ["no tunnel", { ...open, linkState: { ...tunnel, managedTunnelActive: false } }, "turn-on"],
     ["a removed link", { ...open, linkState: { ...tunnel, linkRevoked: true } }, "turn-on"],
@@ -113,18 +113,22 @@ describe("resolveMcpGate", () => {
       "turn-on",
     ],
     [
-      "a saved machine T3 Connect does not list",
+      "a saved machine UpComputer Connect does not list",
       { ...saved, relay: { status: "listed", endpoint: undefined } },
       "turn-on",
     ],
-    ["T3 Connect's list still loading", { ...saved, relay: { status: "loading" } }, "checking"],
     [
-      "a disconnected saved machine while T3 Connect's list refreshes",
+      "UpComputer Connect's list still loading",
+      { ...saved, relay: { status: "loading" } },
+      "checking",
+    ],
+    [
+      "a disconnected saved machine while UpComputer Connect's list refreshes",
       { ...saved, connected: false, relay: { status: "loading" } },
       "checking",
     ],
     [
-      "no tunnel, before T3 Connect's list loads",
+      "no tunnel, before UpComputer Connect's list loads",
       {
         ...saved,
         linkState: { ...tunnel, managedTunnelActive: false },
@@ -143,7 +147,7 @@ describe("resolveMcpGate", () => {
           cause: "no_connector",
           reason: "Cloudflare has no live connection from this machine for the tunnel.",
           hint: null,
-          fix: "Restart T3 Code.",
+          fix: "Restart Up.computer.",
         },
       },
       "offline",

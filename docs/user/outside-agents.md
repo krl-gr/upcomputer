@@ -6,18 +6,18 @@ check which providers and models are available. This covers Claude Code or
 Codex in your own terminal, ChatGPT, and bots that support MCP. Each agent signs
 in once, and you choose what it may do.
 
-## Add T3 Code to an assistant app
+## Add Up.computer to an assistant app
 
-Open the command palette (`Cmd/Ctrl+K`) and choose **Use T3 Code in another
+Open the command palette (`Cmd/Ctrl+K`) and choose **Use Up.computer in another
 app (MCP)**, or use the button in **Settings → Sharing & access**. Pick the
 app and follow the step for that app. Assistants like
-Poke and Claude run in the cloud, so the wizard first asks you to sign in to T3
+Poke and Claude run in the cloud, so the wizard first asks you to sign in to Up.computer
 Connect and turn it on for the environment. To reach your other machines through
 the same connection, turn on **Linked environments** in Labs and
 [link them](./remote-access.md#link-another-environment).
 
 When the app opens the sign-in page, choose what it may do and approve with your
-T3 Connect account. On an older environment, the wizard asks for the level and
+UpComputer Connect account. On an older environment, the wizard asks for the level and
 gives you a code to paste instead. A code works once, for 5 minutes, and
 approves only that level.
 
@@ -35,7 +35,7 @@ example:
 https://<environment-address>/mcp
 ```
 
-When T3 Connect serves the environment, the copied URL is its T3 Connect
+When UpComputer Connect serves the environment, the copied URL is its UpComputer Connect
 address, which agents can reach from anywhere. Otherwise it uses the route this
 device is connected over, so an agent on the same device can reach it.
 
@@ -53,8 +53,8 @@ device is connected over, so an agent on the same device can reach it.
 ## Approve a sign-in
 
 The first time an agent connects, it opens a sign-in page. When the agent
-reaches the environment through T3 Connect, the page opens on the T3 Code web
-app: sign in with the T3 Connect account the environment is linked to and
+reaches the environment through UpComputer Connect, the page opens on the Up.computer web
+app: sign in with the UpComputer Connect account the environment is linked to and
 approve there, without a code. Otherwise the page opens on the environment.
 Either page names the agent and where its access goes:
 
@@ -64,12 +64,12 @@ Either page names the agent and where its access goes:
   Anyone who runs that service gets the access.
 
 Only approve a sign-in you just started. On the environment's own page, enter a
-code from **Use T3 Code in another app (MCP)**, **Settings → Sharing & access**,
-or `t3 auth pairing create` on the host. A browser already signed in to the
+code from **Use Up.computer in another app (MCP)**, **Settings → Sharing & access**,
+or `up auth pairing create` on the host. A browser already signed in to the
 environment with permission to manage access can approve without a code. On the
 web app, **Use a sign-in code instead** opens the environment's own page.
 
-A code from **Use T3 Code in another app (MCP)** already carries the level you
+A code from **Use Up.computer in another app (MCP)** already carries the level you
 picked there. With another code, choose what the agent may do here: **Auto** is
 selected by default, or the closest lower mode allowed by your organization’s
 policy. Approving without a code starts at **Read only**:
@@ -82,11 +82,11 @@ policy. Approving without a code starts at **Read only**:
 
 ## What outside agents can call
 
-Some tools only work for an agent running inside a T3 thread, because they act
+Some tools only work for an agent running inside an Up.computer thread, because they act
 as that thread: subagents, secret requests, rendered HTML, the browser preview,
 devices, and worktree handoff. They still appear in an outside agent's tool
 list, but calling one returns an error saying it needs an agent running inside
-T3 Code.
+Up.computer.
 
 - To hand off work, start a thread with `t3_thread_launch`, then follow it with
   `t3_thread_wait` or `t3_thread_read`, instead of `create_threads` or

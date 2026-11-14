@@ -296,7 +296,7 @@ it.effect("an update the client walks away from still finishes", () => {
   );
 });
 
-it.effect("mints a T3 Connect credential under the host's device approval setting", () =>
+it.effect("mints a UpComputer Connect credential under the host's device approval setting", () =>
   withService({}, ({ mintCredential, connectCredentialRequests }) =>
     Effect.gen(function* () {
       const proof = yield* signRelayJwt({

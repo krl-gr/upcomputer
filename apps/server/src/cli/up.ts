@@ -130,7 +130,7 @@ const formatSetup = (setup: Setup) => {
   // This home's access settings reach no service, so only the service is shown.
   if (service.otherBaseDir !== undefined) {
     return [
-      `  ${"Service".padEnd(15)}installed for another T3 home · ${service.otherBaseDir}`,
+      `  ${"Service".padEnd(15)}installed for another Up.computer home · ${service.otherBaseDir}`,
       "",
       `Pass \`${BootService.formatBootServiceBaseDirOption(service.otherBaseDir)}\` to manage it.`,
     ].join("\n");
@@ -417,7 +417,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
         }
         if (outcome === "skipped") {
           yield* Console.log(
-            "The installed service was not restarted. Run `t3 service status` to see why.",
+            "The installed service was not restarted. Run `up service status` to see why.",
           );
         }
         started = outcome === "restarted";
@@ -546,7 +546,7 @@ export const statusCommand = Command.make("status", {
           ? setupJson(setup)
           : setup.service.otherBaseDir !== undefined
             ? `This machine\n${formatSetup(setup)}`
-            : `This machine\n${formatSetup(setup)}\n\nChange access: \`t3 up\`.`,
+            : `This machine\n${formatSetup(setup)}\n\nChange access: \`up remote\`.`,
       );
     }),
   ),

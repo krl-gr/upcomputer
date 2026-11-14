@@ -128,7 +128,7 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       const windows = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
         provide(effect.pipe(Effect.provideService(HostProcess.Platform, "win32")));
       const desktopShim =
-        '@echo off\r\nrem Written by T3 Code\r\n"C:\\T3 Code\\T3 Code.exe" "x" %*\r\n';
+        '@echo off\r\nrem Written by Up.computer\r\n"C:\\Up.computer\\Up.computer.exe" "x" %*\r\n';
       yield* fs.writeFileString(shim, desktopShim);
       const foreignShim = yield* windows(installCli()).pipe(Effect.flip);
       assert.include(foreignShim.message, "Another t3 is already at");

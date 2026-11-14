@@ -59,7 +59,7 @@ function ConfiguredT3ConnectSidebarSignIn() {
         <SidebarMenuItem>
           <SidebarMenuButton onClick={retryClerkLoad}>
             <RotateCwIcon />
-            <span>Retry T3 Connect</span>
+            <span>Retry UpComputer Connect</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

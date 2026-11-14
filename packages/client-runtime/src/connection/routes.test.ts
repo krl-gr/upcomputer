@@ -108,7 +108,7 @@ describe("connection routes", () => {
     expect(isNearbyAddress("not a url")).toBe(false);
   });
 
-  it("places a new route after faster kinds and ahead of T3 Connect", () => {
+  it("places a new route after faster kinds and ahead of UpComputer Connect", () => {
     expect(insertRoute([RELAY], LAN)).toEqual([LAN, RELAY]);
     expect(insertRoute([LAN, RELAY], TAILNET)).toEqual([LAN, TAILNET, RELAY]);
     expect(insertRoute([TAILNET], LAN)).toEqual([LAN, TAILNET]);

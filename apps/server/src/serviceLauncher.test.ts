@@ -663,7 +663,7 @@ process.exit(0);
     }),
   );
 
-  it.effect("starts the runtime in a T3 home whose name ends in a space", () =>
+  it.effect("starts the runtime in an Up.computer home whose name ends in a space", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -798,7 +798,7 @@ process.exit(0);
 
   it.effect.each([
     { unitVersion: "1.0.0", replacement: "an intentional downgrade" },
-    { unitVersion: "1.2.0", replacement: "another T3 home" },
+    { unitVersion: "1.2.0", replacement: "another Up.computer home" },
   ])(
     "recovers a rolled-back update with unit $unitVersion and preserves $replacement",
     ({ unitVersion, replacement }) =>
@@ -864,7 +864,7 @@ process.exit(0);
         const staleLauncher = yield* createLauncher;
         // A local install can replace the selection or service owner without stopping this launcher.
         const selectedRoot =
-          replacement === "another T3 home" ? path.join(root, "other-home") : root;
+          replacement === "another Up.computer home" ? path.join(root, "other-home") : root;
         yield* writeFakeRuntime(
           fs,
           path,
@@ -895,75 +895,77 @@ process.exit(0);
       }),
   );
 
-  it.effect("waits without exiting and restarts once the other owner releases the Up.computer home", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-reclaim-" });
-      const statePath = path.join(root, "runtime", "service-state.json");
-      const ownerPath = path.join(root, "userdata", "server-owner.sqlite");
-      yield* fs.makeDirectory(path.dirname(ownerPath), { recursive: true });
-      yield* writeFakeRuntime(
-        fs,
-        path,
-        path.join(root, "runtime", "versions", "1.0.0"),
-        [
-          `const db = new (require("node:sqlite").DatabaseSync)(${JSON.stringify(ownerPath)});`,
-          `try { db.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE;"); }`,
-          `catch { process.exit(${SERVER_EXIT_CODE_STATE_DIR_OWNED}); }`,
-          'process.send("owner");',
-          "setInterval(() => {}, 1_000);",
-        ].join("\n"),
-      );
-      yield* Effect.promise(() =>
-        writeServiceState(statePath, {
-          protocol: SERVICE_LAUNCHER_PROTOCOL,
-          activeVersion: "1.0.0",
-        }),
-      );
-      using otherOwner = new NodeSqlite.DatabaseSync(ownerPath);
-      otherOwner.exec("BEGIN EXCLUSIVE;");
-      const refused = Promise.withResolvers<void>();
-      const owned = Promise.withResolvers<void>();
-      yield* Effect.acquireRelease(
-        Effect.sync(() =>
-          vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
-            if (String(chunk).includes("owns this T3 home")) refused.resolve();
-            return true;
+  it.effect(
+    "waits without exiting and restarts once the other owner releases the Up.computer home",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-reclaim-" });
+        const statePath = path.join(root, "runtime", "service-state.json");
+        const ownerPath = path.join(root, "userdata", "server-owner.sqlite");
+        yield* fs.makeDirectory(path.dirname(ownerPath), { recursive: true });
+        yield* writeFakeRuntime(
+          fs,
+          path,
+          path.join(root, "runtime", "versions", "1.0.0"),
+          [
+            `const db = new (require("node:sqlite").DatabaseSync)(${JSON.stringify(ownerPath)});`,
+            `try { db.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE;"); }`,
+            `catch { process.exit(${SERVER_EXIT_CODE_STATE_DIR_OWNED}); }`,
+            'process.send("owner");',
+            "setInterval(() => {}, 1_000);",
+          ].join("\n"),
+        );
+        yield* Effect.promise(() =>
+          writeServiceState(statePath, {
+            protocol: SERVICE_LAUNCHER_PROTOCOL,
+            activeVersion: "1.0.0",
           }),
-        ),
-        (spy) => Effect.sync(() => spy.mockRestore()),
-      );
-      yield* Effect.acquireRelease(
-        Effect.sync(() => {
-          spawnHook.current = (child) => child.once("message", () => owned.resolve());
-        }),
-        () =>
+        );
+        using otherOwner = new NodeSqlite.DatabaseSync(ownerPath);
+        otherOwner.exec("BEGIN EXCLUSIVE;");
+        const refused = Promise.withResolvers<void>();
+        const owned = Promise.withResolvers<void>();
+        yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+              if (String(chunk).includes("owns this Up.computer home")) refused.resolve();
+              return true;
+            }),
+          ),
+          (spy) => Effect.sync(() => spy.mockRestore()),
+        );
+        yield* Effect.acquireRelease(
           Effect.sync(() => {
-            spawnHook.current = undefined;
+            spawnHook.current = (child) => child.once("message", () => owned.resolve());
           }),
-      );
-      const spawnsBefore = spawnedChildren.length;
-      const launcher = new Launcher(
-        root,
-        yield* Effect.promise(() => readServiceState(statePath)),
-        { stateDirOwnerPollMs: 10 },
-      );
-      let completed = false;
-      const running = launcher.run().finally(() => {
-        completed = true;
-      });
-      yield* Effect.promise(() => refused.promise);
-      assert.isFalse(completed);
-      // An idle launcher must not make an SSH launch wait for a server it is not starting.
-      assert.isFalse(yield* Effect.promise(() => serviceLauncherIsServing(root)));
-      otherOwner.close();
-      yield* Effect.promise(() => owned.promise);
-      assert.isTrue(yield* Effect.promise(() => serviceLauncherIsServing(root)));
-      yield* Effect.promise(() => launcher.stop("SIGTERM"));
-      yield* Effect.promise(() => running);
-      assert.strictEqual(spawnedChildren.length - spawnsBefore, 2);
-    }),
+          () =>
+            Effect.sync(() => {
+              spawnHook.current = undefined;
+            }),
+        );
+        const spawnsBefore = spawnedChildren.length;
+        const launcher = new Launcher(
+          root,
+          yield* Effect.promise(() => readServiceState(statePath)),
+          { stateDirOwnerPollMs: 10 },
+        );
+        let completed = false;
+        const running = launcher.run().finally(() => {
+          completed = true;
+        });
+        yield* Effect.promise(() => refused.promise);
+        assert.isFalse(completed);
+        // An idle launcher must not make an SSH launch wait for a server it is not starting.
+        assert.isFalse(yield* Effect.promise(() => serviceLauncherIsServing(root)));
+        otherOwner.close();
+        yield* Effect.promise(() => owned.promise);
+        assert.isTrue(yield* Effect.promise(() => serviceLauncherIsServing(root)));
+        yield* Effect.promise(() => launcher.stop("SIGTERM"));
+        yield* Effect.promise(() => running);
+        assert.strictEqual(spawnedChildren.length - spawnsBefore, 2);
+      }),
   );
 
   it.effect(
@@ -1019,7 +1021,7 @@ process.exit(0);
         yield* Effect.acquireRelease(
           Effect.sync(() =>
             vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
-              if (String(chunk).includes("owns this T3 home")) refused.resolve();
+              if (String(chunk).includes("owns this Up.computer home")) refused.resolve();
               return true;
             }),
           ),
@@ -1121,35 +1123,37 @@ process.exit(0);
     }),
   );
 
-  it.effect("treats the T3 home as owned while the lock or a pre-lock server holds it", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-owned-" });
-      const stateDir = path.join(root, "userdata");
-      const recordPath = path.join(stateDir, "server-runtime.json");
-      yield* fs.makeDirectory(stateDir, { recursive: true });
-      assert.isFalse(yield* Effect.promise(() => stateDirOwned(root)));
+  it.effect(
+    "treats the Up.computer home as owned while the lock or a pre-lock server holds it",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-owned-" });
+        const stateDir = path.join(root, "userdata");
+        const recordPath = path.join(stateDir, "server-runtime.json");
+        yield* fs.makeDirectory(stateDir, { recursive: true });
+        assert.isFalse(yield* Effect.promise(() => stateDirOwned(root)));
 
-      using owner = new NodeSqlite.DatabaseSync(path.join(stateDir, "server-owner.sqlite"));
-      owner.exec("BEGIN EXCLUSIVE;");
-      assert.isTrue(yield* Effect.promise(() => stateDirOwned(root)));
-      owner.close();
+        using owner = new NodeSqlite.DatabaseSync(path.join(stateDir, "server-owner.sqlite"));
+        owner.exec("BEGIN EXCLUSIVE;");
+        assert.isTrue(yield* Effect.promise(() => stateDirOwned(root)));
+        owner.close();
 
-      const record = { version: 1, pid: process.pid, port: 1, origin: "", startedAt: "" };
-      yield* fs.writeFileString(recordPath, JSON.stringify(record));
-      assert.isTrue(yield* Effect.promise(() => stateDirOwned(root)));
-      yield* fs.writeFileString(recordPath, JSON.stringify({ ...record, ownerId: "lock-aware" }));
-      assert.isFalse(yield* Effect.promise(() => stateDirOwned(root)));
-      // This process started after 1970, so its PID was reused since that record.
-      yield* fs.writeFileString(
-        recordPath,
-        JSON.stringify({ ...record, startedAt: "1970-01-01T00:00:00Z" }),
-      );
-      assert.isFalse(yield* Effect.promise(() => stateDirOwned(root)));
-      yield* fs.writeFileString(recordPath, JSON.stringify({ ...record, pid: 2 ** 22 + 1 }));
-      assert.isFalse(yield* Effect.promise(() => stateDirOwned(root)));
-    }),
+        const record = { version: 1, pid: process.pid, port: 1, origin: "", startedAt: "" };
+        yield* fs.writeFileString(recordPath, JSON.stringify(record));
+        assert.isTrue(yield* Effect.promise(() => stateDirOwned(root)));
+        yield* fs.writeFileString(recordPath, JSON.stringify({ ...record, ownerId: "lock-aware" }));
+        assert.isFalse(yield* Effect.promise(() => stateDirOwned(root)));
+        // This process started after 1970, so its PID was reused since that record.
+        yield* fs.writeFileString(
+          recordPath,
+          JSON.stringify({ ...record, startedAt: "1970-01-01T00:00:00Z" }),
+        );
+        assert.isFalse(yield* Effect.promise(() => stateDirOwned(root)));
+        yield* fs.writeFileString(recordPath, JSON.stringify({ ...record, pid: 2 ** 22 + 1 }));
+        assert.isFalse(yield* Effect.promise(() => stateDirOwned(root)));
+      }),
   );
 
   const commitUpdate = (

@@ -5,8 +5,8 @@ extensions, skills, context files, and native session history.
 
 ## Set Up Pi
 
-1. Install [Pi](https://pi.dev) on the machine running the T3 Code server. Pi requires Node.js
-   22.19 or newer; its platform installers can install Node if needed. T3 Code supports Pi
+1. Install [Pi](https://pi.dev) on the machine running the Up.computer server. Pi requires Node.js
+   22.19 or newer; its platform installers can install Node if needed. Up.computer supports Pi
    0.84.3 or newer.
 2. Run `pi` in a terminal, then `/login` to connect your model provider or configure its API key.
 3. Open Up.computer Settings, enable Pi, and refresh the provider.
@@ -44,7 +44,7 @@ a speed picker with Standard plus those tiers. A chosen tier is sent as the requ
 use Pi's native session files for resume, rollback, and forks within the same Pi instance. Forks
 preserve the native conversation through the selected turn in the destination workspace.
 Switching providers uses portable conversation context. Extension
-dialogs appear in the T3 Code composer, and the thread details context window follows Pi's own usage
+dialogs appear in the Up.computer composer, and the thread details context window follows Pi's own usage
 reporting while a response streams and after it settles.
 
 Pi skills appear in the composer's `$` menu. This includes user skills and project skills that Pi

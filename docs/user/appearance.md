@@ -57,7 +57,7 @@ change. Export your theme as JSON to share it.
 ### Custom CSS
 
 For a change that colors cannot make, open **Custom CSS** in the theme editor. The CSS is saved with
-the theme, applies after T3 Code's own styles on web and desktop, and is included in exports. Use
+the theme, applies after Up.computer's own styles on web and desktop, and is included in exports. Use
 `.dark` or `:root:not(.dark)` to target one appearance.
 
 Custom CSS cannot load files. `@import`, `image-set()`, and `url()` are ignored, except `url()`
@@ -67,14 +67,14 @@ to another site.
 Class names in the app change between releases. For rules that keep working, target `data-slot`
 and other `data-` attributes, such as `[data-chat-header]` or `[data-slot="button"]`.
 
-If a rule hides something you need, run `t3 theme set t3-chat` on the server to switch to a
+If a rule hides something you need, run `up theme set t3-chat` on the server to switch to a
 built-in theme, or press **Cmd+Option+A** on macOS or **Ctrl+Alt+A** on Windows/Linux to pick
 another theme.
 
 ### Ask an agent
 
-An agent on the same machine as the server can restyle T3 Code for you. Ask it to change the look,
-for example "make T3 Code's chat header taller" or "give T3 Code a solarized theme". It publishes
+An agent on the same machine as the server can restyle Up.computer for you. Ask it to change the look,
+for example "make Up.computer's chat header taller" or "give Up.computer a solarized theme". It publishes
 an [environment theme](#environment-themes) with colors and CSS, and web and desktop clients of that
 server switch to it. It can also switch them to light, dark, or system mode. The thread must run
 in Full access. Ask the agent to set a built-in theme to undo it.
@@ -84,7 +84,7 @@ in Full access. Ask the agent to set a built-in theme to undo it.
 Environment themes and defaults come from the server serving your web app or the desktop app's
 main local environment. With the desktop app's local environment off, they come from the
 [background service](./background-service.md) on the same machine while the app is connected to
-it. app.t3.codes and other connections do not use them.
+it. app.up.computer and other connections do not use them.
 
 Select a published theme in **Settings → Appearance** to follow its palette as the server updates
 it. **Duplicate** makes an independent copy you can edit. A saved custom theme with the same ID

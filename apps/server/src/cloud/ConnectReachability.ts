@@ -165,7 +165,7 @@ export function classifyReachability(
     if (endpoint.existsPublicly === true) {
       return fail(
         "dns_failed",
-        "The T3 Connect address resolves in public DNS, but this network's DNS still has an old cached answer that it does not exist.",
+        "The UpComputer Connect address resolves in public DNS, but this network's DNS still has an old cached answer that it does not exist.",
         "Wait. The cached answer usually clears within about 30 minutes.",
         exitNodeHint(exitNode),
       );
@@ -173,20 +173,20 @@ export function classifyReachability(
     if (endpoint.existsPublicly === false) {
       return fail(
         "dns_failed",
-        "The T3 Connect address is missing from public DNS. The relay did not publish it.",
+        "The UpComputer Connect address is missing from public DNS. The relay did not publish it.",
         restart,
       );
     }
     return fail(
       "dns_failed",
-      "The T3 Connect address does not resolve from this machine.",
+      "The UpComputer Connect address does not resolve from this machine.",
       "Check the DNS settings on this machine or its VPN.",
       exitNodeHint(exitNode),
     );
   }
   return fail(
     "timeout",
-    "The T3 Connect address did not answer from this machine.",
+    "The UpComputer Connect address did not answer from this machine.",
     "Check the network, VPN, or proxy on this machine.",
     exitNodeHint(exitNode),
   );

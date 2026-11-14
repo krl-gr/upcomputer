@@ -100,7 +100,7 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
     case "offline":
       return "This device is offline";
     case "session_pending":
-      return "This device is still loading its T3 Connect sign-in";
+      return "This device is still loading its UpComputer Connect sign-in";
     case "approval_pending":
       return `${host} is waiting for someone to approve this device`;
     case "outdated":
@@ -174,7 +174,7 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
       const approve = code ? `approve the device showing ${code}` : "approve this device";
       return [
         `On a device already connected to ${host}, open Settings > Sharing & access and ${approve}.`,
-        `Or run \`t3 auth connect-device approve ${code ?? "<code>"}\` on ${host}.`,
+        `Or run \`up auth connect-device approve ${code ?? "<code>"}\` on ${host}.`,
       ];
     }
     case "outdated":

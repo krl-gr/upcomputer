@@ -117,7 +117,7 @@ function LinkedEnvironmentRow({
   const [busy, setBusy] = useState(false);
   const forget = async () => {
     const confirmed = await (requestConfirmDialog(
-      `Forget ${link.label}? Agents here stop working there. Revoke "T3 Code · …" in ${link.label}'s Sharing & access to end the session there too.`,
+      `Forget ${link.label}? Agents here stop working there. Revoke "Up.computer · …" in ${link.label}'s Sharing & access to end the session there too.`,
       { variant: "destructive" },
     ) ?? Promise.resolve(false));
     if (!confirmed) return;
@@ -346,7 +346,7 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
                   value={pairingCode}
                   onChange={(event) => setPairingCode(event.target.value)}
                   placeholder={
-                    machine === null ? "From Sharing & access there, or t3 pair" : "Paste the code"
+                    machine === null ? "From Sharing & access there, or up pair" : "Paste the code"
                   }
                   disabled={busy}
                   autoComplete="one-time-code"

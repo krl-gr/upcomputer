@@ -164,7 +164,7 @@ Turn on **Suggest next prompt** in Settings > Labs. After a Claude or Codex turn
 empty composer shows a predicted next message. Press `Tab` to fill it in, then edit or send it, or
 press `Escape` to dismiss it. Each suggestion is one extra request that reuses the turn's prompt
 cache, so it uses a little of your plan's usage. Claude skips suggestions on the first turn of a
-thread and near usage limits. Codex needs version 0.165 or later; if T3 Code manages
+thread and near usage limits. Codex needs version 0.165 or later; if Up.computer manages
 Codex, update it in Settings > Providers. Codex follows a change to the setting at once; open Claude
 threads follow it after they restart. Suggestions show on web and desktop.
 
@@ -217,7 +217,7 @@ speech recognition. If the chosen environment disconnects, dictation stops; it n
 switches hosts. Choose **This device** to revoke access and discard pending audio.
 For [cloud dictation](./voice-input.md#choose-where-audio-goes), open **Cloud providers**
 under the environment in **Settings → Voice** and confirm which provider may receive recordings.
-On Android, keep T3 Code open while recording and transcribing.
+On Android, keep Up.computer open while recording and transcribing.
 
 On-device dictation may need a network connection to download a speech model the
 first time. After that it works offline for that language. iPhone dictates in the
@@ -287,7 +287,7 @@ After you add or change skills, plugins, or MCP servers, use **Restart agent
 session** in the command palette on web and desktop. The conversation continues,
 and your next message starts the agent again with the new setup.
 
-Provider commands must start the message to run. T3 Code commands such as
+Provider commands must start the message to run. Up.computer commands such as
 `/model` and skill mentions work on any line.
 
 Send `/compact` in an existing conversation to reduce context usage when the

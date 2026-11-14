@@ -288,7 +288,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
       installed: true,
       reportStatus: true,
       prints: "overridden · T3CODE_HOST=0.0.0.0",
-      omits: "t3 up --no-lan",
+      omits: "up remote --no-lan",
       env: "T3CODE_HOST=0.0.0.0\n",
       args: [],
       installs: 0,

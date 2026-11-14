@@ -226,7 +226,7 @@ export const layer = Layer.effect(
           Effect.provideContext(homeOwnerContext),
         );
         yield* electronDialog.showErrorBox(
-          "This T3 home is unavailable",
+          "This Up.computer home is unavailable",
           DesktopHomeOwner.homeOwnedMessage(owner),
         );
         return yield* electronApp.quit;

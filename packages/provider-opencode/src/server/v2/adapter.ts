@@ -3621,7 +3621,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
                         driver: OPENCODE_PROVIDER,
                         class: "provider_error",
                         detail:
-                          "OpenCode ended the turn with an error while T3 Code was reconnecting.",
+                          "OpenCode ended the turn with an error while Up.computer was reconnecting.",
                       }),
                     }
                   : { status: "interrupted" };

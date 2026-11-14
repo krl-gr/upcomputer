@@ -281,7 +281,7 @@ export const checkCloudReachability: (input: {
         url: (urls) => urls.checkReachability(),
         request: ({ client, headers }) => client.checkReachability({ headers }),
       },
-      "Could not check T3 Connect.",
+      "Could not check UpComputer Connect.",
     );
   });
 
@@ -340,7 +340,7 @@ export const unlinkEnvironmentFromCloud: (input: {
       .pipe(
         Effect.mapError(
           decodedRelayClientError(
-            "Disconnected locally, but T3 Connect did not confirm it removed this environment",
+            "Disconnected locally, but UpComputer Connect did not confirm it removed this environment",
           ),
         ),
       );

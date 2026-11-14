@@ -239,7 +239,7 @@ describe("codexCardProvider", () => {
 });
 
 describe("welcomeOffersPhone", () => {
-  it("offers the phone only through T3 Connect on the primary computer, and only when allowed", () => {
+  it("offers the phone only through UpComputer Connect on the primary computer, and only when allowed", () => {
     const policy = (limits: ManagedPolicySummary["limits"]): ManagedPolicySummary => ({
       organization: "Acme",
       lockedSettings: [],

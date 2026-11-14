@@ -1847,7 +1847,7 @@ it.effect.each(["exit", "missing"] as const)(
       expect(error.message).toBe(
         failure === "exit"
           ? "Device update device tool failed: The device command failed (exit code 243)."
-          : "Device update device tool failed: Device support needs npm, which is not on the T3 server's PATH. Install npm (it comes with Node.js from nodejs.org), restart T3 Code, then retry.",
+          : "Device update device tool failed: Device support needs npm, which is not on the Up.computer server's PATH. Install npm (it comes with Node.js from nodejs.org), restart Up.computer, then retry.",
       );
     }).pipe(
       Effect.provide(

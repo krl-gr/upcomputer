@@ -1,7 +1,7 @@
 # Antigravity
 
-T3 Code runs Google's official Antigravity ACP agent on your selected environment.
-T3 manages its own CLI installation and sign-in, separate from your terminal or IDE. Google controls
+Up.computer runs Google's official Antigravity ACP agent on your selected environment.
+Up.computer manages its own CLI installation and sign-in, separate from your terminal or IDE. Google controls
 which models and account access are available through this agent.
 
 ## Set up Antigravity
@@ -65,7 +65,7 @@ Leave the field blank to use the managed runtime, or a compatible executable on
 ## Update the managed runtime
 
 In web or desktop provider settings, choose **Update Antigravity** when an update
-is available. T3 checks Google's CLI release channel while provider update checks
+is available. Up.computer checks Google's CLI release channel while provider update checks
 are enabled. Installing or reinstalling also checks that channel. Updates keep
 your profile and existing runtime available if the new release fails validation.
 
@@ -152,7 +152,7 @@ then refresh provider status.
 
 Use Stop to interrupt a running goal, then ask Antigravity to stop pursuing it
 before starting more work. Ordinary follow-ups wait until the running turn ends.
-T3 does not support Antigravity goal status, pause, resume, or clear commands.
+Up.computer does not support Antigravity goal status, pause, resume, or clear commands.
 
 ## Check access and troubleshoot
 

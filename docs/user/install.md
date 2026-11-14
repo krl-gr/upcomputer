@@ -71,7 +71,7 @@ command cannot reach the app, start or update the desktop app and try again.
 ### Drop a folder on the sidebar
 
 Drag one or more folders from Finder, Explorer, or your file manager onto the
-sidebar. Each one opens as a project on this computer, the same as `t3 app`.
+sidebar. Each one opens as a project on this computer, the same as `up app`.
 Files dropped on a thread still attach to that thread. Browsers do not share
 folder paths, so in the web app use **Add project** instead.
 
@@ -116,19 +116,19 @@ on the environment's machine. An unlisted version is unverified.
 When a provider CLI is behind its latest release, its provider card shows the
 available version. **Update now** runs the installer that owns the CLI
 (Homebrew, mise, or a global npm, pnpm, Yarn, Bun, Volta, or Vite+ install), or
-the CLI's own update command when T3 Code cannot tell. Claude, Codex, and
-OpenCode installs T3 Code cannot identify stay manual: update them through the
-installer you used. T3 Code runs `mise upgrade`
+the CLI's own update command when Up.computer cannot tell. Claude, Codex, and
+OpenCode installs Up.computer cannot identify stay manual: update them through the
+installer you used. Up.computer runs `mise upgrade`
 only for a tool your mise config requests as `latest` when the provider's binary
 path is a mise shim or under the tool's `installs/<tool>/latest` link; update a
 pinned version, or a path into one version's directory, through mise yourself.
 Update a CLI installed with Nix through Nix.
-Cursor and Antigravity update with T3 Code. Homebrew and Chocolatey installs
+Cursor and Antigravity update with Up.computer. Homebrew and Chocolatey installs
 compare against the version their package manager offers, which can trail the
 npm release; update Claude installed with Chocolatey through Chocolatey.
 
 The managed runtimes for Antigravity and for Codex connected through ChatGPT
-first install the release T3 Code tested. When T3 Code finds a newer compatible
+first install the release Up.computer tested. When Up.computer finds a newer compatible
 release, their setup in **Settings → Providers** offers an update.
 
 Add another provider instance for a separate account or configuration. Each
@@ -143,15 +143,15 @@ For provider-specific setup and accounts, see [Codex](./providers-codex.md),
 
 ### Provider check timeouts
 
-If a provider works in its CLI but T3 Code reports a timeout while checking it,
-allow more time in the T3 server's environment. For example, give Codex and
+If a provider works in its CLI but Up.computer reports a timeout while checking it,
+allow more time in the Up.computer server's environment. For example, give Codex and
 Claude readiness checks 60 seconds:
 
 ```bash
-T3CODE_CODEX_PROBE_TIMEOUT_MS=60000 T3CODE_CLAUDE_PROBE_TIMEOUT_MS=60000 t3 serve
+T3CODE_CODEX_PROBE_TIMEOUT_MS=60000 T3CODE_CLAUDE_PROBE_TIMEOUT_MS=60000 up serve
 ```
 
-For a remote environment, set these on the machine running the T3 server.
+For a remote environment, set these on the machine running the Up.computer server.
 Keep them in your launcher or service configuration to retain them across
 updates, then restart the server. For systemd, add
 `Environment=T3CODE_CODEX_PROBE_TIMEOUT_MS=60000` under `[Service]` in a service
@@ -188,5 +188,5 @@ installation, update checks, and shutdown limits keep their existing behavior.
 - [Permission modes](./permission-modes.md): choose when agents ask before acting.
 - [Remote access](./remote-access.md): connect from another device.
 - [Running in the background](./background-service.md): keep a host available.
-- [Updating T3 Code](./updating.md): update the app and connected servers.
-- [Managed policy](./managed-policy.md): configure T3 Code for everyone on a machine.
+- [Updating Up.computer](./updating.md): update the app and connected servers.
+- [Managed policy](./managed-policy.md): configure Up.computer for everyone on a machine.

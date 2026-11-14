@@ -130,14 +130,14 @@ export function createManagedRelaySession(input: ManagedRelaySessionInput): Mana
           try: () => readCachedClerkToken(nowMillis),
           catch: (cause) =>
             new ManagedRelaySessionError({
-              message: "Could not obtain the T3 Connect session token.",
+              message: "Could not obtain the UpComputer Connect session token.",
               cause,
             }),
         }).pipe(Effect.timeoutOption(CLERK_TOKEN_READ_TIMEOUT_MS));
         if (Option.isSome(token)) return token.value;
       }
       return yield* new ManagedRelaySessionError({
-        message: "Timed out obtaining the T3 Connect session token.",
+        message: "Timed out obtaining the UpComputer Connect session token.",
       });
     }),
   };

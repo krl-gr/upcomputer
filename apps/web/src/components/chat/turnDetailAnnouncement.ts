@@ -164,7 +164,7 @@ export interface TurnDetailMemory {
 }
 
 /** The heading every agent message has in the timeline. */
-const MESSAGE_AUTHOR = "T3 Code";
+const MESSAGE_AUTHOR = "Up.computer";
 
 /**
  * Decides which of the turn's messages and steps a screen reader hears next.

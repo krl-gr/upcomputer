@@ -792,27 +792,32 @@ it.effect("linking a picked machine that answers nowhere names it and links noth
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
-it.live("linking an address with nothing listening says so, unlike one that is not T3 Code", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const closed = yield* Effect.scoped(
-        serveRaw(() => Effect.succeed(HttpServerResponse.empty({ status: 404 }))),
-      );
-      const notT3 = yield* serveRaw(() =>
-        Effect.succeed(
-          HttpServerResponse.text("<h1>Not Found</h1>", { status: 404, contentType: "text/html" }),
-        ),
-      );
-      const a = yield* makeA(laptop);
-      const linking = (url: string) =>
-        a.links.link({ url, pairingCode: "unused", access: "auto" }).pipe(Effect.flip);
-      expect((yield* linking(closed)).message).toBe(`${closed} did not answer (ECONNREFUSED).`);
-      expect((yield* linking(notT3)).message).toBe(
-        `${notT3} answered, but not as a T3 Code environment this version understands.`,
-      );
-      expect(yield* a.links.list).toEqual([]);
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+it.live(
+  "linking an address with nothing listening says so, unlike one that is not Up.computer",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const closed = yield* Effect.scoped(
+          serveRaw(() => Effect.succeed(HttpServerResponse.empty({ status: 404 }))),
+        );
+        const notT3 = yield* serveRaw(() =>
+          Effect.succeed(
+            HttpServerResponse.text("<h1>Not Found</h1>", {
+              status: 404,
+              contentType: "text/html",
+            }),
+          ),
+        );
+        const a = yield* makeA(laptop);
+        const linking = (url: string) =>
+          a.links.link({ url, pairingCode: "unused", access: "auto" }).pipe(Effect.flip);
+        expect((yield* linking(closed)).message).toBe(`${closed} did not answer (ECONNREFUSED).`);
+        expect((yield* linking(notT3)).message).toBe(
+          `${notT3} answered, but not as an Up.computer environment this version understands.`,
+        );
+        expect(yield* a.links.list).toEqual([]);
+      }),
+    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
 /** An https listener whose certificate this machine does not trust. */

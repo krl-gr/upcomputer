@@ -95,7 +95,7 @@ export class BootstrapCredentialConnectApprovalPendingError extends Schema.Tagge
   },
 ) {
   override get message(): string {
-    return "This T3 Connect device is waiting for approval.";
+    return "This UpComputer Connect device is waiting for approval.";
   }
 }
 
@@ -187,7 +187,7 @@ export class ConnectDevicesError extends Schema.TaggedError<ConnectDevicesError>
   },
 ) {
   override get message(): string {
-    return `Failed to ${this.operation} T3 Connect devices.`;
+    return `Failed to ${this.operation} UpComputer Connect devices.`;
   }
 }
 

@@ -664,9 +664,9 @@ while ! (set -C; printf '%s\\n' "$$" >"$LAUNCH_LOCK") 2>/dev/null; do
   fi
   if [ "$LAUNCH_LOCK_WAITED" -ge @@T3_LAUNCH_LOCK_WAIT_SECONDS@@ ]; then
     if [ -e "$LAUNCH_BREAK_LOCK" ]; then
-      printf 'A T3 server launch stopped while recovering %s. If no launch is running, delete %s.\\n' "$LAUNCH_LOCK" "$LAUNCH_BREAK_LOCK" >&2
+      printf 'An Up.computer server launch stopped while recovering %s. If no launch is running, delete %s.\\n' "$LAUNCH_LOCK" "$LAUNCH_BREAK_LOCK" >&2
     else
-      printf 'Another T3 server launch has held %s for too long.\\n' "$LAUNCH_LOCK" >&2
+      printf 'Another Up.computer server launch has held %s for too long.\\n' "$LAUNCH_LOCK" >&2
     fi
     exit 1
   fi
@@ -950,7 +950,7 @@ while [ -z "$REMOTE_PORT" ] && ! managed_server_running "$(cat "$PID_FILE" 2>/de
   REMOTE_PORT=""
   REMOTE_MANAGED=""
   if [ "$OWNER_WAITED" -ge @@T3_READY_TIMEOUT_SECONDS@@ ] || [ "$(date +%s)" -ge "$OWNER_DEADLINE" ]; then
-    printf 'A T3 server or boot service holds %s but did not become ready, so no second server was started. Retry once it has started.\\n' "$DEFAULT_SERVER_HOME" >&2
+    printf 'An Up.computer server or boot service holds %s but did not become ready, so no second server was started. Retry once it has started.\\n' "$DEFAULT_SERVER_HOME" >&2
     exit 1
   fi
   sleep 1

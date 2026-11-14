@@ -138,7 +138,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
           path: path.join(prefix, "bin"),
           env: { T3CODE_NPM_LAUNCHER_PATH: npmLauncher },
         }),
-      ).toBe('sudo env "PATH=$PATH" t3 browser setup');
+      ).toBe('sudo env "PATH=$PATH" up browser setup');
 
       expect(
         yield* rootCommand({ ...desktop, env: { T3CODE_CLI_PATH: path.join(home, "gone") } }),

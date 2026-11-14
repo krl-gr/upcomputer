@@ -64,7 +64,7 @@ describe("resolveRemoteOpenState", () => {
     ).toEqual({ mode: "local-exec" });
   });
 
-  it("keeps exec behavior for the environment that owns the desktop's T3 home", () => {
+  it("keeps exec behavior for the environment that owns the desktop's Up.computer home", () => {
     // With Local environment off, a background service on this machine can own the
     // desktop's home and still be reached through T3 Connect.
     expect(

@@ -397,7 +397,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         if (yield* isWithdrawn(installed.version))
           return yield* installationError(
             "resolve",
-            `Antigravity ${installed.version} no longer works with this T3 Code release. Update it in Antigravity setup.`,
+            `Antigravity ${installed.version} no longer works with this Up.computer release. Update it in Antigravity setup.`,
           );
         return installed;
       }

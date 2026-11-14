@@ -55,7 +55,7 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
       ? "irm https://t3.codes/install.ps1 | iex"
       : "curl -fsSL https://t3.codes/install.sh | sh";
     return yield* new CliInstallError({
-      reason: `Only the standalone t3 can install itself. Use \`${script}\`, or Settings in the desktop app.`,
+      reason: `Only the standalone up can install itself. Use \`${script}\`, or Settings in the desktop app.`,
     });
   }
   const { executable, versionsDir, runtimeDir } = runtime.value;
@@ -103,7 +103,7 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
     )
   ) {
     return yield* new CliInstallError({
-      reason: `Another t3 is already at ${link}. Remove it, then run this again.`,
+      reason: `Another up is already at ${link}. Remove it, then run this again.`,
     });
   }
 
@@ -197,15 +197,15 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
 const reportInstalled = Effect.fn("cli.install.report")(function* (
   installed: Effect.Success<ReturnType<typeof installCli>>,
 ) {
-  yield* Console.log(`Installed t3 ${packageJson.version} at ${installed.link}.`);
+  yield* Console.log(`Installed up ${packageJson.version} at ${installed.link}.`);
   if (installed.shadowedBy !== undefined) {
     return yield* Console.log(
-      `Another t3 at ${installed.shadowedBy} runs first, so run ${installed.link} to use this one.`,
+      `Another up at ${installed.shadowedBy} runs first, so run ${installed.link} to use this one.`,
     );
   }
   if (installed.onPath) return yield* Console.log("Run `t3` to get started.");
   if (installed.pathCommand === undefined) {
-    return yield* Console.log(`Add ${installed.binDir} to your PATH, then run \`t3\`.`);
+    return yield* Console.log(`Add ${installed.binDir} to your PATH, then run \`up\`.`);
   }
   if ((yield* HostProcess.Platform) === "win32") {
     yield* Console.log(
@@ -353,7 +353,7 @@ export const offerCliInstall = Effect.fn("cli.install.offer")(function* <E, R, E
   const answer = yield* input.confirm.pipe(Effect.timeoutOption(PROMPT_TIMEOUT));
   if (Option.isNone(answer)) {
     yield* saveDecline;
-    yield* Console.log(`\nNo answer, so t3 was not installed. ${installHint}\n`);
+    yield* Console.log(`\nNo answer, so up was not installed. ${installHint}\n`);
     return true;
   }
   if (answer.value === undefined) return false;
@@ -374,7 +374,7 @@ export const offerCliInstall = Effect.fn("cli.install.offer")(function* <E, R, E
 
 export const confirmCliInstall = Prompt.run(
   Prompt.Confirm({
-    message: "Install the t3 command? Then you can run `t3` directly.",
+    message: "Install the up command? Then you can run `t3` directly.",
     initial: true,
   }),
 ).pipe(Effect.catchTags({ QuitError: () => Effect.void }));

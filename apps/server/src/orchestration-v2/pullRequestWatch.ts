@@ -328,9 +328,9 @@ const SUMMARY: Record<PullRequestWatchChange["kind"], string> = {
 };
 
 const WATCHING_CLOSING =
-  "Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.";
+  "Look into each item and act on it as your task requires. This PR stays linked and watched, so do not link, watch, or list it again. End your turn when you are done, and Up.computer wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.";
 const WATCHING_CLOSING_PLURAL =
-  "Look into each item and act on it as your task requires. Each PR T3 Code still watches stays linked and watched, so do not link, watch, or list them again. End your turn when you are done, and T3 Code wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request for each first so the thread returns to their inbox.";
+  "Look into each item and act on it as your task requires. Each PR Up.computer still watches stays linked and watched, so do not link, watch, or list them again. End your turn when you are done, and Up.computer wakes you on the next change. When you hand the work back to the user, call unwatch_pull_request for each first so the thread returns to their inbox.";
 
 export interface PullRequestWatchWake {
   readonly text: string;
@@ -381,7 +381,7 @@ export function pullRequestWatchMessage(input: {
     ...changes.flatMap((change) => changeLines(change, context)),
     "",
     exhausted
-      ? `T3 Code stopped watching after ${PULL_REQUEST_WATCH_WAKE_LIMIT} comment-only updates in a row. Call watch_pull_request to watch it again.`
+      ? `Up.computer stopped watching after ${PULL_REQUEST_WATCH_WAKE_LIMIT} comment-only updates in a row. Call watch_pull_request to watch it again.`
       : WATCHING_CLOSING,
   ].join("\n");
   const failed = changes.some(
