@@ -61,6 +61,8 @@ export interface ProductFlags {
    * Mobile app row). It signs in to upstream's Connect, not this product's relay.
    */
   readonly mobileApp: boolean;
+  /** Upstream's standalone `t3` installer (t3.codes/install.sh), offered where a computer needs the CLI. */
+  readonly standaloneCli: boolean;
 }
 
 export type ProductFlag = keyof ProductFlags;
@@ -82,6 +84,7 @@ export const UPSTREAM_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   triage: true,
   fleetTrackSwitch: true,
   mobileApp: true,
+  standaloneCli: true,
 });
 
 export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
@@ -101,6 +104,7 @@ export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   triage: false,
   fleetTrackSwitch: false,
   mobileApp: false,
+  standaloneCli: false,
 });
 
 /**
@@ -351,6 +355,12 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     capabilities: [],
     keybindingCommands: [],
     settingsSearchIds: ["mobile-app"],
+    rightPanelSurfaces: [],
+  },
+  standaloneCli: {
+    capabilities: [],
+    keybindingCommands: [],
+    settingsSearchIds: [],
     rightPanelSurfaces: [],
   },
 };
