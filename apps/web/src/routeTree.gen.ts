@@ -333,6 +333,7 @@ export interface FileRoutesByFullPath {
   '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
 }
 export interface FileRoutesByTo {
+  '/$': typeof SplatRoute
   '/approve-agent': typeof ApproveAgentRoute
   '/connect': typeof ConnectRoute
   '/connect-agent': typeof ConnectAgentRoute
@@ -474,6 +475,7 @@ export interface FileRouteTypes {
     | '/threads/$environmentId/$threadId'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/$'
     | '/approve-agent'
     | '/connect'
     | '/connect-agent'
