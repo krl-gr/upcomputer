@@ -880,7 +880,6 @@ export function AgentsView(props: AgentsViewProps) {
                         onModelOptionsChange={(modelOptions) =>
                           commitForm({ ...form, modelOptions })
                         }
-                        planModeEnabled={false}
                       />
                     </DetailSidebarRow>
                   ) : !canEditAgent ? (
@@ -1222,7 +1221,6 @@ export function AgentsView(props: AgentsViewProps) {
                         onModelOptionsChange={(modelOptions) =>
                           setForm((current) => ({ ...current, modelOptions }))
                         }
-                        planModeEnabled={false}
                       />
                     </DetailSidebarRow>
                   ) : null}

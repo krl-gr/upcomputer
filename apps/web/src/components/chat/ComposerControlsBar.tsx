@@ -295,9 +295,6 @@ export function ComposerControlsBar(props: {
         attach={upComputerFooter.attach}
         modelPicker={composerModelPicker}
         providerUnavailableControl={showProviderUnavailable ? providerUnavailableControl : null}
-        showInteractionModeToggle={planModeUiEnabled}
-        interactionMode={interactionMode}
-        onToggleInteractionMode={toggleInteractionMode}
         runtimeMode={compatibleRuntimeMode}
         runtimeModeOptions={compatibleRuntimeModeOptions}
         onRuntimeModeChange={handleRuntimeModeChange}

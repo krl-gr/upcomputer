@@ -39,8 +39,6 @@ function primaryActions(overrides: Partial<PrimaryActionsProps> = {}) {
     pendingAction: null,
     isRunning: false,
     canInterrupt: false,
-    showPlanFollowUpPrompt: false,
-    promptHasText: false,
     isSendBusy: false,
     sendDisabledReason: null,
     isEnvironmentUnavailable: false,
@@ -48,7 +46,6 @@ function primaryActions(overrides: Partial<PrimaryActionsProps> = {}) {
     hasSendableContent: false,
     onPreviousPendingQuestion: () => {},
     onInterrupt: () => {},
-    onImplementPlanInNewThread: () => {},
     ...overrides,
   };
   return firstButton(renderToStaticMarkup(createElement(ComposerPrimaryActions, props)));
@@ -70,12 +67,11 @@ function firstButton(markup: string) {
 
 const STATES = {
   empty: {},
-  "has text": { promptHasText: true, hasSendableContent: true },
+  "has text": { hasSendableContent: true },
   queue: {
     isRunning: true,
     canInterrupt: true,
     followUpBehavior: "queue",
-    promptHasText: true,
     hasSendableContent: true,
   },
 } satisfies Record<string, Partial<PrimaryActionsProps>>;
