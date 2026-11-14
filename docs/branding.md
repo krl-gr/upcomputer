@@ -68,7 +68,7 @@ literals against it and against the electron-builder config.
   copy pass rewrites `t3 up` in code and docs. There is no `up` alias: no release shipped it.
 - **Names in code:** `APP_BASE_NAME` in `apps/web/src/branding.ts` and
   `apps/desktop/src/app/DesktopEnvironment.ts` (window titles, about panel, menus), the sidebar and
-  welcome wizard (`SidebarChrome.tsx`, `WelcomeWizard.tsx`), `apps/web/index.html`,
+  Welcome page (`SidebarChrome.tsx`, `WelcomePage.tsx`), `apps/web/index.html`,
   `apps/web/public/manifest.webmanifest`.
 - **Artwork from V1:** `assets/prod/upcomputer-*` and `assets/dev/upcomputer-blueprint-*` (nightly
   uses the blueprint too), wired in `scripts/lib/brand-assets.ts`, `DesktopAssets.ts` and the dev

@@ -1,5 +1,4 @@
 import {
-  EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderInstallState,
@@ -17,19 +16,11 @@ import type { ProviderInstanceEntry } from "../providerInstances";
 import {
   composerProviderSetupInstanceId,
   countReadyOnboardingProviders,
-  isCodexExistingCliChosen,
   isFirstRunAgentActivating,
   isFirstRunAgentChecking,
   latchFirstRunAgentStart,
-  resolveAgentInstallCell,
-  resolveAgentReadyCell,
-  resolveCliInstallCommand,
-  resolveCliInstallNote,
-  resolveCliLoginCommand,
   resolveFirstRunAgentStart,
   resolveFirstRunAgentStatus,
-  showsUpComputerOnboarding,
-  UPCOMPUTER_ONBOARDING_AGENTS,
 } from "./upComputerOnboarding.logic";
 
 afterEach(() => {
@@ -55,113 +46,6 @@ function provider(driver: string, overrides: Partial<ServerProvider> = {}): Serv
 
 const missing = { installed: false, status: "error", auth: { status: "unknown" } } as const;
 const signedOut = { status: "error", auth: { status: "unauthenticated" } } as const;
-
-describe("showsUpComputerOnboarding", () => {
-  const environmentId = EnvironmentId.make("env");
-
-  it("shows our screens on a paired server with the upcomputer surface", () => {
-    expect(showsUpComputerOnboarding({ localAvailable: true, environmentId })).toBe(true);
-  });
-
-  it("keeps upstream's wizard for hosted web, a missing server, or the upstream surface", () => {
-    expect(showsUpComputerOnboarding({ localAvailable: false, environmentId })).toBe(false);
-    expect(showsUpComputerOnboarding({ localAvailable: true, environmentId: undefined })).toBe(
-      false,
-    );
-    surface.variant = "upstream";
-    expect(showsUpComputerOnboarding({ localAvailable: true, environmentId })).toBe(false);
-  });
-});
-
-describe("agent rows", () => {
-  const agent = (driver: string) =>
-    UPCOMPUTER_ONBOARDING_AGENTS.find((candidate) => candidate.driver === driver)!;
-  const cells = (
-    driver: string,
-    snapshot: ServerProvider | undefined,
-    codexExistingCli = false,
-  ) => [
-    resolveAgentInstallCell({ agent: agent(driver), provider: snapshot, codexExistingCli }),
-    resolveAgentReadyCell({ agent: agent(driver), provider: snapshot, codexExistingCli }),
-  ];
-
-  it("offers V1's six agents in V1's order", () => {
-    expect(UPCOMPUTER_ONBOARDING_AGENTS.map((entry) => entry.name)).toEqual([
-      "Codex",
-      "Claude",
-      "Cursor",
-      "Grok",
-      "OpenCode",
-      "Antigravity",
-    ]);
-    for (const entry of UPCOMPUTER_ONBOARDING_AGENTS) expect(entry.description).not.toContain("—");
-  });
-
-  it("needs no install step for Codex until the user picks the CLI", () => {
-    const codex = provider("codex", missing);
-    expect(cells("codex", codex)).toEqual(["included", "connect"]);
-    expect(cells("codex", codex, true)).toEqual(["install", "install-first"]);
-    expect(cells("codex", provider("codex", signedOut), true)).toEqual(["installed", "sign-in"]);
-  });
-
-  it("walks CLI agents through install, then sign-in, then ready", () => {
-    for (const driver of ["claudeAgent", "grok", "opencode"]) {
-      expect(cells(driver, provider(driver, missing))).toEqual(["install", "install-first"]);
-      expect(cells(driver, provider(driver, signedOut))).toEqual(["installed", "sign-in"]);
-      expect(cells(driver, provider(driver))).toEqual(["installed", "ready"]);
-    }
-  });
-
-  it("connects agents with in-app setup in one step", () => {
-    expect(cells("cursor", provider("cursor", signedOut))).toEqual(["built-in", "connect"]);
-    expect(cells("antigravity", provider("antigravity", missing))).toEqual(["install", "connect"]);
-  });
-
-  it("offers Connect for an agent that starts disabled", () => {
-    expect(cells("grok", provider("grok", { ...missing, enabled: false }))[1]).toBe("connect");
-    expect(cells("cursor", provider("cursor", { enabled: false, status: "disabled" }))[1]).toBe(
-      "connect",
-    );
-  });
-
-  it("waits while the server has not reported the agent", () => {
-    expect(cells("codex", undefined)).toEqual(["checking", "checking"]);
-  });
-});
-
-describe("CLI commands", () => {
-  it("runs OpenCode's official installer unchanged", () => {
-    expect(resolveCliInstallCommand("opencode", "darwin")).toBe(
-      "curl -fsSL https://opencode.ai/install | bash",
-    );
-  });
-
-  it("installs Grok without Node.js except on Windows, where npm needs it", () => {
-    expect(resolveCliInstallCommand("grok", "darwin")).toBe(
-      "curl -fsSL https://x.ai/cli/install.sh | bash",
-    );
-    expect(resolveCliInstallNote("darwin")).not.toContain("Node.js");
-    expect(resolveCliInstallCommand("grok", "windows")).toBe("npm install -g @xai-official/grok");
-    expect(resolveCliInstallNote("windows")).toContain("nodejs.org");
-  });
-
-  it("logs in through a configured binary only when it needs no quoting", () => {
-    expect(resolveCliLoginCommand("grok", {})).toBe("grok login");
-    expect(resolveCliLoginCommand("opencode", { binaryPath: "~/bin/opencode" })).toBe(
-      "~/bin/opencode auth login",
-    );
-    expect(resolveCliLoginCommand("grok", { binaryPath: "/Apps/My Grok/grok" })).toBe("grok login");
-  });
-});
-
-describe("isCodexExistingCliChosen", () => {
-  it("is true only for an explicit choice of the CLI", () => {
-    expect(isCodexExistingCliChosen({ setupMode: "existing" })).toBe(true);
-    expect(isCodexExistingCliChosen({ setupMode: "managed" })).toBe(false);
-    expect(isCodexExistingCliChosen({})).toBe(false);
-    expect(isCodexExistingCliChosen(null)).toBe(false);
-  });
-});
 
 describe("countReadyOnboardingProviders", () => {
   it("counts enabled, working agents of any driver", () => {

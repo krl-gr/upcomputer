@@ -6,7 +6,7 @@ Up.computer requires OpenCode 1.14.19 or newer, including when you connect an ex
 OpenCode server.
 
 On a new installation, the Up.computer desktop app installs OpenCode for you (see
-[first launch](./welcome-wizard.md#first-launch-of-the-desktop-app)). That copy lives
+[first launch](./welcome-page.md#first-launch-of-the-desktop-app)). That copy lives
 in the app's own data directory, under `tools/opencode`, and is the binary path in
 OpenCode's provider settings. It does not replace an OpenCode you install yourself;
 to use yours instead, set its path there. The app's copy is updated with app releases,
@@ -51,19 +51,19 @@ fail, check the URL, credentials, and OpenCode version, then refresh provider st
 
 When **Server URL** points to a locally running server (such as `127.0.0.1`),
 the update button upgrades its installed CLI. If that server is this machine's
-OpenCode background service, T3 Code then restarts it on the new version. The URL
+OpenCode background service, Up.computer then restarts it on the new version. The URL
 must use the service's own protocol, host, and port. For a service listening on
 `0.0.0.0` use `127.0.0.1`, and for `[::]` use `[::1]`.
 
-Restarting interrupts running turns, and the service then runs with T3 Code's
+Restarting interrupts running turns, and the service then runs with Up.computer's
 environment. Set any variables it needs with `opencode service set env <name> <value>`.
 
-T3 Code does not restart any other server, including the background service
+Up.computer does not restart any other server, including the background service
 reached through `localhost`. That server can still report the previous version
-until you restart it. For a loopback URL, T3 Code shows that restart requirement
+until you restart it. For a loopback URL, Up.computer shows that restart requirement
 instead of treating the CLI update as a failure.
 
-T3 Code waits for a local server it started to recover after a lost connection.
+Up.computer waits for a local server it started to recover after a lost connection.
 You can stop the turn while it reconnects. If the server exits or an external
 connection cannot be restored, send another prompt to resume the same OpenCode
 session.
@@ -94,7 +94,7 @@ refreshes keep the helper alive. An external server may need its own reload or
 restart before Up.computer can see configuration changes.
 
 Models defined in a project's own `opencode.json` appear only in that project's
-model picker, after T3 Code reads the project's catalog the first time the picker
+model picker, after Up.computer reads the project's catalog the first time the picker
 opens there.
 
 Existing threads keep their selected model and options even when it disappears

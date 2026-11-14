@@ -56,6 +56,11 @@ export interface ProductFlags {
    * looks up the target release of the `t3` package on npm.
    */
   readonly fleetTrackSwitch: boolean;
+  /**
+   * Offers of upstream's phone app (the Welcome page's phone section, Settings'
+   * Mobile app row). It signs in to upstream's Connect, not this product's relay.
+   */
+  readonly mobileApp: boolean;
 }
 
 export type ProductFlag = keyof ProductFlags;
@@ -76,6 +81,7 @@ export const UPSTREAM_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   t3Chat: true,
   triage: true,
   fleetTrackSwitch: true,
+  mobileApp: true,
 });
 
 export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
@@ -94,6 +100,7 @@ export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   t3Chat: false,
   triage: false,
   fleetTrackSwitch: false,
+  mobileApp: false,
 });
 
 /**
@@ -153,10 +160,9 @@ export interface ProductSurfaces {
    */
   readonly threadDetailsCard: ProductSurfaceVariant;
   /**
-   * First-run setup on a local or paired server. With `upcomputer` it is V1's
-   * agent table: one screen to make an agent work, then project import only
-   * when there is something to import. Hosted web keeps upstream's wizard,
-   * which has the Connect step it needs.
+   * First run on a local or paired server. With `upcomputer` a new user lands
+   * in the app at once while it sets up OpenCode, unless their own agent
+   * already works; the Welcome page stays at /welcome for other agents.
    */
   readonly onboarding: ProductSurfaceVariant;
   /**
@@ -339,6 +345,12 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     capabilities: ["npmReleaseLookup"],
     keybindingCommands: [],
     settingsSearchIds: [],
+    rightPanelSurfaces: [],
+  },
+  mobileApp: {
+    capabilities: [],
+    keybindingCommands: [],
+    settingsSearchIds: ["mobile-app"],
     rightPanelSurfaces: [],
   },
 };

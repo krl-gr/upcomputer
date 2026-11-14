@@ -8,9 +8,7 @@ import { BlankWorkspacePage } from "../components/BlankWorkspacePage";
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { WelcomePage } from "../components/onboarding/WelcomePage";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { useBoringSidebarEnabled } from "../hooks/useSettings";
-import { UpComputerOnboarding } from "../onboardingSurface/UpComputerOnboarding";
-import { showsUpComputerOnboarding } from "../onboardingSurface/upComputerOnboarding.logic";
+import { useClientSettings } from "../hooks/useSettings";
 import { newThreadStartsWithoutProject } from "../sidebarProjects/SidebarThreadsSection";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 
@@ -27,7 +25,6 @@ export const Route = createFileRoute("/welcome")({
 });
 
 function WelcomeRouteView() {
-  const { authGateState } = Route.useRouteContext();
   const navigate = useNavigate();
   const hash = useLocation({ select: (location) => location.hash });
   // A ChatGPT sign-in returns here with the computer it set up.
@@ -49,37 +46,26 @@ function WelcomeRouteView() {
   const openNewThread = useNewThreadHandler();
   // Home opens a chat without a project here (see the index route), so the
   // hero behind setup would only flash before it.
-  const startsWithoutProject = newThreadStartsWithoutProject(useBoringSidebarEnabled());
+  const startsWithoutProject = newThreadStartsWithoutProject(
+    useClientSettings((settings) => settings.boringSidebarEnabled),
+  );
   const background = startsWithoutProject ? <BlankWorkspacePage /> : <NoProjectsHero />;
-  const onDone = async (projectRef?: Parameters<typeof openNewThread>[0]) => {
-    setDismissed(true);
-    if (projectRef !== undefined) {
-      await openNewThread(projectRef, { replace: true }).catch(() =>
-        navigate({ to: "/", replace: true }),
-      );
-      return;
-    }
-    await navigate({ to: "/", replace: true });
-  };
   if (waitingForCatalog) return null;
   if (environmentId === null || !isWelcomeRoute || dismissed) return background;
-  // UpComputer: the `onboarding` surface shows its own setup screens over the empty workspace.
-  if (
-    showsUpComputerOnboarding({
-      localAvailable: authGateState.status === "authenticated",
-      environmentId,
-    })
-  ) {
-    return (
-      <>
-        {background}
-        <UpComputerOnboarding
-          environmentId={environmentId}
-          resumeCodexSetup={resumeKnown}
-          onDone={onDone}
-        />
-      </>
-    );
-  }
-  return <WelcomePage key={environmentId} environmentId={environmentId} onDone={onDone} />;
+  return (
+    <WelcomePage
+      key={environmentId}
+      environmentId={environmentId}
+      onDone={async (projectRef) => {
+        setDismissed(true);
+        if (projectRef !== undefined) {
+          await openNewThread(projectRef, { replace: true }).catch(() =>
+            navigate({ to: "/", replace: true }),
+          );
+          return;
+        }
+        await navigate({ to: "/", replace: true });
+      }}
+    />
+  );
 }

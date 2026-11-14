@@ -40,7 +40,12 @@ import {
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
-import { MOBILE_APP_URL } from "../../branding";
+import { APP_BASE_NAME, MOBILE_APP_URL } from "../../branding";
+import { isProductFeatureShown } from "../../product/productFlags";
+import {
+  useWelcomePageViewed,
+  useWelcomeTelemetry,
+} from "../../onboardingSurface/welcomeTelemetry";
 import { isElectron } from "../../env";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { usePersistEnvironmentProviderInstanceMutation } from "../../hooks/useSettings";
@@ -134,7 +139,11 @@ export function WelcomePage({
   const label =
     environments.find((environment) => environment.environmentId === environmentId)?.label ??
     "this computer";
-  const agentReady = useWelcomeAgents(environmentId).readyCount > 0;
+  const readyCount = useWelcomeAgents(environmentId).readyCount;
+  const agentReady = readyCount > 0;
+  // UpComputer: the onboarding funnel's events (flow "welcome").
+  useWelcomePageViewed(environmentId);
+  const welcomeTelemetry = useWelcomeTelemetry(environmentId);
   // The phone and `t3` on PATH belong to the primary computer, so only it offers them.
   const isPrimary = usePrimaryEnvironmentId() === environmentId;
   // The same access Settings → Sharing & access checks.
@@ -193,6 +202,7 @@ export function WelcomePage({
     holdPageRef.current = true;
     const completion = completeOnboarding()
       .then(async () => {
+        welcomeTelemetry.completed(projectRef !== undefined, importedThreadCount);
         if (completionErrorToastIdRef.current !== null) {
           toastManager.close(completionErrorToastIdRef.current);
           completionErrorToastIdRef.current = null;
@@ -251,6 +261,7 @@ export function WelcomePage({
   const selected = projectImport.canWrite ? projectImport.selected : [];
   const newCount = selected.filter(projectImport.isNew).length;
   const start = () => {
+    welcomeTelemetry.started(readyCount);
     keepChoicesRef.current = scans.some((scan) => scan.data === null);
     if (selected.length === 0) {
       projectImport.finishAfterImport();
@@ -273,7 +284,7 @@ export function WelcomePage({
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-gutter-both">
           <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-12 pb-8 sm:pt-20">
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              Welcome to T3 Code
+              Welcome to {APP_BASE_NAME}
             </h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
               Setting up <span className="text-foreground">{label}</span>.
@@ -290,7 +301,9 @@ export function WelcomePage({
                 projectImport={projectImport}
                 isImporting={isImporting}
               />
-              {showPhone ? <PhoneSection environmentId={environmentId} /> : null}
+              {showPhone && isProductFeatureShown("mobileApp") ? (
+                <PhoneSection environmentId={environmentId} />
+              ) : null}
             </div>
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
               {agentReady ? (
@@ -329,7 +342,7 @@ function TelemetryNotice({ environmentId }: { readonly environmentId: Environmen
   const telemetryOff = managedTelemetryOffMessage(useManagedPolicy(environmentId));
   return (
     <p className="mt-auto pt-12 text-2xs leading-relaxed text-muted-foreground/70">
-      {telemetryOff ?? "T3 Code collects anonymous usage data to improve the app."}{" "}
+      {telemetryOff ?? "Up.computer collects anonymous usage data to improve the app."}{" "}
       {telemetryOff === undefined ? "To opt out, see the" : "See the"}{" "}
       <a
         className="underline decoration-current/40 underline-offset-2 hover:text-muted-foreground"
@@ -428,6 +441,7 @@ function AgentsSection({
   const [addingProvider, setAddingProvider] = useState(false);
   const [codexSetupId, setCodexSetupId] = useState<ProviderInstanceId | null>(null);
   const [cliTerminalFor, setCliTerminalFor] = useState<ProviderInstanceId | null>(null);
+  const welcomeTelemetry = useWelcomeTelemetry(environmentId);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks the environment to refresh its provider list when the environment changes
   useEffect(() => {
@@ -473,6 +487,7 @@ function AgentsSection({
       !readEnvironmentScope(environmentId, AuthTerminalOperateScope)
     )
       return;
+    welcomeTelemetry.terminalOpened(provider);
     setTerminalSession({
       environmentId,
       driver: provider.driver,
@@ -705,7 +720,12 @@ function AgentsSection({
           }
           onClose={() => {
             setTerminalSession(null);
-            void refreshProviders({ environmentId, input: {} });
+            void refreshProviders({ environmentId, input: {} }).then((refreshed) =>
+              welcomeTelemetry.terminalClosed(
+                terminalSession.providerInstanceId,
+                refreshed._tag === "Success" ? refreshed.value.providers : undefined,
+              ),
+            );
           }}
         />
       ) : null}
@@ -924,7 +944,7 @@ function PhoneSection({ environmentId }: { readonly environmentId: EnvironmentId
             <SmartphoneIcon className="size-4" />
           </RowIcon>
           <span className="min-w-0 flex-1 text-sm font-medium text-foreground">
-            Use T3 Code on your phone
+            Use Up.computer on your phone
           </span>
           <CollapsibleTrigger render={<Button variant="ghost-muted" size="xs" />}>
             {open ? "Hide" : "Set up"}
@@ -948,7 +968,7 @@ function PhoneSection({ environmentId }: { readonly environmentId: EnvironmentId
                 size={124}
                 level="M"
                 marginSize={2}
-                title="T3 Code app for iPhone and Android"
+                title="Up.computer app for iPhone and Android"
               />
             </div>
           </div>
@@ -995,13 +1015,13 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
     </Button>
   );
   if (isSignedIn && link === null && linkState.isPending) {
-    return <p className="text-sm text-muted-foreground">Checking T3 Connect…</p>;
+    return <p className="text-sm text-muted-foreground">Checking UpComputer Connect…</p>;
   }
   if (isSignedIn && linkState.error !== null) {
     return (
       <>
-        <p className="text-sm text-foreground">Could not check T3 Connect.</p>
-        {settingsLink("Check T3 Connect")}
+        <p className="text-sm text-foreground">Could not check UpComputer Connect.</p>
+        {settingsLink("Check UpComputer Connect")}
       </>
     );
   }
@@ -1016,7 +1036,7 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
   if (isSignedIn && shared && reachability === undefined) {
     return (
       <p className="text-sm text-foreground">
-        T3 Connect is on for this computer. Sign in to the app with the same account.
+        UpComputer Connect is on for this computer. Sign in to the app with the same account.
       </p>
     );
   }
@@ -1026,17 +1046,17 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
       <>
         <p className="text-sm text-foreground">
           {shared
-            ? "T3 Connect is on, but the app cannot reach this computer."
+            ? "UpComputer Connect is on, but the app cannot reach this computer."
             : "Signed in. Share this computer so the app can reach it."}
         </p>
-        {settingsLink(shared ? "Check T3 Connect" : "Set up T3 Connect")}
+        {settingsLink(shared ? "Check UpComputer Connect" : "Set up UpComputer Connect")}
       </>
     );
   }
   return (
     <>
       <p className="text-sm text-foreground">
-        Sign in to T3 Connect here, then in the app with the same account.
+        Sign in to UpComputer Connect here, then in the app with the same account.
       </p>
       {loadFailed ? (
         <Button variant="outline" size="xs" onClick={retryClerkLoad}>
@@ -1044,7 +1064,7 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
         </Button>
       ) : (
         <Button variant="outline" size="xs" disabled={!isLoaded} onClick={openAuthPrompt}>
-          Sign in to T3 Connect
+          Sign in to UpComputer Connect
         </Button>
       )}
     </>
@@ -1075,7 +1095,9 @@ function OnboardingCodexSetup({
   const config =
     instance.config !== null && typeof instance.config === "object" ? instance.config : {};
   const mode = readCodexSetupMode(config);
+  const welcomeTelemetry = useWelcomeTelemetry(environmentId);
   const changeMode = (setupMode: "managed" | "existing") => {
+    welcomeTelemetry.codexModeChosen(setupMode);
     // "Use existing CLI" also opens a terminal to install or sign in to the CLI.
     onUseCliChange(setupMode === "existing");
     const unchanged = mode === setupMode && provider.enabled;

@@ -1136,9 +1136,12 @@ const OnboardingStep = Schema.Literals(["connection", "agents", "import"]);
 /**
  * Which first-run screens sent the event; absent means upstream's wizard.
  * `first_run` is no screen at all: a new user lands in the app while it
- * installs OpenCode for them.
+ * installs OpenCode for them. `welcome` is upstream's Welcome page;
+ * `upcomputer` was the agent table it replaced.
  */
-const OnboardingFlow = Schema.optionalKey(Schema.Literals(["upstream", "upcomputer", "first_run"]));
+const OnboardingFlow = Schema.optionalKey(
+  Schema.Literals(["upstream", "upcomputer", "first_run", "welcome"]),
+);
 
 // Driver kinds are free-form slugs, so a client could put any text there. Telemetry names
 // only the drivers we ship; anything else is "other".

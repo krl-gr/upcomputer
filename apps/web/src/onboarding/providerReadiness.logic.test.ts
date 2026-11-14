@@ -9,9 +9,6 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   getOnboardingProviderState,
   resolveOnboardingProviderLoginCommand,
-  selectOnboardingProvidersByDriver,
-  onboardingRecheckPending,
-  providerStreamHasRecheck,
 } from "./providerReadiness.logic";
 
 const readyCodex: ServerProvider = {
@@ -87,33 +84,6 @@ describe("getOnboardingProviderState", () => {
         statusPending: true,
       }),
     ).toBe("checking");
-  });
-});
-
-describe("providerStreamHasRecheck", () => {
-  it("keeps checking after Close until the stream carries the recheck", () => {
-    // After the OpenCode install, the recheck answered "installed" while the
-    // stream still held the earlier "not installed" snapshot, so the step
-    // briefly offered Install again before the app opened.
-    const before = { ...readyCodex, installed: false, checkedAt: "2026-10-18T03:30:40.000Z" };
-    const recheckedAt = "2026-10-18T03:30:45.000Z";
-    expect(providerStreamHasRecheck(before, recheckedAt)).toBe(false);
-    expect(providerStreamHasRecheck(undefined, recheckedAt)).toBe(false);
-    expect(providerStreamHasRecheck({ ...readyCodex, checkedAt: recheckedAt }, recheckedAt)).toBe(
-      true,
-    );
-  });
-
-  it("stops checking when the stream does not carry the recheck in time", () => {
-    // Astra review G: a stream that stopped after a successful recheck left
-    // the step checking with no way out.
-    const before = { ...readyCodex, installed: false, checkedAt: "2026-10-18T03:30:40.000Z" };
-    const recheckedAt = "2026-10-18T03:30:45.000Z";
-    const pending = (recheckedAt: string | null, streamWaitOver: boolean) =>
-      onboardingRecheckPending({ streamed: before, recheckedAt, streamWaitOver });
-    expect(pending(null, false)).toBe(true);
-    expect(pending(recheckedAt, false)).toBe(true);
-    expect(pending(recheckedAt, true)).toBe(false);
   });
 });
 

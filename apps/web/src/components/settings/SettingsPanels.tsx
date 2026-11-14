@@ -2424,11 +2424,15 @@ export function AboutSettingsPanel() {
             />
           </>
         )}
-        <MobileAppSettingsRow />
+        {isProductFeatureShown("mobileApp") ? <MobileAppSettingsRow /> : null}
         {primaryEnvironmentId === null ? null : (
           <SettingsRow
             {...searchableSetting("welcome-page")}
-            description="See your agents, import projects, and set up your phone."
+            description={
+              isProductFeatureShown("mobileApp")
+                ? "See your agents, import projects, and set up your phone."
+                : "See your agents and import projects."
+            }
             control={
               <Button size="sm" variant="outline" render={<Link to="/welcome" />}>
                 Open
