@@ -61,6 +61,7 @@ import { unsentManualContinuationSource } from "./manualContinuation.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import {
   ContextHandoffBackgroundWorkError,
+  knownProviderFailureMessage,
   makeProviderFailure,
   providerFailureTitle,
 } from "@t3tools/provider-core/server/failure";

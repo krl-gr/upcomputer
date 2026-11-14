@@ -3020,7 +3020,7 @@ export default function ChatView(props: ChatViewProps) {
       failedMessage === undefined ||
       (failedMessage.text.trim().length === 0 && failedMessage.attachments.length === 0)
     ) {
-      scheduleComposerFocus();
+      scheduleComposerFocusStable();
       return;
     }
     // Sends the stored message itself, so the draft in the composer stays put.

@@ -160,6 +160,8 @@ export function resolveReadyTextGenerationModelSelection(
     }
   }
   return selection;
+}
+
 /** A text generator, or a provider whose snapshot can generate text; no snapshots trusts settings. */
 function isTextGenerationTargetUsable(
   settings: ServerSettings,

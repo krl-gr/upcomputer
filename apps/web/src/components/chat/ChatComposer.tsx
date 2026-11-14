@@ -945,7 +945,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (entry) => entry.instanceId === providerSetupInstanceId,
   )?.driverKind;
   const recordClientEvent = useRecordClientEvent();
-  const navigate = useNavigate();
   const providerSetupShownRef = useRef(false);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records a telemetry event once the setup prompt has rendered
   useEffect(() => {
@@ -3477,21 +3476,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       runId={activeThread?.runtime?.activeRunId ?? null}
       followUpBehavior={followUpBehavior}
       canSteer={canSteer}
-      alternateShortcutLabel={shortcutLabelForCommand(
-        keybindings,
-        "composer.sendAlternate",
-        {
-          context: {
-            composerFocus: true,
-            draftThreadRoute: routeKind === "draft",
-            turnRunning: true,
-            composerRequiresModifier: composerRequiresModifier(
-              settings.sendShortcut,
-              prompt,
-            ),
-          },
+      alternateShortcutLabel={shortcutLabelForCommand(keybindings, "composer.sendAlternate", {
+        context: {
+          composerFocus: true,
+          draftThreadRoute: routeKind === "draft",
+          turnRunning: true,
+          composerRequiresModifier: composerRequiresModifier(settings.sendShortcut, prompt),
         },
-      )}
+      })}
       voiceInputActive={voiceInputActive}
       isSendBusy={isSendBusy}
       sendDisabledReason={primaryActionSendDisabledReason}

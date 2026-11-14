@@ -1061,6 +1061,7 @@ const cliRuntimeLayer = Layer.mergeAll(
 );
 
 if (import.meta.main) {
+  applyUpcomputerEnvAliases(process.env);
   // runMain interrupts (running finalizers such as the --share unmapping) only
   // on SIGINT/SIGTERM; a closed terminal or dropped SSH session sends SIGHUP.
   process.on("SIGHUP", () => process.kill(process.pid, "SIGTERM"));

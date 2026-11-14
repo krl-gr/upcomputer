@@ -409,6 +409,8 @@ const GIT_REASON_SENTENCES: Record<GitCommandFailureReason, string> = {
     "The remote refused the push, for example because of a protected branch or a hook. Check the remote's rules, then try again.",
   push_rejected_non_fast_forward:
     "The remote has commits you don't have yet. Pull first, then push again.",
+  ref_name_conflict:
+    "An existing branch blocks that branch name, for example a branch named after one of its folders. Pick another branch name.",
   ref_not_found: "Git couldn't find that branch or commit. Check the name, then try again.",
   remote_unreachable:
     "Git couldn't reach the remote, or you don't have access to it. Check the address, your connection and your sign-in, then try again.",

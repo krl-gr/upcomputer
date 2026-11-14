@@ -620,7 +620,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     input: PreviewAutomationEvaluateInput,
   ): Promise<unknown> => {
     const value = await evaluateInPage(tab, input.expression, {
-      returnByValue: input.returnByValue ?? true,
+      returnByValue: true,
       awaitPromise: input.awaitPromise ?? true,
     });
     const bytes = Buffer.byteLength(JSON.stringify(value) ?? "null", "utf8");

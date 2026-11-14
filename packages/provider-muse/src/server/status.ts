@@ -91,7 +91,7 @@ export const checkMuseProviderStatus = Effect.fn("checkMuseProviderStatus")(func
     );
   }).pipe(
     Effect.timeoutOption(
-      resolveProviderProbeTimeoutMs("muse", DEFAULT_TIMEOUT_MS, museEnvironment),
+      resolveProviderProbeTimeoutMs("muse", VERSION_PROBE_TIMEOUT_MS, museEnvironment),
     ),
     Effect.result,
   );
@@ -128,7 +128,7 @@ export const checkMuseProviderStatus = Effect.fn("checkMuseProviderStatus")(func
       // T3 runs Muse with MUSE_NO_AUTO_UPDATE=1, so a launcher whose runtime was never fetched
       // (common after a mise upgrade) refuses to install it; a manual run completes setup.
       message: versionOutput.stderr.includes("installed binary is missing")
-        ? "Muse Code has not finished installing. Run `muse --version` on this T3 server host, then refresh its status."
+        ? "Muse Code has not finished installing. Run `muse --version` on this Up.computer server host, then refresh its status."
         : "Muse Code is installed but didn't respond. Open a terminal and run `muse --version` to see what's wrong, then refresh.",
     });
   }
