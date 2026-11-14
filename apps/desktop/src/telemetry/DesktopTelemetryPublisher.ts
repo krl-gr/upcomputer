@@ -25,7 +25,6 @@ import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronPowerMonitor from "../electron/ElectronPowerMonitor.ts";
 import * as DesktopRendererHistory from "./DesktopRendererHistory.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
-import * as DesktopKeepAwake from "../power/DesktopKeepAwake.ts";
 
 const LIVE_SAMPLE_INTERVAL = Duration.seconds(1);
 const BATTERY_SAMPLE_INTERVAL = Duration.seconds(5);
@@ -147,7 +146,6 @@ function sampleInterval(
 export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
   const electronApp = yield* ElectronApp.ElectronApp;
   const powerMonitor = yield* ElectronPowerMonitor.ElectronPowerMonitor;
-  const keepAwake = yield* DesktopKeepAwake.DesktopKeepAwake;
   const rendererHistory = yield* DesktopRendererHistory.DesktopRendererHistory;
   const shellEnvironment = yield* DesktopShellEnvironment.DesktopShellEnvironment;
   yield* electronApp.whenReady;
@@ -354,8 +352,6 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
         return Queue.offer(updateCommitQueue, message).pipe(Effect.asVoid);
       case "cancelDesktopUpdate":
         return Queue.offer(updateCancellationQueue, message).pipe(Effect.asVoid);
-      case "setKeepAwake":
-        return keepAwake.setForSource(sourceId, message.active);
       case "serverReady":
         return Effect.void;
     }
@@ -374,7 +370,6 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
           ? Effect.void
           : Queue.offer(sampleTriggers, undefined).pipe(Effect.asVoid),
       ),
-      Effect.andThen(keepAwake.setForSource(sourceId, false)),
     );
 
   const snapshots = Stream.unwrap(

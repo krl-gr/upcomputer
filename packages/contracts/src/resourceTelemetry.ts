@@ -405,12 +405,6 @@ export const DesktopTelemetryCancelDesktopUpdate = Schema.Struct({
 });
 export type DesktopTelemetryCancelDesktopUpdate = typeof DesktopTelemetryCancelDesktopUpdate.Type;
 
-/** Holds the desktop app's system sleep blocker while `active`; the backend's exit releases it. */
-export const DesktopTelemetrySetKeepAwake = Schema.Struct({
-  version: Schema.Literal(1),
-  type: Schema.Literal("setKeepAwake"),
-  active: Schema.Boolean,
-});
 /** The server accepts requests; the desktop treats this as backend readiness. */
 export const DesktopTelemetryServerReady = Schema.Struct({
   version: Schema.Literal(1),
@@ -421,7 +415,6 @@ export type DesktopTelemetryServerReady = typeof DesktopTelemetryServerReady.Typ
 export const DesktopTelemetryControlMessage = Schema.Union([
   DesktopTelemetryServerReady,
   DesktopTelemetrySetDiagnosticsDemand,
-  DesktopTelemetrySetKeepAwake,
   DesktopTelemetrySetHostPowerIntervals,
   DesktopTelemetryRequestDesktopUpdate,
   DesktopTelemetryCommitDesktopUpdate,
