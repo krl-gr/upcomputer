@@ -123,6 +123,8 @@ const computerUseTool = (tool: ComputerUseToolDefinition) =>
     description: tool.description,
     parameters: tool.inputSchema as JsonSchema.JsonSchema,
     // The handler answers with its own `CallToolResult`.
+    // Effect 4.1.3 JSON-encodes results: an undeclared success schema rejects the class instance.
+    success: McpSchema.CallToolResult,
     failure: OrchestratorMcpFailure,
   })
     .annotate(Tool.Title, tool.label)

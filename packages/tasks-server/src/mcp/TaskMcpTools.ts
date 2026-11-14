@@ -60,6 +60,8 @@ const taskTool = (spec: (typeof TASK_TOOL_SPECS)[number]) =>
     description: spec.description,
     parameters: spec.inputSchema as JsonSchema.JsonSchema,
     // The handler answers with its own `CallToolResult`.
+    // Effect 4.1.3 JSON-encodes results: an undeclared success schema rejects the class instance.
+    success: McpSchema.CallToolResult,
     failure: OrchestratorMcpFailure,
   })
     .annotate(Tool.Readonly, spec.mutation === "read")
