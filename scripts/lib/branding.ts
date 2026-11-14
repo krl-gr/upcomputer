@@ -73,6 +73,8 @@ export const COPY_RULES: ReadonlyArray<CopyRule> = [
   },
   { pattern: /\bT3 Server\b/g, replacement: "Up.computer server" },
   { pattern: /\bT3 Connect\b/g, replacement: "UpComputer Connect" },
+  // URL-encoded, as in links that prefill the name in another app.
+  { pattern: /\bT3%20Code\b/g, replacement: "Up.computer" },
   // After the phrase rules, which can leave "a Up.computer home".
   { pattern: /\b(a|A) Up\.computer\b/g, replacement: "$1n Up.computer" },
   // The HTML render tools and their errors, which agents read and repeat to the user.

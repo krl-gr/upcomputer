@@ -106,7 +106,8 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig, triage = true } =
       statusCommand,
       serviceCommand,
       updateCommand,
-      installCommand,
+      // UpComputer: `install` links upstream's npm `t3`; the desktop app installs `up` instead.
+      installCommand.pipe(Command.unlisted),
       uninstallCommand,
       // bin.ts runs the bare service invocation; this keeps flags and help working like other commands.
       Command.make("__service-launcher").pipe(

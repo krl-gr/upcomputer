@@ -141,6 +141,8 @@ export function ProductSettingsNavItems(props: { readonly pathname: string }) {
       <SidebarMenuItem key={page.path}>
         <SidebarMenuButton
           data-track={`settings.nav.${page.id}`}
+          data-settings-section={page.path}
+          aria-current={props.pathname === page.path ? "page" : undefined}
           isActive={props.pathname === page.path}
           onClick={() => {
             if (isMobile) setOpenMobile(false);

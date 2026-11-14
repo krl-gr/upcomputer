@@ -96,7 +96,7 @@ export function retryFailedUpdateRunServers(
     options: { readonly quiet: boolean },
   ) => Promise<ServerUpdateOutcome>,
 ): void {
-  const failed = (appAtomRegistry.get(visibleUpdateEverythingRunAtom)?.machines ?? []).flatMap(
+  const failed = (appAtomRegistry.get(updateEverythingRunAtom)?.machines ?? []).flatMap(
     (machine) =>
       machine.result === "failed" && machine.server !== null
         ? [{ target: machine.server, providerFailure: machine.providerFailure }]

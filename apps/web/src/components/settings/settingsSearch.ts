@@ -1087,6 +1087,8 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "scheduled-tasks",
     title: "Scheduled prompts",
     to: "/settings/scheduled-tasks",
+    // Upstream's name for the page.
+    searchTerms: ["scheduled tasks"],
   },
   {
     id: "agent-browser-access",
