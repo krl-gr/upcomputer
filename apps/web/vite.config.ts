@@ -378,7 +378,11 @@ function bootstrapTitlePlugin(): Plugin {
         hostedAppChannel: configuredHostedAppChannel,
         development,
       });
-      const title = formatAppDisplayName({ baseName: "T3 Code", stageLabel });
+      // Matches APP_STAGE_LABEL in src/branding.ts: Up.computer ships as Alpha, not Beta.
+      const title = formatAppDisplayName({
+        baseName: "Up.computer",
+        stageLabel: stageLabel === "Beta" ? "Alpha" : stageLabel,
+      });
       return html.replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`);
     },
   };

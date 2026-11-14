@@ -569,7 +569,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         undefined,
       );
 
-      assert.nestedPropertyVal(linux, "linux.desktop.entry.StartupWMClass", "com.t3tools.T3Code");
+      // Up.computer: the executable and WM class are `upcomputer` (docs/branding.md).
+      assert.nestedPropertyVal(linux, "linux.desktop.entry.StartupWMClass", "upcomputer");
     }),
   );
 
