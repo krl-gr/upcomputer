@@ -290,6 +290,7 @@ export const DesktopUpdateStatusReport = Schema.Struct({
   version: Schema.Literal(1),
   type: Schema.Literal("desktopUpdateStatus"),
   requestId: Schema.optionalKey(TrimmedNonEmptyString),
+  preparedRequestId: Schema.optionalKey(TrimmedNonEmptyString),
   outcome: Schema.optionalKey(DesktopUpdateRemoteOutcome),
   reason: Schema.optionalKey(TrimmedNonEmptyString),
   state: DesktopUpdateStateSchema,
@@ -314,6 +315,8 @@ export type DesktopProductEventMessage = typeof DesktopProductEventMessage.Type;
 
 export const ShellEnvironmentPatch = Schema.Struct({
   PATH: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  ANDROID_HOME: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  ANDROID_SDK_ROOT: Schema.optionalKey(Schema.NullOr(Schema.String)),
   DBUS_SESSION_BUS_ADDRESS: Schema.optionalKey(Schema.NullOr(Schema.String)),
   DISPLAY: Schema.optionalKey(Schema.NullOr(Schema.String)),
   LANG: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -408,8 +411,15 @@ export const DesktopTelemetrySetKeepAwake = Schema.Struct({
   type: Schema.Literal("setKeepAwake"),
   active: Schema.Boolean,
 });
+/** The server accepts requests; the desktop treats this as backend readiness. */
+export const DesktopTelemetryServerReady = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("serverReady"),
+});
+export type DesktopTelemetryServerReady = typeof DesktopTelemetryServerReady.Type;
 
 export const DesktopTelemetryControlMessage = Schema.Union([
+  DesktopTelemetryServerReady,
   DesktopTelemetrySetDiagnosticsDemand,
   DesktopTelemetrySetKeepAwake,
   DesktopTelemetrySetHostPowerIntervals,

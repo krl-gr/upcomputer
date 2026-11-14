@@ -4,6 +4,7 @@ import {
   useComposerDraftModelState,
   useComposerDraftReleaseKey,
 } from "../../composerDraftStore";
+import { draftModelSelectionApplies } from "../../lib/chatThreadActions";
 import {
   type EnvironmentId,
   type ModelSelection,
@@ -40,6 +41,7 @@ export function useComposerProviderModel(
     readonly promptInjectionState: ReturnType<typeof getComposerPromptInjectionState>;
     /** The environment whose providers `providerStatuses` are. */
     readonly environmentId: EnvironmentId;
+    readonly threadStarted: boolean;
   },
 ) {
   const {
@@ -54,6 +56,7 @@ export function useComposerProviderModel(
     lockedProvider,
     lockedInstanceId,
     environmentId,
+    threadStarted,
   } = input;
   const draftModelState = useComposerDraftModelState(threadRef);
   const draftKey = useComposerDraftReleaseKey(threadRef);
@@ -64,7 +67,12 @@ export function useComposerProviderModel(
   );
   const selection = resolveComposerProviderSelection({
     entries: providerInstanceEntries,
-    candidateInstanceIds,
+    candidateInstanceIds: [
+      draftModelSelectionApplies(draftModelState, threadStarted)
+        ? draftModelState.activeProvider
+        : null,
+      ...candidateInstanceIds,
+    ],
     lockedProvider,
     lockedInstanceId,
   });
@@ -74,6 +82,7 @@ export function useComposerProviderModel(
     selection.selectedProviderEntry?.driverKind ?? selection.requestedDriverKind;
   const modelState = deriveEffectiveComposerModelState({
     draft: draftModelState,
+    threadStarted,
     providers: providerStatuses,
     selectedProvider,
     selectedInstanceId,
@@ -94,7 +103,6 @@ export function useComposerProviderModel(
     models: selectedProviderModels,
     promptInjectionState,
     modelOptions: modelState.modelOptions?.[selectedInstanceId],
-    planModeEnabled: settings.planModeEnabled,
   });
   return {
     providerInstanceEntries,

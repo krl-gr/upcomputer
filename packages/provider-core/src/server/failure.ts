@@ -126,6 +126,10 @@ const PROPER_NOUNS = new Set([
 const CODEX_GOAL_VALIDATION_MESSAGE =
   /^goal objective must (?:not be empty|be at most \d{1,6} characters)$/u;
 
+// codex_config::ConstraintError::InvalidValue for a managed requirements.toml or cloud policy.
+const CODEX_ACCESS_REQUIREMENT_REJECTION =
+  /invalid value for `(approval_policy|sandbox_mode)`: `([A-Za-z]{1,32})` is not in the allowed set /u;
+
 /**
  * Typed fields our own code writes for the user. Free-form `message` and defect
  * text are never promoted to the main message; they only go to the detail.
@@ -224,6 +228,7 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
         case "CodexGoalObjectiveTooLongError":
         case "ProviderSetupError":
         case "ProviderAdapterThreadInUseError":
+        case "ProviderCompactionUnsupportedError":
           return {
             message: stringField(cause, "message") ?? "",
             // The message is shown as written; a session-open wrapper still names the stage.
@@ -233,8 +238,8 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
             known: true,
           };
         case "CodexAppServerRequestError": {
-          // Only Codex's fixed-shape goal validation text is actionable and
-          // safe to show; other request error text stays hidden.
+          // Only Codex's fixed-shape goal validation and managed-requirements
+          // text is actionable and safe to show; other request error text stays hidden.
           const rejection = stringField(cause, "message");
           if (
             record.method === "thread/goal/set" &&
@@ -243,6 +248,17 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
           ) {
             return {
               message: `Codex rejected the goal: ${rejection}.`,
+              code: undefined,
+              retryable: undefined,
+              detail: undefined,
+              known: true,
+            };
+          }
+          const access =
+            rejection === undefined ? null : CODEX_ACCESS_REQUIREMENT_REJECTION.exec(rejection);
+          if (access !== null) {
+            return {
+              message: `Codex's managed requirements do not allow \`${access[1]}\` \`${access[2]}\`, which this thread's access mode uses. Switch the thread to an access mode the policy allows.`,
               code: undefined,
               retryable: undefined,
               detail: undefined,
@@ -707,6 +723,13 @@ export function makeProviderFailureTurnItem(input: {
     ...(input.retry === undefined ? {} : { retry: input.retry }),
   };
 }
+
+/**
+ * Longest a turn may stay in provider retries before the adapter stops it as
+ * failed. Codex waits for the network without limit and a hung Claude request
+ * can take many minutes per attempt, so counting attempts alone never ends them.
+ */
+export const PROVIDER_RETRY_BUDGET_MS = 10 * 60 * 1000;
 
 export function makeProviderRetryTurnItem(input: {
   readonly driver: ProviderDriverKind;

@@ -1,6 +1,5 @@
 import * as BackgroundNotices from "../background/BackgroundNotices.ts";
 import {
-  AuthStandardClientScopes,
   EnvironmentAuthenticatedPrincipal,
   type EnvironmentCloudLinkStateResult,
   type EnvironmentCloudPreferencesRequest,
@@ -31,6 +30,7 @@ import {
 } from "@t3tools/contracts/relay";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import {
+  decodeRelayJwt,
   normalizeRelayIssuer,
   RELAY_HEALTH_REQUEST_TYP,
   RELAY_HEALTH_RESPONSE_TYP,
@@ -103,6 +103,7 @@ import * as ConnectReachability from "./ConnectReachability.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import * as ManagedLimits from "../policy/managedLimits.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { relayUrlConfig } from "./publicConfig.ts";
 import {
   inRelayTime,
@@ -528,6 +529,7 @@ const make = Effect.gen(function* () {
   const endpointRuntime = yield* ManagedEndpointRuntime.CloudManagedEndpointRuntime;
   const reachability = yield* ConnectReachability.ConnectReachability;
   const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
   const cliTokenManager = yield* CliTokenManager.CloudCliTokenManager;
   const httpClient = yield* HttpClient.HttpClient;
   const httpServer = yield* HttpServer.HttpServer;
@@ -655,16 +657,22 @@ const make = Effect.gen(function* () {
     // freshest relay time there is, even on a first link.
     yield* observeRelayTokenIssuedAt(request.challenge);
     const now = yield* relayClock.now;
-    const expiresAt = DateTime.add(now, { minutes: 5 });
     const nowSeconds = Math.floor(now.epochMilliseconds / 1_000);
+    // Borrow only the relay clock; the relay still verifies and consumes the challenge.
+    const issuedAt = yield* decodeRelayJwt(request.challenge).pipe(
+      Effect.map(({ iat }) =>
+        typeof iat === "number" && Number.isSafeInteger(iat) && iat > 0 ? iat : nowSeconds,
+      ),
+      Effect.orElseSucceed(() => nowSeconds),
+    );
     const descriptor = yield* environment.getDescriptor;
     const payload = {
       iss: `t3-env:${descriptor.environmentId}`,
       aud: normalizeRelayIssuer(request.relayIssuer),
       sub: descriptor.environmentId,
       jti: yield* random.uuidV4(),
-      iat: nowSeconds,
-      exp: Math.floor(expiresAt.epochMilliseconds / 1_000),
+      iat: issuedAt,
+      exp: issuedAt + 5 * 60,
       challenge: request.challenge,
       descriptor,
       environmentId: descriptor.environmentId,
@@ -1401,6 +1409,10 @@ const make = Effect.gen(function* () {
       ],
       { concurrency: 10 },
     );
+    // The hostname arrives once cloudflared connects, before any check passes.
+    const connector = Option.isSome(endpointRuntimeConfig)
+      ? yield* endpointRuntime.inspectConnector
+      : null;
     // A not-linked check predates the stored tunnel config; the next check replaces it.
     const currentReachability = Option.filter(
       latestReachability,
@@ -1425,6 +1437,7 @@ const make = Effect.gen(function* () {
       holdWebhooksWhileOffline:
         Option.isSome(holdWebhooks) && bytesToString(holdWebhooks.value) === "true",
       ...(Option.isSome(currentReachability) ? { reachability: currentReachability.value } : {}),
+      ...(connector?.hostname ? { tunnelHostname: connector.hostname } : {}),
     } satisfies EnvironmentCloudLinkStateResult;
   });
 
@@ -1710,12 +1723,12 @@ const make = Effect.gen(function* () {
         return yield* new CloudLinkProofReplayedError({ request: "mint" });
       }
 
-      const issued = yield* environmentAuth.createPairingLink({
-        scopes: AuthStandardClientScopes,
-        subject: "cloud-connect",
-        ttl: Duration.minutes(2),
-        label: "UpComputer Connect connect",
+      const settings = yield* serverSettings.getSettings.pipe(
+        Effect.catch(internalError("issue-credential")),
+      );
+      const issued = yield* environmentAuth.issueConnectCredential({
         proofKeyThumbprint: proof.clientProofKeyThumbprint,
+        requireApproval: settings.requireConnectDeviceApproval,
       });
       // The credential's own expiry is checked here, in local time; the relay
       // and the client read this copy in theirs.

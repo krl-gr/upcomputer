@@ -94,7 +94,7 @@ describe("DefectReporter", () => {
         assert.equal(next, 2);
         assert.equal(yield* Queue.size(logs), 0);
       }),
-    ).pipe(Effect.scoped),
+    ),
   );
 
   it.effect("logs and reports defects, not typed failures or interrupts", () =>

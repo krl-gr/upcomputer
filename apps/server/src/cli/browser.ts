@@ -129,7 +129,14 @@ const browserSetupCommand = Command.make("setup", { baseDir: baseDirFlag }).pipe
           ? new PreviewBrowserHost.PreviewBrowserRootError().message
           : undefined;
 
-      const needsProfile = yield* PreviewBrowserHost.sandboxBlocked;
+      const restricted = yield* PreviewBrowserHost.usernsRestricted;
+      // The kernel can lack a profile that is on disk, as on a host restored from an image,
+      // and only root can read the loaded list, so root reloads it on every run.
+      const needsProfile = isRoot ? restricted : yield* PreviewBrowserHost.sandboxBlocked;
+      const reloadHint =
+        restricted && !isRoot
+          ? `\nIf the browser still reports a blocked sandbox, the AppArmor profile at ${PreviewBrowserHost.APPARMOR_PROFILE_PATH} is not loaded. To load it, run:\n\n  ${setupCommand}\n`
+          : "";
       const browser = yield* installedBrowser(baseDirPath);
       const missing = Option.isSome(browser)
         ? yield* PreviewBrowserHost.missingLibraries(browser.value)
@@ -141,8 +148,9 @@ const browserSetupCommand = Command.make("setup", { baseDir: baseDirFlag }).pipe
         return yield* Console.log(
           rootWarning ??
             (Option.isSome(browser)
-              ? "This host is ready for Up.computer's browser."
-              : "Chrome's sandbox is allowed here. Up.computer's browser installs on first use; if it then reports missing libraries, run this again."),
+              ? "This host is ready for T3's browser."
+              : "Chrome's sandbox is allowed here. T3's browser installs on first use; if it then reports missing libraries, run this again.") +
+              reloadHint,
         );
       }
 
@@ -166,25 +174,35 @@ const browserSetupCommand = Command.make("setup", { baseDir: baseDirFlag }).pipe
       }
 
       if (needsProfile) {
-        yield* fs
-          .writeFileString(
-            PreviewBrowserHost.APPARMOR_PROFILE_PATH,
-            PreviewBrowserHost.APPARMOR_PROFILE,
-          )
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new BrowserSetupStepError({
-                  step: `write ${PreviewBrowserHost.APPARMOR_PROFILE_PATH}`,
-                  detail: cause.message,
-                }),
-            ),
-          );
+        // An existing profile may carry an administrator's edits, so it is reloaded as is.
+        const profileOnDisk = yield* fs
+          .exists(PreviewBrowserHost.APPARMOR_PROFILE_PATH)
+          .pipe(Effect.orElseSucceed(() => false));
+        if (!profileOnDisk) {
+          yield* fs
+            .writeFileString(
+              PreviewBrowserHost.APPARMOR_PROFILE_PATH,
+              PreviewBrowserHost.APPARMOR_PROFILE,
+            )
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new BrowserSetupStepError({
+                    step: `write ${PreviewBrowserHost.APPARMOR_PROFILE_PATH}`,
+                    detail: cause.message,
+                  }),
+              ),
+            );
+        }
         yield* runStep("load the AppArmor profile", "apparmor_parser", [
           "-r",
           PreviewBrowserHost.APPARMOR_PROFILE_PATH,
         ]);
-        yield* Console.log("Allowed Chrome's sandbox for Up.computer's browser.");
+        yield* Console.log(
+          profileOnDisk
+            ? `Reloaded the AppArmor profile at ${PreviewBrowserHost.APPARMOR_PROFILE_PATH} that allows Chrome's sandbox for T3's browser.`
+            : `Wrote and loaded the AppArmor profile at ${PreviewBrowserHost.APPARMOR_PROFILE_PATH} that allows Chrome's sandbox for T3's browser.`,
+        );
       }
 
       if ((missing.length > 0 || needsFonts) && !hasApt) {

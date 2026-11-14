@@ -9,7 +9,7 @@ import { isProductFeatureShown } from "../product/productFlags";
 
 const MAX_SEARCH_LABEL_CANDIDATES = 100;
 
-function pullRequestSearchLabels(raw: unknown): Partial<Pick<PullRequestsSearch, "labels">> {
+function pullRequestSearchLabels(raw: unknown): PullRequestsSearch["labels"] {
   const values = (Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : []).slice(
     0,
     MAX_SEARCH_LABEL_CANDIDATES,
@@ -25,7 +25,7 @@ function pullRequestSearchLabels(raw: unknown): Partial<Pick<PullRequestsSearch,
     seen.add(key);
     if (labels.length === 10) break;
   }
-  return labels.length === 0 ? {} : { labels };
+  return labels.length === 0 ? undefined : labels;
 }
 
 export const Route = createFileRoute("/_chat/pull-requests")({
@@ -33,6 +33,7 @@ export const Route = createFileRoute("/_chat/pull-requests")({
     if (!isProductFeatureShown("pullRequests")) throw redirect({ to: "/", replace: true });
   },
   validateSearch: (raw: Record<string, unknown>): PullRequestsSearch => ({
+    ...(typeof raw.selectedUrl === "string" ? { selectedUrl: raw.selectedUrl.slice(0, 4096) } : {}),
     involvement:
       raw.involvement === "reviewing" || raw.involvement === "authored" ? raw.involvement : "all",
     state:
@@ -62,7 +63,7 @@ export const Route = createFileRoute("/_chat/pull-requests")({
     ...(typeof raw.selectedEnvironmentId === "string" && raw.selectedEnvironmentId
       ? { selectedEnvironmentId: raw.selectedEnvironmentId as EnvironmentId }
       : {}),
-    // Always include q to override numeric values in the parent route's unvalidated search.
+    // Always include free-text keys to override numeric values in the parent route's unvalidated search.
     q: typeof raw.q === "string" && raw.q ? raw.q.slice(0, 200) : undefined,
     ...(raw.draft === "only" || raw.draft === "hide" ? { draft: raw.draft } : {}),
     ...(raw.review === "approved" ||
@@ -72,10 +73,11 @@ export const Route = createFileRoute("/_chat/pull-requests")({
       ? { review: raw.review }
       : {}),
     ...(raw.checks === "passing" || raw.checks === "failing" ? { checks: raw.checks } : {}),
-    ...(typeof raw.author === "string" && raw.author.trim()
-      ? { author: raw.author.trim().slice(0, 200) }
-      : {}),
-    ...pullRequestSearchLabels(raw.labels),
+    author:
+      typeof raw.author === "string" && raw.author.trim()
+        ? raw.author.trim().slice(0, 200)
+        : undefined,
+    labels: pullRequestSearchLabels(raw.labels),
   }),
   component: PullRequestsPage,
 });
