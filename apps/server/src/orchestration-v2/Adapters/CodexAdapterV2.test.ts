@@ -4834,7 +4834,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       assert.equal(terminal.failure.code, "responseStreamDisconnected");
       assert.equal(
         terminal.failure.message,
-        "exceeded retry limit, last status: 429 Too Many Requests",
+        "Codex usage limit reached (exceeded retry limit, last status: 429 Too Many Requests). Switch to another model or provider to keep working now.",
       );
       assert.equal(terminal.retry?.attempt, 2);
       assert.equal(terminal.threadDisposition, "reusable");

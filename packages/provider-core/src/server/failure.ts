@@ -229,6 +229,7 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
         case "ProviderSetupError":
         case "ProviderAdapterThreadInUseError":
         case "ProviderCompactionUnsupportedError":
+        case "ProviderResumeUnsupportedError":
           return {
             message: stringField(cause, "message") ?? "",
             // The message is shown as written; a session-open wrapper still names the stage.

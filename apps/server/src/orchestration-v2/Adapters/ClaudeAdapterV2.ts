@@ -4768,11 +4768,19 @@ function providerFailureFromResult(
       : "provider_error";
   const listedError = resultUserFacingError(message);
   const apiErrorStatus = message.subtype === "success" ? (message.api_error_status ?? null) : null;
+  // Claude's own "update Claude Code" text says what to do; the 4xx catch-all below would hide it.
+  const unsupportedVersion =
+    failureHint === undefined &&
+    message.subtype === "success" &&
+    CLAUDE_UNSUPPORTED_VERSION_ERROR.test(message.result.trim())
+      ? message.result.trim()
+      : undefined;
   const structuredError = isOverloadedResult(message)
     ? "Anthropic is overloaded right now (529). Wait a minute and send the message again."
     : message.subtype === "success" && message.api_error_status === 429
       ? CLAUDE_USAGE_LIMIT_TEXT
-      : terminalResultError(message.terminal_reason, failureHint, apiErrorStatus);
+      : (unsupportedVersion ??
+        terminalResultError(message.terminal_reason, failureHint, apiErrorStatus));
   const authFailed = extra?.authFailed === true;
   if (message.subtype !== "success") {
     const native = message.errors.join("\n");

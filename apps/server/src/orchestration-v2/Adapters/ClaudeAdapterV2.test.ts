@@ -1786,6 +1786,7 @@ const claudeMcpSessionUpdates = Effect.fn("claudeMcpSessionUpdates")(function* (
           setModel: () => Effect.void,
           applyFlagSettings: () => Effect.void,
           setPermissionMode: () => Effect.void,
+          renameSession: () => Effect.void,
           backgroundTasks: () => Effect.succeed(false),
           // These cases follow init's server list; the status probe never answers.
           mcpServerStatus: Effect.never,
@@ -1799,6 +1800,7 @@ const claudeMcpSessionUpdates = Effect.fn("claudeMcpSessionUpdates")(function* (
         }),
       forkSession: () => Effect.die("unused"),
       subagentLaunchToolUseId: () => Effect.succeed(null),
+      subagentModel: () => Effect.succeed(null),
       assertComplete: Effect.void,
     }),
   );
@@ -1872,6 +1874,7 @@ describe("ClaudeAdapterV2 MCP status", () => {
         Layer.mergeAll(
           IdAllocator.layer,
           McpProviderSessions.layer,
+          ProviderInstallationGate.layer,
           NodeServices.layer,
           NodeCrypto.layer,
         ),
@@ -1905,6 +1908,7 @@ describe("ClaudeAdapterV2 MCP status", () => {
         Layer.mergeAll(
           IdAllocator.layer,
           McpProviderSessions.layer,
+          ProviderInstallationGate.layer,
           NodeServices.layer,
           NodeCrypto.layer,
         ),
@@ -8545,7 +8549,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       if (terminal.status !== "failed") return;
       assert.equal(terminal.failure.message, input.expected);
       // The provider's own text stays readable in the details, redacted.
-      assert.include(terminal.failure.detail ?? "", input.detail);
+      assert.include(terminal.failure.detail ?? "", "detail" in input ? input.detail : "");
       assert.notInclude(terminal.failure.detail ?? "", "synthetic-secret");
       assert.notInclude(terminal.failure.detail ?? "", "[ede_diagnostic]");
       assert.equal(terminal.failure.code, `api_error_${apiErrorStatus}`);
@@ -21689,7 +21693,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       if (terminal?.status !== "failed") return;
       assert.include(terminal.failure.message, "Claude Code process terminated by signal SIGABRT");
       assert.notInclude(terminal.failure.message, "stderr");
-      assert.equal(terminal.failure.code, "process_killed_by_signal");
+      // Up.computer files every provider crash under one code; the signal stays in the message.
+      assert.equal(terminal.failure.code, "provider_crashed");
     }).pipe(
       Effect.provide(
         Layer.mergeAll(

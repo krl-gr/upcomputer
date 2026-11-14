@@ -7172,7 +7172,16 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   failure: {
                     ...state.failure,
                     retryable: false,
-                    ...(codexErrorHttpStatus(errorInfo) === 429 ? { class: "usage_limit" } : {}),
+                    // UpComputer: a usage limit reads as one, like codexTurnFailure's.
+                    ...(codexErrorHttpStatus(errorInfo) === 429
+                      ? {
+                          class: "usage_limit",
+                          message: usageLimitMessage(
+                            "Codex",
+                            state.failure.detail ?? state.nativeMessage,
+                          ),
+                        }
+                      : {}),
                   },
                 },
               },
