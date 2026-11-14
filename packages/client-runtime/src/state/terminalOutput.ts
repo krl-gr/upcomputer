@@ -291,7 +291,10 @@ function clearOutput(current: TerminalOutputState, maxBufferBytes: number): Term
   return { ...cleared, textStartOffset: cleared.nextOffset };
 }
 
-/** Everything a fresh emulator replays: retained output from outside any control sequence. */
+/**
+ * Everything a fresh emulator replays: retained output from outside any control sequence.
+ * @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace.
+ */
 export function terminalOutputReplay(output: TerminalOutputState): string {
   const text = output.chunks.map((chunk) => chunk.data).join("");
   return text.slice(terminalSequenceEnd(output.sequenceState, text));

@@ -38,7 +38,7 @@ import * as Duration from "effect/Duration";
 import * as Result from "effect/Result";
 import { Link } from "@tanstack/react-router";
 import { productSurface } from "../../product/productFlags";
-import { PlusIcon, SparklesIcon } from "lucide-react";
+import { BotIcon, PlusIcon } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
@@ -1083,7 +1083,7 @@ export function EnvironmentProviderSettings({
                     to="/welcome"
                     className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted/25 hover:text-foreground focus-visible:bg-muted/25 focus-visible:text-foreground sm:px-4"
                   >
-                    <SparklesIcon className="size-4 shrink-0" />
+                    <BotIcon className="size-4 shrink-0" />
                     Connect your agents
                   </Link>
                 ) : null}

@@ -18,6 +18,7 @@ import {
 export {
   INITIAL_TERMINAL_OUTPUT_CURSOR,
   readTerminalOutputUpdate,
+  /** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */
   terminalOutputReplay,
   terminalOutputText,
   type TerminalOutputCursor,

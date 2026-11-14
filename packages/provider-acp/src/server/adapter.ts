@@ -126,7 +126,6 @@ import {
 import {
   makeProviderFailure,
   makeProviderRetryTurnItem,
-  providerFailureName,
 } from "@t3tools/provider-core/server/failure";
 import { acpSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
 import {
@@ -812,20 +811,6 @@ export const AcpProviderCapabilitiesV2 = {
     enforcement: "client-boundary",
   },
 } satisfies OrchestrationV2ProviderCapabilities;
-
-/** Stop reasons that end a turn without a full answer and would otherwise read as success. */
-function acpEarlyStopReason(stopReason: string): string | undefined {
-  switch (stopReason) {
-    case "refusal":
-      return "it declined the request";
-    case "max_tokens":
-      return "it reached its output limit";
-    case "max_turn_requests":
-      return "it reached its step limit";
-    default:
-      return undefined;
-  }
-}
 
 const STEER_DELIVERY_BOUND = "2 seconds";
 
