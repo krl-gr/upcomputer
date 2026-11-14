@@ -707,6 +707,8 @@ it("renders a reply's single line breaks as lines without touching code, lists, 
     "<table>\n<thead>\n<tr>\n<th>Fruit</th>\n<th>Count</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Apple</td>\n<td>2</td>\n</tr>\n<tr>\n<td>Pear</td>\n<td>3</td>\n</tr>\n</tbody>\n</table>",
   );
   expect(render("> quoted\n> lines")).toBe("<blockquote>\n<p>quoted<br>\nlines</p>\n</blockquote>");
+});
+
 it("links complete absolute paths in prose and skips shortened ones", () => {
   const path =
     "/tmp/claude-1000/-home-user--t3-worktrees-app-t3-abc123/session/scratchpad/notes.md";
@@ -736,7 +738,7 @@ it("links complete absolute paths in prose and skips shortened ones", () => {
     ),
   ).toEqual([]);
   expect(
-    links("Config lives in /Users/me/Library/Application Support/T3 Code/settings.json now."),
+    links("Config lives in /Users/me/Library/Application Support/Up.computer/settings.json now."),
   ).toEqual([]);
   expect(links(`/chat/settings and https://example.com${path}`)).toEqual([
     `https://example.com${path}`,

@@ -1085,6 +1085,7 @@ describe("composer default model stability", () => {
     const driver = ProviderDriverKind.make("opencode");
     const instanceId = options.instanceId ?? OPENCODE;
     return deriveEffectiveComposerModelState({
+      threadStarted: false,
       draft: null,
       providers: [
         {
@@ -1151,6 +1152,7 @@ describe("composer default model stability", () => {
     );
     expect(
       deriveEffectiveComposerModelState({
+        threadStarted: false,
         draft: {
           activeProvider: OPENCODE,
           modelSelectionByProvider: {
@@ -1265,6 +1267,7 @@ describe("OpenCode automatic model", () => {
     readonly chosen?: string;
   }) {
     return deriveEffectiveComposerModelState({
+      threadStarted: false,
       draft: input.chosen
         ? {
             activeProvider: OPENCODE,

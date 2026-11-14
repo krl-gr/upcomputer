@@ -553,6 +553,8 @@ it.effect("reports whether Claude took the t3-code MCP server", () =>
       errors: {} as Record<string, string>,
     }));
     const query = vi.spyOn(ClaudeSdk, "query").mockReturnValue({
+      // Upstream's boot deadline waits for initialization first.
+      initializationResult: async () => undefined,
       setMcpServers,
     } as unknown as ClaudeSdk.Query);
     yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));

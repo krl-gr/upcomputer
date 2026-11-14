@@ -177,6 +177,15 @@ vi.mock(import("../ThreadTerminalDrawer"), async (original) => ({
   ...(await original()),
   TerminalViewport: () => <div />,
 }));
+// UpComputer hides the phone section (`mobileApp`); these cases cover upstream's page.
+vi.mock(import("../../product/productFlags"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    isProductFeatureShown: ((flag: Parameters<typeof actual.isProductFeatureShown>[0]) =>
+      flag === "mobileApp" || actual.isProductFeatureShown(flag)) as never,
+  };
+});
 vi.mock(import("../../state/use-atom-command"), async (original) => ({
   ...(await original()),
   useAtomCommand: ((
@@ -187,7 +196,8 @@ vi.mock(import("../../state/use-atom-command"), async (original) => ({
       | "openTerminal"
       | "writeTerminal"
       | "closeTerminal",
-  ) => state[command]) as never,
+    // UpComputer: the page also records onboarding events, which these cases ignore.
+  ) => state[command] ?? (async () => ({ _tag: "Success", value: undefined }))) as never,
 }));
 
 import { welcomeImportSelectionKey } from "../../onboarding/welcomeState";

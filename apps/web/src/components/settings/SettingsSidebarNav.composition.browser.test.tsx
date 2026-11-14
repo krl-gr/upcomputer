@@ -2,6 +2,8 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, render } from "../../../test/render";
+import { WEB_PRODUCT } from "../../product/productEntry";
+import { isSettingsPathShown } from "../../product/productFlags";
 import { SidebarProvider } from "../ui/sidebar";
 import { SettingsSidebarNav } from "./SettingsSidebarNav";
 import { SETTINGS_NAV_GROUPS, SETTINGS_SECTION_LABELS } from "./settingsSearch";
@@ -76,9 +78,13 @@ it("moves Tab through every settings section", async () => {
   await using _screen = await renderNav();
   await userEvent.click(page.getByRole("combobox", { name: "Search settings" }));
 
-  const sections = SETTINGS_NAV_GROUPS.flatMap((group) => group.paths).map(
-    (to) => SETTINGS_SECTION_LABELS[to],
-  );
+  // UpComputer: hidden pages leave the nav, and the product's pages follow the Agents group.
+  const sections = SETTINGS_NAV_GROUPS.flatMap((group) => [
+    ...group.paths.filter(isSettingsPathShown).map((to) => SETTINGS_SECTION_LABELS[to]),
+    ...(group.paths.includes("/settings/providers")
+      ? WEB_PRODUCT.settings.map((settingsPage) => settingsPage.label)
+      : []),
+  ]);
   const tabbed: string[] = [];
   for (let step = 0; step < sections.length; step += 1) {
     await userEvent.tab();

@@ -325,6 +325,7 @@ describe("desktop-local media fallback", () => {
       const media = resolveMediaSource(source, { threadId, workspaceRoot: "/tmp/repo" });
       if (media?.access !== "environment") throw new Error(`${source} is not host media`);
       calls.length = 0;
+      // @effect-diagnostics-next-line anyUnknownInErrorContext:off -- the URL atom's error is unknown upstream too
       return AtomRegistry.getResult(
         registry,
         atoms.createUrl({ environmentId: remote, input: { resource: media.resource } }),

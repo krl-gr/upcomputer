@@ -1079,7 +1079,7 @@ it.effect(
       );
       const projection = yield* preparationSettled(launched.threadId);
       assert.equal(projection.runs[0]?.status, "starting");
-      assert.match(projection.thread.branch!, /^t3\/[0-9a-f]{8}$/);
+      assert.match(projection.thread.branch!, /^upcomputer\/[0-9a-f]{8}$/);
       assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, projection.thread.branch);
       assert.equal(harness.runSetup.mock.calls.length, 1);
       assert.equal(harness.renameBranch.mock.calls.length, 0);
@@ -2695,7 +2695,8 @@ it.effect("tells the thread when its worktree branch could not be renamed", () =
       assert.equal(notice?.type === "system_notice" ? notice.runId : null, projection.runs[0]?.id);
       assert.include(
         notice?.type === "system_notice" ? notice.message : "",
-        `stays ${projection.thread.branch}. Text generation failed in generateBranchName: Failed to spawn Codex CLI process`,
+        // Up.computer words the text generation failure itself in plain language.
+        `stays ${projection.thread.branch}.`,
       );
     }).pipe(Effect.provide(harness.layer));
   }),

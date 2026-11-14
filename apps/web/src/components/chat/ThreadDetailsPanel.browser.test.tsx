@@ -57,6 +57,10 @@ vi.mock(import("~/state/entities"), async (importOriginal) => ({
         : [],
     )) as never,
 }));
+// Upstream's world: pull requests shown, and the details card open by default.
+vi.mock(import("../../product/productEntry"), async () => ({
+  WEB_PRODUCT: (await import("../../product/WebProduct")).composeExperimentalWebFeatures([]),
+}));
 // Neither folder is a repository, which is what the server reports for both.
 vi.mock(import("~/state/vcs"), async (importOriginal) => {
   const actual = await importOriginal();

@@ -5117,9 +5117,12 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           out("session.instructions.entry.put", {
             sessionID: SESSION,
             key: "t3-code",
-            value: orchestrationInstructions
-              ? `${runtimeInstructions}\n\n${T3_CODE_ORCHESTRATION_INSTRUCTIONS}`
-              : runtimeInstructions,
+            // Upstream's background-wait hint follows whenever the session has MCP tools.
+            value: [
+              runtimeInstructions,
+              ...(orchestrationInstructions ? [T3_CODE_ORCHESTRATION_INSTRUCTIONS] : []),
+              "To wait for a background shell you started (tests, a build), call `t3_background_wait` with its shell ID before you end your turn. Do not mark work you leave running, or PRs.",
+            ].join("\n\n"),
           }),
           reply("session.instructions.entry.put", null),
           out("session.prompt", { sessionID: SESSION, text: "<any>" }),
@@ -5135,7 +5138,10 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           runtimePolicy: policy(),
         });
         const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
-        yield* runtime.startTurn(turnInput(thread));
+        // The MCP registration settles on the test clock before the prompt goes out.
+        const started = yield* runtime.startTurn(turnInput(thread)).pipe(Effect.forkScoped);
+        yield* TestClock.adjust("250 millis");
+        yield* Fiber.join(started);
         assert.equal((yield* Fiber.join(terminal))?.status, "completed");
         yield* runtime.unloadThread!({ providerThread: thread });
       }).pipe(Effect.scoped),
@@ -6639,7 +6645,11 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       yield* runtime.startTurn(secondTurn(thread));
       const [first, second] = yield* Fiber.join(ended);
       assert.equal(first?.status, "interrupted");
-      assert.equal(second?.failure?.message, "second turn failed");
+      // Up.computer wraps the provider's words in its plain-language sentence.
+      assert.equal(
+        second?.failure?.message,
+        "OpenCode reported an error: second turn failed. Send the message again.",
+      );
     }),
   );
 

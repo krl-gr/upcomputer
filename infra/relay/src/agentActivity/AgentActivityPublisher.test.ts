@@ -272,7 +272,6 @@ describe("AgentActivityPublisher", () => {
                   ApnsDeliveries.ApnsDeliveries,
                   makeApnsDeliveries({
                     sendForTarget: () => Effect.die("APNs for a web device"),
-                    sendPushNotificationForTarget: () => Effect.die("APNs for a web device"),
                   }),
                 ),
                 Layer.succeed(FcmDeliveries.FcmDeliveries, {

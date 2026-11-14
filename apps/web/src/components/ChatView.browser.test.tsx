@@ -346,7 +346,8 @@ it("a rejected send leaves the timeline when a new draft was typed meanwhile", a
 
   await rejectPendingCommand("Attachment 'sample.png' cannot be sent.");
 
-  await expect.element(page.getByText("Attachment 'sample.png' cannot be sent.")).toBeVisible();
+  // Up.computer's banner wraps the reason in its own sentence.
+  await expect.element(page.getByText(/attachment 'sample\.png' cannot be sent\./i)).toBeVisible();
   await expect.element(page.getByText("Failed prompt")).not.toBeInTheDocument();
   expect(editor.element().textContent).toContain("Next draft");
 });

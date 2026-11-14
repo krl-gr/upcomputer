@@ -7,6 +7,14 @@ vi.mock("../product/productFlags", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../product/productFlags")>()),
   productSurface: () => surface.composerFooter,
 }));
+// Static markup has no server snapshot for upstream's modifier-key store; no key is held.
+vi.mock("../shortcutModifierState", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../shortcutModifierState")>();
+  return {
+    ...actual,
+    useShortcutModifierState: () => actual.shortcutModifierStore.getSnapshot(),
+  };
+});
 vi.mock("~/hooks/useSettings", () => ({
   useEnvironmentIdentificationMode: () => "none",
   useClientSettings: (select: (settings: Record<string, unknown>) => unknown) => select({}),

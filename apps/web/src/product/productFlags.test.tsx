@@ -135,7 +135,6 @@ describe("hidden upstream features in the web app", () => {
       hasCloudPublicConfig: true,
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
-      hasMacProviderSettingsEnvironment: true,
       canManageLocalBackend: true,
       isWslSettingsRowVisible: true,
       hasThreadAutoSettlement: true,
@@ -165,9 +164,10 @@ describe("hidden upstream features in the web app", () => {
         "review-guide-instructions",
         "pull-request-links-open-in-app",
         "keep-threads-with-pull-requests",
+        "mobile-app",
       ]),
     );
-    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(15);
+    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(16);
     expect(all.find((item) => item.id === "code-font")).toBeDefined();
     expect(isProductSettingsSearchItemVisible({ id: "code-font" })).toBe(true);
   });
@@ -177,7 +177,6 @@ describe("hidden upstream features in the web app", () => {
       hasCloudPublicConfig: true,
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
-      hasMacProviderSettingsEnvironment: true,
       canManageLocalBackend: true,
       isWslSettingsRowVisible: true,
       hasThreadAutoSettlement: true,
@@ -204,12 +203,16 @@ describe("hidden upstream features in the web app", () => {
     expect(search("pr titles").map((item) => item.id)).toContain("source-control-writer-model");
 
     product.hidden = true;
-    // Automatically pull is git pull.
-    expect(search("pull")).toEqual([{ id: "automatic-pull", title: "Automatically pull" }]);
+    // Automatically pull is git pull; commit writing and PR templates are git text, not PR screens.
+    expect(search("pull")).toEqual([
+      { id: "automatic-pull", title: "Automatically pull" },
+      { id: "source-control-writing-style", title: "Commit and pull request writing" },
+      { id: "follow-change-request-templates", title: "Follow pull request templates" },
+    ]);
     expect(search("copy thread link")).toEqual([
       { id: "keybinding-thread.copyReference", title: "Copy Thread Link" },
     ]);
-    expect(search("change request templates").map((item) => item.id)).toEqual([
+    expect(search("pull request templates").map((item) => item.id)).toEqual([
       "follow-change-request-templates",
     ]);
     expect(search("pr titles").map((item) => item.id)).not.toContain("source-control-writer-model");

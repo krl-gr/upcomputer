@@ -114,7 +114,6 @@ it.effect.each([false, true])(
             configuredBackendPort: Option.some(3773),
             defaultDesktopSettings: { serverExposureMode: "local-only" },
             // Up.computer's V1 data upgrade check reads these before the backend starts.
-            stateDir: "/isolated/userdata",
             path: { join: (...parts: ReadonlyArray<string>) => parts.join("/") },
           } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]),
           Effect.provideService(DesktopPreReadyPlatform.DesktopPreReadyElectronOptions, {

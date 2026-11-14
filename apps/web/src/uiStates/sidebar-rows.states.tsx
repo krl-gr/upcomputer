@@ -103,6 +103,7 @@ function composerDraft(overrides: Partial<ComposerThreadDraftState>): ComposerTh
     reviewComments: [],
     threadContexts: [],
     environmentContexts: [],
+    replyTo: null,
     modelSelectionByProvider: {},
     activeProvider: null,
     runtimeMode: null,

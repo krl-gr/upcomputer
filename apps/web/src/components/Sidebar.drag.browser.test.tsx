@@ -51,10 +51,12 @@ it("keeps the title when dragging a search result from a collapsed folder", asyn
     // AppRoot brings its own router.
     router: false,
   });
-  const folder = page.getByRole("button", { name: /^render/ });
+  // UpComputer: the Projects section also has a "render" row, named "render Project actions for…".
+  const folder = page.getByRole("button", { name: "render", exact: true });
   await expect.element(folder).toHaveAttribute("aria-expanded", "true");
   // A removed row fades out as a clone without its test id, so match the live row only.
-  const secondRow = page.getByTestId("sidebar-row-folder").filter({ hasText: second.title });
+  // UpComputer: the default compact thread list draws its own row.
+  const secondRow = page.getByTestId("sidebar-row-compact").filter({ hasText: second.title });
   await expect.element(secondRow).toBeInTheDocument();
   // The shift guard drops pointer presses on a row that appeared under 500ms ago; keys pass.
   folder.element().focus();

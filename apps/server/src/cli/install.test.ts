@@ -84,14 +84,14 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       yield* fs.remove(link);
       yield* fs.writeFileString(link, "#!/bin/sh\n");
       const error = yield* provide(installCli()).pipe(Effect.flip);
-      assert.include(error.message, "Another t3 is already at");
+      assert.include(error.message, "Another up is already at");
       assert.equal(yield* fs.readFileString(link), "#!/bin/sh\n");
 
       // Only `<version>/t3` is ours, not another program inside a version.
       yield* fs.remove(link);
       yield* fs.symlink(path.join(runtimeDir, "versions/0.0.1/node"), link);
       const sibling = yield* provide(installCli()).pipe(Effect.flip);
-      assert.include(sibling.message, "Another t3 is already at");
+      assert.include(sibling.message, "Another up is already at");
       // This home's desktop launcher is replaced, as install.sh does.
       yield* fs.remove(link);
       yield* fs.symlink(path.join(root, ".t3/bin/t3"), link);
@@ -131,7 +131,7 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
         '@echo off\r\nrem Written by Up.computer\r\n"C:\\Up.computer\\Up.computer.exe" "x" %*\r\n';
       yield* fs.writeFileString(shim, desktopShim);
       const foreignShim = yield* windows(installCli()).pipe(Effect.flip);
-      assert.include(foreignShim.message, "Another t3 is already at");
+      assert.include(foreignShim.message, "Another up is already at");
       assert.equal(yield* fs.readFileString(shim), desktopShim);
       // A user's wrapper that also runs a managed t3.exe is still theirs.
       const wrapper = `@echo off\r\nset FOO=1\r\n"${path.join(runtimeDir, "versions/0.0.1/t3.exe")}" %*`;
@@ -232,7 +232,8 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       assert.equal(asked, 1);
       assert.isFalse(yield* fs.exists(link));
 
-      yield* fs.writeFileString(path.join(runtimeDir, "install-prompt-declined"), "0.0\n");
+      // An earlier minor than this build's (Up.computer's versions are 0.0.x).
+      yield* fs.writeFileString(path.join(runtimeDir, "install-prompt-declined"), "-1.0\n");
       yield* offer(true);
       assert.equal(asked, 2);
       assert.equal(yield* fs.readLink(link), executable);

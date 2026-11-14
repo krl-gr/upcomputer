@@ -138,7 +138,8 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
           path: path.join(prefix, "bin"),
           env: { T3CODE_NPM_LAUNCHER_PATH: npmLauncher },
         }),
-      ).toBe('sudo env "PATH=$PATH" up browser setup');
+        // Up.computer looks for `up` on PATH, so upstream's npm `t3` launcher is not it.
+      ).toBe("sudo /home/theo/.t3/runtime/versions/1.0.0/t3 browser setup");
 
       expect(
         yield* rootCommand({ ...desktop, env: { T3CODE_CLI_PATH: path.join(home, "gone") } }),

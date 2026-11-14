@@ -1303,7 +1303,7 @@ it.layer(layerUpdate)("OpenCodeDriver updates", (it) => {
         const scriptUpdate = yield* script.snapshot.resolveMaintenance({ fresh: true });
         assert.strictEqual(scriptUpdate.packageName, "opencode-ai");
         assert.strictEqual(scriptUpdate.update?.executable, scriptBinary);
-        assert.deepStrictEqual(scriptUpdate.update?.args, ["upgrade"]);
+        assert.deepStrictEqual(scriptUpdate.update?.args, ["upgrade", "--method", "curl"]);
       }).pipe(Effect.scoped),
   );
 

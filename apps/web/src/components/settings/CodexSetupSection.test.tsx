@@ -26,14 +26,20 @@ vi.mock("../../state/query", () => ({
     error: state.queryError,
   }),
 }));
-vi.mock("../../state/server", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../state/server")>()),
-  serverEnvironment: {
-    providerAuthState: () => "auth",
-    providerInstallState: () => "install",
-    chatGptHandoffState: () => "handoff",
-  },
-}));
+vi.mock("../../state/server", async (importOriginal) => {
+  const { Atom } = await import("effect/reactivity");
+  return {
+    ...(await importOriginal<typeof import("../../state/server")>()),
+    serverEnvironment: {
+      providerAuthState: () => "auth",
+      providerInstallState: () => "install",
+      chatGptHandoffState: () => "handoff",
+      // Upstream's remove-sign-in action asks for its permission while rendering.
+      removeProviderAuthMethod: { permissionAtom: () => Atom.make(false) },
+    },
+  };
+});
+
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: () => vi.fn(async () => ({ _tag: "Success", value: {} })),
 }));

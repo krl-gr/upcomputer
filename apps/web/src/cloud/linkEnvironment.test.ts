@@ -279,7 +279,8 @@ describe("web cloud link environment client", () => {
       expect(error).toMatchObject({
         _tag: "CloudEnvironmentLinkError",
         message:
-          "Disconnected locally, but UpComputer Connect did not confirm it removed this environment: Relay encountered an internal error (upstream_unavailable).",
+          // Up.computer explains relay errors in plain language (relayRequestFailureDetail).
+          "Disconnected locally, but UpComputer Connect did not confirm it removed this environment: UpComputer Connect had a problem on our side. Try again in a few minutes, and if it keeps failing, copy the trace ID and contact us.",
         traceId: "trace-unlink",
       });
     }),

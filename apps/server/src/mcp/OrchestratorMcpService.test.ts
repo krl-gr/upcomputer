@@ -1032,7 +1032,8 @@ describe("OrchestratorMcpService", () => {
         assert.equal(error.code, "orchestration_error");
         assert.equal(
           error.message,
-          `Unable to dispose delegated task ${taskId} completion delivery: refused by the orchestrator`,
+          // Up.computer's plain wording for agents (`errorMessage`).
+          "Couldn't stop the helper's report to this chat: refused by the orchestrator. Try again.",
         );
       }),
   );
@@ -2521,13 +2522,16 @@ describe("OrchestratorMcpService provider resolution", () => {
           .pipe(Effect.flip);
       }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
       assert.equal(error.code, "orchestration_error");
-      assert.equal(error.message, "Unable to create delegated task: refused by the orchestrator");
+      assert.equal(
+        error.message,
+        "Couldn't start the helper: refused by the orchestrator. Try again.",
+      );
     }),
   );
 
   it.effect.each([
     { failingType: "thread.create", prefix: "Unable to create thread 1: " },
-    { failingType: "message.dispatch", prefix: "Unable to start thread 1: " },
+    { failingType: "message.dispatch", prefix: "Couldn't start chat 1: " },
     {
       failingType: "thread.created.record",
       prefix: "Unable to record thread 1 in the parent timeline: ",
@@ -2588,7 +2592,8 @@ describe("OrchestratorMcpService provider resolution", () => {
             .pipe(Effect.flip);
         }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
         assert.equal(error.code, "orchestration_error");
-        assert.equal(error.message, `${prefix}refused by the orchestrator`);
+        // Up.computer adds what to do next after the cause.
+        assert.include(error.message, `${prefix}refused by the orchestrator`);
       }),
   );
 

@@ -144,7 +144,8 @@ describe("DesktopPreReadyPlatform", () => {
       desktopName = name;
     });
     writeFileSyncMock.mockImplementation((path: string, contents: string | Buffer) => {
-      if (path === "/xdg/applications/computer.up.upcomputer.desktop") desktopEntry = String(contents);
+      if (path === "/xdg/applications/computer.up.upcomputer.desktop")
+        desktopEntry = String(contents);
       if (path === iconPath) iconInstalled = Buffer.compare(Buffer.from(contents), iconBytes) === 0;
     });
 
@@ -193,8 +194,10 @@ describe("DesktopPreReadyPlatform", () => {
     ({ relaunchedByUpdater, restored }) => {
       vi.stubEnv("VITE_DEV_SERVER_URL", "");
       getSwitchValueMock.mockReturnValue("");
-      const entryPath = "/xdg/applications/com.t3tools.T3Code.desktop";
-      const files = new Map([[entryPath, "Exec=/Applications/T3-Code-0.1.8-x86_64.AppImage %U\n"]]);
+      const entryPath = "/xdg/applications/computer.up.upcomputer.desktop";
+      const files = new Map([
+        [entryPath, "Exec=/Applications/Up.computer-0.1.8-x86_64.AppImage %U\n"],
+      ]);
       readFileSyncMock.mockImplementation((path: string) => files.get(path) ?? "{}");
       writeFileSyncMock.mockImplementation((path: string, contents: string | Buffer) => {
         files.set(path, String(contents));
@@ -208,7 +211,7 @@ describe("DesktopPreReadyPlatform", () => {
               Layer.provide(
                 DesktopConfig.layerTest({
                   XDG_DATA_HOME: "/xdg",
-                  APPIMAGE: "/Applications/T3-Code-x86_64.AppImage",
+                  APPIMAGE: "/Applications/Up.computer-x86_64.AppImage",
                   APPIMAGE_SILENT_INSTALL: relaunchedByUpdater,
                 }),
               ),
@@ -217,10 +220,10 @@ describe("DesktopPreReadyPlatform", () => {
           assert.deepEqual(
             symlinkSyncMock.mock.calls,
             restored
-              ? [["T3-Code-x86_64.AppImage", "/Applications/T3-Code-0.1.8-x86_64.AppImage"]]
+              ? [["Up.computer-x86_64.AppImage", "/Applications/Up.computer-0.1.8-x86_64.AppImage"]]
               : [],
           );
-          assert.include(files.get(entryPath), "Exec=/Applications/T3-Code-x86_64.AppImage %U");
+          assert.include(files.get(entryPath), "Exec=/Applications/Up.computer-x86_64.AppImage %U");
         }),
       ).pipe(Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())));
     },

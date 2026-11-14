@@ -4071,7 +4071,7 @@ it.layer(
           if (configDir === undefined) {
             assert.strictEqual(
               status.message,
-              "Claude Code is not authenticated. Run `claude auth login` and try again.",
+              "Claude Code isn't signed in. Run `claude auth login` in a terminal, then refresh.",
             );
           } else {
             // A home path is resolved to a native path; an inherited value is kept literal.
