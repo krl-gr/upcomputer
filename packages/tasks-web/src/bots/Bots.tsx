@@ -1,10 +1,24 @@
 import {
+  createContext,
+  useContext,
   useEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
+import {
+  closestCenter,
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { PlusIcon, SettingsIcon } from "lucide-react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -89,6 +103,7 @@ import {
   TaskThreadTasksSubmenu,
 } from "../ui/TaskThreadRunCounts.tsx";
 import { botRowMenuEntries } from "./botMenu.ts";
+import { BOTS_ORDER_STORAGE_KEY, botOrderKey, moveBotInOrder, orderBots } from "./botOrder.ts";
 import { botsInProjectScope } from "./botProjectScope.ts";
 import {
   BotAvatar,
@@ -101,6 +116,8 @@ import {
   useBotStatus,
   type BotSectionList,
 } from "./botData.tsx";
+
+export { BOTS_ORDER_STORAGE_KEY, botOrderKey };
 
 /**
  * The bot lists the one Bots section merges: this computer first, then each connected one, as
@@ -125,6 +142,16 @@ function useShownBots(lists: ReadonlyArray<BotSectionList>) {
     botsInProjectScope(environmentId, bots, scope).map((bot) => ({ environmentId, bot })),
   );
 }
+
+/**
+ * The Bots section's order, which the user sets by dragging. It is this browser's, as the
+ * Projects section's manual order is: one list across every computer's bots.
+ */
+function useBotOrder() {
+  return useLocalStorage(BOTS_ORDER_STORAGE_KEY, NO_ORDER, botOrderSchema);
+}
+const NO_ORDER: ReadonlyArray<string> = [];
+const botOrderSchema = Schema.Array(Schema.String);
 
 /** Whether a bot is the one on screen: its page or its chat. */
 function useIsBotActive() {
@@ -174,10 +201,16 @@ function UnavailableComputerBots({ environmentId }: { readonly environmentId: En
   const access = useTasksWebAccess(environmentId);
   useTasksWebAccessRevision();
   const name = useComputerName(environmentId) ?? "This computer";
+  const [order] = useBotOrder();
   const unsupported =
     connected && (readBotsUnsupported(environmentId) || access.availability === "unavailable");
   if (connected && !unsupported) return null;
-  const lastBots = connected ? [] : (readShownBots(environmentId) ?? []);
+  const lastBots = connected
+    ? []
+    : orderBots(
+        (readShownBots(environmentId) ?? []).map((bot) => ({ environmentId, bot })),
+        order,
+      ).map(({ bot }) => bot);
   if (!connected && lastBots.length === 0) return null;
   return (
     <div className={SIDEBAR_SECTION_GAP} data-computer-bots={connected ? "unsupported" : "offline"}>
@@ -213,8 +246,26 @@ function UnavailableComputerBots({ environmentId }: { readonly environmentId: En
   );
 }
 
-function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> }) {
-  const shown = useShownBots(lists);
+// useSensor memoizes on its options' identity; fresh ones rebuild the DndContext.
+const DRAG_SENSOR_OPTIONS = { activationConstraint: { distance: 6 } };
+const DRAG_MODIFIERS = [restrictToVerticalAxis, restrictToParentElement];
+
+/** The one Bots section over the computers' lists, in the order the user dragged. */
+export function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> }) {
+  const [order, setOrder] = useBotOrder();
+  const shown = orderBots(useShownBots(lists), order);
+  const sensors = useSensors(useSensor(PointerSensor, DRAG_SENSOR_OPTIONS));
+  const handleDragEnd = (event: DragEndEvent) => {
+    if (event.over === null) return;
+    setOrder(
+      moveBotInOrder({
+        order,
+        lists,
+        activeKey: String(event.active.id),
+        overKey: String(event.over.id),
+      }),
+    );
+  };
   // New bots go to the first computer shown: this one in All computers.
   const createOn = lists[0]!.environmentId;
   const canWrite = useExperimentalFeatureRpcPermission(createOn, BOTS_RPC_METHODS.save);
@@ -252,19 +303,34 @@ function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> 
       <CollapsiblePanel className="[[data-sidebar-compact=true]_&]:overflow-visible">
         <div className={`${SIDEBAR_SECTION_HEADER_GAP} ${SIDEBAR_MENU_SCOPE}`}>
           <SidebarMenu>
-            {shown.map(({ environmentId, bot }) => (
-              <SidebarMenuItem key={`${environmentId}:${bot.agent.id}`}>
-                <BotRow
-                  environmentId={environmentId}
-                  bot={bot}
-                  active={isActive(environmentId, bot)}
-                  onOpen={() => openBotChat(navigate, environmentId, bot)}
-                  onSettings={() => {
-                    void navigate(botPage(environmentId, { bot: bot.agent.id }));
-                  }}
-                />
-              </SidebarMenuItem>
-            ))}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              modifiers={DRAG_MODIFIERS}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={shown.map(({ environmentId, bot }) => botOrderKey(environmentId, bot))}
+                strategy={verticalListSortingStrategy}
+              >
+                {shown.map(({ environmentId, bot }) => (
+                  <SortableBotItem
+                    key={botOrderKey(environmentId, bot)}
+                    id={botOrderKey(environmentId, bot)}
+                  >
+                    <BotRow
+                      environmentId={environmentId}
+                      bot={bot}
+                      active={isActive(environmentId, bot)}
+                      onOpen={() => openBotChat(navigate, environmentId, bot)}
+                      onSettings={() => {
+                        void navigate(botPage(environmentId, { bot: bot.agent.id }));
+                      }}
+                    />
+                  </SortableBotItem>
+                ))}
+              </SortableContext>
+            </DndContext>
             {/* The section always shows; the Projects filter only picks its rows. */}
             {shown.length > 0 ? null : lists.some((list) => list.bots.length > 0) ? (
               <li className="px-3 py-1 text-xs text-sidebar-muted-foreground [[data-sidebar-compact=true]_&]:hidden">
@@ -285,6 +351,34 @@ function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> 
         </div>
       </CollapsiblePanel>
     </Collapsible>
+  );
+}
+
+/** Whether the row's bot is lifted under the pointer, which keeps its tooltips closed. */
+const BotDragging = createContext(false);
+
+/**
+ * A Bots row the pointer drags, in both the full sidebar and its icon column. The rename
+ * field keeps the pointer for selecting text. Its row is a stable child, so a pointer move
+ * re-renders only this item.
+ */
+function SortableBotItem(props: { readonly id: string; readonly children: ReactNode }) {
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.id,
+  });
+  // dnd-kit's sensor swallows the click that ends a drag, so a drop never opens the bot.
+  return (
+    <SidebarMenuItem
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={cn(isDragging && "relative z-20")}
+      data-dragging={isDragging || undefined}
+      onPointerDown={(event) => {
+        if ((event.target as Element).closest("input") === null) listeners?.onPointerDown?.(event);
+      }}
+    >
+      <BotDragging.Provider value={isDragging}>{props.children}</BotDragging.Provider>
+    </SidebarMenuItem>
   );
 }
 
@@ -326,6 +420,7 @@ export function BotRow({
   readonly onSettings: () => void;
 }) {
   const status = useBotStatus(environmentId, bot);
+  const dragging = useContext(BotDragging);
   const compact = useSidebarCompact();
   const canRename = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope) && !compact;
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
@@ -372,6 +467,7 @@ export function BotRow({
       <SidebarRowContextMenu disabled={renaming !== null}>
         <SidebarCompactTooltip
           label={status.detail ? `${bot.agent.name}: ${status.detail}` : bot.agent.name}
+          disabled={dragging}
         >
           <SidebarRowContextMenuTrigger
             render={
@@ -383,6 +479,8 @@ export function BotRow({
                 className={cn(
                   SIDEBAR_LIST_ROW,
                   active ? SIDEBAR_LIST_ROW_ACTIVE : SIDEBAR_LIST_ROW_REST,
+                  // Lifted under the pointer, as a dragged thread row is.
+                  "group-data-[dragging]/menu-item:bg-sidebar group-data-[dragging]/menu-item:bg-linear-to-b group-data-[dragging]/menu-item:from-sidebar-row-active group-data-[dragging]/menu-item:to-sidebar-row-active group-data-[dragging]/menu-item:opacity-100 group-data-[dragging]/menu-item:shadow-lg",
                 )}
                 onClick={(event) => {
                   if (isRowEvent(event)) onOpen();
@@ -435,7 +533,7 @@ export function BotRow({
                     className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm text-card-foreground outline-none focus:border-foreground"
                   />
                 ) : status.detail ? (
-                  <Tooltip>
+                  <Tooltip disabled={dragging}>
                     <TooltipTrigger render={<span className={nameClassName} />}>
                       {bot.agent.name}
                     </TooltipTrigger>
