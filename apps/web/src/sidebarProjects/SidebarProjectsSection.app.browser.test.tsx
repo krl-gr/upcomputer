@@ -149,6 +149,10 @@ describe("Projects section More", () => {
   });
 
   it("filters to a project picked in More of the sidebar's icon mode", async () => {
+    // mod+b stores icon mode, and later files in this browser would mount the app in it.
+    using _fullSidebar = {
+      [Symbol.dispose]: () => localStorage.removeItem("upcomputer:sidebar-compact"),
+    };
     await using _app = await mountApp();
     // sidebar.toggle switches the adaptive sidebar between full and icons.
     const mod = isMacPlatform(navigator.platform) ? "Meta" : "Control";

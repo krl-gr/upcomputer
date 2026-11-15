@@ -34,8 +34,7 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
   trackRpcRequestSent: () => {},
 }));
 
-// quarantine: #102 on CI the "render" button never gets aria-expanded; passes locally.
-it.skip("keeps the title when dragging a search result from a collapsed folder", async () => {
+it("keeps the title when dragging a search result from a collapsed folder", async () => {
   await page.viewport(1400, 900);
   const [first, second] = [threadWithHistory("visible", 1), threadWithHistory("search-target", 1)];
   using _environment = installFakeEnvironment([first, second]);
