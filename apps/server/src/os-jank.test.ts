@@ -171,7 +171,10 @@ effectIt.effect("waits longer for a login shell that times out at startup", () =
         );
 
         // UpComputer: the known CLI directories of HOME follow the login shell PATH.
-        assert.equal(env.PATH, `/opt/tools/bin:/usr/bin:/home/theo/.local/bin:/home/theo/.opencode/bin:/home/theo/.grok/bin`);
+        assert.equal(
+          env.PATH,
+          `/opt/tools/bin:/usr/bin:/home/theo/.local/bin:/home/theo/.opencode/bin:/home/theo/.grok/bin`,
+        );
       }),
     (probe) => Effect.sync(() => probe.mockRestore()),
   ),
@@ -196,7 +199,10 @@ effectIt.effect("waits longer for only one hung login shell", () =>
 
         const timeouts = probe.mock.calls.map(([, , options]) => options?.timeout);
         assert.equal(timeouts.filter((timeout) => (timeout ?? 0) > 5_000).length, 1);
-        assert.equal(env.PATH, `/usr/bin:/home/theo/.local/bin:/home/theo/.opencode/bin:/home/theo/.grok/bin`);
+        assert.equal(
+          env.PATH,
+          `/usr/bin:/home/theo/.local/bin:/home/theo/.opencode/bin:/home/theo/.grok/bin`,
+        );
       }),
     (probe) => Effect.sync(() => probe.mockRestore()),
   ),

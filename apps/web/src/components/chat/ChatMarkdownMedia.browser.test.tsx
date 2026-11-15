@@ -5,11 +5,7 @@ import { unified } from "unified";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../../test/render";
-import {
-  ChatMarkdownAssetImage,
-  ChatMarkdownImage,
-  markdownImageCopy,
-} from "./ChatMarkdownMedia";
+import { ChatMarkdownAssetImage, ChatMarkdownImage, markdownImageCopy } from "./ChatMarkdownMedia";
 
 const IMAGE_URL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 // Stands in for a signed URL the server no longer accepts.

@@ -1355,7 +1355,11 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                           <ProductThreadRowAccessory
                             environmentId={thread.environmentId}
                             threadId={thread.id}
-                            fallback={<RelativeTimeLabel timestamp={resolveThreadActivityTimestamp(thread)} />}
+                            fallback={
+                              <RelativeTimeLabel
+                                timestamp={resolveThreadActivityTimestamp(thread)}
+                              />
+                            }
                           />
                         )}
                       </span>
@@ -1564,7 +1568,9 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                       <ProductThreadRowAccessory
                         environmentId={thread.environmentId}
                         threadId={thread.id}
-                        fallback={<RelativeTimeLabel timestamp={resolveThreadActivityTimestamp(thread)} />}
+                        fallback={
+                          <RelativeTimeLabel timestamp={resolveThreadActivityTimestamp(thread)} />
+                        }
                       />
                     )}
                   </span>
