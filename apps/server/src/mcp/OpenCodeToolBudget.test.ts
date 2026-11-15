@@ -10,10 +10,12 @@ import { AttachmentToolkit } from "./toolkits/attachment/tools.ts";
 import { DeviceToolkit } from "./toolkits/device/tools.ts";
 import { EnvironmentToolkit } from "./toolkits/environment/tools.ts";
 import { HtmlToolkit } from "./toolkits/html/tools.ts";
+import { MessageToolkit } from "./toolkits/message/tools.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
 import { PreviewToolkit } from "./toolkits/preview/tools.ts";
 import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
+import { ThemeToolkit } from "./toolkits/theme/tools.ts";
 import { PullRequestsToolkit } from "./toolkits/pullRequests/tools.ts";
 import { ThreadToolkit } from "./toolkits/thread/tools.ts";
 import { WorktreeToolkit } from "./toolkits/worktree/tools.ts";
@@ -41,6 +43,8 @@ const upComputerT3Tools = new Set([
   ...(UPCOMPUTER_PRODUCT_FLAGS.pullRequestAgentTools ? names(PullRequestsToolkit) : []),
   ...(UPCOMPUTER_PRODUCT_FLAGS.devices ? names(DeviceToolkit) : []),
   ...names(HtmlToolkit),
+  ...names(ThemeToolkit),
+  ...names(MessageToolkit),
   ...names(WorkspaceToolkit),
   ...TASK_TOOL_SPECS.map((spec) => spec.name),
   ...COMPUTER_USE_TOOL_NAMES,

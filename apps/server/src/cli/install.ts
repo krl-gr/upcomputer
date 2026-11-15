@@ -51,11 +51,9 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
   const runtime = yield* standaloneRuntime;
   const windows = platform === "win32";
   if (Option.isNone(runtime)) {
-    const script = windows
-      ? "irm https://t3.codes/install.ps1 | iex"
-      : "curl -fsSL https://t3.codes/install.sh | sh";
     return yield* new CliInstallError({
-      reason: `Only the standalone up can install itself. Use \`${script}\`, or Settings in the desktop app.`,
+      reason:
+        "Only the standalone up can install itself. Install up from Settings in the Up.computer desktop app.",
     });
   }
   const { executable, versionsDir, runtimeDir } = runtime.value;
