@@ -9,19 +9,32 @@ const sheetDirectory = NodePath.join(webRoot, "src/uiStates");
 const outputDirectory = NodePath.join(root, ".ui-states");
 const SHEET_SUFFIX = ".states.tsx";
 
-const HELP = `Usage: vp run ui-states [sheet]
+const HELP = `Usage: vp run ui-states [sheet] [--locale <locale>]
 
 Renders UI state sheets (apps/web/src/uiStates/<sheet>${SHEET_SUFFIX}) in headless
 Chromium with the app's CSS and theme, and writes <sheet>-dark.png and
 <sheet>-light.png to .ui-states/ (a sheet with densities writes
-<sheet>-<theme>-retina.png and -nonretina.png). Without a sheet it renders every sheet.`;
+<sheet>-<theme>-retina.png and -nonretina.png). Without a sheet it renders every sheet.
+--locale renders in one of the UI languages (such as de or ru) and adds it to the names.`;
 
 const sheets = NodeFS.readdirSync(sheetDirectory)
   .filter((file) => file.endsWith(SHEET_SUFFIX))
   .map((file) => file.slice(0, -SHEET_SUFFIX.length))
   .toSorted();
 
-const requested = process.argv.slice(2).filter((argument) => argument !== "--");
+const argumentsGiven = process.argv.slice(2).filter((argument) => argument !== "--");
+const localeFlag = argumentsGiven.indexOf("--locale");
+const locale = localeFlag === -1 ? null : argumentsGiven[localeFlag + 1];
+const requested = argumentsGiven.filter(
+  (_, index) => localeFlag === -1 || (index !== localeFlag && index !== localeFlag + 1),
+);
+if (
+  locale !== null &&
+  !NodeFS.existsSync(NodePath.join(webRoot, `src/i18n/translations/${locale}.json`))
+) {
+  console.error(`Unknown locale: ${locale}`);
+  process.exit(1);
+}
 if (requested.includes("--help") || requested.includes("-h")) {
   console.log(HELP);
   process.exit(0);
@@ -46,7 +59,11 @@ const result = NodeChildProcess.spawnSync(
   ],
   {
     cwd: webRoot,
-    env: { ...process.env, T3CODE_UI_STATES_DIR: outputDirectory },
+    env: {
+      ...process.env,
+      T3CODE_UI_STATES_DIR: outputDirectory,
+      T3CODE_UI_STATES_LOCALE: locale ?? "",
+    },
     stdio: ["ignore", "inherit", "inherit"],
   },
 );

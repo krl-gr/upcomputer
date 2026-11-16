@@ -218,6 +218,7 @@ const uiStatesProject = {
       instances: [{ browser: "chromium" }],
       commands: {
         ...browserTestProject.test.browser.commands,
+        uiStatesLocale: () => process.env.T3CODE_UI_STATES_LOCALE || null,
         writeUiStatesSheet: async (
           context,
           fileName: string,

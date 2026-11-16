@@ -305,9 +305,8 @@ function openPopover(inside?: (popup: HTMLElement) => Promise<void>) {
 }
 
 async function expandErrorDetails(popup: HTMLElement) {
-  const details = [...popup.querySelectorAll("button")].find(
-    (button) => button.textContent === "Details",
-  )!;
+  // ErrorDetails' toggle, found by its state so sheets work in every UI language.
+  const details = popup.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!;
   await userEvent.click(details);
   await vi.waitFor(() => {
     if (!popup.querySelector("pre")) throw new Error("Details did not expand");

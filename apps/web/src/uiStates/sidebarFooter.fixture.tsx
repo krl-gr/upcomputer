@@ -157,9 +157,10 @@ function archiveThread() {
   });
 }
 
+/** The archive notice's label, found by its icon so sheets work in every UI language. */
 function shownNotice(cell: HTMLElement) {
-  return [...cell.querySelectorAll("span")].find((span) =>
-    /^Archived( \d+)?,?$/.test(span.textContent ?? ""),
+  return (
+    cell.querySelector('[data-sidebar-footer-notice] svg[class*="lucide-archive"] + span') ?? null
   );
 }
 
