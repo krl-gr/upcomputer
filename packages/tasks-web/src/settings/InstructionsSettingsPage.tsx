@@ -93,8 +93,26 @@ function conflictMessage(
   );
 }
 
-function errorMessage(cause: unknown, fallback: string): string {
-  return cause instanceof Error && cause.message.trim() ? cause.message : fallback;
+const LOAD_FAILED = msg("Instructions could not be loaded.");
+const NOT_CONNECTED = msg(
+  "The computer with your tasks isn't connected. Reconnect it to edit instructions.",
+);
+
+/** An error on the page, translated where it is shown so a language switch keeps it. */
+type PageError =
+  | { readonly message: string }
+  | { readonly text: string }
+  | { readonly conflicts: ReadonlyArray<InstructionsField> };
+
+function causeError(cause: unknown): PageError {
+  return cause instanceof Error && cause.message.trim()
+    ? { text: cause.message }
+    : { message: LOAD_FAILED };
+}
+
+function pageErrorText(error: PageError, gt: GT, m: ReturnType<typeof useMessages>): string {
+  if ("conflicts" in error) return conflictMessage(error.conflicts, gt, m);
+  return "text" in error ? error.text : m(error.message);
 }
 
 /** Where the editor reads and saves: an environment, and the project's checkout on it. */
@@ -245,7 +263,7 @@ function InstructionsEditor({
   const [customInstructionsDraft, setCustomInstructionsDraft] = useState<AllChatsDraft>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<PageError>();
   // Cancel and Restore replace the text even while the editor has focus,
   // which a new editor does and an outside value would not.
   const [resets, setResets] = useState(0);
@@ -260,10 +278,6 @@ function InstructionsEditor({
   const tab = tabs.find(({ id }) => id === activeTab) ?? tabs[0];
   const editingAllChats = tab.id === ALL_CHATS_TAB.id;
   const promptDefaults = promptDefaultsFor(project);
-  const notConnectedText = gt(
-    "The computer with your tasks isn't connected. Reconnect it to edit instructions.",
-  );
-  const loadFailedText = gt("Instructions could not be loaded.");
 
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
@@ -274,7 +288,7 @@ function InstructionsEditor({
     setError(undefined);
     if (!api) {
       setLoading(false);
-      setError(notConnectedText);
+      setError({ message: NOT_CONNECTED });
       return () => {
         cancelled = true;
       };
@@ -292,14 +306,14 @@ function InstructionsEditor({
       },
       (cause) => {
         if (cancelled) return;
-        setError(errorMessage(cause, loadFailedText));
+        setError(causeError(cause));
         setLoading(false);
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [api, loadFailedText, notConnectedText, projectId, serverConfigs]);
+  }, [api, projectId, serverConfigs]);
 
   useEffect(() => {
     // Hand back to the saved value once settings catch up with a save.
@@ -346,12 +360,11 @@ function InstructionsEditor({
             base: allChats,
           });
         if (conflicts.length > 0) {
-          const message = conflictMessage(conflicts, gt, m);
-          setError(message);
+          setError({ conflicts });
           toastManager.add({
             type: "warning",
             title: gt("Instructions changed elsewhere"),
-            description: message,
+            description: conflictMessage(conflicts, gt, m),
           });
           return;
         }
@@ -366,12 +379,12 @@ function InstructionsEditor({
       }
       toastManager.add({ type: "success", title: gt("Instructions saved") });
     } catch (cause) {
-      const message = errorMessage(cause, loadFailedText);
-      setError(message);
+      const failure = causeError(cause);
+      setError(failure);
       toastManager.add({
         type: "error",
         title: gt("Failed to save instructions"),
-        description: message,
+        description: pageErrorText(failure, gt, m),
       });
     } finally {
       setSaving(false);
@@ -386,7 +399,6 @@ function InstructionsEditor({
     draft,
     environmentId,
     gt,
-    loadFailedText,
     m,
     projectId,
     promptsDirty,
@@ -509,7 +521,9 @@ function InstructionsEditor({
             })}
           </p>
         ) : null}
-        {error ? <p className="px-3 text-xs text-destructive sm:px-4">{error}</p> : null}
+        {error ? (
+          <p className="px-3 text-xs text-destructive sm:px-4">{pageErrorText(error, gt, m)}</p>
+        ) : null}
 
         <div
           className={cn(
