@@ -43,7 +43,7 @@
   "2f890e1e55af5ae5": "Memory",
   "744e7b77c236f447": "About memory",
   "03bc59d69354feed": "Up to 200 facts the bot saves in its chat. The chat's context holds what fits the budget, your facts first, and the bot reads the rest when needed. The bot cannot change or forget facts you edited.",
-  "1180176530fe8559": "{outside} of {count, plural, one {# fact} other {# facts}} don't fit the chat's context. The bot can still look them up.",
+  "6eae33a4fd1ec469": "{outside} of {count, plural, one {# fact} other {# facts}} {outside, plural, one {doesn't fit the chat's context. The bot can still look it up.} other {don't fit the chat's context. The bot can still look them up.}}",
   "4ca23b35b7c54fd4": "Delete this memory?\n{text}",
   "70cf26e4f7c8874d": "No memories yet. Say “Remember: …” in the chat.",
   "d859122dbda01c18": "Memory text",

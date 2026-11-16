@@ -908,7 +908,7 @@ function MemorySections({
       {context.selected.length < context.entries.length ? (
         <p className="px-3 pt-3 pb-1 text-xs text-muted-foreground sm:px-4">
           {gt(
-            "{outside} of {count, plural, one {# fact} other {# facts}} don't fit the chat's context. The bot can still look them up.",
+            "{outside} of {count, plural, one {# fact} other {# facts}} {outside, plural, one {doesn't fit the chat's context. The bot can still look it up.} other {don't fit the chat's context. The bot can still look them up.}}",
             {
               outside: context.entries.length - context.selected.length,
               count: context.entries.length,

@@ -43,7 +43,7 @@
   "2f890e1e55af5ae5": "Memória",
   "744e7b77c236f447": "Sobre a memória",
   "03bc59d69354feed": "Até 200 fatos que o bot salva no chat dele. O contexto do chat guarda o que couber no orçamento, começando pelos seus fatos, e o bot lê o resto quando precisa. O bot não pode alterar nem esquecer fatos que você editou.",
-  "1180176530fe8559": "{outside} de {count, plural, one {# fato} other {# fatos}} não cabem no contexto do chat. O bot ainda pode consultá-los.",
+  "6eae33a4fd1ec469": "{outside} de {count, plural, one {# fato} other {# fatos}} {outside, plural, one {não cabe no contexto do chat. O bot ainda pode consultá-lo.} other {não cabem no contexto do chat. O bot ainda pode consultá-los.}}",
   "4ca23b35b7c54fd4": "Excluir esta memória?\n{text}",
   "70cf26e4f7c8874d": "Nenhuma memória ainda. Diga “Lembre-se: …” no chat.",
   "d859122dbda01c18": "Texto da memória",
