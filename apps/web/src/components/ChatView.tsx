@@ -3564,9 +3564,10 @@ export default function ChatView(props: ChatViewProps) {
               setThreadError={setThreadError}
               setThreadErrorBannerDismissTick={setThreadErrorBannerDismissTick}
             />
+            {/* UpComputer: isolate keeps the right-edge minimap's z-index under the docked details card. */}
             <div
               {...conversationArea}
-              className="relative flex min-h-0 flex-1 flex-col bg-background group-has-[[data-chat-header-hidden]]/chat-column:-mt-[var(--workspace-topbar-height)]"
+              className="relative isolate flex min-h-0 flex-1 flex-col bg-background group-has-[[data-chat-header-hidden]]/chat-column:-mt-[var(--workspace-topbar-height)]"
             >
               <WorkspaceMutationIdContext value={workspaceMutationId}>
                 <ThreadTimeline
