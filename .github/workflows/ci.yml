@@ -228,13 +228,16 @@ jobs:
               sys.stdout.write(line.encode("ascii", "backslashreplace").decode("ascii"))
           '
 
-  # The web suite is the largest outside the server. In the shared Test job it
-  # started last and ran alone for about 40s after everything else finished.
-  # release.yml mirrors this test, test_web, and test_server split.
+  # The web suite is the largest outside the server. Two shards, as upstream runs
+  # it: on one 4 vCPU runner the whole suite crashed headless Chromium mid-run.
   test_web:
-    name: Test Web
+    name: Test Web ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -277,10 +280,11 @@ jobs:
           fi
 
       - name: Test
-        run: vp run --filter @t3tools/web test
+        run: vp run --filter @t3tools/web test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 
       # Browser tests run source modules; this boots the production chunk graph.
       - name: Boot the built web client
+        if: matrix.shard == 1
         run: |
           vp run --filter @t3tools/web build
           node apps/web/scripts/verify-built-boot.ts
