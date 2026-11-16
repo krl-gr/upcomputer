@@ -1,20 +1,6 @@
-import {
-  Heading1Icon,
-  Heading2Icon,
-  Heading3Icon,
-  ListIcon,
-  ListOrderedIcon,
-  ListTodoIcon,
-  type LucideIcon,
-  MinusIcon,
-  PilcrowIcon,
-  QuoteIcon,
-  SquareCodeIcon,
-  Table2Icon,
-} from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { msg, useGT, useMessages } from "gt-react";
+import { useGT, useMessages } from "gt-react";
 
 import { readLocalApi } from "../../../../apps/web/src/localApi.ts";
 import { cn } from "../../../../apps/web/src/lib/utils.ts";
@@ -26,6 +12,7 @@ import {
   type SlashCommandId,
   type SlashMenuState,
 } from "./markdownEditorCore.ts";
+import { slashCommandsFor } from "./slashCommands.ts";
 import "./markdownEditor.css";
 
 export interface MarkdownEditorProps {
@@ -39,40 +26,6 @@ export interface MarkdownEditorProps {
   readonly autoFocus?: boolean;
   readonly className?: string;
 }
-
-const SLASH_COMMANDS: ReadonlyArray<{
-  readonly id: SlashCommandId;
-  readonly label: string;
-  readonly keywords: string;
-  readonly icon: LucideIcon;
-}> = [
-  {
-    id: "text",
-    label: msg("Text", { $context: "markdown block type: plain paragraph" }),
-    keywords: "paragraph p",
-    icon: PilcrowIcon,
-  },
-  { id: "h1", label: msg("Heading 1"), keywords: "title", icon: Heading1Icon },
-  { id: "h2", label: msg("Heading 2"), keywords: "", icon: Heading2Icon },
-  { id: "h3", label: msg("Heading 3"), keywords: "", icon: Heading3Icon },
-  { id: "bullet", label: msg("Bullet list"), keywords: "ul", icon: ListIcon },
-  { id: "ordered", label: msg("Numbered list"), keywords: "ordered ol", icon: ListOrderedIcon },
-  { id: "task", label: msg("Checklist"), keywords: "task todo checkbox", icon: ListTodoIcon },
-  {
-    id: "quote",
-    label: msg("Quote", { $context: "markdown block type" }),
-    keywords: "blockquote",
-    icon: QuoteIcon,
-  },
-  { id: "divider", label: msg("Divider"), keywords: "hr rule", icon: MinusIcon },
-  {
-    id: "table",
-    label: msg("Table", { $context: "markdown block type" }),
-    keywords: "grid",
-    icon: Table2Icon,
-  },
-  { id: "code", label: msg("Code block"), keywords: "snippet", icon: SquareCodeIcon },
-];
 
 interface OpenMenu {
   readonly state: SlashMenuState;
@@ -95,12 +48,7 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
   const propsRef = useRef(props);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const items = useMemo(() => {
-    const query = menu?.state.query.toLowerCase() ?? "";
-    return SLASH_COMMANDS.map((command) => ({ ...command, label: m(command.label) })).filter(
-      (command) => `${command.label} ${command.keywords}`.toLowerCase().includes(query),
-    );
-  }, [m, menu]);
+  const items = useMemo(() => slashCommandsFor(menu?.state.query ?? "", m), [m, menu]);
   const runCommand = (id: SlashCommandId) => {
     const session = sessionRef.current;
     if (!session || !menu) return;
