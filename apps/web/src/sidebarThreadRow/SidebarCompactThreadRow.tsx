@@ -1,4 +1,4 @@
-import { T, useGT, useMessages } from "gt-react";
+import { T, useGT, useLocale, useMessages } from "gt-react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { ScopedThreadRef } from "@t3tools/contracts";
@@ -31,7 +31,7 @@ import {
   SIDEBAR_LIST_ROW_SPACING,
 } from "../sidebarMetrics/sidebarMetrics";
 import { useThreadSelectionStore } from "../threadSelectionStore";
-import { formatRelativeTimeLabel } from "../timestampFormat";
+import { relativeTimeElapsedMs } from "../timestampFormat";
 import type { SidebarThreadSummary } from "../types";
 import { useUiStateStore } from "../uiStateStore";
 import {
@@ -92,16 +92,25 @@ export interface SidebarCompactThreadRowProps {
 const MENU_CLOSING_KEYS = new Set(["Escape", "Enter", " ", "Tab"]);
 
 /**
- * Upstream's compact relative time ("3h", "now"). It subscribes to the minute
- * tick itself, so it advances inside the memoized rows.
+ * Upstream's compact relative time ("3h", "now"), in the UI locale. It
+ * subscribes to the minute tick itself, so it advances inside the memoized rows.
  */
 export function CompactRelativeTime(props: { readonly timestamp: string }) {
   const gt = useGT();
+  const locale = useLocale();
   const nowMinute = useNowMinute();
-  const label = formatRelativeTimeLabel(props.timestamp, Date.parse(`${nowMinute}:00.000Z`));
-  if (label === "just now")
-    return gt("now", { $context: "compact relative time of a sidebar row" });
-  return label.endsWith(" ago") ? label.slice(0, -4) : label;
+  const elapsedMs = relativeTimeElapsedMs(props.timestamp, Date.parse(`${nowMinute}:00.000Z`));
+  if (elapsedMs === null) return "";
+  if (elapsedMs < 60_000) return gt("now", { $context: "compact relative time of a sidebar row" });
+  const [value, unit] =
+    elapsedMs < 3_600_000
+      ? [elapsedMs / 60_000, "minute"]
+      : elapsedMs < 86_400_000
+        ? [elapsedMs / 3_600_000, "hour"]
+        : [elapsedMs / 86_400_000, "day"];
+  return new Intl.NumberFormat(locale, { style: "unit", unit, unitDisplay: "narrow" }).format(
+    Math.floor(value),
+  );
 }
 
 /**
