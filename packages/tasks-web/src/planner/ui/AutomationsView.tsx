@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import { DndContext, DragOverlay, pointerWithin } from "@dnd-kit/core";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
 import {
@@ -147,6 +148,7 @@ export function AutomationsView(props: {
   readonly onNavigateBack: () => void;
   readonly panel?: boolean;
 }) {
+  const gt = useGT();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { environments } = useEnvironments();
   const [storedEnvironment, setStoredEnvironment] = useStoredPlannerEnvironment();
@@ -196,7 +198,7 @@ export function AutomationsView(props: {
       action={
         ready && windows
           ? {
-              ariaLabel: "New automation",
+              ariaLabel: gt("New automation"),
               track: "automations.create",
               onClick: () => windows.openCreateAutomation(),
             }
@@ -212,7 +214,7 @@ export function AutomationsView(props: {
                 if (value) setStoredEnvironment(value);
               }}
             >
-              <SelectTrigger className="w-44 shrink-0" size="sm" aria-label="Environment">
+              <SelectTrigger className="w-44 shrink-0" size="sm" aria-label={gt("Environment")}>
                 <SelectValue>
                   {environmentOptions.find((option) => option.id === environmentId)?.label}
                 </SelectValue>
@@ -233,16 +235,17 @@ export function AutomationsView(props: {
     >
       <div className="flex min-h-0 flex-1 flex-col">
         {gate === "none" ? (
-          <Notice>No connected environment serves Tasks.</Notice>
+          <Notice>{gt("No connected environment serves Tasks.")}</Notice>
         ) : gate === "loading" ? (
-          <Notice>Loading the automations…</Notice>
+          <Notice>{gt("Loading the automations…")}</Notice>
         ) : gate === "offline" || environmentId === null || windows === null ? (
           <Notice>
-            The environment with Tasks is not reachable right now. Automations open when it
-            connects.
+            {gt(
+              "The environment with Tasks is not reachable right now. Automations open when it connects.",
+            )}
           </Notice>
         ) : availability === "unavailable" ? (
-          <Notice>This environment runs an older server without automations here.</Notice>
+          <Notice>{gt("This environment runs an older server without automations here.")}</Notice>
         ) : (
           <AutomationsBody
             key={environmentId}

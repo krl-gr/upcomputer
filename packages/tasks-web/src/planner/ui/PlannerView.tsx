@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { DndContext, DragOverlay, pointerWithin } from "@dnd-kit/core";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
@@ -439,6 +440,7 @@ export function PlannerView(props: {
   /** The right panel's planner: the page's lists under the panel's tab bar, task windows inside it. */
   readonly panel?: boolean;
 }) {
+  const gt = useGT();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { environments } = useEnvironments();
   const [storedEnvironment, setStoredEnvironment] = useStoredPlannerEnvironment();
@@ -516,7 +518,7 @@ export function PlannerView(props: {
                 if (value) setStoredEnvironment(value);
               }}
             >
-              <SelectTrigger className="w-44 shrink-0" size="sm" aria-label="Environment">
+              <SelectTrigger className="w-44 shrink-0" size="sm" aria-label={gt("Environment")}>
                 <SelectValue>
                   {environmentOptions.find((option) => option.id === environmentId)?.label}
                 </SelectValue>
@@ -538,23 +540,26 @@ export function PlannerView(props: {
     >
       <div className="flex min-h-0 flex-1 flex-col">
         {gate === "none" ? (
-          <Notice>No connected environment serves Tasks.</Notice>
+          <Notice>{gt("No connected environment serves Tasks.")}</Notice>
         ) : gate === "loading" ? (
-          <Notice>Loading the planner…</Notice>
+          <Notice>{gt("Loading the planner…")}</Notice>
         ) : gate === "offline" || environmentId === null ? (
           <Notice>
-            The environment with Tasks is not reachable right now. The planner opens when it
-            connects.
+            {gt(
+              "The environment with Tasks is not reachable right now. The planner opens when it connects.",
+            )}
           </Notice>
         ) : availability === "unavailable" ? (
           <Notice
             action={
               <Button size="sm" variant="outline" onClick={props.onShowTable}>
-                Open the table
+                {gt("Open the table")}
               </Button>
             }
           >
-            This environment runs an older server without the planner. The table shows its tasks.
+            {gt(
+              "This environment runs an older server without the planner. The table shows its tasks.",
+            )}
           </Notice>
         ) : (
           <div ref={setPlannerElement} className="relative min-h-0 flex-1">

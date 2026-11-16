@@ -1,6 +1,7 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { CheckIcon, CopyIcon, XIcon } from "lucide-react";
 import { type ComponentProps, type ReactNode, useState } from "react";
+import { useGT } from "gt-react";
 
 import { Button, InlineButton } from "../components/ui/button";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
@@ -67,6 +68,7 @@ export function NotificationCard({
   readonly below?: ReactNode;
   readonly onDismiss?: (() => void) | undefined;
 }) {
+  const gt = useGT();
   const [open, setOpen] = useState(false);
   const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "error details" });
   const detailText = details?.trim() || null;
@@ -106,14 +108,14 @@ export function NotificationCard({
           {links}
           {detailText ? (
             <InlineButton tone="muted" aria-expanded={open} onClick={() => setOpen(!open)}>
-              {open ? "Hide details" : "Details"}
+              {open ? gt("Hide details") : gt("Details")}
             </InlineButton>
           ) : null}
           {detailText && open ? (
             <Button
               size="icon-micro"
               variant="ghost-muted"
-              aria-label={isCopied ? "Copied details" : "Copy details"}
+              aria-label={isCopied ? gt("Copied details") : gt("Copy details")}
               onClick={() => copyToClipboard(detailText, undefined)}
             >
               {isCopied ? <CheckIcon /> : <CopyIcon />}
@@ -128,7 +130,12 @@ export function NotificationCard({
       ) : null}
       {onDismiss ? (
         <span className="absolute top-1.5 right-1.5">
-          <Button size="icon-micro" variant="ghost-muted" aria-label="Dismiss" onClick={onDismiss}>
+          <Button
+            size="icon-micro"
+            variant="ghost-muted"
+            aria-label={gt("Dismiss")}
+            onClick={onDismiss}
+          >
             <XIcon />
           </Button>
         </span>

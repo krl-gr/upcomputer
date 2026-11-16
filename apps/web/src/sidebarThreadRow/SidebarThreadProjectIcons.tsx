@@ -1,5 +1,6 @@
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import { T, useGT } from "gt-react";
 import { memo } from "react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
@@ -36,6 +37,7 @@ export const SidebarThreadProjectIcons = memo(function SidebarThreadProjectIcons
   readonly project: EnvironmentProject | null;
 }) {
   const { environmentId, linkedProjectIds } = props.thread;
+  const gt = useGT();
   const ownProject = props.project;
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
@@ -56,11 +58,13 @@ export const SidebarThreadProjectIcons = memo(function SidebarThreadProjectIcons
     return (
       <Tooltip>
         <TooltipTrigger
-          render={<span role="img" aria-label="No project" className="flex shrink-0" />}
+          render={<span role="img" aria-label={gt("No project")} className="flex shrink-0" />}
         >
           <NoProjectIcon />
         </TooltipTrigger>
-        <TooltipPopup side="top">No project</TooltipPopup>
+        <TooltipPopup side="top">
+          <T>No project</T>
+        </TooltipPopup>
       </Tooltip>
     );
   }

@@ -1,4 +1,5 @@
 import type { DesktopUpdateChannel } from "@t3tools/contracts";
+import { T } from "gt-react";
 
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 
@@ -13,8 +14,8 @@ export function switchDesktopUpdateChannel(channel: DesktopUpdateChannel): void 
     toastManager.add(
       stackedThreadToast({
         type: "error",
-        title: "Could not change update track",
-        description: error instanceof Error ? error.message : "Update track change failed.",
+        title: <T>Could not change update track</T>,
+        description: error instanceof Error ? error.message : <T>Update track change failed.</T>,
       }),
     );
   });

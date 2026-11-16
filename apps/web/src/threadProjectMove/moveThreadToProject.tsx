@@ -4,6 +4,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { AuthOrchestrationOperateScope, type ScopedThreadRef } from "@t3tools/contracts";
+import { T, Var } from "gt-react";
 
 import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
@@ -20,8 +21,8 @@ export async function moveThreadToProject(
     toastManager.add(
       stackedThreadToast({
         type: "error",
-        title: "Could not move thread",
-        description: "This connection cannot change threads.",
+        title: <T>Could not move thread</T>,
+        description: <T>This connection cannot change threads.</T>,
       }),
     );
     return;
@@ -37,12 +38,20 @@ export async function moveThreadToProject(
     { label: command.label, reportFailure: false },
   );
   if (result._tag === "Success") {
-    toastManager.add(stackedThreadToast({ type: "success", title: `Moved to ${target.label}` }));
+    // The scratch project's label is msg() text; other labels are project names.
+    const title = target.isScratch ? (
+      <T>Moved to No project</T>
+    ) : (
+      <T>
+        Moved to <Var>{target.label}</Var>
+      </T>
+    );
+    toastManager.add(stackedThreadToast({ type: "success", title }));
   } else if (!isAtomCommandInterrupted(result)) {
     toastManager.add(
       stackedThreadToast({
         type: "error",
-        title: "Could not move thread",
+        title: <T>Could not move thread</T>,
         description: errorToastDescription(squashAtomCommandFailure(result)),
       }),
     );

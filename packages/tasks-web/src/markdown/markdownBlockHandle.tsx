@@ -4,17 +4,19 @@ import { BlockProvider, block, blockConfig } from "@milkdown/plugin-block";
 import { findParent } from "@milkdown/prose";
 import type { PluginView } from "@milkdown/prose/state";
 import { GripVerticalIcon, PlusIcon } from "lucide-react";
+import { useGT } from "gt-react";
 import { createRoot, type Root } from "react-dom/client";
 
 import type { SlashMenuState } from "./markdownEditorCore.ts";
 
 function BlockHandle(props: { readonly onAdd: () => void }) {
+  const gt = useGT();
   return (
     <div className="flex items-center rounded-md border border-border bg-popover p-0.5 text-muted-foreground shadow-xs">
       <button
         type="button"
         className="flex size-5 items-center justify-center rounded-sm hover:bg-accent hover:text-foreground"
-        aria-label="Add a block below"
+        aria-label={gt("Add a block below")}
         onPointerDown={(event) => event.preventDefault()}
         onClick={(event) => {
           event.preventDefault();

@@ -5,6 +5,7 @@ import {
   type ProviderInstanceId,
   type ServerProvider,
 } from "@t3tools/contracts";
+import { msg } from "gt-react";
 
 import { hasProviderSetup } from "../components/chat/ProviderStatusBanner";
 import { getOnboardingProviderState } from "../onboarding/providerReadiness.logic";
@@ -128,7 +129,8 @@ export type FirstRunAgentStatus =
   | { readonly kind: "preparing"; readonly progress: number | null }
   | { readonly kind: "failed"; readonly message: string };
 
-const FIRST_RUN_SETUP_FAILED = "Could not set up your agent.";
+/** Shown through `useMessages()`, like the status's other text of ours. */
+export const FIRST_RUN_SETUP_FAILED = msg("Could not set up your agent.");
 
 /**
  * How long a new user may stay on the first screen with a working agent and

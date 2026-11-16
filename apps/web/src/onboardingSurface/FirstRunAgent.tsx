@@ -1,6 +1,7 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
+import { msg, useMessages } from "gt-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useClientSettings } from "../hooks/useSettings";
@@ -12,6 +13,7 @@ import { environmentThreadShells } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   countReadyOnboardingProviders,
+  FIRST_RUN_SETUP_FAILED,
   FIRST_RUN_AGENT_ACTIVATION_WAIT_MS,
   FIRST_RUN_AGENT_CHECK_WAIT_MS,
   FIRST_RUN_AGENT_INSTANCE_ID,
@@ -24,7 +26,11 @@ import {
   type FirstRunAgentStatus,
 } from "./upComputerOnboarding.logic";
 
-const START_FAILED = "Could not start setting up your agent. Check your connection and try again.";
+const START_FAILED = msg(
+  "Could not start setting up your agent. Check your connection and try again.",
+);
+/** The status's failure text that is ours; the rest comes from the server or OpenCode. */
+const OWN_FAILURE_MESSAGES: ReadonlySet<string> = new Set([START_FAILED, FIRST_RUN_SETUP_FAILED]);
 /** A Retry that fails at once still shows that it ran. */
 const RETRY_FEEDBACK_MS = 1_000;
 
@@ -234,6 +240,7 @@ export function useFirstRunAgentStatus(
   readonly retrying: boolean;
   readonly retry: () => void;
 } {
+  const m = useMessages();
   const setup = useAtomValue(firstRunAgentAtom(environmentId));
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
   const install = useEnvironmentQuery(
@@ -264,7 +271,7 @@ export function useFirstRunAgentStatus(
       new Promise((resolve) => window.setTimeout(resolve, RETRY_FEEDBACK_MS)),
     ]).finally(() => setRetrying(false));
   };
-  const status = active
+  const resolved = active
     ? resolveFirstRunAgentStatus({
         requested: setup.start === "wait" || setup.start === "install",
         startError: setup.startError,
@@ -279,5 +286,9 @@ export function useFirstRunAgentStatus(
         }),
       })
     : null;
+  const status =
+    resolved?.kind === "failed" && OWN_FAILURE_MESSAGES.has(resolved.message)
+      ? { ...resolved, message: m(resolved.message) }
+      : resolved;
   return { status, retrying, retry };
 }

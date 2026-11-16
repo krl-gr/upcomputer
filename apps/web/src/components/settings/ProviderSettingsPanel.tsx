@@ -40,6 +40,7 @@ import { Link } from "@tanstack/react-router";
 import { productSurface } from "../../product/productFlags";
 import { BotIcon, PlusIcon } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
+import { useGT } from "gt-react";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { isManagedOpenCodeBinaryPath, withoutManagedOpenCodeNote } from "./providerStatus";
@@ -550,6 +551,7 @@ export function EnvironmentProviderSettings({
   readonly projectIds?: readonly ProjectId[];
   readonly readOnly?: boolean;
 }) {
+  const gt = useGT();
   const settings = useEnvironmentSettings(environmentId);
   const managedPolicy = useManagedPolicy(environmentId);
   // A policy that allows no provider leaves nothing to add.
@@ -1084,7 +1086,7 @@ export function EnvironmentProviderSettings({
                     className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted/25 hover:text-foreground focus-visible:bg-muted/25 focus-visible:text-foreground sm:px-4"
                   >
                     <BotIcon className="size-4 shrink-0" />
-                    Connect your agents
+                    {gt("Connect your agents")}
                   </Link>
                 ) : null}
               </div>
@@ -1287,6 +1289,7 @@ function ProviderInstanceRow({
   readonly favorites: UnifiedSettings["favorites"];
   readonly actions: ProviderInstanceRowActions;
 }) {
+  const gt = useGT();
   const allProjects = useProjects();
   const secretSources = useSecretSources(environmentId);
   const acpProjects =
@@ -1411,8 +1414,10 @@ function ProviderInstanceRow({
           driver === "opencode" &&
           isManagedOpenCodeBinaryPath(configuredBinaryPath(instance.config)) ? (
           <SettingsRow
-            title="Managed by Up.computer"
-            description="Up.computer installed this OpenCode and updates it with app releases."
+            title={gt("Managed by Up.computer")}
+            description={gt(
+              "Up.computer installed this OpenCode and updates it with app releases.",
+            )}
           />
         ) : null
       }

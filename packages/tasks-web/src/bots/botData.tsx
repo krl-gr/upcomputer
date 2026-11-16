@@ -2,6 +2,7 @@ import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { describeError } from "@t3tools/client-runtime/errors";
 import { ThreadId, type EnvironmentId } from "@t3tools/contracts";
+import { gtFallback, msg, type useGT } from "gt-react";
 import {
   defaultBotAppearance,
   type Bot,
@@ -33,6 +34,7 @@ import {
 interface BotList {
   readonly bots: ReadonlyArray<Bot>;
   readonly loaded: boolean;
+  /** Empty, or English from `msg()` that the component shows through `useMessages()`. */
   readonly error: string;
   /** The environment's server predates bots: it has no Bots section and no error. */
   readonly unsupported: boolean;
@@ -56,17 +58,19 @@ interface BotListStore {
 const EMPTY: BotList = { bots: [], loaded: false, error: "", unsupported: false };
 const stores = new Map<EnvironmentId, BotListStore>();
 
+type GT = ReturnType<typeof useGT>;
+
 /** A failed bot action in plain words; the raw text goes behind Details. */
-export const errorText = (error: unknown) => {
+export const errorText = (error: unknown, gt: GT = gtFallback) => {
   const { reason } = describeError(error);
   return reason === undefined
-    ? "Something went wrong. Try again."
+    ? gt("Something went wrong. Try again.")
     : `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.`;
 };
 
 /** The reason inside a sentence, such as "Couldn't save Nova's settings: <reason>." */
-export const errorReason = (error: unknown) =>
-  describeError(error).reason ?? "something went wrong";
+export const errorReason = (error: unknown, gt: GT = gtFallback) =>
+  describeError(error).reason ?? gt("something went wrong");
 
 /**
  * A server without the bots methods, such as another computer on an older version, rejects
@@ -117,7 +121,7 @@ async function refresh(environmentId: EnvironmentId, store: BotListStore) {
       store,
       isUnknownMethodError(cause)
         ? { ...EMPTY, loaded: true, unsupported: true }
-        : { ...store.list, error: "Couldn't load bots." },
+        : { ...store.list, error: msg("Couldn't load bots.") },
     );
   } finally {
     store.fetching = false;

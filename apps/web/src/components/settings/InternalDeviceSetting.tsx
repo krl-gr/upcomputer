@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useState } from "react";
+import { T, useGT } from "gt-react";
 
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -15,6 +16,7 @@ export function InternalDeviceSetting() {
 }
 
 function InternalDeviceRow() {
+  const gt = useGT();
   const { environment } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
   const canEdit = useAtomValue(
@@ -39,15 +41,20 @@ function InternalDeviceRow() {
   }, [environmentId, getInternalDevice]);
 
   return (
-    <SettingsSection title="Product usage data" id="product-usage-data">
+    <SettingsSection title={gt("Product usage data")} id="product-usage-data">
       <SettingsRow
-        title="Internal device"
-        description="Marks usage data from this environment as internal, so the Up.computer team can leave it out of product numbers. Turn it on only on team or test devices."
+        title={gt("Internal device")}
+        description={
+          <T>
+            Marks usage data from this environment as internal, so the Up.computer team can leave it
+            out of product numbers. Turn it on only on team or test devices.
+          </T>
+        }
         control={
           <Switch
             checked={enabled === true}
             disabled={enabled === null || saving || !canEdit || !environmentId}
-            aria-label="Internal device"
+            aria-label={gt("Internal device")}
             onCheckedChange={(checked) => {
               if (!environmentId) return;
               setSaving(true);

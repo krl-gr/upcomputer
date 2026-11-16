@@ -1,5 +1,8 @@
+import { useGT, useMessages } from "gt-react";
+
 /** A run count in a status colour: the badge of a sidebar row, a task card or a computer. */
 export interface RunCountGroup {
+  /** English, from `msg()`; shown through `useMessages()`. */
   readonly label: string;
   readonly count: number;
   readonly className: string;
@@ -17,6 +20,8 @@ export function RunCountNumbers<Group extends RunCountGroup>(props: {
   readonly groups: readonly Group[];
   readonly onSelect?: (group: Group) => void;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const { onSelect } = props;
   return props.groups.map((group) =>
     onSelect ? (
@@ -25,7 +30,10 @@ export function RunCountNumbers<Group extends RunCountGroup>(props: {
         type="button"
         className={`${NUMBER_BUTTON_CLASS} ${group.className}`}
         data-run-count={group.label}
-        aria-label={`Show ${group.label} runs (${group.count})`}
+        aria-label={gt("Show {status} runs ({count})", {
+          status: m(group.label),
+          count: group.count,
+        })}
         onClick={(event) => {
           event.stopPropagation();
           onSelect(group);
@@ -41,9 +49,15 @@ export function RunCountNumbers<Group extends RunCountGroup>(props: {
   );
 }
 
-/** The counts in words, for example "Failed 1 · Completed 1". */
-export function runCountSummary(groups: readonly RunCountGroup[]): string {
-  return groups.map((group) => `${group.label} ${group.count}`).join(" · ");
+/**
+ * The counts in words, for example "Failed 1 · Completed 1". `translate` is `useMessages()`'s
+ * `m`, which shows the labels in the UI's language.
+ */
+export function runCountSummary(
+  groups: readonly RunCountGroup[],
+  translate: (label: string) => string = (label) => label,
+): string {
+  return groups.map((group) => `${translate(group.label)} ${group.count}`).join(" · ");
 }
 
 /**

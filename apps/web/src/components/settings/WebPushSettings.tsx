@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import { useEffect, useState } from "react";
+import { useGT, useMessages } from "gt-react";
 
 import {
   disableWebPush,
@@ -24,6 +25,8 @@ export function WebPushSettings() {
 }
 
 function WebPushSettingsRow({ vapidPublicKey }: { readonly vapidPublicKey: string }) {
+  const gt = useGT();
+  const m = useMessages();
   const session = useAtomValue(managedRelaySessionAtom);
   const accountId = session?.accountId ?? null;
   const environment = readWebPushEnvironment(isElectron);
@@ -47,14 +50,20 @@ function WebPushSettingsRow({ vapidPublicKey }: { readonly vapidPublicKey: strin
   const description =
     message ??
     (support === "needs-home-screen"
-      ? "Add Up.computer to your Home Screen, then open it from there to get notifications on this device."
+      ? gt(
+          "Add Up.computer to your Home Screen, then open it from there to get notifications on this device.",
+        )
       : support !== "supported"
-        ? "This browser cannot receive push notifications. Use a current browser over HTTPS."
+        ? gt("This browser cannot receive push notifications. Use a current browser over HTTPS.")
         : !session
-          ? "Sign in to UpComputer Connect in Connections to get agent alerts here while Up.computer is closed."
+          ? gt(
+              "Sign in to UpComputer Connect in Connections to get agent alerts here while Up.computer is closed.",
+            )
           : enabled
-            ? "Agent alerts reach this device while Up.computer is closed."
-            : "Get alerts when an agent finishes, fails, or needs input or approval, even while Up.computer is closed.");
+            ? gt("Agent alerts reach this device while Up.computer is closed.")
+            : gt(
+                "Get alerts when an agent finishes, fails, or needs input or approval, even while Up.computer is closed.",
+              ));
 
   const toggle = async () => {
     if (!session) return;
@@ -72,7 +81,9 @@ function WebPushSettingsRow({ vapidPublicKey }: { readonly vapidPublicKey: strin
         });
         if (result === "denied") {
           setMessage(
-            "Allow notifications for Up.computer in your browser or system settings, then try again.",
+            gt(
+              "Allow notifications for Up.computer in your browser or system settings, then try again.",
+            ),
           );
         }
         setEnabled(result === "enabled");
@@ -81,8 +92,8 @@ function WebPushSettingsRow({ vapidPublicKey }: { readonly vapidPublicKey: strin
       console.error("[web-push] Updating notifications on this device failed", error);
       setMessage(
         enabled
-          ? "Notifications are off on this device, but UpComputer Connect could not be updated."
-          : "Could not turn on notifications on this device. Try again.",
+          ? gt("Notifications are off on this device, but UpComputer Connect could not be updated.")
+          : gt("Could not turn on notifications on this device. Try again."),
       );
       setEnabled(enabled ? false : await readWebPushEnabled(session.accountId).catch(() => false));
     }
@@ -90,9 +101,11 @@ function WebPushSettingsRow({ vapidPublicKey }: { readonly vapidPublicKey: strin
     setBusy(false);
   };
 
+  const setting = searchableSetting("web-push-notifications");
   return (
     <SettingsRow
-      {...searchableSetting("web-push-notifications")}
+      {...setting}
+      title={m(setting.title)}
       description={description}
       control={
         support === "supported" ? (
@@ -102,7 +115,7 @@ function WebPushSettingsRow({ vapidPublicKey }: { readonly vapidPublicKey: strin
             disabled={!session || busy || enabled === null}
             onClick={() => void toggle()}
           >
-            {enabled ? "Turn off on this device" : "Enable on this device"}
+            {enabled ? gt("Turn off on this device") : gt("Enable on this device")}
           </Button>
         ) : null
       }

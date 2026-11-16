@@ -15,6 +15,7 @@ import {
 } from "@t3tools/client-runtime/thread-pull-requests";
 import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { useState, type ComponentProps, type MouseEvent as ReactMouseEvent } from "react";
+import { useGT } from "gt-react";
 
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import {
@@ -92,9 +93,10 @@ function ThreadDetailsPrRows({
   currentLink: ThreadPullRequestLink | null;
   onOpenLink: (event: ReactMouseEvent<HTMLElement>, url: string) => void;
 }) {
+  const gt = useGT();
   const [expanded, setExpanded] = useState(false);
   const watch = useAtomCommand(threadEnvironment.watchPullRequest, {
-    failureToast: "Couldn't update the pull request link",
+    failureToast: gt("Couldn't update the pull request link"),
   });
   const stopWatching = (link: ThreadPullRequestLink | null) =>
     link?.watch === undefined

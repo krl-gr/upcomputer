@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
+import { msg, useGT } from "gt-react";
 
 import { getLocalStorageItem, setLocalStorageItem } from "../hooks/useLocalStorage";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
@@ -65,7 +66,18 @@ export function useIsServerStillUpToDate(): (target: {
     );
 }
 
-export const SERVER_UP_TO_DATE_NOTE = "Up to date on its track";
+/** Shown through `useMessages()`. */
+export const SERVER_UP_TO_DATE_NOTE = msg("Up to date on its track");
+
+/** The toast's title or description, in the UI's language. */
+function ServerUpToDateToastText(props: {
+  readonly label: string;
+  readonly report: UpToDateReport;
+  readonly part: "title" | "description";
+}) {
+  const gt = useGT();
+  return describeServerUpToDate(props.label, props.report, gt)[props.part];
+}
 
 /**
  * The host's desktop app installed nothing: its own feed has nothing newer.
@@ -86,7 +98,13 @@ export function reportServerUpToDate(
   const remembered = upToDateReportToRemember(report);
   if (remembered !== null) recordServerUpToDate(target.environmentId, remembered);
   toastManager.add(
-    stackedThreadToast({ type: "info", ...describeServerUpToDate(target.serverLabel, report) }),
+    stackedThreadToast({
+      type: "info",
+      title: <ServerUpToDateToastText label={target.serverLabel} report={report} part="title" />,
+      description: (
+        <ServerUpToDateToastText label={target.serverLabel} report={report} part="description" />
+      ),
+    }),
   );
   return { status: "current", version: serverVersion };
 }

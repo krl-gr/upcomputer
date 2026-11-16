@@ -3,6 +3,7 @@ import {
   ToggleGroupItem,
 } from "../../../../apps/web/src/components/ui/toggle-group.tsx";
 import type { TableSection } from "../planner/data/preferences.ts";
+import { useGT } from "gt-react";
 
 /**
  * Tasks / Automations: what the Workers side lists, beside the Me / Workers
@@ -13,9 +14,10 @@ export function TableSectionSwitch(props: {
   readonly value: TableSection;
   readonly onChange: (section: TableSection) => void;
 }) {
+  const gt = useGT();
   return (
     <ToggleGroup
-      aria-label="Worker tasks or automations"
+      aria-label={gt("Worker tasks or automations")}
       variant="segmented-outline"
       value={[props.value]}
       onValueChange={(value) => {
@@ -24,10 +26,10 @@ export function TableSectionSwitch(props: {
       }}
     >
       <ToggleGroupItem value="tasks" data-track="tasks.section.tasks">
-        Tasks
+        {gt("Tasks")}
       </ToggleGroupItem>
       <ToggleGroupItem value="automations" data-track="tasks.section.automations">
-        Automations
+        {gt("Automations")}
       </ToggleGroupItem>
     </ToggleGroup>
   );

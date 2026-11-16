@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 
@@ -45,8 +46,9 @@ export function TaskList(props: {
   readonly onDeletingChange: (ids: readonly string[] | null) => void;
   readonly centered: boolean;
 }) {
+  const gt = useGT();
   const { store, kind } = usePlanner();
-  const noun = kind === "routine" ? "routine" : "task";
+  const routine = kind === "routine";
   const { results, status } = props.tasks;
   const hasMore = status === "CanLoadMore" || status === "LoadingMore";
   const hiddenActive = !props.showArchived && hasMore;
@@ -77,7 +79,7 @@ export function TaskList(props: {
   }, [moving, props.activeTasks, props.selectMode, results, hiddenActive, lastId]);
   const createNear = async (task: PlannerTask, where: "above" | "below") => {
     await store.createTask({
-      title: kind === "routine" ? "New routine" : "New task",
+      title: routine ? gt("New routine") : gt("New task"),
       description: "",
       projectId: task.projectId,
       kind,
@@ -87,6 +89,8 @@ export function TaskList(props: {
 
   // Blank, no text: the planner's own "Loading the planner…" comes just before
   // and the first page within a moment, so a second loading text would flash.
+  const deletingTitle =
+    deleting?.length === 1 ? results.find((task) => task.id === deleting[0])?.title : undefined;
   const firstPageLoading = status === "LoadingFirstPage" && results.length === 0;
   const empty = !firstPageLoading && results.length === 0;
 
@@ -102,16 +106,20 @@ export function TaskList(props: {
         >
           {firstPageLoading ? null : empty ? (
             props.showArchived ? (
-              <ListEmptyState title={`No done or archived ${noun}s`} />
-            ) : kind === "routine" ? (
               <ListEmptyState
-                title="No routines yet"
-                hint="Click + to add a habit or chore that repeats on a schedule."
+                title={
+                  routine ? gt("No done or archived routines") : gt("No done or archived tasks")
+                }
+              />
+            ) : routine ? (
+              <ListEmptyState
+                title={gt("No routines yet")}
+                hint={gt("Click + to add a habit or chore that repeats on a schedule.")}
               />
             ) : (
               <ListEmptyState
-                title="No tasks yet"
-                hint="Click + to add one, or ask any thread to plan the work for you."
+                title={gt("No tasks yet")}
+                hint={gt("Click + to add one, or ask any thread to plan the work for you.")}
               />
             )
           ) : (
@@ -137,7 +145,7 @@ export function TaskList(props: {
                 disabled={status === "LoadingMore"}
                 onClick={props.tasks.loadMore}
               >
-                {status === "LoadingMore" ? "Loading…" : "Load more"}
+                {status === "LoadingMore" ? gt("Loading…") : gt("Load more")}
               </Button>
             </div>
           ) : null}
@@ -149,19 +157,23 @@ export function TaskList(props: {
         {menu ? (
           <>
             <MenuItem onClick={() => void createNear(menu.task, "above")}>
-              Create {noun} above
+              {routine ? gt("Create routine above") : gt("Create task above")}
             </MenuItem>
             <MenuItem
               disabled={hiddenActive && menu.task.id === lastId}
               onClick={() => void createNear(menu.task, "below")}
             >
-              Create {noun} below
+              {routine ? gt("Create routine below") : gt("Create task below")}
             </MenuItem>
-            <MenuItem onClick={() => void store.reorder([menu.task.id], {})}>Move to top</MenuItem>
-            <MenuItem onClick={() => setMoving([menu.task.id])}>Move below another {noun}</MenuItem>
+            <MenuItem onClick={() => void store.reorder([menu.task.id], {})}>
+              {gt("Move to top")}
+            </MenuItem>
+            <MenuItem onClick={() => setMoving([menu.task.id])}>
+              {routine ? gt("Move below another routine") : gt("Move below another task")}
+            </MenuItem>
             <MenuSeparator />
             <MenuItem variant="destructive" onClick={() => setDeleting([menu.task.id])}>
-              Delete {noun}
+              {routine ? gt("Delete routine") : gt("Delete task")}
             </MenuItem>
           </>
         ) : null}
@@ -182,11 +194,21 @@ export function TaskList(props: {
       />
       <ConfirmDeleteDialog
         open={deleting !== null}
-        title={deleting?.length === 1 ? "Delete task" : `Delete ${deleting?.length ?? 0} tasks`}
+        title={
+          deleting?.length === 1
+            ? gt("Delete task")
+            : gt("{count, plural, one {Delete # task} other {Delete # tasks}}", {
+                count: deleting?.length ?? 0,
+              })
+        }
         description={
           deleting?.length === 1
-            ? `"${results.find((task) => task.id === deleting[0])?.title ?? "This task"}" and its schedule are deleted. This cannot be undone.`
-            : "The selected tasks and their schedules are deleted. This cannot be undone."
+            ? deletingTitle !== undefined
+              ? gt('"{title}" and its schedule are deleted. This cannot be undone.', {
+                  title: deletingTitle,
+                })
+              : gt("This task and its schedule are deleted. This cannot be undone.")
+            : gt("The selected tasks and their schedules are deleted. This cannot be undone.")
         }
         onOpenChange={(open) => {
           if (!open) setDeleting(null);

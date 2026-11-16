@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
+import { useLocale } from "gt-react";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
 import { cn } from "../../../../../apps/web/src/lib/utils.ts";
@@ -130,6 +131,7 @@ export function WeekCalendar(props: {
   readonly entryMenu: EntryMenuTarget | null;
   readonly onEntryMenuClose: () => void;
 }) {
+  const locale = useLocale();
   const { store, preferences } = usePlanner();
   const onResize = useCallback(
     (entry: TaskScheduleEntry, durationMinutes: number) =>
@@ -180,7 +182,7 @@ export function WeekCalendar(props: {
                 className="absolute right-2 -translate-y-1/2 whitespace-nowrap text-xs text-muted-foreground tabular-nums first:translate-y-0"
                 style={{ top: hour * 4 * slotHeight }}
               >
-                {formatHourLabel(hour)}
+                {formatHourLabel(hour, locale)}
               </span>
             ))}
           </div>

@@ -167,6 +167,7 @@ const QUIT_CONFIRMATION_MODE_LABELS: Record<QuitConfirmationMode, string> = {
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 function AboutVersionSection() {
+  const gt = useGT();
   const updateState = useDesktopUpdateState();
   const [switchChannel, setSwitchChannel] = useState<DesktopUpdateChannel | null>(null);
   const [isUpdateActionPending, setIsUpdateActionPending] = useState(false);
@@ -367,7 +368,7 @@ function AboutVersionSection() {
             ) : fleetTrackSwitch ? (
               "Switches this app and every connected machine whose database the target release supports."
             ) : (
-              "Use stable releases or nightly builds. Switch back anytime."
+              gt("Use stable releases or nightly builds. Switch back anytime.")
             )
           }
           managed={updatesDenial}
@@ -441,6 +442,7 @@ function AboutVersionSection() {
 }
 
 export function useSettingsRestore(onRestored?: () => void) {
+  const gt = useGT();
   const {
     theme,
     setTheme,
@@ -472,7 +474,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       : []),
     ...(settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? ["Chat width"] : []),
     ...(settings.sidebarThreadList !== DEFAULT_UNIFIED_SETTINGS.sidebarThreadList
-      ? ["Thread list"]
+      ? [gt("Thread list")]
       : []),
     ...(settings.effortDisplay !== DEFAULT_UNIFIED_SETTINGS.effortDisplay
       ? ["Effort display"]
@@ -531,7 +533,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Composer context"]
       : []),
     ...(settings.threadDetailsEnabled !== DEFAULT_UNIFIED_SETTINGS.threadDetailsEnabled
-      ? ["Thread details button"]
+      ? [gt("Thread details button")]
       : []),
     ...getChangedTypographySettingLabels(settings),
     ...(settings.diffFilesCollapsed !== DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed
@@ -548,7 +550,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Show skills in slash menu"]
       : []),
     ...(settings.composerCompact !== DEFAULT_UNIFIED_SETTINGS.composerCompact
-      ? ["Full composer in bot chats"]
+      ? [gt("Full composer in bot chats")]
       : []),
     ...(settings.composerRichTextEnabled !== DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled
       ? ["Rich text composer"]
@@ -594,7 +596,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Clone into host folders"]
       : []),
     ...(settings.wakeChatOnTaskCompletion !== DEFAULT_UNIFIED_SETTINGS.wakeChatOnTaskCompletion
-      ? ["Wake chat when tasks complete"]
+      ? [gt("Wake chat when tasks complete")]
       : []),
     ...(settings.confirmThreadUnpin !== DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin
       ? ["Unpin confirmation"]
@@ -1175,6 +1177,8 @@ export function GeneralSettingsPanel() {
 }
 
 export function ChatSettingsPanel() {
+  const gt = useGT();
+  const setting = useTranslatedSearchableSetting();
   const modifierLabel = isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
   const sendShortcutOptions = [
     { value: "enter", label: "Enter" },
@@ -1188,8 +1192,10 @@ export function ChatSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="composer" title="Composer">
         <SettingsRow
-          {...searchableSetting("composer-compact")}
-          description="Show the model and other controls in bot chats too, instead of one line that grows as you write."
+          {...setting("composer-compact")}
+          description={gt(
+            "Show the model and other controls in bot chats too, instead of one line that grows as you write.",
+          )}
           resetAction={
             settings.composerCompact !== DEFAULT_UNIFIED_SETTINGS.composerCompact ? (
               <SettingResetButton
@@ -1204,7 +1210,7 @@ export function ChatSettingsPanel() {
             <Switch
               checked={!settings.composerCompact}
               onCheckedChange={(checked) => updateSettings({ composerCompact: !checked })}
-              aria-label="Full composer in bot chats"
+              aria-label={gt("Full composer in bot chats")}
             />
           }
         />
@@ -1557,9 +1563,10 @@ function DiffColorsSettingsRow() {
 }
 
 function ProactivePanelsSettingRow() {
+  const gt = useGT();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  const setting = searchableSetting("proactive-panels");
+  const setting = useTranslatedSearchableSetting()("proactive-panels");
 
   return (
     <SettingsRow
@@ -1567,7 +1574,7 @@ function ProactivePanelsSettingRow() {
       description={
         isProductFeatureShown("pullRequests")
           ? "Open linked pull requests first. Otherwise, open Changes for edits to at least 3 files or 50 lines."
-          : "Open Changes when a turn edits at least 3 files or 50 lines."
+          : gt("Open Changes when a turn edits at least 3 files or 50 lines.")
       }
       resetAction={
         settings.proactivePanelsEnabled !== DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled ? (
@@ -1595,6 +1602,7 @@ function ProactivePanelsSettingRow() {
 }
 
 export function DiffsSettingsPanel() {
+  const gt = useGT();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
 
@@ -1665,7 +1673,7 @@ export function DiffsSettingsPanel() {
           description={
             isProductFeatureShown("pullRequests")
               ? "Start with files expanded or collapsed when opening diffs or a pull request's Code tab."
-              : "Start with files expanded or collapsed when opening diffs."
+              : gt("Start with files expanded or collapsed when opening diffs.")
           }
           resetAction={
             settings.diffFilesCollapsed !== DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed ? (
@@ -1785,6 +1793,8 @@ function ScopedCompactIdleThreadsRow() {
 }
 
 export function ThreadsSettingsPanel() {
+  const gt = useGT();
+  const setting = useTranslatedSearchableSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const navigate = useNavigate();
@@ -1947,12 +1957,14 @@ export function ThreadsSettingsPanel() {
         />
       </SettingsSection>
 
-      <SettingsSection id="tasks" title="Tasks">
+      <SettingsSection id="tasks" title={gt("Tasks")}>
         <SettingsRow
           serverScoped
           settingKeys={["wakeChatOnTaskCompletion"]}
-          {...searchableSetting("wake-chat-on-task-completion")}
-          description="The chat that created a task replies when its runs complete. Turning this off saves tokens, but the chat ignores completed tasks until you message it. Blocked or failed runs always wake the chat."
+          {...setting("wake-chat-on-task-completion")}
+          description={gt(
+            "The chat that created a task replies when its runs complete. Turning this off saves tokens, but the chat ignores completed tasks until you message it. Blocked or failed runs always wake the chat.",
+          )}
           resetAction={
             settings.wakeChatOnTaskCompletion !==
             DEFAULT_UNIFIED_SETTINGS.wakeChatOnTaskCompletion ? (
@@ -1973,7 +1985,7 @@ export function ThreadsSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ wakeChatOnTaskCompletion: Boolean(checked) })
               }
-              aria-label="Wake chat when tasks complete"
+              aria-label={gt("Wake chat when tasks complete")}
             />
           }
         />
@@ -2387,6 +2399,7 @@ export function MaintenanceSettingsPanel() {
 }
 
 export function AboutSettingsPanel() {
+  const gt = useGT();
   const primaryPolicy = usePrimaryManagedPolicy();
   // The Welcome page sets up this computer, so it needs one.
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -2431,7 +2444,7 @@ export function AboutSettingsPanel() {
             description={
               isProductFeatureShown("mobileApp")
                 ? "See your agents, import projects, and set up your phone."
-                : "See your agents and import projects."
+                : gt("See your agents and import projects.")
             }
             control={
               <Button size="sm" variant="outline" render={<Link to="/welcome" />}>
@@ -2448,8 +2461,13 @@ export function AboutSettingsPanel() {
             {...searchableSetting("privacy-policy")}
             description={
               telemetryOff === undefined
-                ? "What Up.computer collects: basic usage stats, never your chats, files or passwords."
-                : `What Up.computer collects: basic usage stats, never your chats, files or passwords. ${telemetryOff}`
+                ? gt(
+                    "What Up.computer collects: basic usage stats, never your chats, files or passwords.",
+                  )
+                : gt(
+                    "What Up.computer collects: basic usage stats, never your chats, files or passwords. {telemetryOff}",
+                    { telemetryOff },
+                  )
             }
             control={
               <Button

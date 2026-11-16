@@ -1,4 +1,5 @@
 import { CheckIcon } from "lucide-react";
+import { gtFallback, useGT } from "gt-react";
 
 import {
   Combobox,
@@ -12,8 +13,11 @@ import {
 import { SelectButton } from "../../../../apps/web/src/components/ui/select.tsx";
 
 /** Label of the closed tag filter. */
-export function tagFilterLabel(selected: ReadonlyArray<string>): string {
-  if (selected.length === 0) return "All tags";
+export function tagFilterLabel(
+  selected: ReadonlyArray<string>,
+  gt: ReturnType<typeof useGT> = gtFallback,
+): string {
+  if (selected.length === 0) return gt("All tags");
   if (selected.length === 1) return selected[0]!;
   return `${selected[0]} +${selected.length - 1}`;
 }
@@ -29,6 +33,7 @@ export function TagFilterCombobox(props: {
   /** The trigger's width; a fixed one by default. */
   readonly className?: string | undefined;
 }) {
+  const gt = useGT();
   return (
     <Combobox<string, true>
       multiple
@@ -41,16 +46,16 @@ export function TagFilterCombobox(props: {
           <SelectButton
             size="sm"
             className={props.className ?? "w-40 shrink-0"}
-            aria-label="Filter by tags"
-            title="Tasks with every selected tag"
+            aria-label={gt("Filter by tags")}
+            title={gt("Tasks with every selected tag")}
           />
         }
       >
-        {tagFilterLabel(props.value)}
+        {tagFilterLabel(props.value, gt)}
       </ComboboxTrigger>
       <ComboboxPopup align="end" className="w-60">
-        <ComboboxSearchInput aria-label="Search tags" placeholder="Search tags..." />
-        <ComboboxEmpty>No matching tags.</ComboboxEmpty>
+        <ComboboxSearchInput aria-label={gt("Search tags")} placeholder={gt("Search tags...")} />
+        <ComboboxEmpty>{gt("No matching tags.")}</ComboboxEmpty>
         <ComboboxList>
           {(tag: string) => (
             <ComboboxItem key={tag} value={tag}>

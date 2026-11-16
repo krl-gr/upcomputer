@@ -12,6 +12,7 @@ import {
 } from "@tanstack/react-router";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useGT } from "gt-react";
 
 import { APP_DISPLAY_NAME, APP_VERSION } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
@@ -255,6 +256,7 @@ function RootRouteBranch() {
 }
 
 function RootRouteErrorView({ error }: ErrorComponentProps) {
+  const gt = useGT();
   const router = useRouter();
   // Route errors without their own error component end up here.
   useAppErrorTelemetrySender();
@@ -268,8 +270,10 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
   return (
     <StandalonePage>
       <StandalonePageHeader
-        title="This screen stopped working"
-        description="Up.computer hit an internal problem on this screen. Try again or reload the app, and if it keeps happening, copy the error report and send it to us."
+        title={gt("This screen stopped working")}
+        description={gt(
+          "Up.computer hit an internal problem on this screen. Try again or reload the app, and if it keeps happening, copy the error report and send it to us.",
+        )}
       />
 
       <div className="mt-5 flex flex-wrap gap-2">

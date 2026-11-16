@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import type { ReactNode } from "react";
 import {
   MoreHorizontalIcon,
@@ -62,6 +63,7 @@ export function ListHeader(props: {
    */
   readonly titleBar: boolean;
 }) {
+  const gt = useGT();
   const { environmentId, windows, kind } = usePlanner();
   const pickEnvironment = props.environments.length > 1;
   const weekBeside = props.canHideWeek && !props.weekHidden;
@@ -88,7 +90,7 @@ export function ListHeader(props: {
             <KindSwitch value={kind} onChange={props.onKindChange} />
             <div className="ml-auto flex items-center gap-1">
               <IconAction
-                label={kind === "routine" ? "New routine" : "New task"}
+                label={kind === "routine" ? gt("New routine") : gt("New task")}
                 track={kind === "routine" ? "planner.create_routine" : "planner.create_task"}
                 variant="outline"
                 size="icon-sm"
@@ -98,24 +100,28 @@ export function ListHeader(props: {
               </IconAction>
               <Menu>
                 <MenuTrigger
-                  render={<Button size="icon-sm" variant="outline" aria-label="List options" />}
+                  render={
+                    <Button size="icon-sm" variant="outline" aria-label={gt("List options")} />
+                  }
                 >
                   <MoreHorizontalIcon />
                 </MenuTrigger>
                 <MenuPopup align="end">
-                  <MenuItem onClick={() => props.onSelectModeChange(true)}>Select</MenuItem>
+                  <MenuItem onClick={() => props.onSelectModeChange(true)}>
+                    {gt("Select", { $context: "menu item that turns on select mode" })}
+                  </MenuItem>
                   <MenuCheckboxItem
                     variant="switch"
                     checked={props.showArchived}
                     onCheckedChange={props.onToggleArchived}
                   >
-                    Show archive
+                    {gt("Show archive")}
                   </MenuCheckboxItem>
                   {pickEnvironment ? (
                     <>
                       <MenuSeparator />
                       <MenuGroup>
-                        <MenuGroupLabel>Environment</MenuGroupLabel>
+                        <MenuGroupLabel>{gt("Environment")}</MenuGroupLabel>
                         <MenuRadioGroup
                           value={environmentId}
                           onValueChange={(value) => props.onEnvironmentChange(String(value))}
@@ -133,7 +139,7 @@ export function ListHeader(props: {
               </Menu>
               {props.canHideWeek ? (
                 <IconAction
-                  label={props.weekHidden ? "Show the week" : "Hide the week"}
+                  label={props.weekHidden ? gt("Show the week") : gt("Hide the week")}
                   variant="outline"
                   size="icon-sm"
                   onClick={props.onToggleWeek}

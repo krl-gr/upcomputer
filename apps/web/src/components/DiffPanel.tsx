@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import * as Schema from "effect/Schema";
 import { type MouseEvent, useEffect, useRef, useState } from "react";
+import { useGT } from "gt-react";
 import { useCodeViewFileReveal } from "./diffs/useCodeViewFileReveal";
 import { useCodeViewScrollRestore } from "./diffs/useCodeViewScrollRestore";
 import { useFilesystemReadAccess } from "~/state/filesystem";
@@ -215,6 +216,7 @@ export default function DiffPanel({
   workspaceMutationId,
   visible,
 }: DiffPanelProps) {
+  const gt = useGT();
   const resolvedTheme = useRenderedAppearance();
   const settings = useClientSettings((settings) => ({
     diffFilesCollapsed: settings.diffFilesCollapsed,
@@ -751,7 +753,7 @@ export default function DiffPanel({
           if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
             toastManager.add({
               type: "error",
-              title: "Couldn't open in your editor",
+              title: gt("Couldn't open in your editor"),
               description: errorToastDescription(squashAtomCommandFailure(result)),
             });
             console.warn("Failed to open diff file in editor.", {

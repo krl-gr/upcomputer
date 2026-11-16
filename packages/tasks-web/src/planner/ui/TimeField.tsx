@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { useId, useState } from "react";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
@@ -26,6 +27,7 @@ export function TimeField(props: {
   readonly onChange: (value: string) => void;
   readonly autoFocus?: boolean;
 }) {
+  const gt = useGT();
   return (
     <Input
       id={props.id}
@@ -34,7 +36,7 @@ export function TimeField(props: {
       value={props.value}
       autoFocus={props.autoFocus}
       onChange={(event) => props.onChange(event.currentTarget.value)}
-      aria-label="Start time"
+      aria-label={gt("Start time")}
     />
   );
 }
@@ -47,6 +49,7 @@ export function DurationField(props: {
   readonly value: number | null;
   readonly onChange: (value: number | null) => void;
 }) {
+  const gt = useGT();
   const preset = props.value === null ? NONE : String(props.value);
   const isPreset =
     props.value === null || DURATION_PRESETS.some((minutes) => minutes === props.value);
@@ -65,19 +68,27 @@ export function DurationField(props: {
           props.onChange(next === NONE ? null : Number(next));
         }}
       >
-        <SelectTrigger size="sm" aria-label="Duration">
+        <SelectTrigger size="sm" aria-label={gt("Duration")}>
           <SelectValue>
-            {custom ? "Custom" : props.value === null ? "Default" : formatDuration(props.value)}
+            {custom
+              ? gt("Custom", { $context: "a duration typed in minutes" })
+              : props.value === null
+                ? gt("Default", { $context: "the default duration" })
+                : formatDuration(props.value, gt)}
           </SelectValue>
         </SelectTrigger>
         <SelectPopup>
-          <SelectItem value={NONE}>Default</SelectItem>
+          <SelectItem value={NONE}>
+            {gt("Default", { $context: "the default duration" })}
+          </SelectItem>
           {DURATION_PRESETS.map((minutes) => (
             <SelectItem key={minutes} value={String(minutes)}>
-              {formatDuration(minutes)}
+              {formatDuration(minutes, gt)}
             </SelectItem>
           ))}
-          <SelectItem value={CUSTOM}>Custom</SelectItem>
+          <SelectItem value={CUSTOM}>
+            {gt("Custom", { $context: "a duration typed in minutes" })}
+          </SelectItem>
         </SelectPopup>
       </Select>
       {custom ? (
@@ -89,9 +100,9 @@ export function DurationField(props: {
           size="sm"
         >
           <NumberFieldGroup>
-            <NumberFieldDecrement aria-label="Shorter" />
-            <NumberFieldInput aria-label="Minutes" />
-            <NumberFieldIncrement aria-label="Longer" />
+            <NumberFieldDecrement aria-label={gt("Shorter")} />
+            <NumberFieldInput aria-label={gt("Minutes")} />
+            <NumberFieldIncrement aria-label={gt("Longer")} />
           </NumberFieldGroup>
         </NumberField>
       ) : null}
@@ -112,6 +123,7 @@ export function TimingForm(props: {
   }) => void;
   readonly onCancel: () => void;
 }) {
+  const gt = useGT();
   const id = useId();
   const [time, setTime] = useState(props.startTime ?? "");
   const [duration, setDuration] = useState(props.durationMinutes);
@@ -125,11 +137,11 @@ export function TimingForm(props: {
       }}
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`${id}-time`}>Start time</Label>
+        <Label htmlFor={`${id}-time`}>{gt("Start time")}</Label>
         <TimeField id={`${id}-time`} value={time} onChange={setTime} autoFocus />
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label>Duration</Label>
+        <Label>{gt("Duration")}</Label>
         <DurationField value={duration} onChange={setDuration} />
       </div>
       <div className="flex justify-between gap-2">
@@ -139,14 +151,14 @@ export function TimingForm(props: {
           disabled={!canClear}
           onClick={() => props.onSave({ startTime: null, durationMinutes: null })}
         >
-          Clear
+          {gt("Clear")}
         </Button>
         <div className="flex gap-2">
           <Button size="sm" variant="ghost" onClick={props.onCancel}>
-            Cancel
+            {gt("Cancel")}
           </Button>
           <Button size="sm" type="submit">
-            Done
+            {gt("Done", { $context: "button that saves the time and duration" })}
           </Button>
         </div>
       </div>

@@ -15,6 +15,7 @@ import {
   TriangleAlertIcon,
 } from "lucide-react";
 import { Fragment, memo, type ReactNode, useState } from "react";
+import { T, useGT } from "gt-react";
 
 import {
   getDesktopUpdateDownloadedVersion,
@@ -94,18 +95,22 @@ function useBackgroundNotices() {
  * Update everything shows a ring on the button and upstream's capsule in a card.
  */
 export const SidebarNotifications = memo(function SidebarNotifications() {
+  const gt = useGT();
   const updates = useSidebarUpdates();
   const { notices, dismiss } = useBackgroundNotices();
   const [open, setOpen] = useState(false);
-  const { dot, label } = describeSidebarNotificationsButton({
-    severities: notices.map((notice) => notice.severity),
-    update: updates.signal,
-    updateFailed: hasFailedUpdate({
-      app: updates.state ? describeAppUpdateCard(updates.state, updates.action) : null,
-      providerStatuses: updates.providers.map((card) => card.provider.updateState?.status),
-      run: updates.run,
-    }),
-  });
+  const { dot, label } = describeSidebarNotificationsButton(
+    {
+      severities: notices.map((notice) => notice.severity),
+      update: updates.signal,
+      updateFailed: hasFailedUpdate({
+        app: updates.state ? describeAppUpdateCard(updates.state, updates.action, gt) : null,
+        providerStatuses: updates.providers.map((card) => card.provider.updateState?.status),
+        run: updates.run,
+      }),
+    },
+    gt,
+  );
   const tooltipSide = useSidebarFooterTooltipSide();
 
   return (
@@ -232,6 +237,7 @@ function NotificationsPanel({
   readonly dismiss: (keys: ReadonlyArray<string>) => void;
   readonly onClose: () => void;
 }) {
+  const gt = useGT();
   const navigate = useNavigate();
   const { state, action, run, pending } = updates;
   const updateEverything = () => {
@@ -283,7 +289,7 @@ function NotificationsPanel({
         <NotificationCard
           tone="info"
           icon={<RefreshCwIcon />}
-          {...describeUpdateRun(run)}
+          {...describeUpdateRun(run, gt)}
           onDismiss={updateRunFailed(run) ? dismissSettledUpdateRunMachines : undefined}
           below={
             // Upstream's capsule keeps the run's own actions: retry, Later and Restart.
@@ -295,7 +301,7 @@ function NotificationsPanel({
       ),
     });
   } else {
-    const app = state ? describeAppUpdateCard(state, action) : null;
+    const app = state ? describeAppUpdateCard(state, action, gt) : null;
     if (state && app) {
       if (action !== "none") pendingUpdates += 1;
       const runAction =
@@ -327,10 +333,10 @@ function NotificationsPanel({
                   onClick={runAction}
                 >
                   {app.kind === "failed"
-                    ? "Retry"
+                    ? gt("Retry")
                     : app.action === "install"
-                      ? "Restart"
-                      : "Download"}
+                      ? gt("Restart")
+                      : gt("Download")}
                 </NotificationButton>
               ) : null
             }
@@ -370,28 +376,37 @@ function NotificationsPanel({
             }
             title={
               failed
-                ? `${card.name} update failed`
+                ? gt("{provider} update failed", { provider: card.name })
                 : `${card.name} ${provider.versionAdvisory.latestVersion}`
             }
             detail={
               failed
-                ? (provider.updateState?.message ?? "The update did not finish.")
-                : `${current ? `You have ${current}` : "Update available"}${card.machineLabel ? ` on ${card.machineLabel}` : ""}`
+                ? (provider.updateState?.message ?? gt("The update did not finish."))
+                : current
+                  ? card.machineLabel
+                    ? gt("You have {version} on {machine}", {
+                        version: current,
+                        machine: card.machineLabel,
+                      })
+                    : gt("You have {version}", { version: current })
+                  : card.machineLabel
+                    ? gt("Update available on {machine}", { machine: card.machineLabel })
+                    : gt("Update available")
             }
             details={failed ? provider.updateState?.output : null}
             action={
               status === "queued" ? (
-                <UpdateStatus label="Waiting" />
+                <UpdateStatus label={gt("Waiting")} />
               ) : status === "running" ? (
-                <UpdateStatus label="Updating" icon={<Spinner size="xs" />} />
+                <UpdateStatus label={gt("Updating")} icon={<Spinner size="xs" />} />
               ) : status === "succeeded" ? (
                 <UpdateStatus
-                  label="Updated"
+                  label={gt("Updated")}
                   icon={<CheckIcon className="size-3.5 text-success-foreground" />}
                 />
               ) : (
                 <NotificationButton tone="secondary" disabled={pending} onClick={card.update}>
-                  {failed ? "Retry" : "Update"}
+                  {failed ? gt("Retry") : gt("Update")}
                 </NotificationButton>
               )
             }
@@ -412,14 +427,14 @@ function NotificationsPanel({
             title={server.label}
             detail={
               server.version
-                ? `Server ${server.version} is behind this app.`
-                : "Its server is behind this app."
+                ? gt("Server {version} is behind this app.", { version: server.version })
+                : gt("Its server is behind this app.")
             }
             action={
               // Update everything is the one way to update a server from here.
               updates.runsEverything ? (
                 <NotificationButton tone="secondary" disabled={pending} onClick={updateEverything}>
-                  Update
+                  <T>Update</T>
                 </NotificationButton>
               ) : null
             }
@@ -434,27 +449,33 @@ function NotificationsPanel({
   return (
     <div className="flex flex-col pb-1">
       <div className="flex min-h-7 items-center gap-2 px-1 pb-2">
-        <PopoverTitle className="flex-1">Notifications</PopoverTitle>
+        <PopoverTitle className="flex-1">
+          <T>Notifications</T>
+        </PopoverTitle>
         {notices.length > 0 ? (
           <span className="text-xs">
             <InlineButton
               tone="muted"
               onClick={() => dismiss(notices.map(backgroundNoticeDismissalKey))}
             >
-              Clear all
+              <T>Clear all</T>
             </InlineButton>
           </span>
         ) : null}
         {showsUpdateAll ? (
           <NotificationButton tone="secondary" disabled={pending} onClick={updateEverything}>
-            Update all
+            <T>Update all</T>
           </NotificationButton>
         ) : null}
       </div>
       {cards.length === 0 ? (
         <div className="px-2 pt-5 pb-4 text-center">
-          <p className="text-sm font-medium">You're all caught up</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">Updates and alerts show here.</p>
+          <p className="text-sm font-medium">
+            <T>You're all caught up</T>
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            <T>Updates and alerts show here.</T>
+          </p>
         </div>
       ) : (
         <ol className="flex flex-col gap-1.5">
@@ -483,16 +504,23 @@ function ReleaseNotesLink({
   readonly state: DesktopUpdateState;
   readonly title: string;
 }) {
+  const gt = useGT();
   const shell = window.desktopBridge;
   if (hasNightlyReleaseNotes(state)) {
     return (
       <Popover>
-        <PopoverTrigger render={<InlineButton tone="muted">Release notes</InlineButton>} />
+        <PopoverTrigger
+          render={
+            <InlineButton tone="muted">
+              <T>Release notes</T>
+            </InlineButton>
+          }
+        />
         <PopoverPopup
           side="top"
           align="start"
           tooltipStyle
-          aria-label="Nightly update release notes"
+          aria-label={gt("Nightly update release notes")}
         >
           <SidebarUpdateReleaseNotes shell={shell} state={state} tooltip={title} />
         </PopoverPopup>
@@ -506,7 +534,7 @@ function ReleaseNotesLink({
       tone="muted"
       onClick={() => void openDesktopUpdateReleaseNotes(shell, releaseUrl)}
     >
-      Release notes
+      <T>Release notes</T>
       <ExternalLinkIcon aria-hidden className="size-3" />
     </InlineButton>
   );

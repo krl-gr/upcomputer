@@ -361,7 +361,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "thread-list",
-    title: "Thread list",
+    title: msg("Thread list"),
     to: "/settings/appearance",
     searchTerms: ["sidebar threads compact detailed rows cards density"],
   },
@@ -450,7 +450,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "thread-details",
-    title: "Thread details button",
+    title: msg("Thread details button"),
     to: "/settings/appearance",
     searchTerms: [
       "environment open in editor git initialize workspace card toggle composer header",
@@ -720,7 +720,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "web-push-notifications",
-    title: "Notifications on this device",
+    title: msg("Notifications on this device"),
     to: "/settings/general",
     searchTerms: ["web push phone iphone android home screen browser closed alerts"],
     browserOnly: true,
@@ -782,7 +782,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     get title() {
       return isProductFeatureShown("pullRequests")
         ? "Open pull requests and changes panels proactively"
-        : "Open the changes panel after large edits";
+        : msg("Open the changes panel after large edits");
     },
     to: "/settings/diffs",
     get searchTerms() {
@@ -805,7 +805,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "composer-compact",
-    title: "Full composer in bot chats",
+    title: msg("Full composer in bot chats"),
     to: "/settings/chat",
     searchTerms: ["composer bots compact one line single line expand footer model controls"],
   },
@@ -892,7 +892,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "wake-chat-on-task-completion",
-    title: "Wake chat when tasks complete",
+    title: msg("Wake chat when tasks complete"),
     to: "/settings/threads",
     searchTerms: [
       "task agent worker run done finished orchestrator notify reply tokens card delegate",
@@ -986,7 +986,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "internal-device",
-    title: "Internal device",
+    title: msg("Internal device"),
     to: "/settings/diagnostics",
     targetId: "product-usage-data",
     scope: "environment",
@@ -1085,7 +1085,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "scheduled-tasks",
-    title: "Scheduled prompts",
+    title: msg("Scheduled prompts"),
     to: "/settings/scheduled-tasks",
     // Upstream's name for the page.
     searchTerms: ["scheduled tasks"],

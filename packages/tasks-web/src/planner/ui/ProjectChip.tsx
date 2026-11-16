@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { FolderIcon, InboxIcon } from "lucide-react";
 
 import type { ProjectFaviconProject } from "../../../../../apps/web/src/components/ProjectFavicon.tsx";
@@ -50,6 +51,7 @@ export function ProjectChip(props: {
   readonly allowNewInbox?: boolean;
   readonly onChange: (projectId: string | null) => void;
 }) {
+  const gt = useGT();
   const inbox = props.projects.find((project) => project.inbox) ?? null;
   const others = props.projects.filter((project) => !project.inbox);
   const selected = props.mixed
@@ -58,12 +60,12 @@ export function ProjectChip(props: {
   const value = props.mixed ? MIXED : (props.value ?? NEW_INBOX);
   const unknown = !props.mixed && selected === null && props.value !== null;
   const label = props.mixed
-    ? "Mixed"
+    ? gt("Mixed", { $context: "a selection of tasks from several projects" })
     : selected
       ? selected.name
       : unknown
-        ? "Unknown project"
-        : "Inbox";
+        ? gt("Unknown project")
+        : gt("Inbox");
   return (
     <Select
       value={value}
@@ -76,7 +78,7 @@ export function ProjectChip(props: {
       <SelectTrigger
         size="xs"
         className="w-auto min-w-0 max-w-48"
-        aria-label="Project"
+        aria-label={gt("Project")}
         data-prevent-drag
       >
         <SelectValue>
@@ -93,14 +95,14 @@ export function ProjectChip(props: {
       <SelectPopup>
         {props.mixed ? (
           <SelectItem value={MIXED} disabled>
-            Mixed
+            {gt("Mixed", { $context: "a selection of tasks from several projects" })}
           </SelectItem>
         ) : null}
         {inbox || props.allowNewInbox ? (
           <SelectItem value={inbox?.id ?? NEW_INBOX}>
             <span className="flex min-w-0 items-center gap-2">
               <InboxIcon className="size-4" />
-              <span className="truncate">Inbox</span>
+              <span className="truncate">{gt("Inbox")}</span>
             </span>
           </SelectItem>
         ) : null}

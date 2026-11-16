@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ListFilterIcon } from "lucide-react";
+import { useGT, useMessages } from "gt-react";
 import type { TaskArchiveFilter } from "@t3tools/tasks-contracts/v1";
 
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
@@ -46,6 +47,8 @@ function Field(props: { readonly label: string; readonly children: ReactNode }) 
  * in the wide header, or stacked under their labels in the filter popover.
  */
 function TaskFilterSelects(props: TaskFilterSelectsProps & { readonly stacked: boolean }) {
+  const gt = useGT();
+  const m = useMessages();
   const { filters, onFiltersChange, stacked } = props;
   const archiveFilter: TaskArchiveFilter = filters.archive ?? "active";
   const width = (header: string) => (stacked ? "w-full" : `${header} shrink-0`);
@@ -54,20 +57,20 @@ function TaskFilterSelects(props: TaskFilterSelectsProps & { readonly stacked: b
   return (
     <>
       {field(
-        "Status",
+        gt("Status"),
         <Select
           value={filters.status}
           onValueChange={(value) => {
             if (value) onFiltersChange({ ...filters, status: value });
           }}
         >
-          <SelectTrigger className={width("w-40")} size="sm" aria-label="Filter by status">
+          <SelectTrigger className={width("w-40")} size="sm" aria-label={gt("Filter by status")}>
             <SelectValue>
-              {filters.status === ALL_FILTER ? "All statuses" : filters.status}
+              {filters.status === ALL_FILTER ? gt("All statuses") : filters.status}
             </SelectValue>
           </SelectTrigger>
           <SelectPopup>
-            <SelectItem value={ALL_FILTER}>All statuses</SelectItem>
+            <SelectItem value={ALL_FILTER}>{gt("All statuses")}</SelectItem>
             {props.statusOptions.map((status) => (
               <SelectItem key={status} value={status}>
                 {status}
@@ -77,7 +80,7 @@ function TaskFilterSelects(props: TaskFilterSelectsProps & { readonly stacked: b
         </Select>,
       )}
       {field(
-        "Last run",
+        gt("Last run"),
         <Select
           value={filters.lastRun}
           onValueChange={(value) => {
@@ -87,28 +90,28 @@ function TaskFilterSelects(props: TaskFilterSelectsProps & { readonly stacked: b
           <SelectTrigger
             className={width("w-36")}
             size="sm"
-            aria-label="Filter by last run"
-            title="Status of each task's latest run"
+            aria-label={gt("Filter by last run")}
+            title={gt("Status of each task's latest run")}
           >
             <SelectValue>
               {filters.lastRun === ALL_FILTER
-                ? "Any last run"
-                : (LAST_RUN_OPTIONS.find((option) => option.value === filters.lastRun)?.label ??
+                ? gt("Any last run")
+                : (m(LAST_RUN_OPTIONS.find((option) => option.value === filters.lastRun)?.label) ??
                   filters.lastRun)}
             </SelectValue>
           </SelectTrigger>
           <SelectPopup>
-            <SelectItem value={ALL_FILTER}>Any last run</SelectItem>
+            <SelectItem value={ALL_FILTER}>{gt("Any last run")}</SelectItem>
             {LAST_RUN_OPTIONS.map((option) => (
               <SelectItem key={option.value} value={option.value}>
-                {option.label}
+                {m(option.label)}
               </SelectItem>
             ))}
           </SelectPopup>
         </Select>,
       )}
       {field(
-        "Tags",
+        gt("Tags"),
         <TagFilterCombobox
           tags={props.tagOptions}
           value={filters.tags}
@@ -117,7 +120,7 @@ function TaskFilterSelects(props: TaskFilterSelectsProps & { readonly stacked: b
         />,
       )}
       {field(
-        "Show",
+        gt("Show", { $context: "filter label: which tasks to show, active or archived" }),
         <Select
           value={archiveFilter}
           onValueChange={(value) => {
@@ -125,15 +128,15 @@ function TaskFilterSelects(props: TaskFilterSelectsProps & { readonly stacked: b
             if (option) onFiltersChange({ ...filters, archive: option.value });
           }}
         >
-          <SelectTrigger className={width("w-44")} size="sm" aria-label="Filter by archive">
+          <SelectTrigger className={width("w-44")} size="sm" aria-label={gt("Filter by archive")}>
             <SelectValue>
-              {ARCHIVE_OPTIONS.find((option) => option.value === archiveFilter)?.label}
+              {m(ARCHIVE_OPTIONS.find((option) => option.value === archiveFilter)?.label)}
             </SelectValue>
           </SelectTrigger>
           <SelectPopup>
             {ARCHIVE_OPTIONS.map((option) => (
               <SelectItem key={option.value} value={option.value}>
-                {option.label}
+                {m(option.label)}
               </SelectItem>
             ))}
           </SelectPopup>
@@ -160,6 +163,7 @@ export function TaskFiltersButton(
     readonly onProjectReset: () => void;
   },
 ) {
+  const gt = useGT();
   const count = appliedTaskFilterCount(props.filters, props.projectChosen);
   return (
     <Popover>
@@ -168,7 +172,7 @@ export function TaskFiltersButton(
           <Button
             variant="outline"
             size={count > 0 ? "sm" : "icon-sm"}
-            aria-label={count > 0 ? `Filters, ${count} applied` : "Filters"}
+            aria-label={count > 0 ? gt("Filters, {count} applied", { count }) : gt("Filters")}
             data-task-filters-button=""
           />
         }
@@ -180,7 +184,7 @@ export function TaskFiltersButton(
         <div className="flex w-56 flex-col gap-3 py-1">
           {props.projectSelect ? (
             <div className="contents [&_[data-slot=select-trigger]]:w-full">
-              <Field label="Project">{props.projectSelect}</Field>
+              <Field label={gt("Project")}>{props.projectSelect}</Field>
             </div>
           ) : null}
           <TaskFilterSelects {...props} stacked />
@@ -194,7 +198,7 @@ export function TaskFiltersButton(
               if (props.projectChosen) props.onProjectReset();
             }}
           >
-            Reset
+            {gt("Reset")}
           </Button>
         </div>
       </PopoverPopup>

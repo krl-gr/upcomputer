@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useGT } from "gt-react";
 import {
   DEFAULT_UNIFIED_SETTINGS,
   MAX_CODE_FONT_SIZE,
@@ -299,6 +300,7 @@ function SeparateFontsRow({
 }
 
 function SimpleFontRows() {
+  const gt = useGT();
   const settings = useScopedSettings();
   return (
     <>
@@ -308,7 +310,7 @@ function SimpleFontRows() {
         description={
           isProductFeatureShown("terminalSurface")
             ? "Code blocks, diffs, file previews, and the terminal."
-            : "Code blocks, diffs, and file previews."
+            : gt("Code blocks, diffs, and file previews.")
         }
         preview={
           <>

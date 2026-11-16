@@ -1,3 +1,4 @@
+import { gtFallback } from "gt-react";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { MessagesTimelineRow } from "../components/chat/MessagesTimeline.logic";
@@ -30,7 +31,7 @@ const turn = (id: string, text: string, at: Date): MessagesTimelineRow[] =>
   );
 
 const ticks = (rows: MessagesTimelineRow[]) =>
-  groupTimelineMinimapItemsByDay(deriveTimelineMinimapItems(rows), rows, NOW);
+  groupTimelineMinimapItemsByDay(deriveTimelineMinimapItems(rows), rows, gtFallback, NOW);
 
 describe("timeline minimap by day", () => {
   it("gives each local day one tick at its first message, with its count and first text", () => {

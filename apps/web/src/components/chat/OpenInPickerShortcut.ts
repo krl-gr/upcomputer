@@ -5,6 +5,7 @@ import {
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
 import { useEffect } from "react";
+import { useGT } from "gt-react";
 
 import { usePreferredEditor } from "../../editorPreferences";
 import { editorLabelForPlatform } from "../../editorLabels";
@@ -53,9 +54,10 @@ export function useOpenFavoriteEditorShortcut({
   availableEditors: ReadonlyArray<EditorId>;
   openInCwd: string | null;
 }) {
+  const gt = useGT();
   const openInEditorMutation = useAtomCommand(shellEnvironment.openInEditor, {
     label: "open in editor",
-    failureToast: "Couldn't open in your editor",
+    failureToast: gt("Couldn't open in your editor"),
   });
   const remote = useRemoteOpenState(environmentId);
   const remoteCapableEditors = useRemoteCapableEditors();

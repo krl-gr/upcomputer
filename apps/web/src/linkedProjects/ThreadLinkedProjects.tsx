@@ -1,5 +1,6 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import { T, useGT } from "gt-react";
 import { LinkIcon } from "lucide-react";
 
 import { showsUpComputerComposerContextRow } from "../composerContextRow/composerContextRowSurface";
@@ -35,6 +36,7 @@ export default function ThreadLinkedProjects(props: ExperimentalWebThreadAccesso
  * sidebar and give its agent their folders from its next turn.
  */
 function ThreadLinkedProjectsMenu(props: ExperimentalWebThreadAccessoryProps) {
+  const gt = useGT();
   const thread = useThreadShell(scopeThreadRef(props.environmentId, props.threadId));
   const projects = useProjects();
   const scratchRoot = useServerConfigs().get(props.environmentId)?.scratchWorkspaceRoot;
@@ -51,8 +53,10 @@ function ThreadLinkedProjectsMenu(props: ExperimentalWebThreadAccessoryProps) {
   const linkedProjects = candidates.filter((project) => linked.has(project.id));
   const label =
     linkedProjects.length === 0
-      ? "Link projects"
-      : `Linked projects: ${linkedProjects.map((project) => project.title).join(", ")}`;
+      ? gt("Link projects")
+      : gt("Linked projects: {projects}", {
+          projects: linkedProjects.map((project) => project.title).join(", "),
+        });
   return (
     <Menu>
       <MenuTrigger render={<Button variant="ghost" size="compact" aria-label={label} />}>
@@ -71,7 +75,9 @@ function ThreadLinkedProjectsMenu(props: ExperimentalWebThreadAccessoryProps) {
       </MenuTrigger>
       <MenuPopup align="start" side="bottom">
         <MenuGroup>
-          <MenuGroupLabel>Linked projects</MenuGroupLabel>
+          <MenuGroupLabel>
+            <T>Linked projects</T>
+          </MenuGroupLabel>
           {candidates.map((project) => (
             <MenuCheckboxItem
               key={project.id}

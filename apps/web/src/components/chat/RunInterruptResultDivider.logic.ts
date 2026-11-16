@@ -1,4 +1,5 @@
 import { parseTaskAgentRunEndInterruptReason } from "@t3tools/shared/taskAgentRunInterrupt";
+import type { useGT } from "gt-react";
 
 export type RunInterruptResultKind = "interrupted" | "finished" | "stopped" | "failed";
 
@@ -14,59 +15,62 @@ export interface RunInterruptResultPresentation {
  * run's status as the request's reason. That end is shown instead of an
  * interruption by the user.
  */
-export function runInterruptResultPresentation(input: {
-  readonly resultMessage: string;
-  readonly requestMessage: string | null;
-}): RunInterruptResultPresentation {
+export function runInterruptResultPresentation(
+  input: {
+    readonly resultMessage: string;
+    readonly requestMessage: string | null;
+  },
+  gt: ReturnType<typeof useGT>,
+): RunInterruptResultPresentation {
   const status = parseTaskAgentRunEndInterruptReason(input.requestMessage);
   switch (status) {
     case null:
       return {
         kind: "interrupted",
-        label: "Run interrupted",
+        label: gt("Run interrupted"),
         detail: input.resultMessage,
         tone: "danger",
       };
     case "completed":
       return {
         kind: "finished",
-        label: "Run finished",
-        detail: "Task handed off",
+        label: gt("Run finished"),
+        detail: gt("Task handed off"),
         tone: "neutral",
       };
     case "blocked":
       return {
         kind: "finished",
-        label: "Run finished",
-        detail: "Blocker reported",
+        label: gt("Run finished"),
+        detail: gt("Blocker reported"),
         tone: "neutral",
       };
     case "stopped":
       return {
         kind: "stopped",
-        label: "Run stopped",
-        detail: "Stopped by a person or agent",
+        label: gt("Run stopped"),
+        detail: gt("Stopped by a person or agent"),
         tone: "neutral",
       };
     case "failed":
       return {
         kind: "failed",
-        label: "Run failed",
-        detail: "Worker run failed",
+        label: gt("Run failed"),
+        detail: gt("Worker run failed"),
         tone: "danger",
       };
     case "interrupted":
       return {
         kind: "failed",
-        label: "Run interrupted",
-        detail: "Worker run could not continue",
+        label: gt("Run interrupted"),
+        detail: gt("Worker run could not continue"),
         tone: "danger",
       };
     default:
       return {
         kind: "stopped",
-        label: "Run ended",
-        detail: `Worker run ${status}`,
+        label: gt("Run ended"),
+        detail: gt("Worker run {status}", { status }),
         tone: "neutral",
       };
   }

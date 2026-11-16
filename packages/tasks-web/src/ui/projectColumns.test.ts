@@ -103,6 +103,8 @@ test("Agents show the project as an icon, a global agent as All projects, none f
             saving: false,
             triggerLabel: "To Do",
             modelLabel: "Codex",
+            openLabel: "Open worker",
+            toggleLabel: "Pause",
             onOpen: () => undefined,
             onToggleEnabled: () => undefined,
           }),

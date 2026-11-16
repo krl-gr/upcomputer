@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { LegendList } from "@legendapp/list/react";
 import { memo, useState } from "react";
+import { useGT } from "gt-react";
 
 import {
   COMPOSER_PULL_REQUEST_DRAG_TYPE,
@@ -397,11 +398,12 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
   const speedMode =
     modifiers.shiftKey && !modifiers.metaKey && !modifiers.ctrlKey && !modifiers.altKey;
   const openLinkDialog = () => openLinkPullRequestDialog(threadRef);
+  const gt = useGT();
   const unlink = useAtomCommand(threadEnvironment.unlinkPullRequest, {
-    failureToast: "Couldn't unlink the pull request",
+    failureToast: gt("Couldn't unlink the pull request"),
   });
   const watch = useAtomCommand(threadEnvironment.watchPullRequest, {
-    failureToast: "Couldn't update the pull request link",
+    failureToast: gt("Couldn't update the pull request link"),
   });
   const capabilities = useServerConfigs().get(threadRef.environmentId)?.environment.capabilities;
   const supportsWatch = capabilities?.threadPullRequestWatch === true;

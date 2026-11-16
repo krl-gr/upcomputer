@@ -2,6 +2,7 @@
  * React access to an environment's planner store, under wande's hook names
  * where a ported component reads them. Writes are store methods.
  */
+import { mFallback, useMessages } from "gt-react";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
@@ -20,6 +21,12 @@ import {
   type ProgressWindow,
 } from "./plannerStore.ts";
 
+/**
+ * The UI's `useMessages()`, kept current by `usePlannerLive`, so the stores'
+ * failure toasts (titles from `msg()`) show in the UI's language.
+ */
+let messages: ReturnType<typeof useMessages> = mFallback;
+
 const stores = new Map<EnvironmentId, PlannerStore>();
 
 /** One store per environment for the session, so windows and data survive leaving /tasks. */
@@ -34,7 +41,11 @@ export function plannerStoreFor(environmentId: EnvironmentId): PlannerStore {
       },
       {
         onError: (title, error) =>
-          toastManager.add({ type: "error", title, description: errorMessage(error) }),
+          toastManager.add({
+            type: "error",
+            title: messages(title),
+            description: errorMessage(error),
+          }),
       },
     );
     stores.set(environmentId, store);
@@ -50,7 +61,11 @@ export function automationStoreFor(environmentId: EnvironmentId): AutomationStor
   if (!store) {
     store = new AutomationStore(readTasksWebClient(environmentId), {
       onError: (title, error) =>
-        toastManager.add({ type: "error", title, description: errorMessage(error) }),
+        toastManager.add({
+          type: "error",
+          title: messages(title),
+          description: errorMessage(error),
+        }),
     });
     automationStores.set(environmentId, store);
   }
@@ -67,8 +82,16 @@ export function usePlannerSnapshot(store: PlannerStore): PlannerSnapshot {
   return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 }
 
-/** Keeps the store following the change stream while the planner is mounted. */
+/**
+ * Keeps the store following the change stream while the planner is mounted,
+ * and its failure toasts in the UI's language.
+ */
 export function usePlannerLive(store: PlannerStore) {
+  const m = useMessages();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the stores' toast handler, outside React, on the UI's language
+  useEffect(() => {
+    messages = m;
+  });
   useEffect(() => store.retain(), [store]);
 }
 

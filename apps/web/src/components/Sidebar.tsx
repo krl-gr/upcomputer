@@ -279,6 +279,7 @@ import {
   projectKeysInComputerScope,
 } from "../sidebarComputers/sidebarComputers.logic";
 import { productThreadActions, runProductThreadAction } from "../product/threadActions";
+import { useGT, useMessages } from "gt-react";
 import { useClaimedSidebarThreadKeys } from "../product/sidebarThreadClaims";
 import { useDraftFirstSendPending } from "../draftFirstSend";
 import { TooltipProvider } from "./ui/tooltip";
@@ -970,6 +971,8 @@ function readRouteThreadKey(router: AnyRouter): string | null {
 }
 
 export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReveal }) {
+  const gt = useGT();
+  const m = useMessages();
   const {
     projects,
     serverConfigs,
@@ -1444,7 +1447,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       workspaceDelivered: workspaceDelivery.delivered,
     });
   const sidebarWaiting =
-    sidebarEmptyState === "waiting" ? describeWorkspaceWaiting(workspaceDelivery.waitingOn) : null;
+    sidebarEmptyState === "waiting"
+      ? describeWorkspaceWaiting(workspaceDelivery.waitingOn, gt)
+      : null;
   // UpComputer: the Threads header, and the Pinned one above it once something is
   // pinned, sit in the list, so a thread drags between them to pin or unpin, and a
   // collapsed section leaves its rows out of the list and takes no drops.
@@ -2747,7 +2752,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           timestampFormat,
           thread.environmentId,
         );
-        const featureActions = productThreadActions(threadRef);
+        const featureActions = productThreadActions(threadRef, m);
         const threadProjectGroup =
           projectGroupsRef.current.find((project) =>
             project.memberProjectRefs.some(
@@ -3829,7 +3834,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       to="/settings/connections"
                       className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                     >
-                      Check Connections
+                      {gt("Check Connections")}
                     </Link>
                   ) : null}
                 </>

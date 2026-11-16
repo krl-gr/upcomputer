@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { MoreHorizontalIcon } from "lucide-react";
+import { useGT, useMessages } from "gt-react";
 
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import {
@@ -54,6 +55,8 @@ export function TaskCard(props: {
   readonly onArchivedChange: (archived: boolean) => void;
   readonly onDrop: () => void;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const { task } = props;
   const runs = groupTaskRunCounts(task.runCounts);
   const archived = task.archivedAt !== null;
@@ -125,7 +128,11 @@ export function TaskCard(props: {
             if (status && status !== task.status) props.onStatusChange(status);
           }}
         >
-          <SelectTrigger size="xs" className="w-auto min-w-0 max-w-48" aria-label="Task status">
+          <SelectTrigger
+            size="xs"
+            className="w-auto min-w-0 max-w-48"
+            aria-label={gt("Task status")}
+          >
             <SelectValue>
               <span className="truncate">{task.status}</span>
             </SelectValue>
@@ -138,7 +145,11 @@ export function TaskCard(props: {
             ))}
           </SelectPopup>
         </Select>
-        {archived ? <span className={ROW_LABEL_CHIP_CLASS}>Archived</span> : null}
+        {archived ? (
+          <span className={ROW_LABEL_CHIP_CLASS}>
+            {gt("Archived", { $context: "status of an archived task" })}
+          </span>
+        ) : null}
         {task.tags.map((tag) => (
           <span key={tag} className={ROW_LABEL_CHIP_CLASS}>
             <span className="truncate"># {tag}</span>
@@ -148,7 +159,7 @@ export function TaskCard(props: {
           <Button
             variant="outline"
             size="xs"
-            aria-label={`Runs: ${runCountSummary(runs)}`}
+            aria-label={gt("Runs: {summary}", { summary: runCountSummary(runs, m) })}
             onClick={props.onOpen}
           >
             <span className="inline-flex items-center gap-1.5 tabular-nums">
@@ -159,13 +170,15 @@ export function TaskCard(props: {
         {props.canMutate ? (
           <Menu>
             <MenuTrigger
-              render={<Button size="icon-xs" variant="outline" aria-label="More actions" />}
+              render={<Button size="icon-xs" variant="outline" aria-label={gt("More actions")} />}
             >
               <MoreHorizontalIcon />
             </MenuTrigger>
             <MenuPopup align="end">
               <MenuItem onClick={() => props.onArchivedChange(!archived)}>
-                {archived ? "Unarchive" : "Archive"}
+                {archived
+                  ? gt("Unarchive", { $context: "button that unarchives a task" })
+                  : gt("Archive", { $context: "button that archives a task" })}
               </MenuItem>
             </MenuPopup>
           </Menu>

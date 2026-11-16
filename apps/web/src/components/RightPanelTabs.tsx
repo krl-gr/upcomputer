@@ -108,6 +108,7 @@ import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { withoutHiddenProductSurfaces } from "~/product/productFlags";
 import { productRightPanelSurface, productRightPanelSurfaces } from "~/product/ProductSlots";
+import { useMessages } from "gt-react";
 import { observeResize } from "~/lib/observeResize";
 import { surfaceShortcutKey } from "~/lib/surfaceShortcutKey";
 
@@ -227,10 +228,11 @@ interface FeatureSurfaceAction {
 /** Launcher entries for the product features' surfaces, after core's. */
 function featureSurfaceActions(
   onAdd: ((featureSurfaceId: string) => void) | undefined,
+  translate: (label: string) => string,
 ): FeatureSurfaceAction[] {
   if (!onAdd) return [];
   return productRightPanelSurfaces().map((surface) => ({
-    label: surface.label,
+    label: translate(surface.label),
     icon: surface.icon,
     shortcut: surface.shortcut,
     available: true,
@@ -605,6 +607,7 @@ function surfaceTitle(
   surface: RightPanelSurface,
   sessions: Readonly<Record<string, PreviewSessionSnapshot>>,
   terminalLabelsById: ReadonlyMap<string, string>,
+  translate: (label: string) => string,
 ): string {
   switch (surface.kind) {
     case "diff":
@@ -625,7 +628,9 @@ function surfaceTitle(
     case "pull-requests":
       return "Pull requests";
     case "feature":
-      return productRightPanelSurface(surface.featureSurfaceId)?.label ?? surface.featureSurfaceId;
+      return translate(
+        productRightPanelSurface(surface.featureSurfaceId)?.label ?? surface.featureSurfaceId,
+      );
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "side-chat":
@@ -1068,6 +1073,7 @@ function RightPanelTab(
 }
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
+  const m = useMessages();
   const focusedSurface = props.surfaces.find((surface) => surface.id === props.activeSurfaceId);
   const ownsDesktopTitleBar = isElectron && props.mode === "inline";
   const browserProfiles = useBrowserDefaults().profiles;
@@ -1135,7 +1141,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     });
   };
 
-  const featureActions = featureSurfaceActions(props.onAddFeatureSurface);
+  const featureActions = featureSurfaceActions(props.onAddFeatureSurface, m);
   const coreAddSurfaceActions = withoutHiddenProductSurfaces([
     {
       label: "Browser",
@@ -1369,7 +1375,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       workspaceFocusKey={`panel:${props.environmentId}:${props.activeSurfaceId ?? "empty"}`}
       workspaceLabel={
         focusedSurface
-          ? `Workspace panel: ${surfaceTitle(focusedSurface, props.previewSessions, props.terminalLabelsById)}`
+          ? `Workspace panel: ${surfaceTitle(focusedSurface, props.previewSessions, props.terminalLabelsById, m)}`
           : "Workspace panel"
       }
       mode={props.mode}
@@ -1423,7 +1429,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     dragDisabled={!props.onMoveSurface || renamingDevice === surface.id}
                     active={surface.id === props.activeSurfaceId}
                     pending={props.pendingSurfaceIds.has(surface.id)}
-                    title={surfaceTitle(surface, props.previewSessions, props.terminalLabelsById)}
+                    title={surfaceTitle(
+                      surface,
+                      props.previewSessions,
+                      props.terminalLabelsById,
+                      m,
+                    )}
                     audio={tabAudioState(
                       previewTabId ? (props.desktopByTabId[previewTabId] ?? null) : null,
                     )}
