@@ -255,7 +255,7 @@ export function sidebarTriggerShown(isMobile: boolean): boolean {
  * under the footer by this height (`adaptiveSidebar.css`). A footer ref.
  */
 export function observeSidebarFooterHeight(footer: HTMLElement | null) {
-  const sidebar = footer?.parentElement;
+  const sidebar = footer?.closest<HTMLElement>('[data-sidebar="sidebar"]');
   if (!footer || !sidebar) return;
   const stop = observeResize(footer, ([entry]) => {
     const height = entry?.borderBoxSize[0]?.blockSize ?? footer.offsetHeight;
