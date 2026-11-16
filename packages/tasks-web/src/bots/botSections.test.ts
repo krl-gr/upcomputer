@@ -64,7 +64,7 @@ describe("Bots section lists", () => {
     servers.lists.set(here, () => Promise.resolve([]));
     servers.lists.set(older, unknownMethod);
     const { seen, view } = await render([here, older]);
-    expect(seen.at(-1)).toEqual([{ environmentId: here, bots: [], error: "" }]);
+    expect(seen.at(-1)).toEqual([{ environmentId: here, bots: [], loaded: true, error: "" }]);
     view.unmount();
   });
 
@@ -73,7 +73,7 @@ describe("Bots section lists", () => {
     servers.lists.set(failing, () => Promise.reject(new Error("The database is locked")));
     const { seen, view } = await render([failing]);
     expect(seen.at(-1)).toEqual([
-      { environmentId: failing, bots: [], error: "Couldn't load bots." },
+      { environmentId: failing, bots: [], loaded: false, error: "Couldn't load bots." },
     ]);
     view.unmount();
   });
@@ -83,7 +83,7 @@ describe("Bots section lists", () => {
     servers.lists.set(here, () => Promise.resolve([]));
     const { seen, view } = await render([here]);
     await act(async () => servers.dropStream?.());
-    expect(seen.at(-1)).toEqual([{ environmentId: here, bots: [], error: "" }]);
+    expect(seen.at(-1)).toEqual([{ environmentId: here, bots: [], loaded: true, error: "" }]);
     view.unmount();
   });
 
@@ -104,8 +104,8 @@ describe("Bots section lists", () => {
     servers.lists.set(other, () => Promise.resolve([atlas]));
     const { seen, view } = await render([here, other]);
     expect(seen.at(-1)).toEqual([
-      { environmentId: here, bots: [nova], error: "" },
-      { environmentId: other, bots: [atlas], error: "" },
+      { environmentId: here, bots: [nova], loaded: true, error: "" },
+      { environmentId: other, bots: [atlas], loaded: true, error: "" },
     ]);
     view.unmount();
   });
