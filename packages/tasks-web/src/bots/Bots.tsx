@@ -7,6 +7,7 @@ import {
 } from "react";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { PlusIcon, SettingsIcon } from "lucide-react";
+import { useGT, useMessages } from "gt-react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
@@ -170,10 +171,11 @@ export function SidebarBots() {
  * saying so. Nothing while it still loads, or while offline with no bots seen yet.
  */
 function UnavailableComputerBots({ environmentId }: { readonly environmentId: EnvironmentId }) {
+  const gt = useGT();
   const connected = useConnectedEnvironmentIds().includes(environmentId);
   const access = useTasksWebAccess(environmentId);
   useTasksWebAccessRevision();
-  const name = useComputerName(environmentId) ?? "This computer";
+  const name = useComputerName(environmentId);
   const unsupported =
     connected && (readBotsUnsupported(environmentId) || access.availability === "unavailable");
   if (connected && !unsupported) return null;
@@ -181,11 +183,13 @@ function UnavailableComputerBots({ environmentId }: { readonly environmentId: En
   if (!connected && lastBots.length === 0) return null;
   return (
     <div className={SIDEBAR_SECTION_GAP} data-computer-bots={connected ? "unsupported" : "offline"}>
-      <SidebarSectionHeader title="Bots" open onToggle={() => {}} />
+      <SidebarSectionHeader title={gt("Bots")} open onToggle={() => {}} />
       <div className={`${SIDEBAR_SECTION_HEADER_GAP} ${SIDEBAR_MENU_SCOPE}`}>
         {connected ? (
           <p className="px-3 pt-1 text-xs text-sidebar-muted-foreground [[data-sidebar-compact=true]_&]:hidden">
-            Bots need a newer Up.computer on {name}.
+            {name
+              ? gt("Bots need a newer Up.computer on {name}.", { name })
+              : gt("Bots need a newer Up.computer on this computer.")}
           </p>
         ) : (
           <div className="opacity-55" aria-disabled>
@@ -214,6 +218,7 @@ function UnavailableComputerBots({ environmentId }: { readonly environmentId: En
 }
 
 function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> }) {
+  const gt = useGT();
   const shown = useShownBots(lists);
   // New bots go to the first computer shown: this one in All computers.
   const createOn = lists[0]!.environmentId;
@@ -238,11 +243,11 @@ function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> 
     <Collapsible open={open}>
       <div className={SIDEBAR_SECTION_GAP}>
         <SidebarSectionHeader
-          title="Bots"
+          title={gt("Bots")}
           open={open}
           onToggle={() => setOpen(!open)}
           action={
-            <SidebarSectionHeaderAction label="New bot" track="bots.create" onClick={create}>
+            <SidebarSectionHeaderAction label={gt("New bot")} track="bots.create" onClick={create}>
               <PlusIcon />
             </SidebarSectionHeaderAction>
           }
@@ -268,10 +273,10 @@ function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> 
             {/* The section always shows; the Projects filter only picks its rows. */}
             {shown.length > 0 ? null : lists.some((list) => list.bots.length > 0) ? (
               <li className="px-3 py-1 text-xs text-sidebar-muted-foreground [[data-sidebar-compact=true]_&]:hidden">
-                No bots in this project
+                {gt("No bots in this project")}
               </li>
             ) : (
-              <SidebarEmptyRow label="New bot" disabled={!canWrite} onClick={create} />
+              <SidebarEmptyRow label={gt("New bot")} disabled={!canWrite} onClick={create} />
             )}
           </SidebarMenu>
           {errors.map((list) => (
@@ -298,10 +303,11 @@ function BotListError({
   readonly error: string;
   readonly named: boolean;
 }) {
+  const m = useMessages();
   const name = useComputerName(environmentId);
   return (
     <p role="alert" className="px-3 text-xs text-destructive">
-      {named && name ? `${name}: ${error}` : error}
+      {named && name ? `${name}: ${m(error)}` : m(error)}
     </p>
   );
 }
@@ -325,7 +331,10 @@ export function BotRow({
   readonly onOpen: () => void;
   readonly onSettings: () => void;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const status = useBotStatus(environmentId, bot);
+  const detail = m(status.detail);
   const compact = useSidebarCompact();
   const canRename = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope) && !compact;
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
@@ -341,7 +350,7 @@ export function BotRow({
     setRenaming(null);
     const trimmed = title.trim();
     if (trimmed.length === 0) {
-      toastManager.add({ type: "warning", title: "Bot name cannot be empty" });
+      toastManager.add({ type: "warning", title: gt("Bot name cannot be empty") });
       return;
     }
     if (trimmed === bot.agent.name) return;
@@ -353,13 +362,16 @@ export function BotRow({
         const error = squashAtomCommandFailure(result);
         toastManager.add({
           type: "error",
-          title: "Couldn't save the bot",
+          title: gt("Couldn't save the bot"),
           description: errorToastDescription(
             error,
             undefined,
-            `Couldn't save ${bot.agent.name}'s settings: ${errorReason(error)}. Try again.`,
+            gt("Couldn't save {name}'s settings: {reason}. Try again.", {
+              name: bot.agent.name,
+              reason: errorReason(error, gt),
+            }),
           ),
-          actionProps: { children: "Retry", onClick: () => commitRename(trimmed) },
+          actionProps: { children: gt("Retry"), onClick: () => commitRename(trimmed) },
         });
       }
     });
@@ -370,9 +382,7 @@ export function BotRow({
   return (
     <>
       <SidebarRowContextMenu disabled={renaming !== null}>
-        <SidebarCompactTooltip
-          label={status.detail ? `${bot.agent.name}: ${status.detail}` : bot.agent.name}
-        >
+        <SidebarCompactTooltip label={detail ? `${bot.agent.name}: ${detail}` : bot.agent.name}>
           <SidebarRowContextMenuTrigger
             render={
               <div
@@ -414,7 +424,7 @@ export function BotRow({
                   <input
                     autoFocus
                     value={renaming}
-                    aria-label="Bot name"
+                    aria-label={gt("Bot name")}
                     onChange={(event) => setRenaming(event.target.value)}
                     onFocus={(event) => event.currentTarget.select()}
                     onKeyDown={(event) => {
@@ -434,12 +444,12 @@ export function BotRow({
                     }}
                     className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm text-card-foreground outline-none focus:border-foreground"
                   />
-                ) : status.detail ? (
+                ) : detail ? (
                   <Tooltip>
                     <TooltipTrigger render={<span className={nameClassName} />}>
                       {bot.agent.name}
                     </TooltipTrigger>
-                    <TooltipPopup side="top">{status.detail}</TooltipPopup>
+                    <TooltipPopup side="top">{detail}</TooltipPopup>
                   </Tooltip>
                 ) : (
                   <span className={nameClassName}>{bot.agent.name}</span>
@@ -449,7 +459,7 @@ export function BotRow({
                   action={
                     <button
                       type="button"
-                      aria-label={`Settings for ${bot.agent.name}`}
+                      aria-label={gt("Settings for {name}", { name: bot.agent.name })}
                       className={sidebarListRowActionClassName(tasksMenuOpen)}
                       onClick={onSettings}
                     >
@@ -465,7 +475,7 @@ export function BotRow({
                         <TaskThreadTasksButton
                           environmentId={environmentId}
                           threadId={bot.threadId}
-                          label={`Tasks for ${bot.agent.name}`}
+                          label={gt("Tasks for {name}", { name: bot.agent.name })}
                           className={sidebarListRowExtraActionClassName(tasksMenuOpen)}
                           onOpenChange={setTasksMenuOpen}
                         />
@@ -483,7 +493,7 @@ export function BotRow({
             entry === "settings" ? (
               <MenuItem key={entry} onClick={onSettings}>
                 <SettingsIcon />
-                Settings
+                {gt("Settings")}
               </MenuItem>
             ) : (
               <TaskThreadTasksSubmenu

@@ -1,4 +1,5 @@
 import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
+import type { useGT } from "gt-react";
 
 export interface UpToDateReport {
   readonly serverVersion: string;
@@ -31,22 +32,34 @@ export function isStillUpToDate(
   );
 }
 
-const trackLabel = (version: string) =>
-  desktopUpdateChannelOf(version) === "nightly" ? "Nightly" : "Stable";
-
 /** What the user reads: its track's newest build, or a feed with nothing newer yet. */
 export function describeServerUpToDate(
   label: string,
   report: UpToDateReport,
+  gt: ReturnType<typeof useGT>,
 ): { readonly title: string; readonly description: string } {
   const { serverVersion, targetVersion } = report;
+  const trackLabel = (version: string) =>
+    desktopUpdateChannelOf(version) === "nightly"
+      ? gt("Nightly", { $context: "desktop app update track" })
+      : gt("Stable", { $context: "desktop app update track" });
   return onOtherTrack(serverVersion, targetVersion)
     ? {
-        title: `${label} is up to date`,
-        description: `It is on ${trackLabel(serverVersion)} ${serverVersion}, the newest build on that track. This app runs ${trackLabel(targetVersion)}.`,
+        title: gt("{label} is up to date", { label }),
+        description: gt(
+          "It is on {serverTrack} {serverVersion}, the newest build on that track. This app runs {targetTrack}.",
+          {
+            serverTrack: trackLabel(serverVersion),
+            serverVersion,
+            targetTrack: trackLabel(targetVersion),
+          },
+        ),
       }
     : {
-        title: `Nothing to install on ${label} yet`,
-        description: `Its update feed has nothing newer than ${serverVersion} yet. Try again later.`,
+        title: gt("Nothing to install on {label} yet", { label }),
+        description: gt(
+          "Its update feed has nothing newer than {serverVersion} yet. Try again later.",
+          { serverVersion },
+        ),
       };
 }

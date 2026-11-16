@@ -9,6 +9,7 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect, useEffectEvent, useState } from "react";
+import { useGT } from "gt-react";
 
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { useCloudLinkController } from "../cloud/useCloudLinkController";
@@ -42,6 +43,7 @@ export function ConnectSignIn() {
 const EMPTY_SESSION_STATE_ATOM = Atom.make(AsyncResult.initial<AuthSessionState>());
 
 function DesktopConnectSignIn() {
+  const gt = useGT();
   // Pending Clerk sessions must not look signed out or activation would look like a new sign-in.
   const { isLoaded, isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
   const navigate = useNavigate();
@@ -96,20 +98,22 @@ function DesktopConnectSignIn() {
     }
     toastManager.add({
       type: "success",
-      title: "UpComputer Connect is on",
-      description:
+      title: gt("UpComputer Connect is on"),
+      description: gt(
         "Your other devices can reach this computer. Turn it off in Settings, Sharing & access.",
+      ),
     });
   });
   const reportOtherAccount = useEffectEvent(() => {
     toastManager.add({
       type: "warning",
-      title: "This computer is on another UpComputer Connect account",
-      description:
+      title: gt("This computer is on another UpComputer Connect account"),
+      description: gt(
         "To move it to this account, turn UpComputer Connect off and on again in Settings, Sharing & access.",
+      ),
       timeout: 0,
       actionProps: {
-        children: "Open Sharing & access",
+        children: gt("Open Sharing & access"),
         onClick: () => void navigate({ to: "/settings/access" }),
       },
       data: { actionLayout: "stacked-end" },
@@ -144,8 +148,8 @@ function DesktopConnectSignIn() {
     if (!ok) return;
     toastManager.add({
       type: "success",
-      title: "UpComputer Connect reconnected this computer",
-      description: "Your other devices can reach it again.",
+      title: gt("UpComputer Connect reconnected this computer"),
+      description: gt("Your other devices can reach it again."),
     });
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- relinks once when the host reports that the relay holds an older key for it
@@ -162,11 +166,14 @@ function DesktopConnectSignIn() {
     setPublishFailedFor(null);
     toastManager.add({
       type: "warning",
-      title: "This computer is not on UpComputer Connect",
-      description: `Your account already has ${limit} computers on UpComputer Connect, its limit. Remove one you no longer use, then turn it on in Settings, Sharing & access.`,
+      title: gt("This computer is not on UpComputer Connect"),
+      description: gt(
+        "Your account already has {limit, plural, one {# computer} other {# computers}} on UpComputer Connect, its limit. Remove one you no longer use, then turn it on in Settings, Sharing & access.",
+        { limit },
+      ),
       timeout: 0,
       actionProps: {
-        children: "Open Sharing & access",
+        children: gt("Open Sharing & access"),
         onClick: () => void navigate({ to: "/settings/access" }),
       },
       data: { actionLayout: "stacked-end" },

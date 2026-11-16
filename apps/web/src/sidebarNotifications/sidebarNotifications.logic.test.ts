@@ -1,3 +1,4 @@
+import { gtFallback } from "gt-react";
 import { describe, expect, it } from "vite-plus/test";
 
 import { EnvironmentId, type BackgroundNotice } from "@t3tools/contracts";
@@ -80,11 +81,14 @@ describe("describeSidebarNotificationsButton", () => {
     ],
   ] as const)("%j with %j shows a %s dot", (severities, update, dot, label, updateFailed) => {
     expect(
-      describeSidebarNotificationsButton({
-        severities,
-        update,
-        updateFailed,
-      }),
+      describeSidebarNotificationsButton(
+        {
+          severities,
+          update,
+          updateFailed,
+        },
+        gtFallback,
+      ),
     ).toEqual({ dot, label });
   });
 });

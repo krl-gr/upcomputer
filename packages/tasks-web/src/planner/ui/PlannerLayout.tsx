@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { useRef, useState, type ReactNode } from "react";
 
 import { useSidebar } from "../../../../../apps/web/src/components/ui/sidebar.tsx";
@@ -36,6 +37,7 @@ export function PlannerLayout(props: {
   /** The headers are the page's title bar row, not a right-panel surface's plain row. */
   readonly titleBar: boolean;
 }) {
+  const gt = useGT();
   const { wide } = props;
   // With the sidebar collapsed the page's list header starts after the sidebar
   // toggle (and the macOS traffic lights), so the column grows to keep its controls.
@@ -70,7 +72,7 @@ export function PlannerLayout(props: {
               className="absolute top-0 -right-1 z-20 h-full w-2 cursor-ew-resize touch-none"
               role="separator"
               aria-orientation="vertical"
-              aria-label="Resize the task list"
+              aria-label={gt("Resize the task list")}
               onPointerDown={(event) => {
                 event.preventDefault();
                 const target = event.currentTarget;
@@ -128,7 +130,7 @@ export function PlannerLayout(props: {
             )}
             role="separator"
             aria-orientation="horizontal"
-            aria-label="Resize the week"
+            aria-label={gt("Resize the week")}
             onPointerDown={(event) => {
               event.preventDefault();
               const target = event.currentTarget;

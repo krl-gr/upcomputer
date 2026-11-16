@@ -1,4 +1,7 @@
 /** Wall-clock times and durations of schedule entries; ported from wande's calendar time helpers. */
+import { gtFallback, type useGT } from "gt-react";
+
+type GT = ReturnType<typeof useGT>;
 
 export const MINUTES_IN_DAY = 24 * 60;
 /** The calendar grid's slot: a quarter hour. */
@@ -71,7 +74,7 @@ export function effectiveDuration(entry: EntryTiming, defaultDuration: number): 
 
 const timeFormatters = new Map<string, Intl.DateTimeFormat>();
 
-/** HH:MM in the browser's locale, 12- or 24-hour as the locale prefers. */
+/** HH:MM in `locale` (the browser's without one), 12- or 24-hour as the locale prefers. */
 export function formatTime(time: string, locale?: string): string {
   const minutes = parseTimeToMinutes(time);
   if (minutes === null) return time;
@@ -88,18 +91,35 @@ export function formatHourLabel(hour: number, locale?: string): string {
   return formatTime(`${String(hour).padStart(2, "0")}:00`, locale);
 }
 
-export function formatDuration(minutes: number): string {
+/** Components pass their `useGT()`; without it the text stays English. */
+export function formatDuration(minutes: number, gt: GT = gtFallback): string {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  if (hours === 0) return `${rest}m`;
-  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+  if (hours === 0) {
+    return gt("{minutes}m", { minutes: rest, $context: "a duration in minutes, abbreviated" });
+  }
+  return rest === 0
+    ? gt("{hours}h", { hours, $context: "a duration in hours, abbreviated" })
+    : gt("{hours}h {minutes}m", {
+        hours,
+        minutes: rest,
+        $context: "a duration in hours and minutes, abbreviated",
+      });
 }
 
-/** The card's timing line: start time and explicit duration, either may be missing. */
-export function entryTimingLabel(entry: EntryTiming, locale?: string): string {
+/**
+ * The card's timing line: start time and explicit duration, either may be
+ * missing. Components pass their `useGT()`; without it the text stays English.
+ */
+export function entryTimingLabel(entry: EntryTiming, locale?: string, gt: GT = gtFallback): string {
   return [
     entry.startTime ? formatTime(entry.startTime, locale) : null,
-    entry.durationMinutes !== null ? `${entry.durationMinutes}m` : null,
+    entry.durationMinutes !== null
+      ? gt("{minutes}m", {
+          minutes: entry.durationMinutes,
+          $context: "a duration in minutes, abbreviated",
+        })
+      : null,
   ]
     .filter((part) => part !== null)
     .join(" · ");

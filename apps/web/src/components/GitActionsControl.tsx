@@ -22,6 +22,7 @@ import type {
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import { msg, useGT, useMessages } from "gt-react";
 import { useDeadlinePassed } from "../hooks/useDeadline";
 import { useNowSecond } from "../hooks/useNowSecond";
 import { flushSync } from "react-dom";
@@ -179,11 +180,11 @@ type RefreshVcsStatus = (target: {
 }) => Promise<unknown>;
 
 const GIT_ACTION_FAILURE_TITLES: Record<GitStackedAction, string> = {
-  commit: "Commit failed",
-  push: "Push failed",
-  create_pr: "Couldn't create the pull request",
-  commit_push: "Commit and push failed",
-  commit_push_pr: "Commit, push and pull request failed",
+  commit: msg("Commit failed"),
+  push: msg("Push failed"),
+  create_pr: msg("Couldn't create the pull request"),
+  commit_push: msg("Commit and push failed"),
+  commit_push_pr: msg("Commit, push and pull request failed"),
 };
 
 function requestVcsStatusRefresh(
@@ -935,6 +936,8 @@ export default function GitActionsControl({
   onOpenChanges,
   workspaceMutationId = null,
 }: GitActionsControlProps) {
+  const gt = useGT();
+  const m = useMessages();
   const progressLabelId = useId();
   const panelAnchorRef = useRef<HTMLDivElement | null>(null);
   const updateThreadMetadata = useAtomCommand(
@@ -1284,7 +1287,7 @@ export default function GitActionsControl({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: GIT_ACTION_FAILURE_TITLES[action],
+          title: m(GIT_ACTION_FAILURE_TITLES[action]),
           description: errorToastDescription(error),
           timeout: errorToastTiming.timeout,
           ...(scopedToastData !== undefined ? { data: scopedToastData } : {}),
@@ -1365,7 +1368,7 @@ export default function GitActionsControl({
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Couldn't pull",
+              title: gt("Couldn't pull"),
               description: errorToastDescription(error),
               timeout: errorToastTiming.timeout,
               ...(threadToastData !== undefined ? { data: threadToastData } : {}),
@@ -1451,7 +1454,7 @@ export default function GitActionsControl({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Couldn't open the file",
+          title: gt("Couldn't open the file"),
           description: errorToastDescription(error),
           ...(threadToastData !== undefined ? { data: threadToastData } : {}),
         }),
@@ -1489,7 +1492,7 @@ export default function GitActionsControl({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Couldn't set up Git",
+          title: gt("Couldn't set up Git"),
           description: errorToastDescription(error),
           timeout: resolveGitActionResultToastTiming("error").timeout,
           ...(threadToastData !== undefined ? { data: threadToastData } : {}),

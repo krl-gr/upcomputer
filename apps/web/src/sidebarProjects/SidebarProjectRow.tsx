@@ -1,3 +1,4 @@
+import { T } from "gt-react";
 import { EllipsisIcon, SquarePenIcon } from "lucide-react";
 import {
   useState,
@@ -98,7 +99,9 @@ export function SidebarProjectRow(props: {
                 >
                   <EllipsisIcon />
                 </TooltipTrigger>
-                <TooltipPopup side="top">Project actions</TooltipPopup>
+                <TooltipPopup side="top">
+                  <T>Project actions</T>
+                </TooltipPopup>
               </Tooltip>
               <MenuPopup side="bottom" align="end">
                 {menuItems}

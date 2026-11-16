@@ -1,3 +1,4 @@
+import { gtFallback } from "gt-react";
 import { presentThreadShell } from "@t3tools/client-runtime/state/models";
 import { isThreadWorking as isSidebarThreadWorking } from "@t3tools/client-runtime/state/thread-inbox";
 import * as DateTime from "effect/DateTime";
@@ -1553,12 +1554,17 @@ describe("describeWorkspaceWaiting", () => {
   });
 
   it("names the environment it is connecting to", () => {
-    expect(describeWorkspaceWaiting([])).toEqual({ text: "Connecting…", unreachable: false });
-    expect(describeWorkspaceWaiting([environment("Local", false, true)])).toEqual({
+    expect(describeWorkspaceWaiting([], gtFallback)).toEqual({
+      text: "Connecting…",
+      unreachable: false,
+    });
+    expect(describeWorkspaceWaiting([environment("Local", false, true)], gtFallback)).toEqual({
       text: "Connecting to this device…",
       unreachable: false,
     });
-    expect(describeWorkspaceWaiting([environment("Cloud VM"), environment("Laptop")])).toEqual({
+    expect(
+      describeWorkspaceWaiting([environment("Cloud VM"), environment("Laptop")], gtFallback),
+    ).toEqual({
       text: "Connecting to 2 environments…",
       unreachable: false,
     });
@@ -1566,10 +1572,13 @@ describe("describeWorkspaceWaiting", () => {
 
   it("says which environment it cannot reach, so the user can check its connection", () => {
     expect(
-      describeWorkspaceWaiting([environment("Laptop"), environment("Cloud VM", true)]),
+      describeWorkspaceWaiting([environment("Laptop"), environment("Cloud VM", true)], gtFallback),
     ).toEqual({ text: "Can’t reach Cloud VM right now.", unreachable: true });
     expect(
-      describeWorkspaceWaiting([environment("Laptop", true), environment("Cloud VM", true)]),
+      describeWorkspaceWaiting(
+        [environment("Laptop", true), environment("Cloud VM", true)],
+        gtFallback,
+      ),
     ).toEqual({ text: "Can’t reach 2 environments right now.", unreachable: true });
   });
 });

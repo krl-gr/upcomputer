@@ -13,6 +13,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import { useRouter } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
+import { T, useGT } from "gt-react";
 import { CopyIcon, EllipsisIcon, PlusIcon, SettingsIcon } from "lucide-react";
 import { useReducer, useRef, type ReactNode } from "react";
 
@@ -65,9 +66,12 @@ import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 export const SIDEBAR_PROJECTS_OPEN_STORAGE_KEY = "upcomputer:sidebar-projects-open";
 
-function sidebarProjectsRowLabel(row: SidebarProjectsListRow): string {
-  if (row.kind === "all") return "All projects";
-  return row.kind === "scratch" ? "No project" : row.project.displayName;
+function sidebarProjectsRowLabel(
+  row: SidebarProjectsListRow,
+  gt: ReturnType<typeof useGT>,
+): string {
+  if (row.kind === "all") return gt("All projects");
+  return row.kind === "scratch" ? gt("No project") : row.project.displayName;
 }
 
 interface ProjectItem {
@@ -89,6 +93,7 @@ export function SidebarProjectsSection(props: {
   readonly loaded: boolean;
 }) {
   const { projectGroups, onAddProject, loaded } = props;
+  const gt = useGT();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const handleNewThread = useNewThreadHandler();
@@ -111,13 +116,13 @@ export function SidebarProjectsSection(props: {
   };
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: ({ path }) => {
-      toastManager.add({ type: "success", title: "Path copied", description: path });
+      toastManager.add({ type: "success", title: gt("Path copied"), description: path });
     },
     onError: (error) => {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to copy path",
+          title: gt("Failed to copy path"),
           description: errorToastDescription(error),
         }),
       );
@@ -132,10 +137,12 @@ export function SidebarProjectsSection(props: {
     const isActive = selectedKey === row.key;
     if (row.kind === "all") {
       return (
-        <SidebarCompactTooltip label="All projects">
+        <SidebarCompactTooltip label={gt("All projects")}>
           <SidebarMenuButton isActive={isActive} onClick={() => select(row.key)}>
             <AllProjectsIcon />
-            <span className="flex-1 truncate">All projects</span>
+            <span className="flex-1 truncate">
+              <T>All projects</T>
+            </span>
           </SidebarMenuButton>
         </SidebarCompactTooltip>
       );
@@ -144,11 +151,11 @@ export function SidebarProjectsSection(props: {
     if (row.kind === "scratch") {
       return (
         <SidebarProjectRow
-          label="No project"
+          label={gt("No project")}
           icon={<NoProjectIcon />}
           isActive={isActive}
           onSelect={() => select(row.key)}
-          newChatLabel="New chat without a project"
+          newChatLabel={gt("New chat without a project")}
           onNewChat={() => startNewThread(project)}
         />
       );
@@ -159,14 +166,14 @@ export function SidebarProjectsSection(props: {
         icon={<ProjectRowIcon project={project} />}
         isActive={isActive}
         onSelect={() => select(row.key)}
-        newChatLabel={`New chat in ${project.displayName}`}
+        newChatLabel={gt("New chat in {project}", { project: project.displayName })}
         onNewChat={() => startNewThread(project)}
-        menuLabel={`Project actions for ${project.displayName}`}
+        menuLabel={gt("Project actions for {project}", { project: project.displayName })}
         menuItems={
           <>
             <MenuItem onClick={() => openProjectSettings(project)}>
               <SettingsIcon />
-              Project settings
+              <T>Project settings</T>
             </MenuItem>
             <MenuItem
               onClick={() =>
@@ -176,7 +183,7 @@ export function SidebarProjectsSection(props: {
               }
             >
               <CopyIcon />
-              Copy path
+              <T>Copy path</T>
             </MenuItem>
           </>
         }
@@ -188,13 +195,13 @@ export function SidebarProjectsSection(props: {
     <Collapsible open={open}>
       <div className={SIDEBAR_SECTION_GAP} ref={holdSurface}>
         <SidebarSectionHeader
-          title="Projects"
+          title={gt("Projects")}
           open={open}
           onToggle={() => setOpen(!open)}
           testId="sidebar-projects-toggle"
           action={
             <SidebarSectionHeaderAction
-              label="Add project"
+              label={gt("Add project")}
               track="sidebar.add_project"
               onClick={onAddProject}
             >
@@ -236,7 +243,7 @@ export function SidebarProjectsSection(props: {
               ) : null}
               {/* "No project" alone is still an empty list of projects. */}
               {projectGroups.every(isScratchGroup) ? (
-                <SidebarEmptyRow label="New project" onClick={onAddProject} />
+                <SidebarEmptyRow label={gt("New project")} onClick={onAddProject} />
               ) : null}
             </SidebarMenu>
           </div>
@@ -288,12 +295,13 @@ function SidebarProjectsMore(props: {
   readonly onOpenProjectSettings: (project: SidebarProjectSnapshot) => void;
 }) {
   const { rows, onSelect, onOpenProjectSettings } = props;
+  const gt = useGT();
   const [menuState, dispatchMenu] = useReducer(reduceSidebarProjectScopeMenuState, {
     open: false,
     query: "",
   });
   const filter = useComboboxFilter();
-  const items = rows.map((row) => ({ value: row.key, label: sidebarProjectsRowLabel(row) }));
+  const items = rows.map((row) => ({ value: row.key, label: sidebarProjectsRowLabel(row, gt) }));
   const rowByKey = new Map(rows.map((row) => [row.key, row] as const));
   const filteredItems = filterSidebarProjectScopeItems({
     items,
@@ -314,10 +322,12 @@ function SidebarProjectsMore(props: {
         if (item) onSelect(item.value);
       }}
     >
-      <SidebarCompactTooltip label="More projects">
+      <SidebarCompactTooltip label={gt("More projects")}>
         <ComboboxTrigger render={<SidebarMenuButton />}>
           <EllipsisIcon />
-          <span className="flex-1 truncate">More</span>
+          <span className="flex-1 truncate">
+            <T>More</T>
+          </span>
         </ComboboxTrigger>
       </SidebarCompactTooltip>
       <ComboboxPopup
@@ -325,12 +335,14 @@ function SidebarProjectsMore(props: {
         className="max-w-[min(18rem,var(--available-width))] overflow-hidden"
       >
         <ComboboxSearchInput
-          aria-label="Search projects"
-          placeholder="Search projects..."
+          aria-label={gt("Search projects")}
+          placeholder={gt("Search projects...")}
           value={menuState.query}
           onChange={(event) => dispatchMenu({ type: "query-changed", query: event.target.value })}
         />
-        <ComboboxEmpty>No matching projects.</ComboboxEmpty>
+        <ComboboxEmpty>
+          <T>No matching projects.</T>
+        </ComboboxEmpty>
         <ComboboxList>
           {(item: ProjectItem) => {
             const row = rowByKey.get(item.value);

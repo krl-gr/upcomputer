@@ -1,3 +1,4 @@
+import { useGT, useLocale, useMessages } from "gt-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MoreHorizontalIcon, XIcon } from "lucide-react";
 import {
@@ -84,6 +85,8 @@ function ScheduleEditor(props: {
   readonly form: AutomationFormState;
   readonly onChange: (form: AutomationFormState) => void;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const { form, onChange } = props;
   const error = automationScheduleError(form);
   const setSchedule = (patch: Partial<AutomationFormState["schedule"]>) =>
@@ -96,15 +99,15 @@ function ScheduleEditor(props: {
           setSchedule({ mode: (value ?? "weekly") as CalendarScheduleMode })
         }
       >
-        <SelectTrigger aria-label="Frequency">
+        <SelectTrigger aria-label={gt("Frequency")}>
           <SelectValue>
-            {SCHEDULE_MODES.find(({ value }) => value === form.schedule.mode)?.label}
+            {m(SCHEDULE_MODES.find(({ value }) => value === form.schedule.mode)?.label)}
           </SelectValue>
         </SelectTrigger>
         <SelectPopup>
           {SCHEDULE_MODES.map((mode) => (
             <SelectItem key={mode.value} value={mode.value}>
-              {mode.label}
+              {m(mode.label)}
             </SelectItem>
           ))}
         </SelectPopup>
@@ -118,7 +121,7 @@ function ScheduleEditor(props: {
                 key={day.value}
                 variant="outline"
                 pressed={selected}
-                aria-label={day.label}
+                aria-label={m(day.label)}
                 className="min-w-0 flex-1"
                 onPressedChange={() =>
                   setSchedule({
@@ -128,7 +131,7 @@ function ScheduleEditor(props: {
                   })
                 }
               >
-                {day.shortLabel}
+                {m(day.shortLabel)}
               </Toggle>
             );
           })}
@@ -139,8 +142,8 @@ function ScheduleEditor(props: {
           value={String(form.schedule.monthDay)}
           onValueChange={(value) => setSchedule({ monthDay: Number(value ?? 1) })}
         >
-          <SelectTrigger aria-label="Day of month">
-            <SelectValue>Day {form.schedule.monthDay}</SelectValue>
+          <SelectTrigger aria-label={gt("Day of month")}>
+            <SelectValue>{gt("Day {day}", { day: form.schedule.monthDay })}</SelectValue>
           </SelectTrigger>
           <SelectPopup className="max-h-64">
             {MONTH_DAYS.map((day) => (
@@ -156,7 +159,7 @@ function ScheduleEditor(props: {
           aria-invalid={calendarScheduleToCron(form.schedule) === null}
           className={`${POPOVER_FIELD_CLASS} font-mono`}
           value={form.schedule.customCron}
-          aria-label="Cron expression"
+          aria-label={gt("Cron expression")}
           onChange={(event) => setSchedule({ customCron: event.target.value })}
         />
       ) : (
@@ -164,7 +167,7 @@ function ScheduleEditor(props: {
           type="time"
           className={POPOVER_FIELD_CLASS}
           value={form.schedule.time}
-          aria-label="Schedule time"
+          aria-label={gt("Schedule time")}
           onChange={(event) => setSchedule({ time: event.target.value })}
         />
       )}
@@ -172,12 +175,12 @@ function ScheduleEditor(props: {
         aria-invalid={!form.timezone.trim()}
         className={POPOVER_FIELD_CLASS}
         value={form.timezone}
-        aria-label="Time zone"
+        aria-label={gt("Time zone")}
         onChange={(event) => onChange({ ...form, timezone: event.target.value })}
       />
       {error ? (
         <p aria-live="polite" className="text-sm text-destructive">
-          {error}
+          {m(error)}
         </p>
       ) : null}
     </div>
@@ -190,6 +193,7 @@ function ScheduleEditor(props: {
  * leave these out.
  */
 function AutomationTasks(props: { readonly automationId: string }) {
+  const gt = useGT();
   const { store, windows } = usePlanner();
   const [state, setState] = useState<TaskPageLoadState | null>(null);
   const loader = useRef<TaskPageLoader | null>(null);
@@ -218,11 +222,11 @@ function AutomationTasks(props: { readonly automationId: string }) {
   const tasks = state?.page?.tasks ?? [];
   return (
     <div className="flex flex-col gap-1">
-      <div className="text-sm font-medium text-foreground">Tasks</div>
+      <div className="text-sm font-medium text-foreground">{gt("Tasks")}</div>
       {state?.error ? <p className="text-sm text-destructive-foreground">{state.error}</p> : null}
       {tasks.length === 0 ? (
         <p className="py-2 text-sm text-muted-foreground">
-          {state === null || state.initialLoading ? "Loading…" : "No created tasks yet."}
+          {state === null || state.initialLoading ? gt("Loading…") : gt("No created tasks yet.")}
         </p>
       ) : (
         <div className="-mx-2 flex flex-col">
@@ -242,7 +246,11 @@ function AutomationTasks(props: { readonly automationId: string }) {
               >
                 {task.title}
               </span>
-              <TablePill>{task.archivedAt ? "Archived" : task.status}</TablePill>
+              <TablePill>
+                {task.archivedAt
+                  ? gt("Archived", { $context: "status of an archived task" })
+                  : task.status}
+              </TablePill>
               <span className="shrink-0 text-xs text-muted-foreground">
                 {formatRelativeTimeLabel(task.createdAt)}
               </span>
@@ -258,7 +266,7 @@ function AutomationTasks(props: { readonly automationId: string }) {
             disabled={state.loadingMore}
             onClick={() => loader.current?.loadMore()}
           >
-            {state.loadingMore ? "Loading…" : "Load more"}
+            {state.loadingMore ? gt("Loading…") : gt("Load more")}
           </Button>
         </div>
       ) : null}
@@ -278,6 +286,9 @@ function AutomationSettings(props: {
   readonly automation: TaskAutomationListItem | null;
   readonly defaultProjectId: string | null;
 }) {
+  const gt = useGT();
+  const m = useMessages();
+  const locale = useLocale();
   const { automations, windows, projects } = usePlanner();
   const { automation } = props;
   const [form, setForm] = useState<AutomationFormState>(() =>
@@ -302,7 +313,7 @@ function AutomationSettings(props: {
     if (!automation) return;
     const upsert = automationUpsertOf(next, automation);
     if ("error" in upsert) {
-      toastManager.add({ type: "error", title: upsert.error });
+      toastManager.add({ type: "error", title: m(upsert.error) });
       return;
     }
     void automations.upsert(upsert.input);
@@ -314,11 +325,19 @@ function AutomationSettings(props: {
     if (value === saved[field]) return;
     if (field !== "description" && field !== "taskStatus" && !value.trim()) {
       setForm({ ...form, [field]: saved[field] });
-      toastManager.add({
-        type: "warning",
-        title: `The ${field} can't be empty`,
-        description: `The previous ${field} was kept.`,
-      });
+      toastManager.add(
+        field === "name"
+          ? {
+              type: "warning",
+              title: gt("The name can't be empty"),
+              description: gt("The previous name was kept."),
+            }
+          : {
+              type: "warning",
+              title: gt("The title can't be empty"),
+              description: gt("The previous title was kept."),
+            },
+      );
       return;
     }
     commit(form);
@@ -338,10 +357,12 @@ function AutomationSettings(props: {
       setForm(before);
       toastManager.add({
         type: "warning",
-        title: "Schedule not changed",
-        description: `That schedule isn't valid (${scheduleProblem.replace(/\.$/u, "").toLowerCase()}), so the previous one was kept.`,
+        title: gt("Schedule not changed"),
+        description: gt("That schedule isn't valid, so the previous one was kept. {problem}", {
+          problem: m(scheduleProblem),
+        }),
         actionProps: {
-          children: "Edit again",
+          children: gt("Edit again"),
           onClick: () => {
             scheduleBefore.current = before;
             setForm(edited);
@@ -360,7 +381,7 @@ function AutomationSettings(props: {
   const create = async () => {
     const upsert = automationUpsertOf(form, null);
     if ("error" in upsert) {
-      toastManager.add({ type: "warning", title: upsert.error });
+      toastManager.add({ type: "warning", title: m(upsert.error) });
       return;
     }
     setSaving(true);
@@ -369,8 +390,8 @@ function AutomationSettings(props: {
     if (!created) return;
     toastManager.add({
       type: "success",
-      title: "Automation created",
-      description: `${created.name} stays disabled until you enable it.`,
+      title: gt("Automation created"),
+      description: gt("{name} stays disabled until you enable it.", { name: created.name }),
     });
     windows.openAutomation(created.id, props.window.id);
   };
@@ -378,6 +399,10 @@ function AutomationSettings(props: {
     if (automation) void automations.setStatus(automation.id, enabled ? "enabled" : "disabled");
   };
   const scheduleError = automationScheduleError(form);
+  const nextRunText =
+    automation?.status === "enabled" && automation.nextRunAt
+      ? gt("Next {time}", { time: shortDateTime(automation.nextRunAt, locale) })
+      : gt("Not scheduled");
 
   return (
     <FloatingWindow
@@ -391,30 +416,30 @@ function AutomationSettings(props: {
         <>
           <TitleInput
             value={form.name}
-            placeholder="Automation name"
-            ariaLabel="Automation name"
+            placeholder={gt("Automation name")}
+            ariaLabel={gt("Automation name")}
             onChange={(name) => setForm({ ...form, name })}
             onBlur={() => commitText("name")}
           />
           {automation ? (
             <Menu>
               <MenuTrigger
-                render={<Button size="icon-sm" variant="outline" aria-label="More actions" />}
+                render={<Button size="icon-sm" variant="outline" aria-label={gt("More actions")} />}
               >
                 <MoreHorizontalIcon />
               </MenuTrigger>
               <MenuPopup align="end">
                 <MenuItem onClick={() => setStatus(automation.status !== "enabled")}>
-                  {automation.status === "enabled" ? "Disable" : "Enable"}
+                  {automation.status === "enabled" ? gt("Disable") : gt("Enable")}
                 </MenuItem>
                 <MenuSeparator />
                 <MenuItem variant="destructive" onClick={() => setDeleting(true)}>
-                  Delete automation
+                  {gt("Delete automation")}
                 </MenuItem>
               </MenuPopup>
             </Menu>
           ) : null}
-          <IconAction label="Close" variant="outline" size="icon-sm" onClick={close}>
+          <IconAction label={gt("Close")} variant="outline" size="icon-sm" onClick={close}>
             <XIcon />
           </IconAction>
         </>
@@ -423,10 +448,10 @@ function AutomationSettings(props: {
         automation ? undefined : (
           <div className="flex gap-2">
             <Button className="flex-1" disabled={saving} onClick={() => void create()}>
-              Create
+              {gt("Create")}
             </Button>
             <Button className="flex-1" variant="outline" onClick={close}>
-              Cancel
+              {gt("Cancel")}
             </Button>
           </div>
         )
@@ -443,19 +468,19 @@ function AutomationSettings(props: {
           />
           {automation ? (
             <>
-              <TablePill>{AUTOMATION_STATUS_LABELS[automation.status]}</TablePill>
+              <TablePill>{m(AUTOMATION_STATUS_LABELS[automation.status])}</TablePill>
               <Switch
                 checked={automation.status === "enabled"}
-                aria-label={automation.status === "enabled" ? "Disable" : "Enable"}
+                aria-label={automation.status === "enabled" ? gt("Disable") : gt("Enable")}
                 onCheckedChange={(checked) => setStatus(Boolean(checked))}
               />
             </>
           ) : (
-            <span className="text-xs text-muted-foreground">Created disabled</span>
+            <span className="text-xs text-muted-foreground">{gt("Created disabled")}</span>
           )}
         </div>
         <div className="flex flex-col gap-2">
-          <Field label="Schedule">
+          <Field label={gt("Schedule")}>
             <Popover open={scheduleOpen} onOpenChange={onScheduleOpenChange}>
               <PopoverTrigger
                 render={
@@ -463,14 +488,17 @@ function AutomationSettings(props: {
                     size="xs"
                     variant="outline"
                     className="max-w-full min-w-0"
-                    aria-label="Edit schedule"
+                    aria-label={gt("Edit schedule")}
                   />
                 }
               >
                 <span className="truncate">
                   {scheduleError
-                    ? "Complete schedule"
-                    : `${describeCalendarSchedule(form.schedule)} · ${form.timezone}`}
+                    ? gt("Complete schedule")
+                    : gt("{schedule} · {timezone}", {
+                        schedule: describeCalendarSchedule(form.schedule, gt, m),
+                        timezone: form.timezone,
+                      })}
                 </span>
               </PopoverTrigger>
               <PopoverPopup
@@ -484,19 +512,23 @@ function AutomationSettings(props: {
             </Popover>
           </Field>
           {automation ? (
-            <Field label="Runs">
+            <Field
+              label={gt("Runs", { $context: "label of the automation's next and last run times" })}
+            >
               <span className="min-w-0 truncate text-muted-foreground">
-                {automation.status === "enabled" && automation.nextRunAt
-                  ? `Next ${shortDateTime(automation.nextRunAt)}`
-                  : "Not scheduled"}
-                {automation.lastFiredAt ? ` · last ${shortDateTime(automation.lastFiredAt)}` : ""}
+                {automation.lastFiredAt
+                  ? gt("{runs} · last {time}", {
+                      runs: nextRunText,
+                      time: shortDateTime(automation.lastFiredAt, locale),
+                    })
+                  : nextRunText}
               </span>
             </Field>
           ) : null}
           {automation?.lastError ? (
             <p className="text-sm text-destructive-foreground">{automation.lastError}</p>
           ) : null}
-          <Field label="Missed run">
+          <Field label={gt("Missed run")}>
             <Select
               value={form.catchUpPolicy}
               onValueChange={(value) =>
@@ -506,36 +538,40 @@ function AutomationSettings(props: {
                 })
               }
             >
-              <SelectTrigger size="xs" className="w-auto min-w-0" aria-label="Missed run policy">
+              <SelectTrigger
+                size="xs"
+                className="w-auto min-w-0"
+                aria-label={gt("Missed run policy")}
+              >
                 <SelectValue>
-                  {CATCH_UP_POLICIES.find(({ value }) => value === form.catchUpPolicy)?.label}
+                  {m(CATCH_UP_POLICIES.find(({ value }) => value === form.catchUpPolicy)?.label)}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup>
                 {CATCH_UP_POLICIES.map((policy) => (
                   <SelectItem key={policy.value} value={policy.value}>
-                    {policy.label}
+                    {m(policy.label)}
                   </SelectItem>
                 ))}
               </SelectPopup>
             </Select>
           </Field>
-          <Field label="Skip if open">
+          <Field label={gt("Skip if open")}>
             <Switch
               checked={form.skipIfOpen}
-              aria-label="Skip while a task it created is not archived"
+              aria-label={gt("Skip while a task it created is not archived")}
               onCheckedChange={(checked) => commit({ ...form, skipIfOpen: Boolean(checked) })}
             />
           </Field>
         </div>
         <div className="flex flex-col gap-2 border-t pt-3">
-          <div className="text-sm font-medium text-foreground">Creates a task</div>
-          <Field label="Title">
+          <div className="text-sm font-medium text-foreground">{gt("Creates a task")}</div>
+          <Field label={gt("Title")}>
             <input
               className={FIELD_CLASS}
               value={form.title}
-              placeholder="Task title"
-              aria-label="Created task title"
+              placeholder={gt("Task title")}
+              aria-label={gt("Created task title")}
               onChange={(event) => setForm({ ...form, title: event.target.value })}
               onBlur={() => commitText("title")}
               onKeyDown={(event) => {
@@ -543,11 +579,11 @@ function AutomationSettings(props: {
               }}
             />
           </Field>
-          <Field label="Status">
+          <Field label={gt("Status")}>
             <input
               className={FIELD_CLASS}
               value={form.taskStatus}
-              aria-label="Created task status"
+              aria-label={gt("Created task status")}
               onChange={(event) => setForm({ ...form, taskStatus: event.target.value })}
               onBlur={() => commitText("taskStatus")}
               onKeyDown={(event) => {
@@ -575,8 +611,17 @@ function AutomationSettings(props: {
       </div>
       <ConfirmDeleteDialog
         open={deleting}
-        title="Delete automation"
-        description={`"${automation?.name ?? "This automation"}" stops creating tasks. The tasks it created stay in the table. This cannot be undone.`}
+        title={gt("Delete automation")}
+        description={
+          automation
+            ? gt(
+                '"{name}" stops creating tasks. The tasks it created stay in the table. This cannot be undone.',
+                { name: automation.name },
+              )
+            : gt(
+                "This automation stops creating tasks. The tasks it created stay in the table. This cannot be undone.",
+              )
+        }
         onOpenChange={setDeleting}
         onConfirm={() => {
           if (!automation) return;
@@ -594,6 +639,7 @@ export function AutomationWindow(props: {
   readonly zIndex: number;
   readonly defaultProjectId: string | null;
 }) {
+  const gt = useGT();
   const { automations, windows } = usePlanner();
   const snapshot = useAutomations(automations);
   const { automationId } = props.window;
@@ -628,10 +674,10 @@ export function AutomationWindow(props: {
       header={
         <>
           <span className="min-w-0 flex-1 pt-1 text-lg font-semibold text-muted-foreground">
-            Automation
+            {gt("Automation")}
           </span>
           <IconAction
-            label="Close"
+            label={gt("Close")}
             variant="outline"
             size="icon-sm"
             onClick={() => windows.close(props.window.id)}
@@ -642,7 +688,7 @@ export function AutomationWindow(props: {
       }
     >
       <p className="py-8 text-center text-sm text-muted-foreground">
-        {snapshot.status === "loading" ? "Loading…" : "This automation was deleted."}
+        {snapshot.status === "loading" ? gt("Loading…") : gt("This automation was deleted.")}
       </p>
     </FloatingWindow>
   );

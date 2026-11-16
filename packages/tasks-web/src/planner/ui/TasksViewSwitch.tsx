@@ -1,3 +1,4 @@
+import { msg, useGT, useMessages } from "gt-react";
 import { BotIcon, UserIcon } from "lucide-react";
 
 import {
@@ -12,8 +13,12 @@ import {
 import type { TasksViewMode } from "../data/preferences.ts";
 
 const VIEWS = [
-  { value: "planner", label: "Me", Icon: UserIcon },
-  { value: "table", label: "Workers", Icon: BotIcon },
+  {
+    value: "planner",
+    label: msg("Me", { $context: "Tasks page view: the person's own tasks" }),
+    Icon: UserIcon,
+  },
+  { value: "table", label: msg("Workers"), Icon: BotIcon },
 ] as const;
 
 /**
@@ -25,9 +30,11 @@ export function TasksViewSwitch(props: {
   readonly value: TasksViewMode;
   readonly onChange: (value: TasksViewMode) => void;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   return (
     <ToggleGroup
-      aria-label="Whose tasks"
+      aria-label={gt("Whose tasks")}
       variant="segmented-outline"
       value={[props.value]}
       onValueChange={(value) => {
@@ -41,14 +48,14 @@ export function TasksViewSwitch(props: {
             render={
               <ToggleGroupItem
                 value={value}
-                aria-label={label}
+                aria-label={m(label)}
                 data-track={`tasks.side.${value}`}
               />
             }
           >
             <Icon />
           </TooltipTrigger>
-          <TooltipPopup>{label}</TooltipPopup>
+          <TooltipPopup>{m(label)}</TooltipPopup>
         </Tooltip>
       ))}
     </ToggleGroup>

@@ -12,6 +12,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { getProviderUpdateRunOutcome } from "../ProviderUpdateLaunchNotification.logic";
 import { useProviderUpdates } from "../ProviderUpdatesAction";
 import { SERVER_UP_TO_DATE_NOTE, useIsServerStillUpToDate } from "~/serverUpToDate/serverUpToDate";
+import { useGT, useMessages } from "gt-react";
 import {
   canUpdateServer,
   type ServerUpdateOutcome,
@@ -60,6 +61,8 @@ export function useUpdateEverything(
   localUpdateVersion: string | null,
   channelSwitch?: ChannelSwitchRelease,
 ) {
+  const gt = useGT();
+  const m = useMessages();
   const targetVersion = localUpdateVersion ?? APP_VERSION;
   const { environments } = useEnvironments();
   const environmentIds = environmentIdsKey(environments.map(({ environmentId }) => environmentId));
@@ -92,7 +95,7 @@ export function useUpdateEverything(
       .map((server) => ({
         environmentId: server.environmentId,
         label: server.serverLabel,
-        reason: stillUpToDate(server) ? SERVER_UP_TO_DATE_NOTE : "Update it on that machine",
+        reason: stillUpToDate(server) ? m(SERVER_UP_TO_DATE_NOTE) : gt("Update it on that machine"),
       })),
   ];
   // Track-only hosts save a setting and restart nothing, so they are neither listed nor counted.

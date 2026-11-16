@@ -1,3 +1,4 @@
+import { msg, useGT, useLocale, useMessages } from "gt-react";
 import { useMemo, useState } from "react";
 import {
   CircleCheckIcon,
@@ -26,10 +27,14 @@ const STATUS_ITEMS: ReadonlyArray<{
   readonly label: string;
   readonly icon: React.ReactNode;
 }> = [
-  { status: "open", label: "Not done", icon: <CircleIcon /> },
-  { status: "done", label: "Done", icon: <CircleCheckIcon /> },
+  { status: "open", label: msg("Not done"), icon: <CircleIcon /> },
+  {
+    status: "done",
+    label: msg("Done", { $context: "status of a planned day entry" }),
+    icon: <CircleCheckIcon />,
+  },
   // Wande's "Archive" for an instance: planned, not done, not carried over.
-  { status: "skipped", label: "Skipped", icon: <CircleSlashIcon /> },
+  { status: "skipped", label: msg("Skipped"), icon: <CircleSlashIcon /> },
 ];
 
 export interface EntryMenuTarget {
@@ -45,6 +50,9 @@ export function EntryMenuHost(props: {
   readonly target: EntryMenuTarget | null;
   readonly onClose: () => void;
 }) {
+  const gt = useGT();
+  const m = useMessages();
+  const locale = useLocale();
   const { store } = usePlanner();
   const [timing, setTiming] = useState<EntryMenuTarget | null>(null);
   const entry = props.target?.entry ?? null;
@@ -58,7 +66,7 @@ export function EntryMenuHost(props: {
         : null,
     [timing],
   );
-  const label = entry ? entryTimingLabel(entry) : "";
+  const label = entry ? entryTimingLabel(entry, locale, gt) : "";
   return (
     <>
       <PointMenu point={props.target?.point ?? null} onClose={props.onClose}>
@@ -70,8 +78,12 @@ export function EntryMenuHost(props: {
                 onClick={() => void store.updateEntry({ id: entry.id, status: item.status })}
               >
                 {item.icon}
-                {item.label}
-                {entry.status === item.status ? <MenuShortcut>Current</MenuShortcut> : null}
+                {m(item.label)}
+                {entry.status === item.status ? (
+                  <MenuShortcut>
+                    {gt("Current", { $context: "marks the entry's current status" })}
+                  </MenuShortcut>
+                ) : null}
               </MenuItem>
             ))}
             <MenuSeparator />
@@ -85,7 +97,7 @@ export function EntryMenuHost(props: {
               }
             >
               <MoveRightIcon />
-              Move to next day
+              {gt("Move to next day")}
             </MenuItem>
             <MenuItem
               onClick={() =>
@@ -97,16 +109,16 @@ export function EntryMenuHost(props: {
               }
             >
               <CopyIcon />
-              Copy to next day
+              {gt("Copy to next day")}
             </MenuItem>
             <MenuItem onClick={() => setTiming(props.target)}>
               <ClockIcon />
-              Set time & duration
+              {gt("Set time & duration")}
               {label ? <MenuShortcut>{label}</MenuShortcut> : null}
             </MenuItem>
             <MenuSeparator />
             <MenuItem variant="destructive" onClick={() => void store.deleteEntries([entry.id])}>
-              Delete
+              {gt("Delete")}
             </MenuItem>
           </>
         ) : null}

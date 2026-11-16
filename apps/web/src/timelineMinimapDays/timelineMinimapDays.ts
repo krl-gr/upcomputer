@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { useEffect, useSyncExternalStore } from "react";
 
 import {
@@ -32,6 +33,7 @@ const dayWithYearFormatter = new Intl.DateTimeFormat("en-US", {
 export function groupTimelineMinimapItemsByDay(
   items: ReadonlyArray<TimelineMinimapItem>,
   rows: ReadonlyArray<MessagesTimelineRow>,
+  gt: ReturnType<typeof useGT>,
   now: Date = new Date(),
 ): TimelineMinimapTick[] {
   const days: Array<{ key: string; date: Date | null; items: TimelineMinimapItem[] }> = [];
@@ -50,13 +52,16 @@ export function groupTimelineMinimapItemsByDay(
       ? (day.date.getFullYear() === now.getFullYear() ? dayFormatter : dayWithYearFormatter).format(
           day.date,
         )
-      : "Earlier";
+      : gt("Earlier", { $context: "minimap tick for messages without a date" });
     const count = day.items.length;
     return {
       id: first.id,
       rowIndex: first.rowIndex,
       lastRowIndex: next ? next.rowIndex - 1 : rows.length - 1,
-      userText: `${label} · ${count} message${count === 1 ? "" : "s"}`,
+      userText: gt("{day} · {count, plural, one {# message} other {# messages}}", {
+        day: label,
+        count,
+      }),
       assistantText: first.userText,
     };
   });
@@ -108,11 +113,12 @@ export function useTimelineMinimapTicks(
   rows: ReadonlyArray<MessagesTimelineRow>,
   threadKey: string,
 ): ReadonlyArray<TimelineMinimapTick> {
+  const gt = useGT();
   const groupsByDay = useSyncExternalStore(
     subscribe,
     () => byDay.has(threadKey),
     () => false,
   );
   const items = deriveTimelineMinimapItems(rows);
-  return groupsByDay ? groupTimelineMinimapItemsByDay(items, rows) : items;
+  return groupsByDay ? groupTimelineMinimapItemsByDay(items, rows, gt) : items;
 }

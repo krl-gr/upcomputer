@@ -1,3 +1,4 @@
+import { gtFallback } from "gt-react";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -25,7 +26,7 @@ describe("server up-to-date memory", () => {
 
   it("claims the newest build only across tracks", () => {
     const title = (targetVersion: string) =>
-      describeServerUpToDate("MacBook", { serverVersion: stable, targetVersion }).title;
+      describeServerUpToDate("MacBook", { serverVersion: stable, targetVersion }, gtFallback).title;
     expect(title(nightly)).toBe("MacBook is up to date");
     expect(title("0.0.38")).toBe("Nothing to install on MacBook yet");
   });

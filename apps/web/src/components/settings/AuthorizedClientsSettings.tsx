@@ -2,6 +2,7 @@ import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/aut
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import { PlugIcon, PlusIcon, QrCodeIcon } from "lucide-react";
 import { type ReactNode, memo, useId, useState } from "react";
+import { useGT } from "gt-react";
 import {
   AuthAccessWriteScope,
   AuthDiagnosticsReadScope,
@@ -574,6 +575,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
   onRevokeOtherClients,
   delegatableScopes,
 }: AuthorizedClientsHeaderActionProps) {
+  const gt = useGT();
   const pairingDenial = managedCapabilityDenial(useManagedPolicy(environmentId), "remoteClients");
   const createPairingCredential = useAtomCommand(authEnvironment.createPairingCredential, {
     reportFailure: false,
@@ -612,7 +614,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Couldn't create a pairing link",
+          title: gt("Couldn't create a pairing link"),
           description: message,
         }),
       );

@@ -1,6 +1,7 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+import { useGT } from "gt-react";
 import { SquarePenIcon } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
@@ -35,10 +36,11 @@ export const useSidebarPinnedOpen = () =>
  * the Threads header, so threads drag between the two to pin and unpin.
  */
 export function SidebarPinnedSectionHeader() {
+  const gt = useGT();
   const [open, setOpen] = useSidebarPinnedOpen();
   return (
     <SidebarSectionHeader
-      title="Pinned"
+      title={gt("Pinned", { $context: "sidebar section of pinned threads" })}
       open={open}
       onToggle={() => setOpen(!open)}
       testId="sidebar-pinned-toggle"
@@ -113,22 +115,23 @@ export function SidebarThreadsSectionHeader(
   },
 ) {
   const { newThreadDisabled, newThreadShortcutLabel, placement } = props;
+  const gt = useGT();
   const [open, setOpen] = useSidebarThreadsOpen();
   const newThread = useNewThreadWithoutProject(props);
   const newThreadTooltip = newThreadShortcutLabel
-    ? `New thread (${newThreadShortcutLabel})`
-    : "New thread";
+    ? gt("New thread ({shortcut})", { shortcut: newThreadShortcutLabel })
+    : gt("New thread");
   const newThreadShown = !(newThreadDisabled && !newThread.available);
   const header = (
     <SidebarSectionHeader
-      title="Threads"
+      title={gt("Threads")}
       open={open}
       onToggle={() => setOpen(!open)}
       testId="sidebar-threads-toggle"
       action={
         newThreadShown ? (
           <SidebarSectionHeaderAction
-            label="New thread"
+            label={gt("New thread")}
             track="sidebar.new_thread"
             tooltip={newThreadTooltip}
             onClick={newThread.start}
@@ -176,6 +179,7 @@ export function SidebarThreadListEmpty(
 function NewThreadRow(
   props: NewThreadProps & { readonly scopedProjectGroups: ReadonlyArray<SidebarProjectSnapshot> },
 ) {
+  const gt = useGT();
   const { isMobile, setOpenMobile } = useSidebar();
   const handleNewThread = useNewThreadHandler();
   const isScratch = useIsScratchProjectGroup();
@@ -187,7 +191,11 @@ function NewThreadRow(
     <div className={SIDEBAR_MENU_SCOPE}>
       <SidebarMenu>
         <SidebarEmptyRow
-          label={named ? `New thread in ${project.displayName}` : "New thread"}
+          label={
+            named
+              ? gt("New thread in {project}", { project: project.displayName })
+              : gt("New thread")
+          }
           onClick={() => {
             if (!project) return withoutProject.start();
             if (isMobile) setOpenMobile(false);

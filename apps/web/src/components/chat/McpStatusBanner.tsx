@@ -1,23 +1,27 @@
 import type { OrchestrationV2ProviderMcpStatus } from "@t3tools/contracts";
+import type { useGT } from "gt-react";
 import { PlugIcon, UnplugIcon } from "lucide-react";
 
 import { Button } from "../ui/button";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import { mcpStatusNotices } from "./McpStatusBanner.logic";
 
-export function mcpStatusBannerItems(input: {
-  readonly threadKey: string;
-  readonly status: OrchestrationV2ProviderMcpStatus | null;
-  readonly productName: string;
-  readonly canReconnect: boolean;
-  /** Restarting the session would kill the running turn, so Reconnect waits for it. */
-  readonly turnRunning: boolean;
-  readonly reconnecting: boolean;
-  readonly onReconnect: () => void;
-  readonly userNoticeDismissed: (key: string) => boolean;
-  readonly onDismissUserNotice: (key: string) => void;
-}): ComposerBannerStackItem[] {
-  const notices = mcpStatusNotices(input.status, input.productName);
+export function mcpStatusBannerItems(
+  input: {
+    readonly threadKey: string;
+    readonly status: OrchestrationV2ProviderMcpStatus | null;
+    readonly productName: string;
+    readonly canReconnect: boolean;
+    /** Restarting the session would kill the running turn, so Reconnect waits for it. */
+    readonly turnRunning: boolean;
+    readonly reconnecting: boolean;
+    readonly onReconnect: () => void;
+    readonly userNoticeDismissed: (key: string) => boolean;
+    readonly onDismissUserNotice: (key: string) => void;
+  },
+  gt: ReturnType<typeof useGT>,
+): ComposerBannerStackItem[] {
+  const notices = mcpStatusNotices(input.status, input.productName, gt);
   const items: ComposerBannerStackItem[] = [];
   if (notices.t3 !== null) {
     items.push({
@@ -34,12 +38,12 @@ export function mcpStatusBannerItems(input: {
           disabled={input.reconnecting || input.turnRunning}
           title={
             input.turnRunning
-              ? "Available when the agent finishes, or press Stop to reconnect now."
+              ? gt("Available when the agent finishes, or press Stop to reconnect now.")
               : undefined
           }
           onClick={input.onReconnect}
         >
-          {input.reconnecting ? "Reconnecting..." : "Reconnect"}
+          {input.reconnecting ? gt("Reconnecting...") : gt("Reconnect")}
         </Button>
       ) : null,
     });
@@ -52,7 +56,7 @@ export function mcpStatusBannerItems(input: {
       icon: <PlugIcon />,
       title: notices.userServers.title,
       description: notices.userServers.description,
-      dismissLabel: "Dismiss MCP server notice",
+      dismissLabel: gt("Dismiss MCP server notice"),
       onDismiss: () => input.onDismissUserNotice(userNoticeKey),
     });
   }

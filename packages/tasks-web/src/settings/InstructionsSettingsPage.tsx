@@ -13,6 +13,7 @@ import {
 } from "@t3tools/contracts";
 import { useBlocker } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { msg, T, useGT, useMessages, Var } from "gt-react";
 
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { toastManager } from "../../../../apps/web/src/components/ui/toast.tsx";
@@ -40,13 +41,29 @@ import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 
 // "All chats" edits the core `customInstructions` setting, which every agent
 // harness adds to its prompt. The other tabs edit the Tasks prompt settings.
-const ALL_CHATS_TAB = { id: "allChats", label: "All chats" } as const;
+const ALL_CHATS_TAB = { id: "allChats", label: msg("All chats") } as const;
 
 const PROMPT_TABS = [
-  { id: "taskCreation", label: "Task creation" },
-  { id: "agentCreation", label: "Worker creation" },
-  { id: "automationCreation", label: "Automation creation" },
-  { id: "taskExecution", label: "Task execution" },
+  {
+    id: "taskCreation",
+    label: msg("Task creation"),
+    globalNote: msg("Global task creation instructions, which come first"),
+  },
+  {
+    id: "agentCreation",
+    label: msg("Worker creation"),
+    globalNote: msg("Global worker creation instructions, which come first"),
+  },
+  {
+    id: "automationCreation",
+    label: msg("Automation creation"),
+    globalNote: msg("Global automation creation instructions, which come first"),
+  },
+  {
+    id: "taskExecution",
+    label: msg("Task execution"),
+    globalNote: msg("Global task execution instructions, which come first"),
+  },
 ] as const;
 
 const TABS = [ALL_CHATS_TAB, ...PROMPT_TABS] as const;
@@ -61,16 +78,23 @@ function sameSettings(left: TaskPromptSettings, right: TaskPromptSettings): bool
   return PROMPT_TABS.every(({ id }) => left[id] === right[id]);
 }
 
+type GT = ReturnType<typeof useGT>;
+
 /** Refused edits stay in the editor; Cancel shows the newer text, saving again replaces it. */
-function conflictMessage(conflicts: ReadonlyArray<InstructionsField>): string {
-  const labels = conflicts.map((field) => TABS.find(({ id }) => id === field)?.label ?? field);
-  return `${labels.join(", ")} changed elsewhere after this page loaded it, so your edit was not saved. Cancel to load the newer text, or save again to replace it.`;
+function conflictMessage(
+  conflicts: ReadonlyArray<InstructionsField>,
+  gt: GT,
+  m: ReturnType<typeof useMessages>,
+): string {
+  const labels = conflicts.map((field) => m(TABS.find(({ id }) => id === field)?.label) ?? field);
+  return gt(
+    "{fields} changed elsewhere after this page loaded it, so your edit was not saved. Cancel to load the newer text, or save again to replace it.",
+    { fields: labels.join(", ") },
+  );
 }
 
-function errorMessage(cause: unknown): string {
-  return cause instanceof Error && cause.message.trim()
-    ? cause.message
-    : "Instructions could not be loaded.";
+function errorMessage(cause: unknown, fallback: string): string {
+  return cause instanceof Error && cause.message.trim() ? cause.message : fallback;
 }
 
 /** Where the editor reads and saves: an environment, and the project's checkout on it. */
@@ -94,6 +118,7 @@ function sameTarget(left: InstructionsTarget, right: InstructionsTarget): boolea
  * environment (the primary one when it is selected), like Keybindings.
  */
 function InstructionsSettingsPage() {
+  const gt = useGT();
   const { scope, search, environment } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
   const environmentLabel = environment?.label ?? null;
@@ -142,10 +167,15 @@ function InstructionsSettingsPage() {
         >
           <p className="min-w-0 flex-1">
             {target.environmentLabel === null
-              ? "No environment for this scope is connected now."
-              : `This scope now reads from ${target.environmentLabel}.`}{" "}
-            Your unsaved changes still save to{" "}
-            {bound.target.environmentLabel ?? "the environment you were editing"}.
+              ? gt("No environment for this scope is connected now.")
+              : gt("This scope now reads from {environment}.", {
+                  environment: target.environmentLabel,
+                })}{" "}
+            {bound.target.environmentLabel === null
+              ? gt("Your unsaved changes still save to the environment you were editing.")
+              : gt("Your unsaved changes still save to {environment}.", {
+                  environment: bound.target.environmentLabel,
+                })}
           </p>
           <Button
             type="button"
@@ -156,7 +186,7 @@ function InstructionsSettingsPage() {
               setBound({ searchKey, target });
             }}
           >
-            Discard and switch
+            {gt("Discard and switch")}
           </Button>
         </div>
       ) : null}
@@ -177,7 +207,7 @@ function InstructionsSettingsPage() {
   );
 }
 
-const DISCARD_MESSAGE = "Discard your unsaved instruction changes?";
+const DISCARD_MESSAGE = msg("Discard your unsaved instruction changes?");
 
 function InstructionsEditor({
   environmentId,
@@ -187,6 +217,8 @@ function InstructionsEditor({
 }: Omit<InstructionsTarget, "environmentLabel"> & {
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const serverConfigs = useServerConfigs();
   useTasksWebAccessRevision();
   const api =
@@ -228,6 +260,10 @@ function InstructionsEditor({
   const tab = tabs.find(({ id }) => id === activeTab) ?? tabs[0];
   const editingAllChats = tab.id === ALL_CHATS_TAB.id;
   const promptDefaults = promptDefaultsFor(project);
+  const notConnectedText = gt(
+    "The computer with your tasks isn't connected. Reconnect it to edit instructions.",
+  );
+  const loadFailedText = gt("Instructions could not be loaded.");
 
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
@@ -238,7 +274,7 @@ function InstructionsEditor({
     setError(undefined);
     if (!api) {
       setLoading(false);
-      setError("The computer with your tasks isn't connected. Reconnect it to edit instructions.");
+      setError(notConnectedText);
       return () => {
         cancelled = true;
       };
@@ -256,14 +292,14 @@ function InstructionsEditor({
       },
       (cause) => {
         if (cancelled) return;
-        setError(errorMessage(cause));
+        setError(errorMessage(cause, loadFailedText));
         setLoading(false);
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [api, projectId, serverConfigs]);
+  }, [api, loadFailedText, notConnectedText, projectId, serverConfigs]);
 
   useEffect(() => {
     // Hand back to the saved value once settings catch up with a save.
@@ -278,7 +314,7 @@ function InstructionsEditor({
     disabled: !dirty,
     enableBeforeUnload: dirty,
     shouldBlockFn: async () =>
-      !(await ensureLocalApi().dialogs.confirm(DISCARD_MESSAGE, { variant: "destructive" })),
+      !(await ensureLocalApi().dialogs.confirm(m(DISCARD_MESSAGE), { variant: "destructive" })),
   });
 
   const editorDisabled = saving || (editingAllChats ? environmentId === null : loading || !api);
@@ -310,11 +346,11 @@ function InstructionsEditor({
             base: allChats,
           });
         if (conflicts.length > 0) {
-          const message = conflictMessage(conflicts);
+          const message = conflictMessage(conflicts, gt, m);
           setError(message);
           toastManager.add({
             type: "warning",
-            title: "Instructions changed elsewhere",
+            title: gt("Instructions changed elsewhere"),
             description: message,
           });
           return;
@@ -328,13 +364,13 @@ function InstructionsEditor({
         const stored = result.value.customInstructions;
         setCustomInstructionsDraft({ text: stored, base: stored });
       }
-      toastManager.add({ type: "success", title: "Instructions saved" });
+      toastManager.add({ type: "success", title: gt("Instructions saved") });
     } catch (cause) {
-      const message = errorMessage(cause);
+      const message = errorMessage(cause, loadFailedText);
       setError(message);
       toastManager.add({
         type: "error",
-        title: "Failed to save instructions",
+        title: gt("Failed to save instructions"),
         description: message,
       });
     } finally {
@@ -349,6 +385,9 @@ function InstructionsEditor({
     dirty,
     draft,
     environmentId,
+    gt,
+    loadFailedText,
+    m,
     projectId,
     promptsDirty,
     saved,
@@ -373,24 +412,27 @@ function InstructionsEditor({
     <div className="flex min-w-0 flex-1 flex-col gap-2.5">
       <p className="max-w-2xl px-3 text-xs leading-normal text-muted-foreground/80 sm:px-4">
         {project === null ? (
-          <>
+          <T>
             <span className="text-foreground/80">
               Shared instructions for all agents across every project.
             </span>{" "}
             &ldquo;All chats&rdquo; applies to every agent in every chat and task run. The other
             tabs apply when agents create tasks, workers, or automations, and when they run a task.
             They&apos;re added after an agent&apos;s own instructions.
-          </>
+          </T>
         ) : (
-          <>
+          <T>
             Added after the global instructions, only for tasks in{" "}
-            <span className="text-foreground/80">{project.title}</span>.
-          </>
+            <span className="text-foreground/80">
+              <Var>{project.title}</Var>
+            </span>
+            .
+          </T>
         )}
       </p>
       <div
         role="tablist"
-        aria-label="Instruction type"
+        aria-label={gt("Instruction type")}
         className="scrollbar-none flex min-w-0 overflow-x-auto"
       >
         {tabs.map((promptTab) => (
@@ -406,7 +448,7 @@ function InstructionsEditor({
             )}
             onClick={() => setActiveTab(promptTab.id)}
           >
-            {promptTab.label}
+            {m(promptTab.label)}
           </button>
         ))}
       </div>
@@ -414,11 +456,9 @@ function InstructionsEditor({
       {/* The actions only show while the editor (or one of its buttons) has focus,
           or while there are unsaved changes. */}
       <div className="group/editor flex min-w-0 flex-1 flex-col gap-2.5">
-        {project !== null && !editingAllChats && globalPrompts?.[tab.id].trim() ? (
+        {project !== null && "globalNote" in tab && globalPrompts?.[tab.id].trim() ? (
           <details className="px-3 text-xs text-muted-foreground sm:px-4">
-            <summary className="cursor-pointer select-none">
-              Global {tab.label.toLowerCase()} instructions, which come first
-            </summary>
+            <summary className="cursor-pointer select-none">{m(tab.globalNote)}</summary>
             <p className="mt-2 whitespace-pre-wrap rounded-lg border border-border/60 px-3 py-2 leading-normal">
               {globalPrompts[tab.id]}
             </p>
@@ -429,19 +469,21 @@ function InstructionsEditor({
             key={`${tab.id}:${resets}`}
             value={editingAllChats ? customInstructions : draft[tab.id]}
             disabled={editorDisabled}
-            ariaLabel={`${tab.label} instructions`}
+            ariaLabel={gt("{tab} instructions", { tab: m(tab.label) })}
             className={cn(
               "min-h-[50dvh] px-3 py-3 text-sm text-foreground sm:min-h-[26rem] sm:px-4",
               editorDisabled && "opacity-60",
             )}
             placeholder={
               editingAllChats
-                ? "Instructions every agent follows in every chat, e.g. answer in Russian, never commit without asking."
+                ? gt(
+                    "Instructions every agent follows in every chat, e.g. answer in Russian, never commit without asking.",
+                  )
                 : loading
-                  ? "Loading…"
+                  ? gt("Loading…")
                   : project === null
-                    ? "Add guidance…"
-                    : `Add guidance for ${project.title}…`
+                    ? gt("Add guidance…")
+                    : gt("Add guidance for {project}…", { project: project.title })
             }
             onChange={(value) => {
               if (editingAllChats) {
@@ -461,8 +503,10 @@ function InstructionsEditor({
         </SettingsGroup>
         {editingAllChats && allChatsTooLong ? (
           <p className="px-3 text-xs text-destructive sm:px-4">
-            All chats instructions can be at most {CUSTOM_INSTRUCTIONS_MAX_CHARS.toLocaleString()}{" "}
-            characters; this text has {customInstructions.length.toLocaleString()}.
+            {gt("All chats instructions can be at most {max} characters; this text has {count}.", {
+              max: CUSTOM_INSTRUCTIONS_MAX_CHARS.toLocaleString(),
+              count: customInstructions.length.toLocaleString(),
+            })}
           </p>
         ) : null}
         {error ? <p className="px-3 text-xs text-destructive sm:px-4">{error}</p> : null}
@@ -506,7 +550,7 @@ function InstructionsEditor({
               }));
             }}
           >
-            {project === null ? "Restore default" : "Clear"}
+            {project === null ? gt("Restore default") : gt("Clear")}
           </Button>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <Button
@@ -519,14 +563,14 @@ function InstructionsEditor({
                 setResets((count) => count + 1);
               }}
             >
-              Cancel
+              {gt("Cancel")}
             </Button>
             <Button
               type="button"
               disabled={!dirty || saving || (promptsDirty && !api) || allChatsTooLong}
               onClick={() => void save()}
             >
-              {saving ? "Saving…" : "Save changes"}
+              {saving ? gt("Saving…") : gt("Save changes")}
             </Button>
           </div>
         </div>

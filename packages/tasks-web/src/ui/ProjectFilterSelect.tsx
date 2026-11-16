@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { gtFallback, useGT } from "gt-react";
 
 import {
   Select,
@@ -25,16 +26,26 @@ interface ProjectOption {
 /**
  * Options with the sidebar Projects section's icons: All projects, No project
  * (the primary Scratch project), then the other projects in the sidebar's order.
+ * Components pass their `useGT()`; without it the first two stay English.
  */
-export function projectFilterOptions(input: {
-  readonly projectGroups: ReadonlyArray<SidebarProjectSnapshot>;
-  readonly scratch: SidebarProjectSnapshot | null;
-}): ProjectOption[] {
+export function projectFilterOptions(
+  input: {
+    readonly projectGroups: ReadonlyArray<SidebarProjectSnapshot>;
+    readonly scratch: SidebarProjectSnapshot | null;
+  },
+  gt: ReturnType<typeof useGT> = gtFallback,
+): ProjectOption[] {
   const { scratch } = input;
   return [
-    { value: ALL_FILTER, label: "All projects", icon: <AllProjectsIcon /> },
+    { value: ALL_FILTER, label: gt("All projects"), icon: <AllProjectsIcon /> },
     ...(scratch
-      ? [{ value: scratch.projectKey, label: "No project", icon: <NoProjectIcon /> }]
+      ? [
+          {
+            value: scratch.projectKey,
+            label: gt("No project"),
+            icon: <NoProjectIcon />,
+          },
+        ]
       : []),
     ...input.projectGroups
       .filter((project) => project !== scratch)
@@ -62,8 +73,9 @@ export function ProjectFilterSelect(props: {
   readonly value: string | null;
   readonly onChange: (projectKey: string | null) => void;
 }) {
+  const gt = useGT();
   const scratch = useSidebarScratchProject(props.projectGroups);
-  const options = projectFilterOptions({ projectGroups: props.projectGroups, scratch });
+  const options = projectFilterOptions({ projectGroups: props.projectGroups, scratch }, gt);
   const value = options.some((option) => option.value === props.value)
     ? (props.value ?? ALL_FILTER)
     : ALL_FILTER;
@@ -76,7 +88,11 @@ export function ProjectFilterSelect(props: {
       }}
     >
       {/* Shrinks toward its icon when the header runs short, so it stays in reach. */}
-      <SelectTrigger className="w-44 min-w-16 shrink" size="sm" aria-label="Filter by project">
+      <SelectTrigger
+        className="w-44 min-w-16 shrink"
+        size="sm"
+        aria-label={gt("Filter by project")}
+      >
         <SelectValue>
           <OptionLabel option={selected} />
         </SelectValue>

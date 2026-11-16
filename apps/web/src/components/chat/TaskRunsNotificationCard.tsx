@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, OrchestrationV2NotificationSource } from "@t3tools/contracts";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
+import { useGT } from "gt-react";
 import { ChevronRightIcon, CircleCheckIcon } from "lucide-react";
 
 import { formatShortTimestamp } from "../../timestampFormat";
@@ -17,6 +18,7 @@ export function TaskRunsNotificationCard(props: {
   readonly createdAt: string;
   readonly timestampFormat: TimestampFormat;
 }) {
+  const gt = useGT();
   const navigate = useNavigate();
   const count = props.tasks.length;
   return (
@@ -27,7 +29,7 @@ export function TaskRunsNotificationCard(props: {
       <div className="flex min-w-0 items-center gap-2.5">
         <CircleCheckIcon aria-hidden className="size-3.5 shrink-0 text-success" />
         <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-          {count === 1 ? "1 task done" : `${count} tasks done`}
+          {gt("{count, plural, one {# task done} other {# tasks done}}", { count })}
         </span>
         <span className="shrink-0 font-mono text-3xs text-muted-foreground/80">
           {formatShortTimestamp(props.createdAt, props.timestampFormat)}
@@ -38,7 +40,7 @@ export function TaskRunsNotificationCard(props: {
           <li key={task.id}>
             <button
               type="button"
-              aria-label={`Open task ${task.title}`}
+              aria-label={gt("Open task {title}", { title: task.title })}
               onClick={() =>
                 void navigate({
                   to: "/tasks",

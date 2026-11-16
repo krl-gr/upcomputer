@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { ArrowLeftIcon, GripVerticalIcon } from "lucide-react";
+import { msg, useGT, useMessages } from "gt-react";
 import {
   TASK_HISTORY_EVENT_KINDS,
   TaskId,
@@ -103,9 +104,13 @@ interface TaskFormState {
 }
 
 /** Who does a task, in its details: changing it moves the task between Agents and Me. */
-const AUDIENCE_LABELS: Record<TaskAudience, string> = { agent: "Workers", person: "Me" };
-const TASKS_OFFLINE_TEXT =
-  "The environment with Tasks is not reachable right now. Tasks show when it connects.";
+const AUDIENCE_LABELS: Record<TaskAudience, string> = {
+  agent: msg("Workers"),
+  person: msg("Me", { $context: "the person themselves, as who does a task" }),
+};
+const TASKS_OFFLINE_TEXT = msg(
+  "The environment with Tasks is not reachable right now. Tasks show when it connects.",
+);
 const OFFLINE_NOTE_CLASS =
   "rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground";
 
@@ -113,15 +118,17 @@ function OfflineComputerNote(props: {
   readonly environmentId: EnvironmentId;
   readonly showsRows: boolean;
 }) {
+  const gt = useGT();
   const name = useComputerName(props.environmentId);
-  const computer = name ?? "A computer";
   return (
     <div className={OFFLINE_NOTE_CLASS}>
       {props.showsRows
-        ? `${computer} is not connected. Its tasks may be out of date.`
+        ? name
+          ? gt("{name} is not connected. Its tasks may be out of date.", { name })
+          : gt("A computer is not connected. Its tasks may be out of date.")
         : name
-          ? `Tasks from ${name} will show when it reconnects.`
-          : "Tasks from a computer that is not connected will show when it reconnects."}
+          ? gt("Tasks from {name} will show when it reconnects.", { name })
+          : gt("Tasks from a computer that is not connected will show when it reconnects.")}
     </div>
   );
 }
@@ -207,6 +214,7 @@ function DetailDescriptionEditor(props: {
   readonly disabled: boolean;
   readonly onSave: (description: string) => void;
 }) {
+  const gt = useGT();
   const [draft, setDraft] = useState<{ readonly base: string; readonly text: string }>();
   const text = draft?.base === props.value ? draft.text : undefined;
   const textRef = useRef(text);
@@ -217,8 +225,8 @@ function DetailDescriptionEditor(props: {
     <LazyMarkdownEditor
       value={text ?? props.value}
       disabled={props.disabled}
-      placeholder="Description…"
-      ariaLabel="Task description"
+      placeholder={gt("Description…")}
+      ariaLabel={gt("Task description")}
       className={DESCRIPTION_EDITOR_CLASS}
       onChange={(next) => {
         textRef.current = next;
@@ -248,6 +256,9 @@ function compareStatuses(left: string, right: string): number {
 
 export function TaskReorderHandle(props: {
   readonly task: ScopedTask;
+  /** Translated by the caller, which has `useGT()`. */
+  readonly ariaLabel: string;
+  readonly title: string;
   readonly enabled: boolean;
   readonly onDragStart: () => void;
   readonly onDragEnd: () => void;
@@ -259,8 +270,8 @@ export function TaskReorderHandle(props: {
       draggable={props.enabled}
       disabled={!props.enabled}
       className="cursor-grab rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"
-      aria-label={`Reorder ${props.task.title}`}
-      title="Drag to reorder globally. Worker queues run from the bottom, so lower runs sooner. With filters, the task is placed between the visible neighbors; hidden tasks keep their order."
+      aria-label={props.ariaLabel}
+      title={props.title}
       onClick={(event) => event.stopPropagation()}
       onDragStart={(event) => {
         event.stopPropagation();
@@ -281,6 +292,8 @@ export function TaskReorderHandle(props: {
 }
 
 export function TasksView(props: TasksViewProps) {
+  const gt = useGT();
+  const m = useMessages();
   const [createModeOpen, setCreateModeOpen] = useState(false);
   const [detailRuns, setDetailRuns] = useState<readonly ScopedTaskAgentRun[]>([]);
   const [detailRunsStatus, setDetailRunsStatus] = useState<"idle" | "loading" | "ready" | "error">(
@@ -294,6 +307,7 @@ export function TasksView(props: TasksViewProps) {
   const [activeRuns, setActiveRuns] = useState<readonly ScopedTaskAgentRun[]>([]);
   const [moreRuns, setMoreRuns] = useState(false);
   const [fetchedTask, setFetchedTask] = useState<ScopedTask | null>(null);
+  /** English from `msg()`, shown through `useMessages()`. */
   const [detailError, setDetailError] = useState<string | null>(null);
   const [form, setForm] = useState<TaskFormState>(() => emptyForm(props.projects[0]));
   const [saving, setSaving] = useState(false);
@@ -427,7 +441,7 @@ export function TasksView(props: TasksViewProps) {
         if (result.reason === "cross-environment") {
           toastManager.add({
             type: "error",
-            title: "Tasks can only be reordered within one environment",
+            title: gt("Tasks can only be reordered within one environment"),
           });
         }
         return;
@@ -437,7 +451,7 @@ export function TasksView(props: TasksViewProps) {
       reorderInFlightRef.current = true;
       try {
         const client = props.getClient(task.environmentId);
-        if (!client) throw new Error("The computer with your tasks isn't connected.");
+        if (!client) throw new Error(gt("The computer with your tasks isn't connected."));
         await persistPlannedTaskMove({
           previousTasks: previous,
           plan: result.plan,
@@ -449,7 +463,7 @@ export function TasksView(props: TasksViewProps) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Couldn't move the task",
+            title: gt("Couldn't move the task"),
             description: errorDescription(error),
           }),
         );
@@ -457,7 +471,7 @@ export function TasksView(props: TasksViewProps) {
         reorderInFlightRef.current = false;
       }
     },
-    [filteredTasks, optimisticTasks, props],
+    [filteredTasks, gt, optimisticTasks, props],
   );
 
   const dropOn = (task: ScopedTaskListItem) => {
@@ -468,6 +482,10 @@ export function TasksView(props: TasksViewProps) {
   const reorderHandle = (task: ScopedTaskListItem) => (
     <TaskReorderHandle
       task={task}
+      ariaLabel={gt("Reorder {title}", { title: task.title })}
+      title={gt(
+        "Drag to reorder globally. Worker queues run from the bottom, so lower runs sooner. With filters, the task is placed between the visible neighbors; hidden tasks keep their order.",
+      )}
       enabled={props.canMutateEnvironment(task.environmentId)}
       onDragStart={() => setDraggedTaskKey(taskKey(task))}
       onDragEnd={() => setDraggedTaskKey(null)}
@@ -498,7 +516,7 @@ export function TasksView(props: TasksViewProps) {
     const id = selectedTaskKey.slice(separator + 1);
     const client = props.getClient(environmentId);
     if (!client || separator < 1 || !id.trim()) {
-      setDetailError("Couldn't open this task: the computer with your tasks isn't connected.");
+      setDetailError(msg("Couldn't open this task: the computer with your tasks isn't connected."));
       return;
     }
     const refresh = () => {
@@ -508,7 +526,7 @@ export function TasksView(props: TasksViewProps) {
           if (cancelled || request !== current) return;
           if (!task) {
             setFetchedTask(null);
-            setDetailError("Task not found.");
+            setDetailError(msg("Task not found."));
             return;
           }
           setDetailError(null);
@@ -523,7 +541,7 @@ export function TasksView(props: TasksViewProps) {
           });
         },
         () => {
-          if (!cancelled && request === current) setDetailError("Could not refresh task.");
+          if (!cancelled && request === current) setDetailError(msg("Could not refresh task."));
         },
       );
     };
@@ -534,7 +552,7 @@ export function TasksView(props: TasksViewProps) {
         timer = setTimeout(refresh, 150);
       },
       () => {
-        if (!cancelled) setDetailError("Task updates are temporarily unavailable.");
+        if (!cancelled) setDetailError(msg("Task updates are temporarily unavailable."));
       },
     );
     const foreground = () => {
@@ -705,7 +723,7 @@ export function TasksView(props: TasksViewProps) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Couldn't save the task",
+            title: gt("Couldn't save the task"),
             description: errorDescription(error),
           }),
         );
@@ -714,7 +732,7 @@ export function TasksView(props: TasksViewProps) {
         setUpdatingField(null);
       }
     },
-    [props],
+    [gt, props],
   );
 
   // Status and archive changes always touch updatedAt, so it keys the reload.
@@ -748,11 +766,15 @@ export function TasksView(props: TasksViewProps) {
     if (!selectedTask || history.taskKey !== taskKey(selectedTask)) return [];
     const agentIdByRun = new Map(detailRuns.map((run) => [run.id as string, run.agentId]));
     const agentNames = new Map(props.agents.map((agent) => [agent.id as string, agent.name]));
-    return taskHistoryEntries(history.events, (runId) => {
-      const agentId = agentIdByRun.get(runId);
-      return agentId === undefined ? null : (agentNames.get(agentId) ?? null);
-    });
-  }, [detailRuns, history, props.agents, selectedTask]);
+    return taskHistoryEntries(
+      history.events,
+      (runId) => {
+        const agentId = agentIdByRun.get(runId);
+        return agentId === undefined ? null : (agentNames.get(agentId) ?? null);
+      },
+      gt,
+    );
+  }, [detailRuns, gt, history, props.agents, selectedTask]);
 
   const setTaskArchived = useCallback(
     async (task: ScopedTask, archived: boolean) => {
@@ -765,14 +787,14 @@ export function TasksView(props: TasksViewProps) {
         if (fresh) setFetchedTask({ ...task, ...fresh });
         toastManager.add({
           type: "success",
-          title: archived ? "Task archived" : "Task unarchived",
+          title: archived ? gt("Task archived") : gt("Task unarchived"),
           description: task.title,
         });
       } catch (error) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: archived ? "Failed to archive task" : "Failed to unarchive task",
+            title: archived ? gt("Failed to archive task") : gt("Failed to unarchive task"),
             description: errorDescription(error),
           }),
         );
@@ -780,7 +802,7 @@ export function TasksView(props: TasksViewProps) {
         setUpdatingField(null);
       }
     },
-    [props],
+    [gt, props],
   );
 
   const save = useCallback(async () => {
@@ -792,10 +814,10 @@ export function TasksView(props: TasksViewProps) {
       toastManager.add({
         type: "error",
         title: !target
-          ? "Select a project"
+          ? gt("Select a project")
           : !title
-            ? "Task title is required"
-            : "Task status is required",
+            ? gt("Task title is required")
+            : gt("Task status is required"),
       });
       return;
     }
@@ -803,8 +825,8 @@ export function TasksView(props: TasksViewProps) {
     if (!client) {
       toastManager.add({
         type: "error",
-        title: "Couldn't create the task",
-        description: "The computer with your tasks isn't connected. Reconnect, then try again.",
+        title: gt("Couldn't create the task"),
+        description: gt("The computer with your tasks isn't connected. Reconnect, then try again."),
       });
       return;
     }
@@ -820,14 +842,14 @@ export function TasksView(props: TasksViewProps) {
         // The table is the agents' side; the person's own tasks are made in the planner.
         audience: "agent",
       });
-      toastManager.add({ type: "success", title: "Task created", description: title });
+      toastManager.add({ type: "success", title: gt("Task created"), description: title });
       setCreateModeOpen(false);
       props.onReload();
     } catch (error) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Couldn't create the task",
+          title: gt("Couldn't create the task"),
           description: errorDescription(error),
         }),
       );
@@ -835,7 +857,7 @@ export function TasksView(props: TasksViewProps) {
       createInFlightRef.current = false;
       setSaving(false);
     }
-  }, [form, props, selectedProject]);
+  }, [form, gt, props, selectedProject]);
 
   const detailOuterClass = panel ? "flex w-full min-w-0 py-3" : "flex min-h-0 w-full flex-1 py-5";
   const detailInnerClass = panel
@@ -848,17 +870,19 @@ export function TasksView(props: TasksViewProps) {
       {...(selectedTask
         ? {}
         : createModeOpen
-          ? { title: "New task" }
+          ? { title: gt("New task") }
           : { switches: props.viewSwitch })}
       action={
         selectedTask
           ? props.canMutateEnvironment(selectedTask.environmentId)
             ? {
-                ariaLabel: selectedTask.archivedAt ? "Unarchive task" : "Archive task",
+                ariaLabel: selectedTask.archivedAt ? gt("Unarchive task") : gt("Archive task"),
                 track: selectedTask.archivedAt ? "tasks.unarchive" : "tasks.archive",
                 disabled: updatingField === "archive",
                 hideIcon: true,
-                label: selectedTask.archivedAt ? "Unarchive" : "Archive",
+                label: selectedTask.archivedAt
+                  ? gt("Unarchive", { $context: "button that unarchives a task" })
+                  : gt("Archive", { $context: "button that archives a task" }),
                 onClick: () => {
                   void setTaskArchived(selectedTask, selectedTask.archivedAt === null);
                 },
@@ -866,18 +890,18 @@ export function TasksView(props: TasksViewProps) {
             : undefined
           : createModeOpen
             ? {
-                ariaLabel: "Create task",
+                ariaLabel: gt("Create task"),
                 track: "tasks.create_save",
                 disabled: mutableProjects.length === 0 || saving,
                 hideIcon: true,
-                label: "Create",
+                label: gt("Create", { $context: "button that creates a task" }),
                 onClick: () => {
                   void save();
                 },
               }
             : SHOW_MANUAL_CREATE_ACTIONS.tasks
               ? {
-                  ariaLabel: "Create task",
+                  ariaLabel: gt("Create task"),
                   track: "tasks.create",
                   disabled: mutableProjects.length === 0 || saving,
                   onClick: openCreate,
@@ -887,7 +911,7 @@ export function TasksView(props: TasksViewProps) {
       leadingAction={
         selectedTask || createModeOpen
           ? {
-              ariaLabel: selectedTask ? "Back to tasks" : "Cancel task creation",
+              ariaLabel: selectedTask ? gt("Back to tasks") : gt("Cancel task creation"),
               track: selectedTask ? "tasks.back" : "tasks.create_cancel",
               disabled: createModeOpen && saving,
               icon: <ArrowLeftIcon className="size-4" />,
@@ -909,7 +933,9 @@ export function TasksView(props: TasksViewProps) {
               {selectedTask.title}
             </span>
             {selectedTask.archivedAt ? (
-              <span className="shrink-0 text-sm text-muted-foreground">Archived</span>
+              <span className="shrink-0 text-sm text-muted-foreground">
+                {gt("Archived", { $context: "status of an archived task" })}
+              </span>
             ) : null}
           </>
         ) : createModeOpen ? undefined : (
@@ -955,7 +981,7 @@ export function TasksView(props: TasksViewProps) {
             <main className={panel ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto"}>
               <DetailSidebarSection
                 key={`${taskKey(selectedTask)}:description`}
-                title="Description"
+                title={gt("Description")}
                 defaultOpen={!hasSelectedTaskOutput}
               >
                 {props.canMutateEnvironment(selectedTask.environmentId) ? (
@@ -972,13 +998,13 @@ export function TasksView(props: TasksViewProps) {
                     {selectedTask.description}
                   </p>
                 ) : (
-                  <p className="px-3 py-2 text-sm text-muted-foreground">No description.</p>
+                  <p className="px-3 py-2 text-sm text-muted-foreground">{gt("No description.")}</p>
                 )}
               </DetailSidebarSection>
               {hasSelectedTaskOutput ? (
                 <DetailSidebarSection
                   key={`${taskKey(selectedTask)}:output`}
-                  title="Output"
+                  title={gt("Output")}
                   defaultOpen
                 >
                   <ChatMarkdown
@@ -991,10 +1017,10 @@ export function TasksView(props: TasksViewProps) {
               ) : null}
             </main>
             <DetailColumn stacked={panel}>
-              <DetailSidebarSection title="Details">
+              <DetailSidebarSection title={gt("Details")}>
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow
-                    label="Title"
+                    label={gt("Title")}
                     controlSelector={
                       props.canMutateEnvironment(selectedTask.environmentId) ? "input" : undefined
                     }
@@ -1005,7 +1031,7 @@ export function TasksView(props: TasksViewProps) {
                         className={DETAIL_INPUT_CLASS}
                         defaultValue={selectedTask.title}
                         disabled={updatingField === "title"}
-                        aria-label="Task title"
+                        aria-label={gt("Task title")}
                         onBlur={(event) => {
                           const title = event.currentTarget.value.trim();
                           if (title && title !== selectedTask.title)
@@ -1025,7 +1051,7 @@ export function TasksView(props: TasksViewProps) {
                     )}
                   </DetailSidebarRow>
                   <DetailSidebarRow
-                    label="Status"
+                    label={gt("Status")}
                     controlSelector={
                       props.canMutateEnvironment(selectedTask.environmentId) ? "button" : undefined
                     }
@@ -1042,7 +1068,7 @@ export function TasksView(props: TasksViewProps) {
                           className={DETAIL_SELECT_TRIGGER_CLASS}
                           style={{ color: "var(--foreground)" }}
                           variant="ghost"
-                          aria-label="Task status"
+                          aria-label={gt("Task status")}
                         >
                           <SelectValue>{selectedTask.status}</SelectValue>
                         </SelectTrigger>
@@ -1060,7 +1086,7 @@ export function TasksView(props: TasksViewProps) {
                   </DetailSidebarRow>
                   {selectedTask.kind === "routine" ? null : (
                     <DetailSidebarRow
-                      label="For"
+                      label={gt("For", { $context: "who a task is for" })}
                       controlSelector={
                         props.canMutateEnvironment(selectedTask.environmentId)
                           ? "button"
@@ -1076,10 +1102,14 @@ export function TasksView(props: TasksViewProps) {
                             const task = selectedTask;
                             void updateTaskInline(task, "audience", { audience }).then((moved) => {
                               if (!moved) return;
-                              toastAudienceMoved(audience, task.title, () =>
-                                audience === "person"
-                                  ? props.onOpenInPlanner?.(task.environmentId, task.id)
-                                  : selectTaskKey(taskKey(task)),
+                              toastAudienceMoved(
+                                audience,
+                                task.title,
+                                () =>
+                                  audience === "person"
+                                    ? props.onOpenInPlanner?.(task.environmentId, task.id)
+                                    : selectTaskKey(taskKey(task)),
+                                gt,
                               );
                             });
                           }}
@@ -1088,48 +1118,53 @@ export function TasksView(props: TasksViewProps) {
                             className={DETAIL_SELECT_TRIGGER_CLASS}
                             style={{ color: "var(--foreground)" }}
                             variant="ghost"
-                            aria-label="For"
+                            aria-label={gt("For", { $context: "who a task is for" })}
                             disabled={updatingField === "audience"}
                           >
-                            <SelectValue>{AUDIENCE_LABELS[selectedTask.audience]}</SelectValue>
+                            <SelectValue>{m(AUDIENCE_LABELS[selectedTask.audience])}</SelectValue>
                           </SelectTrigger>
                           <SelectPopup>
-                            <SelectItem value="agent">{AUDIENCE_LABELS.agent}</SelectItem>
-                            <SelectItem value="person">{AUDIENCE_LABELS.person}</SelectItem>
+                            <SelectItem value="agent">{m(AUDIENCE_LABELS.agent)}</SelectItem>
+                            <SelectItem value="person">{m(AUDIENCE_LABELS.person)}</SelectItem>
                           </SelectPopup>
                         </Select>
                       ) : (
-                        AUDIENCE_LABELS[selectedTask.audience]
+                        m(AUDIENCE_LABELS[selectedTask.audience])
                       )}
                     </DetailSidebarRow>
                   )}
-                  <DetailSidebarRow label="ID">
+                  <DetailSidebarRow label={gt("ID")}>
                     <button
                       type="button"
                       className="max-w-full truncate font-mono text-xs hover:underline"
-                      title="Copy task ID"
+                      title={gt("Copy task ID")}
                       onClick={() => {
                         void navigator.clipboard.writeText(selectedTask.id).then(
-                          () => toastManager.add({ type: "success", title: "Task ID copied" }),
+                          () => toastManager.add({ type: "success", title: gt("Task ID copied") }),
                           () =>
-                            toastManager.add({ type: "error", title: "Could not copy task ID" }),
+                            toastManager.add({
+                              type: "error",
+                              title: gt("Could not copy task ID"),
+                            }),
                         );
                       }}
                     >
                       {selectedTask.id}
                     </button>
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Project">
+                  <DetailSidebarRow label={gt("Project")}>
                     <span className="flex min-w-0 items-center justify-end gap-2 text-foreground">
                       {selectedTaskProject ? (
                         <ProjectFavicon project={selectedTaskProject.favicon} className="size-4" />
                       ) : null}
-                      <span className="truncate">{selectedTask.projectName ?? "No project"}</span>
+                      <span className="truncate">
+                        {selectedTask.projectName ?? gt("No project")}
+                      </span>
                     </span>
                   </DetailSidebarRow>
                   {/* A person task's tags stay hidden; the planner hands it to an agent. */}
                   {selectedTask.audience === "person" ? null : (
-                    <DetailSidebarRow label="Tags">
+                    <DetailSidebarRow label={gt("Tags")}>
                       {props.canMutateEnvironment(selectedTask.environmentId) ? (
                         <TagChipsField
                           tags={selectedTask.tags}
@@ -1150,48 +1185,52 @@ export function TasksView(props: TasksViewProps) {
                       ) : selectedTask.tags.length > 0 ? (
                         selectedTask.tags.join(", ")
                       ) : (
-                        "None"
+                        gt("None", { $context: "a task has no tags" })
                       )}
                     </DetailSidebarRow>
                   )}
-                  <DetailSidebarRow label="Created">
+                  <DetailSidebarRow label={gt("Created", { $context: "date a task was created" })}>
                     {new Date(selectedTask.createdAt).toLocaleDateString()}
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Updated">
+                  <DetailSidebarRow
+                    label={gt("Updated", { $context: "date a task was last updated" })}
+                  >
                     {new Date(selectedTask.updatedAt).toLocaleDateString()}
                   </DetailSidebarRow>
                   {selectedTask.archivedAt ? (
-                    <DetailSidebarRow label="Archived">
+                    <DetailSidebarRow
+                      label={gt("Archived", { $context: "date a task was archived" })}
+                    >
                       {new Date(selectedTask.archivedAt).toLocaleString()}
                     </DetailSidebarRow>
                   ) : null}
                   {selectedTask.notBefore ? (
-                    <DetailSidebarRow label="Not before">
+                    <DetailSidebarRow label={gt("Not before")}>
                       {new Date(selectedTask.notBefore).toLocaleString()}
                     </DetailSidebarRow>
                   ) : null}
                 </dl>
               </DetailSidebarSection>
               {selectedTask.sourceThreadId ? (
-                <DetailSidebarSection title="Source thread">
+                <DetailSidebarSection title={gt("Source thread")}>
                   <div className="flex min-w-0 flex-col gap-0.5">
                     <TaskThreadLink
                       environmentId={selectedTask.environmentId}
                       threadId={selectedTask.sourceThreadId as ThreadId}
-                      title="Source thread"
+                      title={gt("Source thread")}
                       onOpen={props.onOpenThread}
                     />
                   </div>
                 </DetailSidebarSection>
               ) : null}
-              <DetailSidebarSection title="Active runs" count={activeRuns.length}>
+              <DetailSidebarSection title={gt("Active runs")} count={activeRuns.length}>
                 {activeRuns.length === 0 ? (
                   <p className="px-2 py-3 text-sm text-muted-foreground">
                     {detailRunsStatus === "loading"
-                      ? "Loading active runs…"
+                      ? gt("Loading active runs…")
                       : detailRunsStatus === "error"
-                        ? "Could not refresh active runs."
-                        : "No active runs."}
+                        ? gt("Could not refresh active runs.")
+                        : gt("No active runs.")}
                   </p>
                 ) : (
                   activeRuns.map((run) => {
@@ -1199,6 +1238,7 @@ export function TasksView(props: TasksViewProps) {
                       run,
                       props.agents,
                       props.providerEntriesByEnvironment.get(run.environmentId),
+                      gt,
                     );
                     return (
                       <TaskThreadLink
@@ -1215,33 +1255,36 @@ export function TasksView(props: TasksViewProps) {
                   })
                 )}
               </DetailSidebarSection>
-              <DetailSidebarSection title="Runs" count={detailRuns.length}>
+              <DetailSidebarSection
+                title={gt("Runs", { $context: "noun: a task's worker runs" })}
+                count={detailRuns.length}
+              >
                 {runFilter !== ALL_FILTER ? (
                   <div className="flex items-center justify-between px-2 py-2 text-sm">
-                    <span>{taskRunPresentation(runFilter, false)?.label}</span>
+                    <span>{m(taskRunPresentation(runFilter, false)?.label)}</span>
                     <button
                       type="button"
                       className="hover:underline"
                       onClick={() => setRunFilter(ALL_FILTER)}
                     >
-                      Show all runs
+                      {gt("Show all runs")}
                     </button>
                   </div>
                 ) : null}
                 {detailRunsStatus === "error" ? (
                   <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-                    Could not refresh this task&apos;s worker runs. Showing cached results.
+                    {gt("Could not refresh this task's worker runs. Showing cached results.")}
                   </div>
                 ) : null}
                 {detailRunsStatus === "loading" && taskThreads.length === 0 ? (
                   <div className="px-2 py-5 text-sm text-muted-foreground">
-                    Loading worker runs...
+                    {gt("Loading worker runs...")}
                   </div>
                 ) : taskThreads.length === 0 ? (
                   <div className="px-2 py-5 text-sm text-muted-foreground">
                     {runFilter === ALL_FILTER
-                      ? "No worker has worked on this task yet."
-                      : "No runs match this status."}
+                      ? gt("No worker has worked on this task yet.")
+                      : gt("No runs match this status.")}
                   </div>
                 ) : (
                   <div className="flex min-w-0 flex-col gap-0.5">
@@ -1250,6 +1293,7 @@ export function TasksView(props: TasksViewProps) {
                         run,
                         props.agents,
                         props.providerEntriesByEnvironment.get(run.environmentId),
+                        gt,
                       );
                       return (
                         <TaskThreadLink
@@ -1274,11 +1318,11 @@ export function TasksView(props: TasksViewProps) {
                     className="px-2 py-3 text-sm hover:underline"
                     onClick={() => loadTaskRuns(selectedTask, true)}
                   >
-                    Load more runs
+                    {gt("Load more runs")}
                   </button>
                 ) : null}
               </DetailSidebarSection>
-              <DetailSidebarSection title="History" count={historyEntries.length}>
+              <DetailSidebarSection title={gt("History")} count={historyEntries.length}>
                 <TaskHistory
                   entries={historyEntries}
                   status={history.taskKey === taskKey(selectedTask) ? history.status : "loading"}
@@ -1293,28 +1337,28 @@ export function TasksView(props: TasksViewProps) {
             <main className="flex min-h-0 min-w-0 flex-1 flex-col">
               <LazyMarkdownEditor
                 value={form.description}
-                placeholder="Description…"
-                ariaLabel="Task description"
+                placeholder={gt("Description…")}
+                ariaLabel={gt("Task description")}
                 className={DESCRIPTION_EDITOR_CLASS}
                 onChange={(description) => setForm((current) => ({ ...current, description }))}
               />
             </main>
             <DetailColumn stacked={panel}>
-              <DetailSidebarSection title="Details">
+              <DetailSidebarSection title={gt("Details")}>
                 <dl className="flex min-w-0 flex-col gap-0.5">
-                  <DetailSidebarRow label="Title" controlSelector="input">
+                  <DetailSidebarRow label={gt("Title")} controlSelector="input">
                     <input
                       autoFocus
                       className={DETAIL_INPUT_CLASS}
                       value={form.title}
-                      placeholder="Task title…"
-                      aria-label="Task title"
+                      placeholder={gt("Task title…")}
+                      aria-label={gt("Task title")}
                       onChange={(event) =>
                         setForm((current) => ({ ...current, title: event.target.value }))
                       }
                     />
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Project" controlSelector="button">
+                  <DetailSidebarRow label={gt("Project")} controlSelector="button">
                     <Select
                       value={selectedProjectKey(form)}
                       onValueChange={(value) => {
@@ -1332,7 +1376,7 @@ export function TasksView(props: TasksViewProps) {
                       <SelectTrigger
                         className={DETAIL_SELECT_TRIGGER_CLASS}
                         variant="ghost"
-                        aria-label="Task project"
+                        aria-label={gt("Task project")}
                       >
                         <SelectValue>
                           {selectedProject ? (
@@ -1346,7 +1390,7 @@ export function TasksView(props: TasksViewProps) {
                               </span>
                             </span>
                           ) : (
-                            "Select project"
+                            gt("Select project")
                           )}
                         </SelectValue>
                       </SelectTrigger>
@@ -1359,18 +1403,18 @@ export function TasksView(props: TasksViewProps) {
                       </SelectPopup>
                     </Select>
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Status" controlSelector="input">
+                  <DetailSidebarRow label={gt("Status")} controlSelector="input">
                     <input
                       className={DETAIL_INPUT_CLASS}
                       value={form.status}
                       placeholder="new"
-                      aria-label="Task status"
+                      aria-label={gt("Task status")}
                       onChange={(event) =>
                         setForm((current) => ({ ...current, status: event.target.value }))
                       }
                     />
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Tags">
+                  <DetailSidebarRow label={gt("Tags")}>
                     <TagChipsField
                       tags={splitListInput(form.tags)}
                       suggest={(query) =>
@@ -1418,28 +1462,34 @@ export function TasksView(props: TasksViewProps) {
               >
                 {environmentCount > 1 ? (
                   <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-                    Task order is global within each connected environment. Environments are grouped
-                    deterministically, and tasks cannot be dragged across that storage boundary.
+                    {gt(
+                      "Task order is global within each connected environment. Environments are grouped deterministically, and tasks cannot be dragged across that storage boundary.",
+                    )}
                   </div>
                 ) : null}
                 {hasReadOnlyProjects ? (
                   <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-                    Existing tasks from unavailable or expired extensions remain readable. Mutation
-                    controls are hidden for those environments.
+                    {gt(
+                      "Existing tasks from unavailable or expired extensions remain readable. Mutation controls are hidden for those environments.",
+                    )}
                   </div>
                 ) : null}
                 {selectedTaskKey ? (
-                  <p className="text-sm text-muted-foreground">{detailError ?? "Loading task…"}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {m(detailError) ?? gt("Loading task…")}
+                  </p>
                 ) : null}
                 {props.status === "error" ? (
                   <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-                    Up.computer couldn't load your tasks. {props.errorMessage ?? "Try again."}
+                    {gt("Up.computer couldn't load your tasks. {reason}", {
+                      reason: props.errorMessage ?? gt("Try again."),
+                    })}
                     <button type="button" className="ml-3 underline" onClick={props.onReload}>
-                      Retry
+                      {gt("Retry")}
                     </button>
                   </div>
                 ) : props.status === "offline" && props.tasks.length > 0 ? (
-                  <div className={OFFLINE_NOTE_CLASS}>{TASKS_OFFLINE_TEXT}</div>
+                  <div className={OFFLINE_NOTE_CLASS}>{m(TASKS_OFFLINE_TEXT)}</div>
                 ) : null}
                 {props.status === "offline"
                   ? null
@@ -1455,17 +1505,17 @@ export function TasksView(props: TasksViewProps) {
               {props.tasks.length === 0 || filteredTasks.length === 0 ? (
                 // Blank while the list loads: it arrives within a moment.
                 props.status === "loading" ? null : props.status === "offline" ? (
-                  <ListEmptyState title="Tasks unavailable" hint={TASKS_OFFLINE_TEXT} />
+                  <ListEmptyState title={gt("Tasks unavailable")} hint={m(TASKS_OFFLINE_TEXT)} />
                 ) : props.tasks.length > 0 ||
                   projectFilter !== null ||
                   statusFilter !== ALL_FILTER ||
                   filters.tags.length > 0 ||
                   archiveFilter !== "active" ? (
-                  <ListEmptyState title="No tasks match the current filters" />
+                  <ListEmptyState title={gt("No tasks match the current filters")} />
                 ) : (
                   <ListEmptyState
-                    title="No tasks yet"
-                    hint="Click + to add one, or ask any thread to plan the work for you."
+                    title={gt("No tasks yet")}
+                    hint={gt("Click + to add one, or ask any thread to plan the work for you.")}
                   />
                 )
               ) : cards ? (
@@ -1519,14 +1569,16 @@ export function TasksView(props: TasksViewProps) {
                     <thead className="border-b border-border text-muted-foreground">
                       <tr>
                         <th className="w-12 py-3 pr-2 font-medium">
-                          <span className="sr-only">Order</span>
+                          <span className="sr-only">
+                            {gt("Order", { $context: "column of task order handles" })}
+                          </span>
                         </th>
                         {showProjectColumn ? <ProjectIconHeader /> : null}
-                        <th className="max-w-0 py-3 pr-4 font-medium">Title</th>
-                        <th className="w-40 px-4 py-3 font-medium">Status</th>
-                        <th className="w-56 px-4 py-3 font-medium">Tags</th>
+                        <th className="max-w-0 py-3 pr-4 font-medium">{gt("Title")}</th>
+                        <th className="w-40 px-4 py-3 font-medium">{gt("Status")}</th>
+                        <th className="w-56 px-4 py-3 font-medium">{gt("Tags")}</th>
                         <th className="w-px py-3 pl-4 text-right font-medium whitespace-nowrap">
-                          Runs
+                          {gt("Runs", { $context: "noun: a task's worker runs" })}
                         </th>
                       </tr>
                     </thead>
@@ -1578,7 +1630,9 @@ export function TasksView(props: TasksViewProps) {
                             <td className="px-4 py-4 align-middle whitespace-nowrap">
                               {task.status}
                               {task.archivedAt ? (
-                                <span className="ml-2 text-muted-foreground">Archived</span>
+                                <span className="ml-2 text-muted-foreground">
+                                  {gt("Archived", { $context: "status of an archived task" })}
+                                </span>
                               ) : null}
                             </td>
                             <td className="max-w-56 px-4 py-4 align-middle">
@@ -1606,7 +1660,7 @@ export function TasksView(props: TasksViewProps) {
                       disabled={props.loadingMore}
                       onClick={props.onLoadMore}
                     >
-                      {props.loadingMore ? "Loading…" : "Load more tasks"}
+                      {props.loadingMore ? gt("Loading…") : gt("Load more tasks")}
                     </Button>
                   </div>
                 ) : (
@@ -1616,7 +1670,7 @@ export function TasksView(props: TasksViewProps) {
                     className="self-center rounded-md border border-border px-4 py-2 text-sm hover:bg-muted disabled:opacity-50"
                     onClick={props.onLoadMore}
                   >
-                    {props.loadingMore ? "Loading…" : "Load more tasks"}
+                    {props.loadingMore ? gt("Loading…") : gt("Load more tasks")}
                   </button>
                 )
               ) : null}

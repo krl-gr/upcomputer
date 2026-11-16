@@ -16,9 +16,20 @@ const readCatalog = (locale: string): Catalog =>
 /** ICU argument names in a string entry, or `<T>` variable keys in a JSX entry. */
 function variables(entry: Entry): ReadonlyArray<string> {
   if (typeof entry === "string") {
-    return [
-      ...new Set([...entry.matchAll(/\{\s*([\w$]+)\s*[,}]/g)].map((match) => match[1]!)),
-    ].toSorted();
+    // A brace opens an argument in message text, and a nested message inside an argument
+    // (a plural or select option), so `{one {Archived}}` names no `Archived` argument.
+    const names = new Set<string>();
+    const inArgument: boolean[] = [false];
+    for (let index = 0; index < entry.length; index += 1) {
+      if (entry[index] === "{") {
+        const opensArgument = !inArgument.at(-1);
+        if (opensArgument) names.add(/^\{\s*([\w$]+)/.exec(entry.slice(index))?.[1] ?? "");
+        inArgument.push(opensArgument);
+      } else if (entry[index] === "}") {
+        inArgument.pop();
+      }
+    }
+    return [...names].toSorted();
   }
   return [...JSON.stringify(entry).matchAll(/"k":"([^"]+)"/g)].map((match) => match[1]!).toSorted();
 }

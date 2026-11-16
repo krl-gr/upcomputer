@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import { useGT } from "gt-react";
 
 import { ProviderModelPicker } from "../components/chat/ProviderModelPicker";
 import { productSurface } from "../product/productFlags";
@@ -14,8 +15,9 @@ import { COMPOSER_MODEL_PICKER_TRIGGER_CLASS } from "./composerLookStyles";
  * so the margin goes and the separator keeps its gap.
  */
 export function ComposerFooterModelPicker(props: ComponentProps<typeof ProviderModelPicker>) {
+  const gt = useGT();
   if (productSurface("composerFooter") !== "upcomputer") return <ProviderModelPicker {...props} />;
-  const label = props.selectedModels === undefined ? composerModelPickerLabel(props) : null;
+  const label = props.selectedModels === undefined ? composerModelPickerLabel(props, gt) : null;
   return (
     <ProviderModelPicker
       {...props}

@@ -1,5 +1,6 @@
 import { memo, useCallback, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
+import { useGT } from "gt-react";
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
@@ -59,6 +60,7 @@ function TitleArea(props: {
   readonly onEditingChange: (editing: boolean) => void;
   readonly onSave: (title: string) => void;
 }) {
+  const gt = useGT();
   const ref = useRef<HTMLDivElement>(null);
   const clickPoint = useRef<{ x: number; y: number } | null>(null);
   const active = useRef(false);
@@ -93,7 +95,7 @@ function TitleArea(props: {
     if (!active.current) return;
     const result = titleEditResult(ref.current?.textContent ?? "", props.title);
     if (result.kind === "empty") {
-      toastManager.add({ type: "warning", title: "Title cannot be empty" });
+      toastManager.add({ type: "warning", title: gt("Title cannot be empty") });
       return;
     }
     if (result.kind === "save") props.onSave(result.title);
@@ -111,7 +113,7 @@ function TitleArea(props: {
         ? {
             contentEditable: "plaintext-only" as const,
             role: "textbox",
-            "aria-label": "Task title",
+            "aria-label": gt("Task title"),
           }
         : {})}
       onClick={(event) => {
@@ -153,6 +155,7 @@ export interface TaskRowProps {
 
 /** Wande's EntityItem: a list row that drags into the list order and onto days. */
 export const TaskRow = memo(function TaskRow(props: TaskRowProps) {
+  const gt = useGT();
   const { task } = props;
   const { store, windows, projects, preferences } = usePlanner();
   const [editing, setEditing] = useState(false);
@@ -217,7 +220,7 @@ export const TaskRow = memo(function TaskRow(props: TaskRowProps) {
           />
           {finished ? (
             <IconAction
-              label="Restore"
+              label={gt("Restore", { $context: "button that unarchives the task" })}
               variant="outline"
               onClick={() => void store.restore([task.id])}
             >
@@ -226,14 +229,14 @@ export const TaskRow = memo(function TaskRow(props: TaskRowProps) {
           ) : (
             <>
               <IconAction
-                label="Mark as done"
+                label={gt("Mark as done")}
                 variant="outline"
                 onClick={() => void store.markDone([task.id])}
               >
                 <CircleCheckIcon />
               </IconAction>
               <IconAction
-                label="Archive"
+                label={gt("Archive", { $context: "button that archives the task" })}
                 variant="outline"
                 onClick={() => void store.archive([task.id])}
               >
@@ -245,7 +248,7 @@ export const TaskRow = memo(function TaskRow(props: TaskRowProps) {
           <RunSummary task={task} />
           {props.queueDate && preferences.weekViewMode === "queue" ? (
             <IconAction
-              label={`Add to queue for ${props.queueDate}`}
+              label={gt("Add to queue for {date}", { date: props.queueDate })}
               variant="outline"
               onClick={() =>
                 void store.addEntries({ taskIds: [task.id as never], date: props.queueDate! })
@@ -255,7 +258,7 @@ export const TaskRow = memo(function TaskRow(props: TaskRowProps) {
             </IconAction>
           ) : null}
           <IconAction
-            label={progress ? `Schedule (${progress})` : "Schedule"}
+            label={progress ? gt("Schedule ({progress})", { progress }) : gt("Schedule")}
             variant="outline"
             size={preferences.showProgress && progress ? "xs" : "icon-xs"}
             onClick={() => windows.openDetail(task.id, "instances")}
@@ -265,7 +268,7 @@ export const TaskRow = memo(function TaskRow(props: TaskRowProps) {
           </IconAction>
           {props.selectMode ? (
             <IconAction
-              label={props.selected ? "Deselect" : "Select"}
+              label={props.selected ? gt("Deselect") : gt("Select")}
               variant="outline"
               pressed={props.selected}
               onClick={() => props.onToggleSelected(task.id)}
@@ -275,14 +278,14 @@ export const TaskRow = memo(function TaskRow(props: TaskRowProps) {
           ) : (
             <>
               <IconAction
-                label="Open details"
+                label={gt("Open details")}
                 variant="outline"
                 onClick={() => windows.openDetail(task.id)}
               >
                 <Maximize2Icon />
               </IconAction>
               <IconAction
-                label="More actions"
+                label={gt("More actions")}
                 variant="outline"
                 onClick={(event) => props.onMenu(task, pointBelow(event.currentTarget))}
               >

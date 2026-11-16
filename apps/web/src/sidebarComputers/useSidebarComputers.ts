@@ -1,5 +1,6 @@
 import type { EnvironmentMachineKind, EnvironmentId } from "@t3tools/contracts";
 import { isMacPlatform } from "@t3tools/shared/keybindings";
+import { useGT } from "gt-react";
 
 import { isElectron } from "../env";
 import { isWindowsPlatform } from "../lib/utils";
@@ -37,19 +38,22 @@ export interface SidebarComputer {
   readonly presentation: EnvironmentPresentation;
 }
 
-function platformComputerName(platform: string): string {
-  if (isMacPlatform(platform)) return "This Mac";
-  if (isWindowsPlatform(platform)) return "This PC";
-  return "This computer";
+type Gt = ReturnType<typeof useGT>;
+
+function platformComputerName(platform: string, gt: Gt): string {
+  if (isMacPlatform(platform)) return gt("This Mac");
+  if (isWindowsPlatform(platform)) return gt("This PC");
+  return gt("This computer");
 }
 
 /** The desktop app's own computer reads "This Mac"; a browser names every computer. */
 function computerName(
   presentation: Pick<EnvironmentPresentation, "environmentId" | "label">,
   primaryId: EnvironmentId | null,
+  gt: Gt,
 ): string {
   if (isElectron && presentation.environmentId === primaryId) {
-    return platformComputerName(typeof navigator === "undefined" ? "" : navigator.platform);
+    return platformComputerName(typeof navigator === "undefined" ? "" : navigator.platform, gt);
   }
   return presentation.label;
 }
@@ -75,19 +79,22 @@ function describeComputer(
   presentation: EnvironmentPresentation,
   status: ComputerStatus,
   upToDate: boolean,
+  gt: Gt,
 ): string {
   const version = presentation.serverConfig?.environment.serverVersion ?? null;
   switch (status) {
     case "online":
-      if (upToDate && version) return `Online, ${version}, up to date on its track`;
-      return version ? `Online, ${version}` : "Online";
+      if (upToDate && version) return gt("Online, {version}, up to date on its track", { version });
+      return version ? gt("Online, {version}", { version }) : gt("Online");
     case "outdated":
-      if (presentation.connection.phase === "unsupported") return "Update needed";
-      return version ? `${version}, update available` : "Update available";
+      if (presentation.connection.phase === "unsupported") return gt("Update needed");
+      return version ? gt("{version}, update available", { version }) : gt("Update available");
     case "connecting":
-      return presentation.connection.phase === "reconnecting" ? "Reconnecting..." : "Connecting...";
+      return presentation.connection.phase === "reconnecting"
+        ? gt("Reconnecting...")
+        : gt("Connecting...");
     case "offline":
-      return "Offline";
+      return gt("Offline");
   }
 }
 
@@ -95,6 +102,7 @@ function describeComputer(
 export function useSidebarComputers(
   computerIds: ReadonlyArray<EnvironmentId>,
 ): ReadonlyArray<SidebarComputer> {
+  const gt = useGT();
   const { environments } = useEnvironments();
   const machines = useEnvironmentMachines();
   const primaryId = usePrimaryEnvironmentId();
@@ -115,7 +123,7 @@ export function useSidebarComputers(
     return [
       {
         environmentId,
-        name: computerName(presentation, primaryId),
+        name: computerName(presentation, primaryId, gt),
         machine: machines.get(environmentId) ?? "server",
         status,
         unsupported: presentation.connection.phase === "unsupported",
@@ -123,7 +131,7 @@ export function useSidebarComputers(
           status === "offline" ||
           (status === "outdated" && presentation.connection.phase === "unsupported"),
         serverVersion: presentation.serverConfig?.environment.serverVersion ?? null,
-        description: describeComputer(presentation, status, upToDate),
+        description: describeComputer(presentation, status, upToDate, gt),
         counts: counts.get(environmentId) ?? NO_COMPUTER_RUNS,
         presentation,
       },
@@ -133,10 +141,11 @@ export function useSidebarComputers(
 
 /** The name the sidebar uses for a computer, for labels outside the Computers section. */
 export function useComputerName(environmentId: EnvironmentId): string | null {
+  const gt = useGT();
   const { environments } = useEnvironments();
   const primaryId = usePrimaryEnvironmentId();
   const presentation = environments.find(
     (environment) => environment.environmentId === environmentId,
   );
-  return presentation === undefined ? null : computerName(presentation, primaryId);
+  return presentation === undefined ? null : computerName(presentation, primaryId, gt);
 }

@@ -1,5 +1,6 @@
 import { TaskArchiveFilter } from "@t3tools/tasks-contracts/v1";
 import * as Schema from "effect/Schema";
+import { msg } from "gt-react";
 
 import { useLocalStorage } from "../../../../apps/web/src/hooks/useLocalStorage.ts";
 
@@ -22,13 +23,13 @@ export const NO_RUNS_FILTER = "__none__";
 
 /** Last-run dropdown options: the task system's raw run statuses. */
 export const LAST_RUN_OPTIONS: ReadonlyArray<{ readonly value: string; readonly label: string }> = [
-  { value: "running", label: "Working" },
-  { value: "completed", label: "Completed" },
-  { value: "failed", label: "Failed" },
-  { value: "stopped", label: "Stopped" },
-  { value: "blocked", label: "Blocked" },
-  { value: "interrupted", label: "Interrupted" },
-  { value: NO_RUNS_FILTER, label: "No runs" },
+  { value: "running", label: msg("Working") },
+  { value: "completed", label: msg("Completed") },
+  { value: "failed", label: msg("Failed") },
+  { value: "stopped", label: msg("Stopped") },
+  { value: "blocked", label: msg("Blocked") },
+  { value: "interrupted", label: msg("Interrupted") },
+  { value: NO_RUNS_FILTER, label: msg("No runs") },
 ];
 
 /** Archive dropdown options; archived tasks are hidden unless chosen here. */
@@ -36,9 +37,9 @@ export const ARCHIVE_OPTIONS: ReadonlyArray<{
   readonly value: TaskArchiveFilter;
   readonly label: string;
 }> = [
-  { value: "active", label: "Active" },
-  { value: "archived", label: "Archived" },
-  { value: "all", label: "Active and archived" },
+  { value: "active", label: msg("Active") },
+  { value: "archived", label: msg("Archived") },
+  { value: "all", label: msg("Active and archived") },
 ];
 
 /** Filters of the Tasks table besides the shared project, kept across visits. */

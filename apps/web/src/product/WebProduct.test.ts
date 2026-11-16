@@ -183,7 +183,7 @@ describe("web product composition", () => {
               label: "Move",
               choices: [
                 { id: "a/b", label: "A" },
-                { id: "c", label: "C" },
+                { id: "c", label: "C", message: true },
               ],
               ...(unavailableReason === undefined ? {} : { unavailableReason }),
               run: (_context, choiceId) => {
@@ -199,6 +199,11 @@ describe("web product composition", () => {
       { id: "feature:test.move:move/a/b", label: "A" },
       { id: "feature:test.move:move/c", label: "C" },
     ]);
+    // Only a msg() label is translated; other labels are names.
+    const [translated] = collectExperimentalWebThreadActions(product(), thread, (message) =>
+      message.toLowerCase(),
+    );
+    expect(translated?.children?.map((child) => child.label)).toEqual(["A", "c"]);
     const actions = collectExperimentalWebThreadActions(product(), thread);
     for (const menuId of [
       "feature:test.move:move",

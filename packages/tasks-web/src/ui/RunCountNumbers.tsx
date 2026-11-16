@@ -1,3 +1,4 @@
+import { useMessages } from "gt-react";
 import {
   Tooltip,
   TooltipPopup,
@@ -14,6 +15,7 @@ export function TableRunCounts(props: {
   readonly groups: readonly TaskRunCountGroup[];
   readonly onSelect: (group: TaskRunCountGroup) => void;
 }) {
+  const m = useMessages();
   if (props.groups.length === 0) return null;
   return (
     <Tooltip>
@@ -23,7 +25,7 @@ export function TableRunCounts(props: {
       >
         <RunCountNumbers groups={props.groups} onSelect={props.onSelect} />
       </TooltipTrigger>
-      <TooltipPopup>{runCountSummary(props.groups)}</TooltipPopup>
+      <TooltipPopup>{runCountSummary(props.groups, m)}</TooltipPopup>
     </Tooltip>
   );
 }

@@ -25,6 +25,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type Ref,
 } from "react";
+import { useGT } from "gt-react";
 
 import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
@@ -120,6 +121,7 @@ export function BranchToolbarBranchSelector({
   onCheckoutPullRequestRequest,
   onComposerFocusRequest,
 }: BranchToolbarBranchSelectorProps) {
+  const gt = useGT();
   const composerFloatingLayerProps = useComposerMenuProps();
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
@@ -376,13 +378,19 @@ export function BranchToolbarBranchSelector({
   // A failed list used to look like a project with no branches.
   const branchStatusText =
     branchRefState.error !== null && refs.length === 0
-      ? `Up.computer couldn't list the branches in this project: ${describeError(branchRefState.error).reason ?? "something went wrong"}. Close and reopen this menu to try again.`
+      ? gt(
+          "Up.computer couldn't list the branches in this project: {reason}. Close and reopen this menu to try again.",
+          { reason: describeError(branchRefState.error).reason ?? gt("something went wrong") },
+        )
       : isInitialBranchesLoadPending
-        ? "Loading branches..."
+        ? gt("Loading branches...")
         : isFetchingNextPage
-          ? "Loading more branches..."
+          ? gt("Loading more branches...")
           : hasNextPage
-            ? `Showing ${refs.length} of ${totalBranchCount} branches`
+            ? gt(
+                "{total, plural, one {Showing {shown} of # branch} other {Showing {shown} of # branches}}",
+                { shown: refs.length, total: totalBranchCount },
+              )
             : null;
 
   const copyBranchName = (branchName: string) => {
@@ -527,7 +535,7 @@ export function BranchToolbarBranchSelector({
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Couldn't switch branches",
+            title: gt("Couldn't switch branches"),
             description: toBranchActionErrorMessage(squashAtomCommandFailure(checkoutResult)),
           }),
         );
@@ -572,7 +580,7 @@ export function BranchToolbarBranchSelector({
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Couldn't create the branch",
+            title: gt("Couldn't create the branch"),
             description: toBranchActionErrorMessage(squashAtomCommandFailure(createBranchResult)),
           }),
         );

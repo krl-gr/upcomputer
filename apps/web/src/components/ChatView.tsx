@@ -39,6 +39,7 @@ import { closeThreadFind, openThreadFind, useThreadFindOpen } from "./chat/threa
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
 import { mcpStatusBannerItems } from "./chat/McpStatusBanner";
+import { useGT } from "gt-react";
 import { APP_BASE_NAME } from "../branding";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
 import type { ProviderFailureAction } from "@t3tools/client-runtime/state/turn-item-presentation";
@@ -459,6 +460,7 @@ const DismissedFallbackWindowSchema = Schema.NullOr(Schema.String);
 const ignoreComposerFocus = () => {};
 
 export default function ChatView(props: ChatViewProps) {
+  const gt = useGT();
   const {
     environmentId,
     threadId,
@@ -2670,21 +2672,27 @@ export default function ChatView(props: ChatViewProps) {
     if (result._tag === "Failure") return;
     toastManager.add({
       type: "success",
-      title: "Agent session will restart",
-      description: `Your next message starts a fresh session with ${APP_BASE_NAME} tools.`,
+      title: gt("Agent session will restart"),
+      description: gt("Your next message starts a fresh session with {product} tools.", {
+        product: APP_BASE_NAME,
+      }),
     });
   });
-  const mcpBannerItems = mcpStatusBannerItems({
-    threadKey: routeThreadKey,
-    status: threadMcpStatus,
-    productName: APP_BASE_NAME,
-    canReconnect: canOperateThread,
-    turnRunning: isWorking,
-    reconnecting: mcpReconnectingThreadKey === routeThreadKey,
-    onReconnect: () => void reconnectMcp(),
-    userNoticeDismissed: (key) => dismissedMcpNoticeKeys.has(key),
-    onDismissUserNotice: (key) => setDismissedMcpNoticeKeys((current) => new Set(current).add(key)),
-  });
+  const mcpBannerItems = mcpStatusBannerItems(
+    {
+      threadKey: routeThreadKey,
+      status: threadMcpStatus,
+      productName: APP_BASE_NAME,
+      canReconnect: canOperateThread,
+      turnRunning: isWorking,
+      reconnecting: mcpReconnectingThreadKey === routeThreadKey,
+      onReconnect: () => void reconnectMcp(),
+      userNoticeDismissed: (key) => dismissedMcpNoticeKeys.has(key),
+      onDismissUserNotice: (key) =>
+        setDismissedMcpNoticeKeys((current) => new Set(current).add(key)),
+    },
+    gt,
+  );
   const composerBannerItems = (() => {
     const fallbackSelection = draftFallback?.selection;
     const defaultSelection =

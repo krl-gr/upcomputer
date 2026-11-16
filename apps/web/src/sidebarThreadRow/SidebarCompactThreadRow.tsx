@@ -1,3 +1,4 @@
+import { T, useGT, useMessages } from "gt-react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { ScopedThreadRef } from "@t3tools/contracts";
@@ -95,9 +96,11 @@ const MENU_CLOSING_KEYS = new Set(["Escape", "Enter", " ", "Tab"]);
  * tick itself, so it advances inside the memoized rows.
  */
 export function CompactRelativeTime(props: { readonly timestamp: string }) {
+  const gt = useGT();
   const nowMinute = useNowMinute();
   const label = formatRelativeTimeLabel(props.timestamp, Date.parse(`${nowMinute}:00.000Z`));
-  if (label === "just now") return "now";
+  if (label === "just now")
+    return gt("now", { $context: "compact relative time of a sidebar row" });
   return label.endsWith(" ago") ? label.slice(0, -4) : label;
 }
 
@@ -125,6 +128,8 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
     onThreadActivate,
     onThreadClick,
   } = props;
+  const gt = useGT();
+  const m = useMessages();
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const threadKey = scopedThreadKey(threadRef);
   const localLastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
@@ -140,7 +145,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
   });
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
-    statusLabel: statusLabel?.label ?? null,
+    statusLabel: statusLabel ? m(statusLabel.label) : null,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isActive,
   });
@@ -296,7 +301,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
             <input
               autoFocus
               value={renamingTitle}
-              aria-label="Thread title"
+              aria-label={gt("Thread title")}
               onChange={(event) => onRenameTitleChange(event.target.value)}
               onFocus={(event) => event.currentTarget.select()}
               onKeyDown={handleRenameKeyDown}
@@ -327,7 +332,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
               <button
                 type="button"
                 data-thread-selection-safe
-                aria-label={`Thread actions for ${thread.title}`}
+                aria-label={gt("Thread actions for {title}", { title: thread.title })}
                 className={sidebarListRowActionClassName(menuOpen)}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={openMenu}
@@ -364,7 +369,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
           </SidebarListRowEnd>
           {thread.titleRegeneration != null ? (
             <span role="status" className="sr-only">
-              Regenerating title
+              <T>Regenerating title</T>
             </span>
           ) : null}
         </TooltipTrigger>

@@ -3,6 +3,7 @@ import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { useNavigate } from "@tanstack/react-router";
 import { CalendarClockIcon, PencilIcon, PlayIcon, Settings2Icon } from "lucide-react";
 import { useState } from "react";
+import { useGT } from "gt-react";
 import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
@@ -62,6 +63,7 @@ export function ThreadAutomationsPanel(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
 }) {
+  const gt = useGT();
   const canOperate = useAtomValue(
     serverEnvironment.runScheduledTaskNow.permissionAtom(props.environmentId),
   );
@@ -106,7 +108,7 @@ export function ThreadAutomationsPanel(props: {
     });
     setBusyTaskId(null);
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      reportFailure("Could not update scheduled prompt", squashAtomCommandFailure(result));
+      reportFailure(gt("Could not update scheduled prompt"), squashAtomCommandFailure(result));
     }
   };
 
@@ -123,14 +125,14 @@ export function ThreadAutomationsPanel(props: {
     });
     setBusyTaskId(null);
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      reportFailure("Could not run scheduled prompt", squashAtomCommandFailure(result));
+      reportFailure(gt("Could not run scheduled prompt"), squashAtomCommandFailure(result));
     }
   };
 
   return (
     <ThreadDetailsSection
       headingId="thread-details-automations-heading"
-      title="Scheduled prompts"
+      title={gt("Scheduled prompts")}
       data-thread-automations-panel
       actions={
         <Tooltip>
@@ -140,7 +142,7 @@ export function ThreadAutomationsPanel(props: {
                 size="icon-xs"
                 variant="ghost"
                 part="icon"
-                aria-label="Manage scheduled prompts"
+                aria-label={gt("Manage scheduled prompts")}
                 onClick={() =>
                   void navigate({
                     to: "/settings/scheduled-tasks",
@@ -152,7 +154,7 @@ export function ThreadAutomationsPanel(props: {
               </ThreadDetailsControl>
             }
           />
-          <TooltipPopup>Manage scheduled prompts</TooltipPopup>
+          <TooltipPopup>{gt("Manage scheduled prompts")}</TooltipPopup>
         </Tooltip>
       }
     >
@@ -210,7 +212,7 @@ export function ThreadAutomationsPanel(props: {
                   </ThreadDetailsControl>
                 }
               />
-              <TooltipPopup>Edit scheduled prompt</TooltipPopup>
+              <TooltipPopup>{gt("Edit scheduled prompt")}</TooltipPopup>
             </Tooltip>
             {/* Webhook tasks need a request from their URL. */}
             {task.schedule.type === "webhook" ? null : (

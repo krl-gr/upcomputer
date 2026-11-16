@@ -1,3 +1,5 @@
+import { useGT } from "gt-react";
+
 import { LazyMarkdownEditor } from "../../markdown/LazyMarkdownEditor.tsx";
 
 /**
@@ -10,12 +12,13 @@ export function DescriptionField(props: {
   readonly autoFocus?: boolean;
   readonly className?: string;
 }) {
+  const gt = useGT();
   return (
     <LazyMarkdownEditor
       value={props.value}
       onChange={props.onChange}
-      ariaLabel="Description"
-      placeholder="Description, / for blocks"
+      ariaLabel={gt("Description")}
+      placeholder={gt("Description, / for blocks")}
       {...(props.autoFocus ? { autoFocus: true } : {})}
       className={props.className ?? "min-h-24 text-sm"}
     />

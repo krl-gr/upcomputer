@@ -1,6 +1,7 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import { useGT } from "gt-react";
 import { EllipsisIcon } from "lucide-react";
 import {
   memo,
@@ -31,7 +32,7 @@ const NO_LINKED_PROJECTS: ReadonlyArray<never> = [];
 const MENU_CLOSING_KEYS = new Set(["Escape", "Enter", " ", "Tab"]);
 
 /** The draft's first line, or its attachment count when it has no text. */
-function draftPreview(composer: ComposerThreadDraftState): string {
+function draftPreview(composer: ComposerThreadDraftState, gt: ReturnType<typeof useGT>): string {
   const prompt =
     assistantCitationsToPlainText(
       replaceComposerContextReferences(composer.prompt, (occurrence) => occurrence.label),
@@ -46,7 +47,7 @@ function draftPreview(composer: ComposerThreadDraftState): string {
     composer.terminalContexts.length +
     composer.previewAnnotations.length +
     composer.reviewComments.length;
-  return `${count} attachment${count === 1 ? "" : "s"}`;
+  return gt("{count, plural, one {# attachment} other {# attachments}}", { count });
 }
 
 /**
@@ -65,10 +66,11 @@ export const SidebarCompactDraftRow = memo(function SidebarCompactDraftRow(props
   readonly onContextMenu: (draftId: DraftId, position: { x: number; y: number }) => void;
 }) {
   const { draftId, onContextMenu, onNavigate } = props;
-  const preview = draftPreview(props.composer);
+  const gt = useGT();
+  const preview = draftPreview(props.composer, gt);
   const accessibility = resolveSidebarRowAccessibility({
     title: preview,
-    statusLabel: "Unsent draft",
+    statusLabel: gt("Unsent draft"),
     projectDisplayName: props.projectDisplayName,
     isActive: props.isActive,
   });
@@ -148,7 +150,7 @@ export const SidebarCompactDraftRow = memo(function SidebarCompactDraftRow(props
           action={
             <button
               type="button"
-              aria-label={`Draft actions for ${preview}`}
+              aria-label={gt("Draft actions for {draft}", { draft: preview })}
               className={sidebarListRowActionClassName(menuOpen)}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={openMenu}

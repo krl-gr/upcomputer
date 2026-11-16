@@ -1,6 +1,7 @@
 import type { RuntimeMode } from "@t3tools/contracts";
 import { LockIcon, LockOpenIcon, PaperclipIcon } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useState } from "react";
+import { T, useGT } from "gt-react";
 
 import { CompactComposerControlsMenu } from "../components/chat/CompactComposerControlsMenu";
 import { ComposerControlIcon, ComposerSelectControl } from "../components/chat/ComposerControl";
@@ -67,6 +68,7 @@ function FooterSeparator() {
 
 /** V1's paperclip: opens upstream's file input and keeps the prompt focused. */
 function AttachControl(props: { open: () => void }) {
+  const gt = useGT();
   return (
     <Tooltip>
       <TooltipTrigger
@@ -74,7 +76,7 @@ function AttachControl(props: { open: () => void }) {
           <button
             type="button"
             data-composer-footer-attach=""
-            aria-label="Attach files"
+            aria-label={gt("Attach files")}
             className={COMPOSER_CONTROL_ICON_TRIGGER_CLASS}
             onPointerDown={(event) => event.preventDefault()}
             onClick={props.open}
@@ -83,7 +85,9 @@ function AttachControl(props: { open: () => void }) {
       >
         <PaperclipIcon aria-hidden="true" className="size-4" />
       </TooltipTrigger>
-      <TooltipPopup side="top">Attach files</TooltipPopup>
+      <TooltipPopup side="top">
+        <T>Attach files</T>
+      </TooltipPopup>
     </Tooltip>
   );
 }
@@ -170,6 +174,7 @@ function AccessControl(props: {
   hidden: boolean;
   onChange: (mode: RuntimeMode) => void;
 }) {
+  const gt = useGT();
   const floatingLayerProps = useComposerMenuProps();
   const [open, setOpen] = useComposerMenuState(props.hidden);
   const option = props.options.find((candidate) => candidate.mode === props.runtimeMode);
@@ -193,7 +198,7 @@ function AccessControl(props: {
               className={COMPOSER_CONTROL_TEXT_TRIGGER_CLASS}
               data-composer-shortcut="composer.mode"
               data-composer-footer-access={props.runtimeMode}
-              aria-label={`Access: ${label}`}
+              aria-label={gt("Access: {mode}", { mode: label })}
               data-track="composer.runtime_mode"
             />
           }
