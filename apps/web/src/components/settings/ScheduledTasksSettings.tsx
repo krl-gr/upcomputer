@@ -467,7 +467,7 @@ export function ScheduledTasksSettings(target: {
               <EmptyMedia variant="icon">
                 <Clock3Icon />
               </EmptyMedia>
-              <EmptyTitle>No environments available</EmptyTitle>
+              <EmptyTitle>{gt("No environments available")}</EmptyTitle>
               <EmptyDescription>
                 {gt("Connect an environment to manage scheduled prompts.")}
               </EmptyDescription>
@@ -694,7 +694,7 @@ function ScheduledTaskEnvironmentSection({
     >
       {!connected ? (
         <SettingsRow
-          title="Environment disconnected"
+          title={gt("Environment disconnected")}
           description={gt("Reconnect {environment} to view its scheduled prompts.", {
             environment: environment.label,
           })}
@@ -1498,7 +1498,7 @@ function ScheduledTaskEditorForm({
     ) {
       reportFailure(
         gt("Scheduled prompt is incomplete"),
-        "Add a title, prompt, project, and model.",
+        gt("Add a title, prompt, project, and model."),
       );
       return;
     }
@@ -1531,7 +1531,7 @@ function ScheduledTaskEditorForm({
     }
     if (schedule.type === "once" && !offersOnce) {
       reportFailure(
-        "Once is not available here",
+        gt("Once is not available here"),
         gt(
           "This environment runs an older Up.computer. Update it to schedule a one-time prompt, or pick another schedule.",
         ),
