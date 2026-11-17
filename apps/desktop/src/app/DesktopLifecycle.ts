@@ -190,7 +190,7 @@ function handleBeforeQuit(
 }
 
 function quitFromSignal(
-  signal: "SIGINT" | "SIGTERM",
+  signal: "SIGINT" | "SIGTERM" | "session-end",
   runEffect: <A, E>(
     effect: Effect.Effect<A, E, DesktopLifecycleRegistrationServices>,
   ) => Promise<A>,
@@ -333,7 +333,18 @@ export const make = DesktopLifecycle.of({
       { prepend: true },
     );
 
-    if (environment.platform !== "win32") {
+    if (environment.platform === "win32") {
+      // Windows skips before-quit at shutdown and logoff and may end the process
+      // once the listener returns, so this stop is best effort.
+      yield* electronApp.on(
+        "browser-window-created",
+        (_event: Electron.Event, window: Electron.BrowserWindow) => {
+          window.on("session-end", () => {
+            quitFromSignal("session-end", runEffect, quit);
+          });
+        },
+      );
+    } else {
       yield* addScopedListener(process, "SIGINT", () => {
         quitFromSignal("SIGINT", runEffect, quit);
       });
