@@ -2855,6 +2855,19 @@ export function resolveDesktopProductName(version: string): string {
     : (desktopPackageJson.productName ?? UPCOMPUTER_DESKTOP_PRODUCT_NAME);
 }
 
+// Electron finds its helper apps by the raw CFBundleName, so that stays the
+// product name; the macOS menu bar shows this localized one instead.
+export function resolveMacMenuBarInfoPlistStrings(version: string): string | undefined {
+  const localBuild = resolveUpcomputerLocalBuildIdentity(version);
+  if (!localBuild || localBuild.menuBarName === localBuild.appName) return undefined;
+  return `"CFBundleName" = ${JSON.stringify(localBuild.menuBarName)};\n`;
+}
+
+const MAC_MENU_BAR_NAME_EXTRA_RESOURCE = {
+  from: "apps/desktop/prod-resources/mac-menu-bar-name",
+  to: "en.lproj",
+} as const;
+
 // A local test or demo build gets its own bundle id and no update feed or URL
 // schemes, so it can never replace or intercept the installed Alpha app.
 export function resolveDesktopAppId(version: string): string {
@@ -2937,6 +2950,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ...(platform === "linux" ? LINUX_BROWSER_SECRET_EXTRA_RESOURCES : []),
       ...(platform === "win" ? WINDOWS_SERVER_EXTRA_RESOURCES : []),
       ...(platform === "win" && wslRuntimeBundled ? WSL_RUNTIME_EXTRA_RESOURCES : []),
+      ...(platform === "mac" && resolveMacMenuBarInfoPlistStrings(version)
+        ? [MAC_MENU_BAR_NAME_EXTRA_RESOURCE]
+        : []),
     ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
@@ -3969,6 +3985,16 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   // electron-builder is filtering out stageResourcesDir directory in the AppImage for production
   const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
+  const macMenuBarInfoPlistStrings =
+    options.platform === "mac" ? resolveMacMenuBarInfoPlistStrings(appVersion) : undefined;
+  if (macMenuBarInfoPlistStrings) {
+    const macMenuBarNameDir = path.join(stageAppDir, MAC_MENU_BAR_NAME_EXTRA_RESOURCE.from);
+    yield* fs.makeDirectory(macMenuBarNameDir, { recursive: true });
+    yield* fs.writeFileString(
+      path.join(macMenuBarNameDir, "InfoPlist.strings"),
+      macMenuBarInfoPlistStrings,
+    );
+  }
 
   // Up.computer signs like V1 unless a passkey provisioning profile is configured.
   const releaseEnv = loadRepoEnv({ repoRoot });
