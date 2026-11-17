@@ -122,8 +122,12 @@ export class OpenCodeRuntimeError extends Schema.TaggedError<OpenCodeRuntimeErro
 ) {}
 
 // Classify stderr database locks at exit so callers need not parse diagnostics.
-function classifyStartupExit(stderr: string): OpenCodeStartupFailureReason | undefined {
-  return /SQLITE_BUSY|database is locked/i.test(stderr) ? "databaseLocked" : undefined;
+// Two first starts on a fresh opencode.db both migrate it, and the one that
+// loses fails on a schema statement the other already ran.
+export function classifyStartupExit(stderr: string): OpenCodeStartupFailureReason | undefined {
+  return /SQLITE_BUSY|database is locked|Failed query:\s*(?:CREATE|ALTER|DROP)\s/i.test(stderr)
+    ? "databaseLocked"
+    : undefined;
 }
 
 export const isOpenCodeRuntimeError = (u: unknown): u is OpenCodeRuntimeError =>
@@ -816,8 +820,9 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       // Shared opencode.db locks are transient; retry those, not configuration/executable errors.
       return yield* attempt.pipe(
         Effect.retry({
-          times: 3,
-          schedule: Schedule.spaced("250 millis"),
+          // About 4 seconds in all: a first migration on a slow disk outlasts a fixed short wait.
+          times: 4,
+          schedule: Schedule.exponential("250 millis"),
           while: (error) => error.reason === "databaseLocked",
         }),
       );
