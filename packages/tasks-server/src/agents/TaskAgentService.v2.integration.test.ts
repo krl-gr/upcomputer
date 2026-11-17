@@ -1774,11 +1774,14 @@ it.live("a chat creates a task through MCP tools and, waking off, hears back as 
       const textOf = (result: McpSchema.CallToolResult) =>
         result.content.map((part) => (part.type === "text" ? part.text : "")).join("");
 
+      // A chat forked from another repeats the parent's thread id from history;
+      // the run still reports back to the chat that called.
       const created = yield* callTool("task_create", {
         title: task.title,
         description: task.description,
         status: "To Do",
         audience: "agent",
+        sourceThreadId: "thread:task-agents-v2:parent",
       });
       assert.isFalse(created.isError, textOf(created));
       const createdTask = JSON.parse(textOf(created)).task;
