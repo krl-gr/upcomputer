@@ -61,18 +61,12 @@ const event = (type: string, data: Record<string, unknown>): ProviderReplayEntry
 const labelled = (entry: ProviderReplayEntry, label: string): ProviderReplayEntry =>
   entry.type === "runtime_exit" ? entry : { ...entry, label };
 /**
- * T3's own rules after a mode's: every thread's T3 MCP server is denied, then
- * this thread's own is allowed again (last match wins), less the tools that
- * would take the session over the 128-tool limit.
+ * T3's own rules after a mode's: every thread's T3 MCP server is denied, and
+ * then this thread's own is allowed again (last match wins).
  */
 const mcpRules = (name: string) => [
   { action: "t3-code-*", resource: "*", effect: "deny" },
   { action: `t3-code-thread_${name}_*`, resource: "*", effect: "allow" },
-  ...["preview_*", "t3_preview_*", "computer_*"].map((tool) => ({
-    action: `t3-code-thread_${name}_${tool}`,
-    resource: "*",
-    effect: "deny",
-  })),
 ];
 const FULL_ACCESS = [{ action: "*", resource: "*", effect: "allow" }];
 
