@@ -11,7 +11,11 @@ import {
   useClientSettingsHydrationStatus,
 } from "../../hooks/useSettings";
 import { completeOnboarding } from "../../onboarding/firstRun";
-import { FirstRunAgentStarter } from "../../onboardingSurface/FirstRunAgent";
+import {
+  FirstRunAgentStarter,
+  useFirstRunAgentStarterEnvironment,
+} from "../../onboardingSurface/FirstRunAgent";
+import { firstRunWorkspaceProjects } from "../../onboardingSurface/upComputerOnboarding.logic";
 import { productSurface } from "../../product/productFlags";
 import {
   isFirstRunWorkspaceProvenanceAuthoritative,
@@ -87,10 +91,15 @@ export function FirstRunGate({
   const onboardingCompletedAt = useClientSettings((settings) => settings.onboardingCompletedAt);
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const { isReady: environmentCatalogReady } = useEnvironments();
-  const projects = useProjects();
+  const allProjects = useProjects();
   const threadCount = useAtomValue(threadCountAtom);
   const soleThread = useAtomValue(soleThreadAtom);
   const serverConfig = useAtomValue(primaryServerConfigAtom);
+  // UpComputer: the scratch project home opens for a new user is not their workspace.
+  const projects = firstRunWorkspaceProjects(allProjects, {
+    environmentId: serverConfig?.environment.environmentId ?? null,
+    scratchWorkspaceRoot: serverConfig?.scratchWorkspaceRoot,
+  });
   const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
   const primaryShellLive = useAtomValue(primaryShellLiveAtom);
   const workspaceEvidenceLive = useAtomValue(workspaceEvidenceLiveAtom);
@@ -147,9 +156,21 @@ export function FirstRunGate({
     if (transitioned !== gateState) setGateState(transitioned);
   }
 
+  // UpComputer: a new user lands in the app while it sets up OpenCode; the
+  // Welcome page stays at /welcome for connecting other agents.
+  const installsFirstAgent =
+    decision === "wizard" &&
+    !hostedStatic &&
+    primaryEnvironmentId !== null &&
+    productSurface("onboarding") === "upcomputer";
+  const firstAgentEnvironmentId = useFirstRunAgentStarterEnvironment(
+    installsFirstAgent ? primaryEnvironmentId : null,
+  );
+
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists onboarding completion to settings once the gate settles on skipping the wizard
   useEffect(() => {
-    if (decision === "wizard" || !hydrated) return;
+    // UpComputer: a running first-agent setup completes onboarding itself, with its events.
+    if (decision === "wizard" || !hydrated || firstAgentEnvironmentId !== null) return;
     if (persistCompletion && onboardingCompletedAt === null) {
       void completeOnboarding().catch(() =>
         toastManager.add({
@@ -160,7 +181,7 @@ export function FirstRunGate({
         }),
       );
     }
-  }, [decision, hydrated, onboardingCompletedAt, persistCompletion]);
+  }, [decision, firstAgentEnvironmentId, hydrated, onboardingCompletedAt, persistCompletion]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer gives up on a pending first-run decision after the timeout
   useEffect(() => {
@@ -171,14 +192,6 @@ export function FirstRunGate({
     );
     return () => window.clearTimeout(timer);
   }, [decision, enabled, hydrated]);
-
-  // UpComputer: a new user lands in the app while it sets up OpenCode; the
-  // agent table stays at /welcome for connecting other agents.
-  const installsFirstAgent =
-    decision === "wizard" &&
-    !hostedStatic &&
-    primaryEnvironmentId !== null &&
-    productSurface("onboarding") === "upcomputer";
 
   // Setup opens by itself only from the home route. A direct link, such as
   // Settings, opens as asked so setup can never lock a user out of the app.
@@ -193,10 +206,10 @@ export function FirstRunGate({
   if (settingsReadFailed) {
     return <FirstRunRecovery reason="settings" retrying={hydrationStatus === "retrying"} />;
   }
-  if (installsFirstAgent) {
+  if (firstAgentEnvironmentId !== null) {
     return (
       <>
-        <FirstRunAgentStarter environmentId={primaryEnvironmentId} />
+        <FirstRunAgentStarter environmentId={firstAgentEnvironmentId} />
         {children}
       </>
     );

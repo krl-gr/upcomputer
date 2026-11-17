@@ -1,10 +1,13 @@
 import {
   defaultInstanceIdForDriver,
+  type EnvironmentId,
   ProviderDriverKind,
   type ProviderInstallState,
   type ProviderInstanceId,
   type ServerProvider,
 } from "@t3tools/contracts";
+
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 
 import { hasProviderSetup } from "../components/chat/ProviderStatusBanner";
 import { getOnboardingProviderState } from "../onboarding/providerReadiness.logic";
@@ -78,6 +81,28 @@ export function isFirstRunAgentChecking(entry: ProviderInstanceEntry | undefined
   if (entry?.instanceId !== FIRST_RUN_AGENT_INSTANCE_ID) return false;
   const { snapshot } = entry;
   return snapshot.statusPending === true || !snapshot.enabled || snapshot.status === "disabled";
+}
+
+/**
+ * The projects that tell the first-run gate a workspace already exists. Home
+ * opens the primary environment's scratch project ("No project") for a new
+ * user at once, so it says nothing about them: counted, it would end first-run
+ * setup before their first agent works.
+ */
+export function firstRunWorkspaceProjects<
+  Project extends { readonly environmentId: EnvironmentId; readonly workspaceRoot: string },
+>(
+  projects: ReadonlyArray<Project>,
+  primary: {
+    readonly environmentId: EnvironmentId | null;
+    readonly scratchWorkspaceRoot: string | null | undefined;
+  },
+): ReadonlyArray<Project> {
+  return projects.filter(
+    (project) =>
+      project.environmentId !== primary.environmentId ||
+      !isScratchProject(project, primary.scratchWorkspaceRoot),
+  );
 }
 
 /** How long a new user's setup waits for the agents already on the Mac to answer their first check. */
