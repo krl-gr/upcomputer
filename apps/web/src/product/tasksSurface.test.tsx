@@ -320,7 +320,7 @@ describe("the Tasks surface in the right panel", () => {
     const onAddFeatureSurface = vi.fn();
     renderPanel([], onAddFeatureSurface);
 
-    expect(launcherKeys()).toBe("BTFDK");
+    expect(launcherKeys()).toBe("BTFDMK");
     expect(document.querySelector("[data-surface-launcher-keys]")?.textContent).toContain("Tasks");
 
     pressKey(document.body, "k");
@@ -346,6 +346,7 @@ describe("the Tasks surface in the right panel", () => {
       "TerminalT",
       "FilesF",
       "DiffD",
+      "DeviceM",
       "TasksK",
     ]);
 
@@ -363,13 +364,13 @@ describe("the Tasks surface in the right panel", () => {
   it("leaves Tasks out of a build without the feature and of panels not beside a thread", () => {
     product.tasks = false;
     renderPanel([], vi.fn());
-    expect(launcherKeys()).toBe("BTFD");
+    expect(launcherKeys()).toBe("BTFDM");
     act(() => root?.unmount());
     container?.remove();
 
     product.tasks = true;
     renderPanel([], undefined);
-    expect(launcherKeys()).toBe("BTFD");
+    expect(launcherKeys()).toBe("BTFDM");
   });
 });
 

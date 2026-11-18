@@ -191,16 +191,18 @@ function pressKey(target: EventTarget, key: string) {
 }
 
 describe("the terminal surface in the UpComputer product", () => {
-  it("lists Terminal in the launcher next to Browser, Files and Diff, and T opens it", () => {
+  it("lists Terminal in the launcher next to Browser, Files, Diff and Device, and T opens it", () => {
     product.hidden = true;
     const onAddTerminal = vi.fn();
     renderPanel([], onAddTerminal);
 
     const launcher = document.querySelector("[data-surface-launcher-keys]");
-    expect(launcher?.getAttribute("data-surface-launcher-keys")).toBe("BTFD");
+    expect(launcher?.getAttribute("data-surface-launcher-keys")).toBe("BTFDM");
     const text = launcher?.textContent ?? "";
-    for (const label of ["Browser", "Terminal", "Files", "Diff"]) expect(text).toContain(label);
-    for (const label of ["Pull request", "Device"]) expect(text).not.toContain(label);
+    for (const label of ["Browser", "Terminal", "Files", "Diff", "Device"]) {
+      expect(text).toContain(label);
+    }
+    expect(text).not.toContain("Pull request");
 
     pressKey(document.body, "t");
     expect(onAddTerminal).toHaveBeenCalledOnce();
@@ -223,7 +225,7 @@ describe("the terminal surface in the UpComputer product", () => {
 
     const items = [...document.querySelectorAll('[role="menuitem"]')];
     const labels = items.map((item) => item.textContent);
-    expect(labels).toEqual(["BrowserB", "TerminalT", "FilesF", "DiffD"]);
+    expect(labels).toEqual(["BrowserB", "TerminalT", "FilesF", "DiffD", "DeviceM"]);
 
     pressKey(items[1]!, "t");
     expect(onAddTerminal).toHaveBeenCalledOnce();
