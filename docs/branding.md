@@ -63,6 +63,7 @@ line), and `apps/mobile/app.config.test.ts` fails if a T3 id or host reaches the
 | Apple team               | `T3CODE_IOS_TEAM_ID`; unset builds have no team                                                 |
 
 Bundle ids are fixed once an App Store or TestFlight record exists: confirm them before either.
+EAS submit needs our own App Store Connect record first: `eas.json` names no `ascAppId` until then.
 Until our domains serve Apple association files and the relay has an APNs key, the iOS build has
 no associated domains (universal links, passkeys), no push or remote Live Activity updates, no
 Apple sign-in, no EAS project and no over-the-air updates.
