@@ -643,28 +643,19 @@ const T3_MCP_SERVER_NAME = "t3-code";
 /**
  * OpenCode sends every MCP tool to the model next to its own, and
  * OpenAI-compatible APIs reject a request with more than 128 tools. The T3 MCP
- * server alone has about 120, so OpenCode sessions leave out its browser and
- * computer-use tools, which their instructions never advertise. OpenCode drops
- * a tool whose last matching rule denies it before calling the model, and task
- * sessions inherit the denies.
+ * server alone has about 120, so OpenCode asks it to list a few and load the
+ * rest through `tool_search`; OpenCode re-lists on `tools/list_changed`.
  */
-export const OPENCODE_HIDDEN_T3_TOOLS = ["preview_*", "t3_preview_*", "computer_*"] as const;
+export const openCodeT3McpHeaders = (authorizationHeader: string) => ({
+  Authorization: authorizationHeader,
+  [McpProviderSession.MCP_TOOL_EXPOSURE_HEADER]: "deferred",
+});
+
+export const OPENCODE_T3_TOOL_SEARCH_INSTRUCTIONS =
+  "Up.computer's MCP server lists only a few of its tools at first. Call `tool_search` to load the others, then call them by name: search `computer` for the `computer_*` tools that see and control apps on this computer (computer use), `browser` for the `preview_*` browser you share with the user, or exact names such as `task_update` or `t3_thread_launch`.";
 
 /** OpenCode has no OS sandbox; permission rules must enforce non-interactive policies too. */
 export function openCodePermissionRules(
-  runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
-): PermissionRuleset {
-  return [
-    ...openCodeRuntimePermissionRules(runtimePolicy),
-    ...OPENCODE_HIDDEN_T3_TOOLS.map((tool) => ({
-      permission: `${T3_MCP_SERVER_NAME}_${tool}`,
-      pattern: "*",
-      action: "deny" as const,
-    })),
-  ];
-}
-
-function openCodeRuntimePermissionRules(
   runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
 ): PermissionRuleset {
   const sandboxPolicy = recordValue(runtimePolicy, "sandboxPolicy");
@@ -1070,7 +1061,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               config: {
                 type: "remote",
                 url: mcpSession.endpoint,
-                headers: { Authorization: mcpSession.authorizationHeader },
+                headers: openCodeT3McpHeaders(mcpSession.authorizationHeader),
                 oauth: false,
               },
             }),
@@ -3269,6 +3260,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             ...(variant === undefined ? {} : { variant }),
             system: [
               orchestrationSystemPrompt,
+              hasT3Mcp ? OPENCODE_T3_TOOL_SEARCH_INSTRUCTIONS : undefined,
               buildRuntimeInstructions({ harness: "OpenCode", model: turn.modelSelection.model }),
             ]
               .filter(Boolean)
