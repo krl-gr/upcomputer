@@ -93,7 +93,7 @@ export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   terminalSurface: true,
   terminal: false,
   threadSettlement: false,
-  devices: false,
+  devices: true,
   mcpOAuth: true,
   scheduledTaskWebhooks: true,
   defaultBrowser: true,
