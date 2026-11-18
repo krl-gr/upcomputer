@@ -19,7 +19,12 @@ import {
 } from "./userSurvey.logic";
 
 export const USER_SURVEY_TITLE = `How can we improve ${APP_BASE_NAME} for you?`;
-export const USER_SURVEY_THANKS = "This helps us decide what to build next.";
+/** The thank-you: a promise to look into a reported problem, or plain thanks. */
+export function surveyThanks(reported: boolean): { readonly title: string; readonly text: string } {
+  return reported
+    ? { title: "Thanks!", text: "We'll look into it." }
+    : { title: "Thank you!", text: "This helps us decide what to build next." };
+}
 
 export type UserSurveyStatus =
   | { readonly kind: "editing" }
@@ -261,7 +266,7 @@ function ChoiceChips({
               size={size}
               aria-label={question.choices.at(-1)}
               lines={3}
-              placeholder="What else?"
+              placeholder="Tell us what"
               autoFocus
               value={answer.otherText}
               onChange={(event) => onChange({ ...answer, otherText: event.target.value })}

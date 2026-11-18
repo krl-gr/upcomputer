@@ -33,40 +33,41 @@ describe("parseUserSurveys", () => {
         questions: [
           {
             id: "q-working",
-            question: "Hi 👋 Is everything working fine in Up.computer?",
+            question: "Hi 👋 Is Up.computer working well for you?",
             optional: false,
             type: "single_choice",
-            choices: ["Yes", "There are issues"],
+            choices: ["All good", "Something's off"],
             hasOpenChoice: false,
           },
           {
             id: "q-details",
-            question: "Can you provide details so we can fix it ASAP?",
-            description: "What happened, and where?",
+            question: "What went wrong? We'll fix it as soon as we can.",
+            description: "What happened, and where in the app?",
             optional: true,
-            // "Yes" skips to question 2, so the details question follows "There are issues".
+            // "All good" skips to question 2, so the details question follows "Something's off".
             showWhen: { questionId: "q-working", choices: [1] },
             type: "open",
           },
           {
             id: "q-missing",
-            question: "What are you missing?",
+            question: "What should we build next?",
             optional: true,
             type: "multiple_choice",
             choices: [
               "Mobile app",
-              "Claude agents",
-              "Voice",
-              "Access to bots in Slack",
-              "Bot in video calls",
+              "Cloud agents",
+              "Voice dictation",
+              "Bots in Slack",
+              "Bots in video calls",
               "Document editing",
+              "Collaborative work",
               "Other",
             ],
             hasOpenChoice: true,
           },
           {
             id: "q-else",
-            question: "Can we reach you with follow-up questions? Leave your email or X handle.",
+            question: "Can we follow up with you? Leave your email or X handle.",
             optional: true,
             type: "open",
           },
@@ -143,7 +144,7 @@ describe("parseUserSurveys", () => {
         }),
       ],
     });
-    // "end" skips past the details question too, so it still follows "There are issues".
+    // "end" skips past the details question too, so it still follows "Something's off".
     assert.deepEqual(parsed[0]!.survey.questions[1]!.showWhen, {
       questionId: "q-working",
       choices: [1],
@@ -188,9 +189,9 @@ describe("surveySentProperties", () => {
       surveySentProperties(
         active,
         [
-          { questionId: "q-working", value: "There are issues" },
+          { questionId: "q-working", value: "Something's off" },
           { questionId: "q-details", value: "  The sidebar flickers  " },
-          { questionId: "q-missing", value: ["Voice", "Calendar sync"] },
+          { questionId: "q-missing", value: ["Voice dictation", "Calendar sync"] },
           { questionId: "q-else", value: "" },
           { questionId: "q-unknown", value: "dropped" },
         ],
@@ -204,28 +205,28 @@ describe("surveySentProperties", () => {
         $survey_questions: [
           {
             id: "q-working",
-            question: "Hi 👋 Is everything working fine in Up.computer?",
-            response: "There are issues",
+            question: "Hi 👋 Is Up.computer working well for you?",
+            response: "Something's off",
           },
           {
             id: "q-details",
-            question: "Can you provide details so we can fix it ASAP?",
+            question: "What went wrong? We'll fix it as soon as we can.",
             response: "The sidebar flickers",
           },
           {
             id: "q-missing",
-            question: "What are you missing?",
-            response: ["Voice", "Calendar sync"],
+            question: "What should we build next?",
+            response: ["Voice dictation", "Calendar sync"],
           },
           {
             id: "q-else",
-            question: "Can we reach you with follow-up questions? Leave your email or X handle.",
+            question: "Can we follow up with you? Leave your email or X handle.",
             response: null,
           },
         ],
-        "$survey_response_q-working": "There are issues",
+        "$survey_response_q-working": "Something's off",
         "$survey_response_q-details": "The sidebar flickers",
-        "$survey_response_q-missing": ["Voice", "Calendar sync"],
+        "$survey_response_q-missing": ["Voice dictation", "Calendar sync"],
       },
     );
   });
@@ -234,12 +235,12 @@ describe("surveySentProperties", () => {
     const properties = surveySentProperties(
       active,
       [
-        { questionId: "q-working", value: "Yes" },
-        { questionId: "q-details", value: "typed before switching to Yes" },
+        { questionId: "q-working", value: "All good" },
+        { questionId: "q-details", value: "typed before switching to All good" },
       ],
       "submission-2",
     );
-    assert.strictEqual(properties["$survey_response_q-working"], "Yes");
+    assert.strictEqual(properties["$survey_response_q-working"], "All good");
     assert.notProperty(properties, "$survey_response_q-details");
   });
 

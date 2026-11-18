@@ -88,9 +88,9 @@ const ANSWERED: UserSurveyReport = {
   _tag: "Answered",
   surveyId: SURVEY_ID,
   answers: [
-    { questionId: "q-working", value: "There are issues" },
+    { questionId: "q-working", value: "Something's off" },
     { questionId: "q-details", value: "The sidebar flickers" },
-    { questionId: "q-missing", value: ["Voice", "Calendar sync"] },
+    { questionId: "q-missing", value: ["Voice dictation", "Calendar sync"] },
   ],
 };
 
@@ -129,7 +129,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("UserSurveys", (i
       assert.strictEqual(sent!.distinct_id, shown!.distinct_id);
       assert.strictEqual(sent!.properties.$survey_id, SURVEY_ID);
       assert.strictEqual(sent!.properties["$survey_response_q-details"], "The sidebar flickers");
-      assert.deepEqual(sent!.properties["$survey_response_q-missing"], ["Voice", "Calendar sync"]);
+      assert.deepEqual(sent!.properties["$survey_response_q-missing"], [
+        "Voice dictation",
+        "Calendar sync",
+      ]);
       assert.strictEqual(sent!.properties.$survey_completed, true);
       assert.isString(sent!.properties.$survey_submission_id);
       // With analytics on, the answer carries the usual app details.

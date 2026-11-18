@@ -12,7 +12,7 @@ import type { SubmitUserSurvey } from "./UserSurveyDialog";
 // The server reads PostHog at most hourly; this only picks up what it already holds.
 const POLL_INTERVAL_MS = 15 * 60_000;
 const isUserSurveyError = Schema.is(UserSurveyError);
-const SEND_FAILED = "Could not send your answers. Check your connection and try again.";
+const SEND_FAILED = "Couldn't send. Check your connection and try again.";
 
 export interface UserSurveyHandle {
   readonly survey: UserSurvey;

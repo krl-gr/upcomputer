@@ -133,6 +133,16 @@ export function surveySteps(
   return steps.length > 0 ? steps : blocks;
 }
 
+/**
+ * Whether an answer opened a follow-up question: the person reported something
+ * to look into. Read from the branching, so it holds for any wording.
+ */
+export function surveyOpenedFollowUp(survey: UserSurvey, draft: SurveyDraft): boolean {
+  return survey.questions.some(
+    (question) => question.showWhen !== undefined && isShown(question, draft),
+  );
+}
+
 /** An open question that asks how to reach the person: one line, not a text box. */
 export function isContactQuestion(question: UserSurveyQuestion): boolean {
   return question.type === "open" && /e-?mail/i.test(question.question);

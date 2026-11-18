@@ -65,6 +65,6 @@ export class UserSurveyError extends Schema.TaggedError<UserSurveyError>()("User
   override get message(): string {
     return this.reason === "unavailable"
       ? "This survey has closed."
-      : "Could not send your answers. Check your connection and try again.";
+      : "Couldn't send. Check your connection and try again.";
   }
 }

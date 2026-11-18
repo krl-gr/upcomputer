@@ -14,15 +14,31 @@ import {
   SurveyFollowUps,
   SurveySendAction,
   SurveyThanksMark,
-  USER_SURVEY_THANKS,
+  surveyThanks,
   USER_SURVEY_TITLE,
 } from "./surveyParts";
-import { canSubmitSurvey, type SurveyDraft, surveyAnswers, surveySteps } from "./userSurvey.logic";
+import {
+  canSubmitSurvey,
+  type SurveyDraft,
+  surveyAnswers,
+  surveyOpenedFollowUp,
+  surveySteps,
+} from "./userSurvey.logic";
 
 export type { SubmitUserSurvey, UserSurveyStatus } from "./surveyParts";
 
 // Long enough to see the chip turn before the next question comes in.
 const AUTO_ADVANCE_MS = 260;
+
+/** Each sentence as a unit, so a two-sentence question breaks between them when it must wrap. */
+function sentences(text: string) {
+  return text.split(/(?<=[.?!])\s+/).map((sentence, index) => (
+    // oxlint-disable-next-line react/no-array-index-key -- the parts of one fixed string
+    <span key={index} className="inline-block">
+      {sentence}&nbsp;
+    </span>
+  ));
+}
 
 /** The survey form: one question per step, in a centered dialog. The card asked the first. */
 export function UserSurveyDialog({
@@ -72,6 +88,7 @@ export function UserSurveyDialogPopup({
     answered.has(question.id),
   );
   const canLeave = block.question.optional || answered.has(block.question.id);
+  const thanks = surveyThanks(surveyOpenedFollowUp(survey, draft));
 
   const change = (next: SurveyDraft) => {
     onDraftChange(next);
@@ -85,7 +102,7 @@ export function UserSurveyDialogPopup({
 
   return (
     <DialogPopup
-      className="sm:max-w-md"
+      className="sm:max-w-lg"
       showCloseButton={false}
       // Opens with the caret in the step's text box: the card already took the first click.
       initialFocus={() => formRef.current?.querySelector<HTMLElement>("textarea, input") ?? true}
@@ -116,8 +133,10 @@ export function UserSurveyDialogPopup({
               className="flex flex-col items-center gap-1.5 px-6 pt-10 pb-5 text-center opacity-100 transition-opacity duration-300 ease-out starting:opacity-0 motion-reduce:transition-none"
             >
               <SurveyThanksMark />
-              <p className="mt-2.5 text-xl leading-snug font-semibold tracking-tight">Thank you!</p>
-              <p className="text-sm text-muted-foreground">{USER_SURVEY_THANKS}</p>
+              <p className="mt-2.5 text-xl leading-snug font-semibold tracking-tight">
+                {thanks.title}
+              </p>
+              <p className="text-sm text-muted-foreground">{thanks.text}</p>
             </div>
           ) : (
             <>
@@ -156,9 +175,15 @@ export function UserSurveyDialogPopup({
                 )}
               >
                 <legend className="contents">
-                  <span className="mb-4 text-xl leading-snug font-semibold tracking-tight text-balance">
-                    {block.question.question}
+                  <span className="text-xl leading-snug font-semibold tracking-tight text-balance">
+                    {sentences(block.question.question)}
                   </span>
+                  {block.question.type === "multiple_choice" ? (
+                    <span className="mt-1 text-sm text-muted-foreground">
+                      Pick as many as you like
+                    </span>
+                  ) : null}
+                  <span aria-hidden className="h-4" />
                 </legend>
                 <SurveyAnswerInput
                   question={block.question}
