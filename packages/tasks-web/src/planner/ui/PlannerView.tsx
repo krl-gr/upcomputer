@@ -408,6 +408,8 @@ export function plannerProjectsOf(
       name: project.name,
       favicon: project.favicon,
       inbox: isInboxRoot(project.workspaceRoot),
+      groupKey: project.groupKey,
+      pickId: project.pickId,
     }));
 }
 

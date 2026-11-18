@@ -57,6 +57,7 @@ import { SHOW_MANUAL_CREATE_ACTIONS } from "./manualCreation.ts";
 import { preferredProject } from "./projectFilter.ts";
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { splitListInput, type TasksWebProject } from "./shared.ts";
+import { pickerProjectFor, pickerProjects } from "./taskProjects.ts";
 import { ListEmptyState } from "./ListEmptyState.tsx";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import { isBotAgent } from "../bots/botData.tsx";
@@ -350,10 +351,14 @@ export function AgentsView(props: AgentsViewProps) {
         ?.some((option) => option.slug === project.defaultModelSelection.model),
     );
   });
+  const projectOptions = pickerProjects(mutableProjects);
   const selectedProject = editingAgent
     ? props.projects.find((project) => projectKey(project) === form.projectKey)
     : (mutableProjects.find((project) => projectKey(project) === form.projectKey) ??
-      mutableProjects[0]);
+      projectOptions[0]);
+  const selectedProjectOption = selectedProject
+    ? pickerProjectFor(projectOptions, selectedProject)
+    : undefined;
   const selectedEnvironmentId = editingAgent?.environmentId ?? selectedProject?.environmentId;
   const baseModelSelection =
     editingAgent?.config.modelSelection ?? selectedProject?.defaultModelSelection;
@@ -465,9 +470,9 @@ export function AgentsView(props: AgentsViewProps) {
     detailRequestRef.current += 1;
     setDetailRuns([]);
     setDetailRunsStatus("idle");
-    setForm(emptyForm(preferredProject(mutableProjects, null)));
+    setForm(emptyForm(preferredProject(projectOptions, null)));
     setViewMode({ kind: "create" });
-  }, [mutableProjects]);
+  }, [projectOptions]);
 
   const showAgent = useCallback(
     (agent: ScopedTaskAgent) => {
@@ -1124,12 +1129,18 @@ export function AgentsView(props: AgentsViewProps) {
                   </DetailSidebarRow>
                   <DetailSidebarRow label="Project" controlSelector="button">
                     <Select
-                      value={selectedProject ? projectKey(selectedProject) : ""}
+                      value={
+                        selectedProjectOption
+                          ? projectKey(selectedProjectOption)
+                          : selectedProject
+                            ? projectKey(selectedProject)
+                            : ""
+                      }
                       onValueChange={(value) => {
-                        const project = mutableProjects.find(
+                        const project = projectOptions.find(
                           (candidate) => projectKey(candidate) === value,
                         );
-                        if (project)
+                        if (project && project !== selectedProjectOption)
                           setForm((current) => ({
                             ...current,
                             projectKey: projectKey(project),
@@ -1159,7 +1170,7 @@ export function AgentsView(props: AgentsViewProps) {
                         </SelectValue>
                       </SelectTrigger>
                       <SelectPopup>
-                        {mutableProjects.map((project) => (
+                        {projectOptions.map((project) => (
                           <SelectItem key={projectKey(project)} value={projectKey(project)}>
                             {project.name}
                           </SelectItem>
