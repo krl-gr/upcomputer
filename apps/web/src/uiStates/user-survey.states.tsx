@@ -284,7 +284,13 @@ it("user-survey", async () => {
             1,
             EDITING,
           ),
-          form("There are issues, step 3 of 3: the contact", issues(""), 2, EDITING),
+          form(
+            "There are issues, step 3 of 3: the contact, Skip while empty",
+            issues(""),
+            2,
+            EDITING,
+          ),
+          form("There are issues, step 3 of 3: Send once something is typed", FILLED, 2, EDITING),
           form("Yes, step 1 of 2: what is missing", YES, 0, EDITING),
           form("Yes, step 2 of 2: the contact", YES, 1, EDITING),
         ],
@@ -299,6 +305,7 @@ it("user-survey", async () => {
         title: "Sending",
         states: [
           form("submitting", FILLED, 2, { kind: "submitting" }),
+          form("submitting from Skip, with no contact", issues(""), 2, { kind: "submitting" }),
           form("send failed: the error under the field", FILLED, 2, {
             kind: "failed",
             message: "Could not send your answers. Check your connection and try again.",

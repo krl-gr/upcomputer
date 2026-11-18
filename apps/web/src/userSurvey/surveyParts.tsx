@@ -171,7 +171,10 @@ export function SurveyAutoHeight({ children }: { readonly children: ReactNode })
       className="overflow-hidden transition-[height] duration-200 ease-out motion-reduce:transition-none"
       style={height === null ? undefined : { height }}
     >
-      <div ref={observe}>{children}</div>
+      {/* A flow root, so a child's margin counts in the measured height. */}
+      <div ref={observe} className="flow-root">
+        {children}
+      </div>
     </div>
   );
 }
@@ -291,24 +294,19 @@ export function SurveyAnswerInput({
   const onChange = (next: SurveyDraftAnswer) => onDraftChange({ ...draft, [question.id]: next });
   if (isContactQuestion(question)) {
     return (
-      <>
-        <input
-          type="text"
-          inputMode="email"
-          autoComplete="email"
-          autoCapitalize="off"
-          spellCheck={false}
-          className={fieldVariants({ size })}
-          aria-label={question.question}
-          placeholder={question.description ?? "you@example.com or @handle"}
-          autoFocus={autoFocus}
-          value={answer.text}
-          onChange={(event) => onChange({ ...answer, text: event.target.value })}
-        />
-        <p className="pt-2 text-xs text-muted-foreground">
-          Optional. Send without it if you prefer.
-        </p>
-      </>
+      <input
+        type="text"
+        inputMode="email"
+        autoComplete="email"
+        autoCapitalize="off"
+        spellCheck={false}
+        className={fieldVariants({ size })}
+        aria-label={question.question}
+        placeholder={question.description ?? "you@example.com or @handle"}
+        autoFocus={autoFocus}
+        value={answer.text}
+        onChange={(event) => onChange({ ...answer, text: event.target.value })}
+      />
     );
   }
   if (question.type === "open") {
@@ -388,21 +386,33 @@ export function SurveyAction({
   return <button type="button" className={actionVariants({ size, tone })} {...props} />;
 }
 
-/** The send button in its three faces: Send, Sending and Try again. */
+/**
+ * The last step's button: Send, or a quiet Skip while that step is empty.
+ * Both send the answers, and both turn into Sending and Try again.
+ */
 export function SurveySendAction({
   size,
   status,
+  skip,
   disabled,
 }: {
   readonly size: SurveyChipSize;
   readonly status: UserSurveyStatus;
+  /** The step is optional and empty: sending leaves it out. */
+  readonly skip: boolean;
   readonly disabled: boolean;
 }) {
   const submitting = status.kind === "submitting";
+  const idle = status.kind === "editing";
   return (
-    <SurveyAction type="submit" size={size} tone="primary" disabled={disabled || submitting}>
+    <SurveyAction
+      type="submit"
+      size={size}
+      tone={skip && idle ? "soft" : "primary"}
+      disabled={disabled || submitting}
+    >
       {submitting ? <Spinner /> : null}
-      {submitting ? "Sending…" : status.kind === "failed" ? "Try again" : "Send"}
+      {submitting ? "Sending…" : status.kind === "failed" ? "Try again" : skip ? "Skip" : "Send"}
     </SurveyAction>
   );
 }

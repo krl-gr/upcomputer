@@ -108,69 +108,78 @@ export function UserSurveyDialogPopup({
         }}
       >
         <DialogPrimitive.Title className="sr-only">{USER_SURVEY_TITLE}</DialogPrimitive.Title>
-        <div className="mt-4 flex h-8 items-center justify-between pr-4 pl-6">
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {sent ? "All done" : `${step + 1} of ${blocks.length}`}
-          </span>
-          <DialogPrimitive.Close aria-label="Close" render={<Button size="icon" variant="ghost" />}>
-            <XIcon />
-          </DialogPrimitive.Close>
-        </div>
-        <div className="mt-1.5 flex items-center gap-1 px-6" aria-hidden>
-          {blocks.map((entry, index) => (
-            <span key={entry.question.id} className="h-1 flex-1 rounded-full bg-foreground/10">
-              <span
-                className={cn(
-                  "block h-full origin-left rounded-full bg-foreground transition-transform duration-300 ease-out motion-reduce:transition-none",
-                  sent || index <= step ? "scale-x-100" : "scale-x-0",
-                )}
-              />
-            </span>
-          ))}
-        </div>
+        {/* The header is inside, so the thank-you, which has none, arrives as one smooth resize. */}
         <SurveyAutoHeight>
           {sent ? (
             <div
               key="sent"
-              className="flex flex-col items-center gap-1.5 px-6 pt-9 pb-5 text-center"
+              className="flex flex-col items-center gap-1.5 px-6 pt-10 pb-5 text-center opacity-100 transition-opacity duration-300 ease-out starting:opacity-0 motion-reduce:transition-none"
             >
               <SurveyThanksMark />
               <p className="mt-2.5 text-xl leading-snug font-semibold tracking-tight">Thank you!</p>
               <p className="text-sm text-muted-foreground">{USER_SURVEY_THANKS}</p>
             </div>
           ) : (
-            <fieldset
-              key={step}
-              disabled={submitting}
-              className={cn(
-                "flex min-w-0 translate-x-0 flex-col px-6 pt-5 pb-1 opacity-100 transition-[opacity,translate] duration-250 ease-out starting:opacity-0 motion-reduce:transition-none",
-                back ? "starting:-translate-x-5" : "starting:translate-x-5",
-              )}
-            >
-              <legend className="contents">
-                <span className="mb-4 text-xl leading-snug font-semibold tracking-tight text-balance">
-                  {block.question.question}
+            <>
+              <div className="mt-4 flex h-8 items-center justify-between pr-4 pl-6">
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {step + 1} of {blocks.length}
                 </span>
-              </legend>
-              <SurveyAnswerInput
-                question={block.question}
-                draft={draft}
-                onDraftChange={change}
-                size="lg"
-                autoFocus={block.question.type === "open"}
-              />
-              <SurveyFollowUps
-                followUps={block.followUps}
-                draft={draft}
-                onDraftChange={onDraftChange}
-                size="lg"
-              />
-              {status.kind === "failed" ? (
-                <div className="flex pt-2.5">
-                  <SurveyError status={status} />
-                </div>
-              ) : null}
-            </fieldset>
+                <DialogPrimitive.Close
+                  aria-label="Close"
+                  render={<Button size="icon" variant="ghost" />}
+                >
+                  <XIcon />
+                </DialogPrimitive.Close>
+              </div>
+              <div className="mt-1.5 flex items-center gap-1 px-6" aria-hidden>
+                {blocks.map((entry, index) => (
+                  <span
+                    key={entry.question.id}
+                    className="h-1 flex-1 rounded-full bg-foreground/10"
+                  >
+                    <span
+                      className={cn(
+                        "block h-full origin-left rounded-full bg-foreground transition-transform duration-300 ease-out motion-reduce:transition-none",
+                        index <= step ? "scale-x-100" : "scale-x-0",
+                      )}
+                    />
+                  </span>
+                ))}
+              </div>
+              <fieldset
+                key={step}
+                disabled={submitting}
+                className={cn(
+                  "flex min-w-0 translate-x-0 flex-col px-6 pt-5 pb-1 opacity-100 transition-[opacity,translate] duration-250 ease-out starting:opacity-0 motion-reduce:transition-none",
+                  back ? "starting:-translate-x-5" : "starting:translate-x-5",
+                )}
+              >
+                <legend className="contents">
+                  <span className="mb-4 text-xl leading-snug font-semibold tracking-tight text-balance">
+                    {block.question.question}
+                  </span>
+                </legend>
+                <SurveyAnswerInput
+                  question={block.question}
+                  draft={draft}
+                  onDraftChange={change}
+                  size="lg"
+                  autoFocus={block.question.type === "open"}
+                />
+                <SurveyFollowUps
+                  followUps={block.followUps}
+                  draft={draft}
+                  onDraftChange={onDraftChange}
+                  size="lg"
+                />
+                {status.kind === "failed" ? (
+                  <div className="flex pt-2.5">
+                    <SurveyError status={status} />
+                  </div>
+                ) : null}
+              </fieldset>
+            </>
           )}
         </SurveyAutoHeight>
         <footer className="flex min-h-9 items-center gap-3 px-6 pt-4 pb-6">
@@ -198,6 +207,7 @@ export function UserSurveyDialogPopup({
                 <SurveySendAction
                   size="lg"
                   status={status}
+                  skip={!stepAnswered && block.question.optional}
                   disabled={!canSubmitSurvey(survey, draft)}
                 />
               ) : (
