@@ -191,7 +191,8 @@ function BotForm({
   readonly threadId?: ThreadId;
   readonly onBack: () => void;
 }) {
-  const snapshots = useSidebarProjectSnapshots();
+  // The bot's own computer, even when the sidebar shows another one.
+  const snapshots = useSidebarProjectSnapshots(false);
   const projects = useMemo(
     () => taskProjectsOf(snapshots).filter((project) => project.environmentId === environmentId),
     [environmentId, snapshots],

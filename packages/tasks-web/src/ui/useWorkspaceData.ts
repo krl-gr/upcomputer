@@ -71,10 +71,12 @@ export interface TasksWorkspaceData {
   readonly reload: () => void;
 }
 
-/** The sidebar's logical projects, grouped and ordered as the sidebar shows them. */
-export function useSidebarProjectSnapshots() {
-  // Tasks and Workers follow the sidebar's Computers section.
-  const projects = useSidebarComputerProjects(useProjects(), true);
+/**
+ * The sidebar's logical projects, grouped and ordered as the sidebar shows them. Tasks and
+ * Workers follow the sidebar's Computers section; a screen for one computer passes `scoped` false.
+ */
+export function useSidebarProjectSnapshots(scoped = true) {
+  const projects = useSidebarComputerProjects(useProjects(), scoped);
   const { environments } = useEnvironments();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const grouping = usePrimarySettings(selectProjectGroupingSettings);
