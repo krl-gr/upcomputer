@@ -24,6 +24,8 @@ const PROJECT: TasksViewProps["projects"][number] = {
   id: ProjectId.make("project-ui-states"),
   name: "upcomputer",
   workspaceRoot: "/Users/me/upcomputer",
+  groupKey: "environment-ui-states\0project-ui-states",
+  pickId: ProjectId.make("project-ui-states"),
   favicon: {
     environmentId: ENVIRONMENT_ID,
     workspaceRoot: "/Users/me/upcomputer",
