@@ -13,6 +13,7 @@ import * as Scope from "effect/Scope";
 import * as Electron from "electron";
 
 import {
+  resolveUpcomputerLocalBuildIdentity,
   UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME,
   UPCOMPUTER_PROTOCOL_SCHEME,
 } from "@t3tools/shared/upcomputerIdentity";
@@ -23,6 +24,15 @@ const DESKTOP_DEVELOPMENT_SCHEME = UPCOMPUTER_DEVELOPMENT_PROTOCOL_SCHEME;
 
 export function getDesktopScheme(isDevelopment: boolean): string {
   return isDevelopment ? DESKTOP_DEVELOPMENT_SCHEME : DESKTOP_PRODUCTION_SCHEME;
+}
+
+/**
+ * Local test and demo builds load the same renderer scheme as the installed
+ * app, but they must never become the OS handler for it: sign-in callbacks
+ * and links meant for Alpha or Nightly would open them instead.
+ */
+export function claimsDesktopSchemeHandler(appVersion: string): boolean {
+  return resolveUpcomputerLocalBuildIdentity(appVersion) === undefined;
 }
 
 function getDesktopOrigin(isDevelopment: boolean): string {
