@@ -10,7 +10,7 @@ const { addWidgetAssetCatalog } = require("./lib/addWidgetAssetCatalog.cjs");
 const TARGET_NAME = "ExpoWidgetsTarget";
 const CATALOG_NAME = "Assets.xcassets";
 const IMAGE_SET = "T3Mark.imageset";
-const SVG_NAME = "T3Mark.svg";
+const SVG_NAME = "UpcomputerMark.svg";
 
 const CATALOG_CONTENTS = JSON.stringify({ info: { author: "expo", version: 1 } }, null, 2) + "\n";
 const IMAGE_SET_CONTENTS =

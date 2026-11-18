@@ -16,12 +16,12 @@ export function agentActivityWidgetTimeline(source: AgentActivityWidgetSource, n
   const updatedAt = new Date(now).toISOString();
   if (source.kind !== "snapshot" || !source.aggregate) {
     const props: AgentActivityProps = {
-      title: "T3 Code",
+      title: "Up.computer",
       subtitle:
         source.kind === "signed-out"
-          ? "Sign in to T3 Connect to see agents"
+          ? "Sign in to UpComputer Connect to see agents"
           : source.kind === "unavailable"
-            ? "Couldn't reach T3 Connect"
+            ? "Couldn't reach UpComputer Connect"
             : source.kind === "loading"
               ? "Loading agents…"
               : "No active agents",

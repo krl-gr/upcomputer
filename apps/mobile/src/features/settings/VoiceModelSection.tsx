@@ -316,7 +316,7 @@ export function LocalModelChoice(props: {
             ? `Local model · ${formatBytes(active.size)}`
             : voice.canManage
               ? "No model installed · Choose one to download"
-              : `No model installed · Add one using T3 Code on ${props.label}`
+              : `No model installed · Add one using Up.computer on ${props.label}`
       }
       selected={props.selected}
       onPress={() => {

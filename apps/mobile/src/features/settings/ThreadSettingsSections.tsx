@@ -55,7 +55,7 @@ export function SettingsLabsRouteScreen() {
           icon="bolt.circle"
           capability="fastWorktreeCheckout"
           setting="fastWorktreeCheckout"
-          description="On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache."
+          description="On a Mac, clone new worktrees from a checkout cached in the Up.computer home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache."
         />
       </ScrollView>
     </SettingsScreen>

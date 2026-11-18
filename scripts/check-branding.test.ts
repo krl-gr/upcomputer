@@ -6,7 +6,7 @@ import * as NodeURL from "node:url";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import { findBrandingProblems } from "./check-branding.ts";
-import { rebrandText } from "./lib/branding.ts";
+import { isCopyFile, rebrandText } from "./lib/branding.ts";
 
 const repoRoot = NodePath.dirname(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)));
 const temporaryDirectories: string[] = [];
@@ -126,6 +126,16 @@ describe("apply-branding rules", () => {
     ).toBe(
       'const text = "Start Up.computer, then sign in with your Up.computer account for Up.computer\'s browser. Link T3 Chat with T3CODE_HOME."; const home = resolveWorktreeT3Home(); const env = "T3_UNINSTALL_RUNTIME";',
     );
+  });
+
+  it("names the app where the iPhone app says T3 alone, but not monograms or Android-only files", () => {
+    const source =
+      'const a = gt("T3 Account"); const b = "Open T3 to refresh"; const c = `${n} more in T3`; const d = ["t3code", "T3", "teal"]; const e = "Link T3 Chat";';
+    expect(rebrandText(source, "apps/mobile/src/widgets/SubscriptionUsage.tsx")).toBe(
+      'const a = gt("Up.computer Account"); const b = "Open Up.computer to refresh"; const c = `${n} more in Up.computer`; const d = ["t3code", "T3", "teal"]; const e = "Link T3 Chat";',
+    );
+    expect(isCopyFile("apps/mobile/src/widgets/SubscriptionUsage.tsx")).toBe(true);
+    expect(isCopyFile("apps/mobile/src/widgets/SubscriptionUsage.android.tsx")).toBe(false);
   });
 
   it("rewrites the HTML render tool copy", () => {

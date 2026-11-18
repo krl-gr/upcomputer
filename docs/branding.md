@@ -46,6 +46,27 @@ literals against it and against the electron-builder config.
 | Release links           | `krl-gr/upcomputer` releases, `core-v` tags                                                        | `apps/web/src/components/desktopUpdate.logic.ts`                                                                                                                                                  |
 | CLI archives            | `krl-gr/upcomputer` (not published yet, fails closed)                                              | `packages/shared/src/cliRelease.ts`                                                                                                                                                               |
 
+## iPhone app
+
+`apps/mobile` is upstream's Expo app, outside our pnpm workspace. iOS carries Up.computer's
+identity; Android stays upstream's until we take it on. `apps/mobile/app.config.upcomputer.ts`
+applies the identity to upstream's finished Expo config (`app.config.ts` calls it on its last
+line), and `apps/mobile/app.config.test.ts` fails if a T3 id or host reaches the iOS config.
+
+| Identity                 | Value                                                                                           |
+| ------------------------ | ----------------------------------------------------------------------------------------------- |
+| Bundle id (proposed)     | `computer.up.upcomputer.mobile`, `.dev`, `.preview`; not the desktop's id                       |
+| Extensions and app group | `<bundle id>.widgets` (widgets and Live Activities), `<bundle id>.sharing`, `group.<bundle id>` |
+| Display name             | `Up.computer`, `Up.computer Dev`, `Up.computer Preview`                                         |
+| URL schemes              | `upcomputer`, `upcomputer-dev`, `upcomputer-preview`                                            |
+| Connect                  | relay and Clerk from the same public config as desktop (`T3CODE_RELAY_URL`, `T3CODE_CLERK_*`)   |
+| Apple team               | `T3CODE_IOS_TEAM_ID`; unset builds have no team                                                 |
+
+Bundle ids are fixed once an App Store or TestFlight record exists: confirm them before either.
+Until our domains serve Apple association files and the relay has an APNs key, the iOS build has
+no associated domains (universal links, passkeys), no push or remote Live Activity updates, no
+Apple sign-in, no EAS project and no over-the-air updates.
+
 ## User-visible copy and artwork
 
 - **Copy:** `scripts/apply-branding.ts` rewrites "T3 Code" to "Up.computer", "T3 Connect" to
