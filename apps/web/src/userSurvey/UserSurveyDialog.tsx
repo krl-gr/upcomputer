@@ -17,14 +17,14 @@ import {
   USER_SURVEY_THANKS,
   USER_SURVEY_TITLE,
 } from "./surveyParts";
-import { canSubmitSurvey, type SurveyDraft, surveyAnswers, surveyBlocks } from "./userSurvey.logic";
+import { canSubmitSurvey, type SurveyDraft, surveyAnswers, surveySteps } from "./userSurvey.logic";
 
 export type { SubmitUserSurvey, UserSurveyStatus } from "./surveyParts";
 
 // Long enough to see the chip turn before the next question comes in.
 const AUTO_ADVANCE_MS = 260;
 
-/** The survey form: one question per step, in a centered dialog. */
+/** The survey form: one question per step, in a centered dialog. The card asked the first. */
 export function UserSurveyDialog({
   open,
   onOpenChange,
@@ -58,9 +58,10 @@ export function UserSurveyDialogPopup({
   onStepChange,
   onSubmit,
   onClose,
+  onBackToCard,
 }: SurveyFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
-  const blocks = surveyBlocks(survey, draft);
+  const blocks = surveySteps(survey, draft);
   const sent = status.kind === "sent";
   const step = Math.min(askedStep, blocks.length - 1);
   const block = blocks[step]!;
@@ -78,7 +79,7 @@ export function UserSurveyDialogPopup({
     const question = block.question;
     if (last || question.type !== "single_choice" || question.hasOpenChoice) return;
     if (next[question.id]?.picked === draft[question.id]?.picked) return;
-    const opensFollowUp = surveyBlocks(survey, next)[step]!.followUps.length > 0;
+    const opensFollowUp = surveySteps(survey, next)[step]!.followUps.length > 0;
     if (!opensFollowUp) setTimeout(() => onStepChange(step + 1), AUTO_ADVANCE_MS);
   };
 
@@ -87,7 +88,7 @@ export function UserSurveyDialogPopup({
       className="sm:max-w-md"
       showCloseButton={false}
       // Opens with the caret in the step's text box: the card already took the first click.
-      initialFocus={() => formRef.current?.querySelector("textarea") ?? true}
+      initialFocus={() => formRef.current?.querySelector<HTMLElement>("textarea, input") ?? true}
     >
       <form
         ref={formRef}
@@ -181,19 +182,17 @@ export function UserSurveyDialogPopup({
             </div>
           ) : (
             <>
-              {step > 0 ? (
-                <span className="-ml-2">
-                  <SurveyAction
-                    size="lg"
-                    tone="quiet"
-                    disabled={submitting}
-                    onClick={() => onStepChange(step - 1)}
-                  >
-                    <ArrowLeftIcon aria-hidden />
-                    Back
-                  </SurveyAction>
-                </span>
-              ) : null}
+              <span className="-ml-2">
+                <SurveyAction
+                  size="lg"
+                  tone="quiet"
+                  disabled={submitting}
+                  onClick={() => (step > 0 ? onStepChange(step - 1) : onBackToCard())}
+                >
+                  <ArrowLeftIcon aria-hidden />
+                  Back
+                </SurveyAction>
+              </span>
               <span className="flex-1" />
               {last ? (
                 <SurveySendAction

@@ -41,7 +41,8 @@ describe("parseUserSurveys", () => {
           },
           {
             id: "q-details",
-            question: "Can you provide details?",
+            question: "Can you provide details so we can fix it ASAP?",
+            description: "What happened, and where?",
             optional: true,
             // "Yes" skips to question 2, so the details question follows "There are issues".
             showWhen: { questionId: "q-working", choices: [1] },
@@ -65,7 +66,7 @@ describe("parseUserSurveys", () => {
           },
           {
             id: "q-else",
-            question: "Anything else? Leave your email or X handle if you'd like a reply.",
+            question: "Can we reach you with follow-up questions? Leave your email or X handle.",
             optional: true,
             type: "open",
           },
@@ -208,7 +209,7 @@ describe("surveySentProperties", () => {
           },
           {
             id: "q-details",
-            question: "Can you provide details?",
+            question: "Can you provide details so we can fix it ASAP?",
             response: "The sidebar flickers",
           },
           {
@@ -218,7 +219,7 @@ describe("surveySentProperties", () => {
           },
           {
             id: "q-else",
-            question: "Anything else? Leave your email or X handle if you'd like a reply.",
+            question: "Can we reach you with follow-up questions? Leave your email or X handle.",
             response: null,
           },
         ],

@@ -117,8 +117,23 @@ export function surveyCardQuestion(survey: UserSurvey): ChoiceQuestion | null {
     : null;
 }
 
-/** The step the form opens on after the card's pick: the first while it still asks, else the next. */
-export function stepAfterCardPick(survey: UserSurvey, draft: SurveyDraft): number {
+/**
+ * The form's steps. The card answers a first question it can ask, so that
+ * question is not asked again and its follow-ups become steps of their own.
+ * Otherwise every block is a step.
+ */
+export function surveySteps(
+  survey: UserSurvey,
+  draft: SurveyDraft,
+): ReturnType<typeof surveyBlocks> {
   const blocks = surveyBlocks(survey, draft);
-  return blocks.length < 2 || blocks[0]!.followUps.length > 0 ? 0 : 1;
+  if (!surveyCardQuestion(survey)) return blocks;
+  const [first, ...rest] = blocks;
+  const steps = [...first!.followUps.map((question) => ({ question, followUps: [] })), ...rest];
+  return steps.length > 0 ? steps : blocks;
+}
+
+/** An open question that asks how to reach the person: one line, not a text box. */
+export function isContactQuestion(question: UserSurveyQuestion): boolean {
+  return question.type === "open" && /e-?mail/i.test(question.question);
 }

@@ -31,7 +31,8 @@ const SURVEY: UserSurvey = {
     {
       id: "q-details",
       type: "open",
-      question: "Can you provide details?",
+      question: "Can you provide details so we can fix it ASAP?",
+      description: "What happened, and where?",
       optional: true,
       showWhen: { questionId: "q-working", choices: [1] },
     },
@@ -54,7 +55,7 @@ const SURVEY: UserSurvey = {
     {
       id: "q-else",
       type: "open",
-      question: "Anything else? Leave your email or X handle if you'd like a reply.",
+      question: "Can we reach you with follow-up questions? Leave your email or X handle.",
       optional: true,
     },
   ],
@@ -150,7 +151,7 @@ async function copyPopup(popup: HTMLElement, cell: HTMLElement) {
 
 // A chip of the survey card in the popup's copy; the sheet marks it as hovered.
 const FIRST_CHIP = "[data-popup-copy] [role=radio]:first-child";
-const DISMISS = "[data-popup-copy] li:last-child button:not([role])";
+const DISMISS = '[data-popup-copy] li:last-child [aria-label="Dismiss"]';
 
 function Bell() {
   return (
@@ -201,7 +202,7 @@ const issues = (details: string): SurveyDraft => ({
 const FILLED: SurveyDraft = {
   ...issues("The sidebar flickers when a thread finishes."),
   "q-missing": { ...EMPTY_DRAFT_ANSWER, picked: [0, 2, 6], otherText: "Calendar sync" },
-  "q-else": { ...EMPTY_DRAFT_ANSWER, text: "Thanks for the quick updates! Reach me at @demo." },
+  "q-else": { ...EMPTY_DRAFT_ANSWER, text: "demo@example.com" },
 };
 
 function form(name: string, draft: SurveyDraft, step: number, status: UserSurveyStatus): UiState {
@@ -221,6 +222,7 @@ function form(name: string, draft: SurveyDraft, step: number, status: UserSurvey
             onStepChange={() => undefined}
             onSubmit={() => undefined}
             onClose={() => undefined}
+            onBackToCard={() => undefined}
           />
         </Dialog>
       </AppAtomRegistryProvider>
@@ -254,7 +256,7 @@ it("user-survey", async () => {
           bell("after an app update", AVAILABLE),
           bell("alone", null),
           bell("pointer over a chip", AVAILABLE, FIRST_CHIP),
-          bell("pointer over No thanks", AVAILABLE, DISMISS),
+          bell("pointer over the X", AVAILABLE, DISMISS),
         ],
       },
     ],
@@ -264,21 +266,27 @@ it("user-survey", async () => {
     "user-survey-form",
     [
       {
-        title: "Survey form, one question per step",
+        title: "Survey form: the steps follow the card's answer",
         states: [
-          form("step 1 after There are issues: details under it", issues(""), 0, EDITING),
-          form("step 1 with Yes, reached with Back", YES, 0, EDITING),
-          form("step 2 after Yes in the card: Skip until a chip is picked", YES, 1, EDITING),
+          form("There are issues, step 1 of 3: the details", issues(""), 0, EDITING),
           form(
-            "step 2 with chips and Other",
+            "There are issues, step 2 of 3: Skip until a chip is picked",
+            issues(""),
+            1,
+            EDITING,
+          ),
+          form(
+            "There are issues, step 2 of 3: chips and Other with its text area",
             {
-              ...YES,
+              ...issues("The sidebar flickers when a thread finishes."),
               "q-missing": { ...EMPTY_DRAFT_ANSWER, picked: [2, 6], otherText: "Calendar sync" },
             },
             1,
             EDITING,
           ),
-          form("step 3: the last question", YES, 2, EDITING),
+          form("There are issues, step 3 of 3: the contact", issues(""), 2, EDITING),
+          form("Yes, step 1 of 2: what is missing", YES, 0, EDITING),
+          form("Yes, step 2 of 2: the contact", YES, 1, EDITING),
         ],
       },
     ],
@@ -291,7 +299,7 @@ it("user-survey", async () => {
         title: "Sending",
         states: [
           form("submitting", FILLED, 2, { kind: "submitting" }),
-          form("send failed: the error under the text box", FILLED, 2, {
+          form("send failed: the error under the field", FILLED, 2, {
             kind: "failed",
             message: "Could not send your answers. Check your connection and try again.",
           }),

@@ -10,6 +10,7 @@ import { cn } from "../lib/utils";
 import {
   type ChoiceQuestion,
   EMPTY_DRAFT_ANSWER,
+  isContactQuestion,
   isOpenChoice,
   pickChoice,
   type SurveyDraft,
@@ -41,6 +42,8 @@ export interface SurveyFormProps {
   readonly onStepChange: (step: number) => void;
   readonly onSubmit: () => void;
   readonly onClose: () => void;
+  /** Back from the first step: the card, where the first answer can be changed. */
+  readonly onBackToCard: () => void;
 }
 
 interface SurveyFormState {
@@ -79,8 +82,8 @@ export function useSurveyForm(survey: UserSurvey | null, onSubmit: SubmitUserSur
     back: state.back,
     setDraft: (draft: SurveyDraft) => update(() => ({ draft })),
     goTo: (step: number) => update((current) => ({ step, back: step < current.step })),
-    /** The card's answer: the form opens on `step` with it already given. */
-    start: (draft: SurveyDraft, step: number) => update(() => ({ draft, step, back: false })),
+    /** The card's answer: the form opens on its first step with it already given. */
+    start: (draft: SurveyDraft) => update(() => ({ draft, step: 0, back: false })),
     submit: () => {
       if (!survey || !onSubmit) return;
       update(() => ({ status: { kind: "submitting" } }));
@@ -254,6 +257,7 @@ function ChoiceChips({
             <SurveyTextBox
               size={size}
               aria-label={question.choices.at(-1)}
+              lines={3}
               placeholder="What else?"
               autoFocus
               value={answer.otherText}
@@ -285,13 +289,38 @@ export function SurveyAnswerInput({
 }) {
   const answer = draft[question.id] ?? EMPTY_DRAFT_ANSWER;
   const onChange = (next: SurveyDraftAnswer) => onDraftChange({ ...draft, [question.id]: next });
+  if (isContactQuestion(question)) {
+    return (
+      <>
+        <input
+          type="text"
+          inputMode="email"
+          autoComplete="email"
+          autoCapitalize="off"
+          spellCheck={false}
+          className={fieldVariants({ size })}
+          aria-label={question.question}
+          placeholder={question.description ?? "you@example.com or @handle"}
+          autoFocus={autoFocus}
+          value={answer.text}
+          onChange={(event) => onChange({ ...answer, text: event.target.value })}
+        />
+        <p className="pt-2 text-xs text-muted-foreground">
+          Optional. Send without it if you prefer.
+        </p>
+      </>
+    );
+  }
   if (question.type === "open") {
     return (
       <SurveyTextBox
         size={size}
-        lines={followUp ? 3 : 5}
+        lines={followUp ? 3 : 4}
         aria-label={question.question}
-        placeholder={followUp ? question.question : "Ideas, wishes, rough edges. Anything helps."}
+        // PostHog's description, when set, is the hint inside the box.
+        placeholder={
+          followUp ? question.question : (question.description ?? "Type your answer here")
+        }
         autoFocus={autoFocus || followUp}
         value={answer.text}
         onChange={(event) => onChange({ ...answer, text: event.target.value })}

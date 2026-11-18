@@ -22,8 +22,8 @@
         {
           "id": "q-details",
           "type": "open",
-          "question": "Can you provide details?",
-          "description": "",
+          "question": "Can you provide details so we can fix it ASAP?",
+          "description": "What happened, and where?",
           "descriptionContentType": "text",
           "optional": true
         },
@@ -48,7 +48,7 @@
         {
           "id": "q-else",
           "type": "open",
-          "question": "Anything else? Leave your email or X handle if you'd like a reply.",
+          "question": "Can we reach you with follow-up questions? Leave your email or X handle.",
           "description": "",
           "descriptionContentType": "text",
           "optional": true

@@ -59,7 +59,6 @@ import { BadgedIcon } from "../badgedIcon/BadgedIcon";
 import { useSurveyForm } from "../userSurvey/surveyParts";
 import { UserSurveyCard } from "../userSurvey/UserSurveyCard";
 import { UserSurveyDialog } from "../userSurvey/UserSurveyDialog";
-import { stepAfterCardPick } from "../userSurvey/userSurvey.logic";
 import { useUserSurvey } from "../userSurvey/useUserSurvey";
 
 const DISMISSED_KEY = "upcomputer:background-notices-dismissed:v1";
@@ -168,7 +167,7 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
                     survey={userSurvey.survey}
                     draft={surveyForm.draft}
                     onStart={(draft) => {
-                      surveyForm.start(draft, stepAfterCardPick(userSurvey.survey, draft));
+                      surveyForm.start(draft);
                       setOpen(false);
                       setSurveyOpen(true);
                     }}
@@ -202,6 +201,10 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
             onSubmit={surveyForm.submit}
             open={surveyOpen}
             onOpenChange={setSurveyOpen}
+            onBackToCard={() => {
+              setSurveyOpen(false);
+              setOpen(true);
+            }}
             onSent={userSurvey.finish}
           />
         ) : null}
