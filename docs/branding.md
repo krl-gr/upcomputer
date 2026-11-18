@@ -48,7 +48,7 @@ literals against it and against the electron-builder config.
 
 ## iPhone app
 
-`apps/mobile` is upstream's Expo app, outside our pnpm workspace. iOS carries Up.computer's
+`apps/mobile` is upstream's Expo app, in our pnpm workspace. iOS carries Up.computer's
 identity; Android stays upstream's until we take it on. `apps/mobile/app.config.upcomputer.ts`
 applies the identity to upstream's finished Expo config (`app.config.ts` calls it on its last
 line), and `apps/mobile/app.config.test.ts` fails if a T3 id or host reaches the iOS config.
