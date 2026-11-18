@@ -40,14 +40,20 @@ function rebrand(value: unknown): unknown {
 type Plugin = NonNullable<ExpoConfig["plugins"]>[number];
 
 // Our Clerk instance has no Apple sign-in, and our relay sends no APNs pushes yet.
+// Secure store's default Face ID text names the Xcode target, "Upcomputer".
 const PLUGIN_OPTIONS: Record<string, Record<string, unknown>> = {
   "@clerk/expo": { appleSignIn: false },
+  "expo-secure-store": {
+    faceIDPermission: "Allow Up.computer to access your Face ID biometric data.",
+  },
   "expo-widgets": { enablePushNotifications: false },
 };
 
 function withPluginOptions(plugin: Plugin): Plugin {
-  if (!Array.isArray(plugin)) return plugin;
-  const [name, options] = plugin as [string, Record<string, unknown> | undefined];
+  const [name, options] = (Array.isArray(plugin) ? plugin : [plugin]) as [
+    string,
+    Record<string, unknown> | undefined,
+  ];
   const overrides = PLUGIN_OPTIONS[name];
   return overrides ? [name, { ...options, ...overrides }] : plugin;
 }

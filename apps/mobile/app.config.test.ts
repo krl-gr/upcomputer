@@ -79,6 +79,7 @@ it.each([
       appGroupId: `group.${identifier}`,
     });
     expect(pluginOptions("@clerk/expo")).toMatchObject({ appleSignIn: false });
+    expect(pluginOptions("expo-secure-store")?.faceIDPermission).toMatch(/^Allow Up\.computer /);
     // Universal links and passkeys wait for our domains' association files.
     expect(config.ios?.associatedDomains).toBeUndefined();
     expect(config.updates).toEqual({ enabled: false });
