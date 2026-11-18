@@ -209,6 +209,43 @@ it.effect(
   },
 );
 
+it.effect("the calling thread is the source, whatever thread id a fork copied from history", () => {
+  const { layer, create, stored } = harness();
+  // A fork repeats its parent's calls, including the parent's thread id.
+  const parent = { sourceThreadId: "thread-parent" };
+  const fork: TaskToolInvocationContext = { ...chat, threadId: ThreadId.make("thread-fork") };
+  return Effect.gen(function* () {
+    const one = yield* create(item("one", "To Do", parent), fork);
+    assert.isFalse(one.isError, one.text);
+    const list = yield* create(
+      { tasks: [item("two", "To Do", parent), item("three", "To Do", { sourceThreadId: null })] },
+      fork,
+    );
+    assert.isFalse(list.isError, list.text);
+    // Without a calling thread there is nothing better than the given one.
+    const unbound = yield* create(item("four", "To Do", parent), {
+      source: "mcp",
+      mutationPolicy: "allow",
+    });
+    assert.isFalse(unbound.isError, unbound.text);
+
+    assert.deepStrictEqual(
+      (yield* stored).map(({ title, sourceThreadId, rootThreadId }) => [
+        title,
+        sourceThreadId,
+        rootThreadId,
+      ]),
+      [
+        ["one", "thread-fork", "thread-fork"],
+        ["two", "thread-fork", "thread-fork"],
+        // An explicit null still opts out of reports.
+        ["three", null, "thread-fork"],
+        ["four", "thread-parent", "thread-parent"],
+      ],
+    );
+  }).pipe(Effect.provide(layer));
+});
+
 it.effect("an invalid list names the failing item and creates nothing", () => {
   const { layer, scheduled, create, stored } = harness();
   return Effect.gen(function* () {

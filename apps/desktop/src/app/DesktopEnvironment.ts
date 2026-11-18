@@ -79,6 +79,8 @@ export class DesktopEnvironment extends Context.Service<
     readonly otlpProtocol: OtlpProtocol;
     readonly branding: DesktopAppBranding;
     readonly displayName: string;
+    /** The macOS app menu name; packaged builds show the same in the menu bar. */
+    readonly menuBarName: string;
     readonly appUserModelId: string;
     readonly linuxDesktopEntryName: string;
     readonly linuxApplicationsDir: string;
@@ -235,6 +237,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     otlpProtocol: config.otlpProtocol,
     branding,
     displayName,
+    menuBarName: resolveUpcomputerLocalBuildIdentity(input.appVersion)?.menuBarName ?? displayName,
     appUserModelId:
       resolveUpcomputerLocalBuildIdentity(input.appVersion)?.appId ??
       Option.getOrElse(config.appUserModelIdOverride, () =>

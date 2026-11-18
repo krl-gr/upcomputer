@@ -1,4 +1,5 @@
 import {
+  EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderInstallState,
@@ -16,6 +17,7 @@ import type { ProviderInstanceEntry } from "../providerInstances";
 import {
   composerProviderSetupInstanceId,
   countReadyOnboardingProviders,
+  firstRunWorkspaceProjects,
   isFirstRunAgentActivating,
   isFirstRunAgentChecking,
   latchFirstRunAgentStart,
@@ -294,6 +296,32 @@ describe("first-run agent start latch", () => {
     expect(latch(null, [provider("claudeAgent", { statusPending: true })])).toBeNull();
     expect(latch(null, [provider("codex", missing)])).toBe("install");
     expect(latch("install", working)).toBe("install");
+  });
+});
+
+describe("firstRunWorkspaceProjects", () => {
+  const primaryId = EnvironmentId.make("primary");
+  const remoteId = EnvironmentId.make("remote");
+  const scratch = { environmentId: primaryId, workspaceRoot: "/Users/me/.upcomputer/scratch/" };
+  const repo = { environmentId: primaryId, workspaceRoot: "/Users/me/code/app" };
+  const remoteScratch = { ...scratch, environmentId: remoteId };
+
+  it("leaves out the scratch project home opens for a new user, and only that one", () => {
+    const primary = {
+      environmentId: primaryId,
+      scratchWorkspaceRoot: "/Users/me/.upcomputer/scratch",
+    };
+    expect(firstRunWorkspaceProjects([scratch], primary)).toEqual([]);
+    expect(firstRunWorkspaceProjects([scratch, repo, remoteScratch], primary)).toEqual([
+      repo,
+      remoteScratch,
+    ]);
+    expect(
+      firstRunWorkspaceProjects([scratch], {
+        environmentId: primaryId,
+        scratchWorkspaceRoot: null,
+      }),
+    ).toEqual([scratch]);
   });
 });
 

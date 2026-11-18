@@ -6,7 +6,11 @@ import * as Layer from "effect/Layer";
 
 import * as Identity from "@t3tools/shared/upcomputerIdentity";
 
-import { createBuildConfig, resolveDesktopProductName } from "./build-desktop-artifact.ts";
+import {
+  createBuildConfig,
+  resolveDesktopProductName,
+  resolveMacMenuBarInfoPlistStrings,
+} from "./build-desktop-artifact.ts";
 
 // Installed V1 apps auto-update into this build and keep their macOS
 // permissions only while these values stay exactly as V1 shipped them. The
@@ -138,9 +142,15 @@ it.effect("packages releases with the V1 app id, schemes and update feed", () =>
 
 it.effect("keeps local test and demo builds off the Alpha bundle id, schemes and update feed", () =>
   Effect.gen(function* () {
-    for (const [version, appId, productName] of [
-      ["0.0.46-localtest.1", V1.localTestAppId, V1.localTestProductName],
-      ["0.0.46-demo.1", "computer.up.upcomputer.demo", "Up.computer Demo"],
+    for (const [version, appId, productName, menuBarStrings] of [
+      ["0.0.46-localtest.1", V1.localTestAppId, V1.localTestProductName, undefined],
+      // Only the localized name changes: Electron finds its helpers by the raw CFBundleName.
+      [
+        "0.0.46-demo.1",
+        "computer.up.upcomputer.demo",
+        "Up.computer Demo",
+        '"CFBundleName" = "Up.computer";\n',
+      ],
     ] as const) {
       const config = yield* createBuildConfig(
         "mac",
@@ -158,6 +168,15 @@ it.effect("keeps local test and demo builds off the Alpha bundle id, schemes and
       assert.deepStrictEqual((config.mac as Record<string, unknown>).protocols, [
         MAC_WEB_BROWSER_PROTOCOL,
       ]);
+      assert.equal(resolveMacMenuBarInfoPlistStrings(version), menuBarStrings);
+      assert.equal(
+        (config.extraResources as ReadonlyArray<{ to: string }>).some(
+          (resource) => resource.to === "en.lproj",
+        ),
+        menuBarStrings !== undefined,
+      );
     }
+    assert.isUndefined(resolveMacMenuBarInfoPlistStrings("0.0.46"));
+    assert.isUndefined(resolveMacMenuBarInfoPlistStrings("0.0.46-nightly.20261005.1"));
   }).pipe(Effect.provide(releaseEnvironment)),
 );

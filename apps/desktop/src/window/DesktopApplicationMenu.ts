@@ -161,9 +161,9 @@ export const make = Effect.gen(function* () {
 
     if (environment.platform === "darwin") {
       template.push({
-        label: environment.displayName,
+        label: environment.menuBarName,
         submenu: [
-          { role: "about", label: `About ${environment.displayName}` },
+          { role: "about", label: `About ${environment.menuBarName}` },
           {
             label: "Check for Updates...",
             click: checkForUpdatesClick,
@@ -177,11 +177,11 @@ export const make = Effect.gen(function* () {
           { type: "separator" },
           { role: "services" },
           { type: "separator" },
-          { role: "hide", label: `Hide ${environment.displayName}` },
+          { role: "hide", label: `Hide ${environment.menuBarName}` },
           { role: "hideOthers" },
           { role: "unhide" },
           { type: "separator" },
-          { role: "quit", label: `Quit ${environment.displayName}` },
+          { role: "quit", label: `Quit ${environment.menuBarName}` },
         ],
       });
     }
