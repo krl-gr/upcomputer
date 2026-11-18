@@ -1,7 +1,5 @@
 packages:
   - apps/*
-  # UpComputer does not ship the mobile app; it stays in the tree for upstream syncs.
-  - "!apps/mobile"
   - evals
   - infra/*
   - oxlint-plugin-t3code
@@ -230,9 +228,6 @@ packageExtensions:
   "@effect/vitest@*":
     dependencies:
       vite-plus: "catalog:"
-
-# The mobile-only patches stay for upstream syncs while apps/mobile is excluded.
-allowUnusedPatches: true
 
 patchedDependencies:
   react-native-image-viewing@0.2.2: patches/react-native-image-viewing@0.2.2.patch
