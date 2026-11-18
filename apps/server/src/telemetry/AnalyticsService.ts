@@ -24,7 +24,6 @@ import type * as PlatformError from "effect/PlatformError";
 import * as Random from "effect/Random";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
-import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
@@ -34,6 +33,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import { getTelemetryIdentity, type TelemetryOwner } from "./Identify.ts";
+import * as UncleanExit from "./UncleanExit.ts";
 
 interface BufferedAnalyticsEvent {
   readonly uuid: string;
@@ -48,6 +48,8 @@ interface BufferedAnalyticsEvent {
 export interface RecordOptions {
   readonly sessionId?: string;
   readonly capturedAtMs?: number;
+  /** A fixed id makes PostHog keep one copy of an event sent more than once. */
+  readonly uuid?: string;
 }
 
 interface DeliveryState {
@@ -136,26 +138,6 @@ const INTERNAL_DEVICE_MARKER_FILE = "telemetry-internal-device";
 // Created together with the first-launch claim. Installs that were first launched by an
 // older build have threads already, so their next thread is not their first one.
 const MILESTONES_DIR = "telemetry-milestones";
-// Written at start and removed at a clean stop, so the next start can tell the
-// previous one ended without stopping.
-const SESSION_MARKER_FILE = "telemetry-session";
-// A process that keeps dying would send its start-up events every few seconds.
-// After this many unclean starts within the window, a start records nothing
-// until it has stayed up for the quiet period, which a crash loop never does.
-const CRASH_LOOP_WINDOW_MS = 60 * 60 * 1000;
-const CRASH_LOOP_UNCLEAN_STARTS = 10;
-const CRASH_LOOP_QUIET_MS = 10 * 60 * 1000;
-
-const SessionMarker = Schema.Struct({
-  sessionId: Schema.optionalKey(Schema.String),
-  version: Schema.optionalKey(Schema.String),
-  uncleanStarts: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-  windowStartedAtMs: Schema.Number,
-});
-const decodeSessionMarker = Schema.decodeUnknownOption(Schema.fromJsonString(SessionMarker));
-const encodeSessionMarker = Schema.encodeSync(Schema.fromJsonString(SessionMarker));
-// Only versions a build writes, so a hand-edited marker cannot put text into an event.
-const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]{1,40})?$/;
 
 export class AnalyticsService extends Context.Service<
   AnalyticsService,
@@ -457,40 +439,15 @@ export const make = Effect.gen(function* () {
 
   const startedAtMs = yield* Clock.currentTimeMillis;
   const enabled = telemetryConfig.enabled && policyAllows && distinctId !== null;
-  const sessionMarkerPath = path.join(serverConfig.stateDir, SESSION_MARKER_FILE);
-  const previousStart = enabled
-    ? yield* fileSystem.readFileString(sessionMarkerPath).pipe(
-        Effect.map((text) => Option.some(decodeSessionMarker(text))),
-        Effect.catchCause(() => Effect.succeedNone),
-      )
-    : Option.none();
-  // An unreadable marker still means the previous start did not stop cleanly.
-  const previousMarker = Option.flatten(previousStart);
-  const windowContinues = Option.exists(
-    previousMarker,
-    (marker) => startedAtMs - marker.windowStartedAtMs < CRASH_LOOP_WINDOW_MS,
-  );
-  const uncleanStarts = Option.isNone(previousStart)
-    ? 0
-    : (windowContinues ? Option.getOrThrow(previousMarker).uncleanStarts : 0) + 1;
-  const windowStartedAtMs = windowContinues
-    ? Option.getOrThrow(previousMarker).windowStartedAtMs
-    : startedAtMs;
-  const quietUntilMs =
-    uncleanStarts > CRASH_LOOP_UNCLEAN_STARTS ? startedAtMs + CRASH_LOOP_QUIET_MS : 0;
-  if (enabled) {
-    yield* fileSystem
-      .writeFileString(
-        sessionMarkerPath,
-        encodeSessionMarker({
-          ...(sessionId === undefined ? {} : { sessionId }),
-          version: packageJson.version,
-          uncleanStarts,
-          windowStartedAtMs,
-        }),
-      )
-      .pipe(Effect.ignoreCause);
-  }
+  const { quietUntilMs, markerError, uncleanExit } = enabled
+    ? yield* UncleanExit.startSession({
+        stateDir: serverConfig.stateDir,
+        isDesktopBackend,
+        sessionId,
+        version: packageJson.version,
+        startedAtMs,
+      })
+    : { quietUntilMs: 0, markerError: undefined, uncleanExit: Option.none() };
 
   const record: AnalyticsService["Service"]["record"] = Effect.fn("AnalyticsService.record")(
     function* (event, properties, options) {
@@ -500,7 +457,10 @@ export const make = Effect.gen(function* () {
       if (quietUntilMs > 0 && (yield* Clock.currentTimeMillis) < quietUntilMs) return;
 
       // Catch Node UUID defects too; best-effort telemetry drops events without UUIDs.
-      const uuid = yield* Effect.exit(crypto.uuidV7());
+      const uuid =
+        options?.uuid !== undefined && UUID_PATTERN.test(options.uuid)
+          ? Exit.succeed(options.uuid)
+          : yield* Effect.exit(crypto.uuidV7());
       if (Exit.isFailure(uuid)) return;
 
       const enqueueResult = yield* enqueueBufferedEvent(
@@ -562,20 +522,12 @@ export const make = Effect.gen(function* () {
       : Effect.void;
 
   const startupContext = Option.getOrUndefined(telemetryConfig.desktopStartup);
-  yield* record("server.started", startupContext === undefined ? undefined : { startupContext });
-  if (Option.isSome(previousStart)) {
-    // A desktop backend restart keeps the app's session, so the previous
-    // session can be this one; compare the ids to tell a backend crash apart.
-    const previous = Option.getOrUndefined(previousMarker);
-    yield* record("app.unclean_exit", {
-      ...(previous?.sessionId !== undefined && UUID_PATTERN.test(previous.sessionId)
-        ? { previousSessionId: previous.sessionId }
-        : {}),
-      ...(previous?.version !== undefined && VERSION_PATTERN.test(previous.version)
-        ? { previousVersion: previous.version }
-        : {}),
-      uncleanStarts,
-    });
+  yield* record("server.started", {
+    ...(startupContext === undefined ? {} : { startupContext }),
+    ...(markerError === undefined ? {} : { sessionMarkerError: markerError }),
+  });
+  if (Option.isSome(uncleanExit)) {
+    yield* record("app.unclean_exit", uncleanExit.value.properties, uncleanExit.value.options);
   }
   // Opted-out launches never write the marker: enabling telemetry later makes the
   // next desktop launch the first measured one.
@@ -597,9 +549,16 @@ export const make = Effect.gen(function* () {
   // The marker goes before the flush: a stop killed during a slow send was still clean.
   // One budget for the whole stop, so the marker's file work cannot delay the flush's deadline.
   yield* Effect.addFinalizer(() =>
-    Clock.currentTimeMillis.pipe(
-      Effect.flatMap((now) => record("server.stopped", { uptimeMs: now - startedAtMs })),
-      Effect.andThen(enabled ? fileSystem.remove(sessionMarkerPath, { force: true }) : Effect.void),
+    Effect.gen(function* () {
+      const removeError = enabled
+        ? yield* UncleanExit.endSession(serverConfig.stateDir)
+        : undefined;
+      const now = yield* Clock.currentTimeMillis;
+      yield* record("server.stopped", {
+        uptimeMs: now - startedAtMs,
+        ...(removeError === undefined ? {} : { sessionMarkerError: removeError }),
+      });
+    }).pipe(
       Effect.ignoreCause,
       Effect.andThen(flush),
       Effect.timeout(SHUTDOWN_FLUSH_TIMEOUT),

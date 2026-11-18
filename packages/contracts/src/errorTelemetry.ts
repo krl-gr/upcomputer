@@ -108,6 +108,11 @@ export const DesktopRendererSurface = Schema.Literals([
   "devtools",
 ]);
 
+/** Null when a signal ended the backend. */
+const BackendExitCode = Schema.NullOr(
+  Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 255 })),
+);
+
 /**
  * Product events the desktop app's main process records through its primary
  * backend, which owns the install's telemetry identity and opt-out.
@@ -119,8 +124,7 @@ export const DesktopProductEvent = Schema.Union([
     event: Schema.Literal("desktop.backend.exited"),
     /** The app's own backend, or one it runs elsewhere, such as in WSL. */
     instance: Schema.Literals(["primary", "other"]),
-    /** Null when a signal ended it. */
-    code: Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 255 }))),
+    code: BackendExitCode,
     signal: Schema.NullOr(DesktopBackendExitSignal),
     uptimeMs: NonNegativeInt,
     wasReady: Schema.Boolean,
@@ -134,3 +138,29 @@ export const DesktopProductEvent = Schema.Union([
   }),
 ]);
 export type DesktopProductEvent = typeof DesktopProductEvent.Type;
+
+/** In the state directory; a backend's next start reads it to explain an unclean exit. */
+export const DESKTOP_SESSION_STATE_FILE = "telemetry-desktop-state";
+
+/** The last lifecycle change the desktop app saw in one app session. */
+export const DesktopSessionStateEntry = Schema.Union([
+  Schema.Struct({ state: Schema.Literals(["running", "suspended", "os_shutdown"]) }),
+  Schema.Struct({
+    state: Schema.Literal("renderer_gone"),
+    reason: DesktopRendererGoneReason,
+    exitCode: Schema.Int,
+  }),
+  Schema.Struct({
+    state: Schema.Literal("backend_exited"),
+    code: BackendExitCode,
+    signal: Schema.NullOr(DesktopBackendExitSignal),
+  }),
+]);
+export type DesktopSessionStateEntry = typeof DesktopSessionStateEntry.Type;
+
+export const DesktopSessionState = Schema.Struct({
+  sessionId: Schema.String,
+  atMs: Schema.Number,
+  last: DesktopSessionStateEntry,
+});
+export type DesktopSessionState = typeof DesktopSessionState.Type;

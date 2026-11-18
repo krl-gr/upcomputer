@@ -10,6 +10,8 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
@@ -22,7 +24,11 @@ import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
-import type { ManagedPolicyDocument } from "@t3tools/contracts";
+import {
+  DESKTOP_SESSION_STATE_FILE,
+  type DesktopSessionState,
+  type ManagedPolicyDocument,
+} from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
@@ -194,9 +200,11 @@ const DesktopEvents = Schema.fromJsonString(
   Schema.Struct({
     batch: Schema.Array(
       Schema.Struct({
+        uuid: Schema.String,
         event: Schema.String,
         distinct_id: Schema.String,
         properties: Schema.Record(Schema.String, Schema.Unknown),
+        timestamp: Schema.optionalKey(Schema.String),
       }),
     ),
   }),
@@ -720,6 +728,212 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService
           })),
         [{ previousSessionId: undefined, uncleanStarts: 1 }],
       );
+    }),
+  );
+
+  it.effect("reports a marker it cannot replace or remove under one event id", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-telemetry-lock-" });
+      const marker = path.join(baseDir, "userdata", "telemetry-session");
+      const crashedSessionId = "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d";
+      yield* fileSystem.makeDirectory(path.dirname(marker), { recursive: true });
+      yield* fileSystem.writeFileString(
+        marker,
+        JSON.stringify({
+          sessionId: crashedSessionId,
+          version: "0.0.38",
+          startedAtMs: 1_000,
+          reportId: "0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e",
+          uncleanStarts: 0,
+          windowStartedAtMs: 0,
+        }),
+      );
+      // What antivirus holding the marker open looks like to Node on Windows.
+      const markerAttempts = yield* Queue.unbounded<string>();
+      const busy = (method: string) =>
+        Queue.offer(markerAttempts, method).pipe(
+          Effect.andThen(
+            Effect.fail(
+              PlatformError.systemError({
+                _tag: "Busy",
+                module: "FileSystem",
+                method,
+                pathOrDescriptor: marker,
+                cause: Object.assign(new Error(`EBUSY: resource busy or locked, ${marker}`), {
+                  code: "EBUSY",
+                }),
+              }),
+            ),
+          ),
+        );
+      const lockedMarker = Layer.effect(
+        FileSystem.FileSystem,
+        Effect.map(FileSystem.FileSystem, (real) =>
+          FileSystem.FileSystem.of({
+            ...real,
+            writeFileString: (target, data, options) =>
+              target === marker ? busy("writeFile") : real.writeFileString(target, data, options),
+            remove: (target, options) =>
+              target === marker ? busy("remove") : real.remove(target, options),
+          }),
+        ),
+      );
+      const runLocked = (events: Array<DesktopEvent>) =>
+        Effect.gen(function* () {
+          const run = yield* runDesktopServer(baseDir, events, () => Effect.void).pipe(
+            Effect.provide(lockedMarker),
+            Effect.forkChild,
+          );
+          // The start's write and the stop's remove each try four times, then say why.
+          const attempts: Array<string> = [];
+          for (let attempt = 0; attempt < 8; attempt += 1) {
+            attempts.push(yield* Queue.take(markerAttempts));
+            yield* TestClock.adjust("100 millis");
+          }
+          yield* Fiber.join(run);
+          assert.deepEqual(attempts, [
+            ...Array.from({ length: 4 }, () => "writeFile"),
+            ...Array.from({ length: 4 }, () => "remove"),
+          ]);
+          assert.equal(yield* Queue.size(markerAttempts), 0);
+        });
+
+      const first: Array<DesktopEvent> = [];
+      yield* runLocked(first);
+      assert.deepEqual(
+        first
+          .filter((event) => LIFECYCLE_EVENTS.has(event.event))
+          .map((event) => [event.event, event.properties.sessionMarkerError]),
+        [
+          ["server.started", "EBUSY"],
+          ["server.stopped", "EBUSY"],
+        ],
+      );
+      // The error code is all it carries; the path stays on the machine.
+      assert.notInclude(JSON.stringify(first), baseDir);
+
+      const second: Array<DesktopEvent> = [];
+      yield* runLocked(second);
+      const reports = [...first, ...second].filter((event) => event.event === "app.unclean_exit");
+      assert.equal(reports.length, 2);
+      const [report, again] = reports;
+      // The same exit keeps its id and time, so PostHog stores it once.
+      assert.equal(report?.uuid, "0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e");
+      assert.equal(again?.uuid, report?.uuid);
+      assert.equal(report?.timestamp, "1970-01-01T00:00:01.000Z");
+      assert.equal(again?.timestamp, report?.timestamp);
+      assert.equal(report?.properties.previousSessionId, crashedSessionId);
+    }),
+  );
+
+  it.effect("gives each marker its own report id and the time its session started", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-telemetry-id-" });
+      const marker = path.join(baseDir, "userdata", "telemetry-session");
+      const events: Array<DesktopEvent> = [];
+      const markers: Array<{ readonly reportId?: unknown; readonly startedAtMs?: unknown }> = [];
+      const readMarker = fileSystem
+        .readFileString(marker)
+        .pipe(Effect.map((text) => markers.push(JSON.parse(text))));
+
+      // Two runs that die: each leaves its marker behind for the next start.
+      yield* runDesktopServer(baseDir, events, () => readMarker.pipe(Effect.orDie));
+      const kept = yield* fileSystem.readFileString(marker).pipe(Effect.orElseSucceed(() => ""));
+      yield* fileSystem.writeFileString(marker, JSON.stringify(markers[0]));
+      yield* runDesktopServer(baseDir, events, () => readMarker.pipe(Effect.orDie));
+      yield* fileSystem.writeFileString(marker, JSON.stringify(markers[1]));
+      yield* runDesktopServer(baseDir, events, () => Effect.void);
+
+      assert.equal(kept, "");
+      const [first, second] = markers;
+      assert.match(String(first?.reportId), /^[0-9a-f-]{36}$/);
+      assert.notEqual(first?.reportId, second?.reportId);
+      const reports = events.filter((event) => event.event === "app.unclean_exit");
+      assert.deepEqual(
+        reports.map((event) => [event.uuid, Date.parse(event.timestamp ?? "")]),
+        [
+          [first?.reportId, first?.startedAtMs],
+          [second?.reportId, second?.startedAtMs],
+        ],
+      );
+    }),
+  );
+
+  it.effect("explains an unclean exit with what the desktop app last saw", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-telemetry-why-" });
+      const marker = path.join(baseDir, "userdata", "telemetry-session");
+      const desktopState = path.join(baseDir, "userdata", DESKTOP_SESSION_STATE_FILE);
+      const sessionId = "3a4b5c6d-7e8f-4a9b-8c0d-1e2f3a4b5c6d";
+      const startedAtMs = 1_000;
+      yield* fileSystem.makeDirectory(path.dirname(marker), { recursive: true });
+
+      const explain = (state: DesktopSessionState | "none") =>
+        Effect.gen(function* () {
+          const windowStartedAtMs = yield* Clock.currentTimeMillis;
+          yield* fileSystem.writeFileString(
+            marker,
+            JSON.stringify({ sessionId, startedAtMs, uncleanStarts: 2, windowStartedAtMs }),
+          );
+          yield* state === "none"
+            ? fileSystem.remove(desktopState, { force: true })
+            : fileSystem.writeFileString(desktopState, JSON.stringify(state));
+          const events: Array<DesktopEvent> = [];
+          yield* runDesktopServer(baseDir, events, () => Effect.void);
+          const { reason, exitCode, exitSignal, rendererReason, uncleanStarts } =
+            events.find((event) => event.event === "app.unclean_exit")?.properties ?? {};
+          return { reason, exitCode, exitSignal, rendererReason, uncleanStarts };
+        });
+      const seen = (last: DesktopSessionState["last"], atMs = startedAtMs + 1) => ({
+        sessionId,
+        atMs,
+        last,
+      });
+      const unclean = (reason: string, details: Record<string, unknown> = {}) => ({
+        reason,
+        exitCode: undefined,
+        exitSignal: undefined,
+        rendererReason: undefined,
+        uncleanStarts: 3,
+        ...details,
+      });
+
+      const cases: ReadonlyArray<
+        readonly [DesktopSessionState | "none", ReturnType<typeof unclean>]
+      > = [
+        // An OS shutdown that cut the stop short is not a crash and does not feed the crash loop.
+        [seen({ state: "os_shutdown" }), unclean("os_shutdown", { uncleanStarts: 2 })],
+        [seen({ state: "suspended" }), unclean("suspended")],
+        [
+          seen({ state: "renderer_gone", reason: "crashed", exitCode: 5 }),
+          unclean("renderer_gone", { rendererReason: "crashed", exitCode: 5 }),
+        ],
+        [
+          seen({ state: "backend_exited", code: 1, signal: null }),
+          unclean("backend_exited", { exitCode: 1 }),
+        ],
+        [
+          seen({ state: "backend_exited", code: null, signal: "SIGKILL" }),
+          unclean("backend_exited", { exitSignal: "SIGKILL" }),
+        ],
+        // Resumed, or the state of a backend that died before this one started.
+        [seen({ state: "running" }), unclean("unknown")],
+        [seen({ state: "suspended" }, startedAtMs - 1), unclean("unknown")],
+        [
+          { ...seen({ state: "os_shutdown" }), sessionId: "4a5b6c7d-8e9f-4a0b-8c1d-2e3f4a5b6c7d" },
+          unclean("unknown"),
+        ],
+        ["none", unclean("unknown")],
+      ];
+      for (const [state, expected] of cases) {
+        assert.deepEqual(yield* explain(state), expected, JSON.stringify(state));
+      }
     }),
   );
 
