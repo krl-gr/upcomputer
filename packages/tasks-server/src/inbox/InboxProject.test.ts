@@ -38,7 +38,7 @@ afterEach(() => {
 interface FakeProject {
   readonly id: ProjectId;
   title: string;
-  readonly workspaceRoot: string;
+  workspaceRoot: string;
   deleted: boolean;
 }
 
@@ -64,6 +64,12 @@ function harness() {
           const project = { ...input, id: input.projectId, deleted: false };
           projects.push(project);
           return { project, created: true };
+        }),
+      update: (input: { projectId: ProjectId; workspaceRoot: string }) =>
+        Effect.sync(() => {
+          const project = projects.find(({ id }) => id === input.projectId)!;
+          project.workspaceRoot = input.workspaceRoot;
+          return project;
         }),
     } as never),
     Layer.succeed(ProjectStoreV2, {
@@ -112,6 +118,37 @@ it.effect("the Inbox is created once on its folder, reused, and recreated after 
       projects.map(({ deleted }) => deleted),
       [true, false],
     );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("an Inbox whose folder is missing or outside the home moves back, keeping its id", () => {
+  const { home, projects, layer } = harness();
+  const inboxFolder = NodePath.join(home, INBOX_FOLDER);
+  return Effect.gen(function* () {
+    const inbox = yield* InboxProject;
+    const id = yield* inbox.ensure;
+
+    // A database copied from a dev home points at that home's folder, now gone.
+    const devHome = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "tasks-inbox-dev-"));
+    directories.push(devHome);
+    projects[0]!.workspaceRoot = NodePath.join(devHome, ".upcomputer", INBOX_FOLDER);
+    NodeFS.rmSync(inboxFolder, { recursive: true });
+    assert.equal(yield* inbox.ensure, id);
+    assert.equal(projects[0]!.workspaceRoot, inboxFolder);
+    assert.ok(NodeFS.statSync(inboxFolder).isDirectory());
+
+    // A folder that exists but lies outside the home moves back too.
+    projects[0]!.workspaceRoot = devHome;
+    assert.equal(yield* inbox.ensure, id);
+    assert.equal(projects[0]!.workspaceRoot, inboxFolder);
+
+    // Another folder inside the home is the user's choice and stays.
+    const moved = NodePath.join(home, "projects", "inbox");
+    NodeFS.mkdirSync(moved, { recursive: true });
+    projects[0]!.workspaceRoot = moved;
+    assert.equal(yield* inbox.ensure, id);
+    assert.equal(projects[0]!.workspaceRoot, moved);
+    assert.equal(projects.length, 1);
   }).pipe(Effect.provide(layer));
 });
 

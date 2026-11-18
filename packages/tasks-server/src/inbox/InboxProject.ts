@@ -2,6 +2,7 @@ import { ProjectId } from "@t3tools/contracts";
 import { TaskError } from "@t3tools/tasks-contracts/v1";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -16,10 +17,9 @@ export const INBOX_FOLDER = "tasks-inbox";
 
 export interface InboxProjectShape {
   /**
-   * The project that takes tasks created without one: a normal project titled
-   * Inbox on `<T3 home>/tasks-inbox`, created on first use. Its id is kept in
-   * the task settings, so renaming or moving it keeps it the Inbox; after it
-   * is deleted, the next call creates it again.
+   * The project for tasks created without one: Inbox on `<T3 home>/tasks-inbox`, created on
+   * first use and kept by id, so a rename keeps it; a deleted one is created again. A folder
+   * missing or outside the home (a database copied from another home) moves back there.
    */
   readonly ensure: Effect.Effect<ProjectId, TaskError>;
 }
@@ -32,7 +32,37 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const store = yield* ProjectStoreV2;
   const projects = yield* makeFeatureProjects;
-  const workspaceRoot = (yield* Path.Path).join(projects.homeDir, INBOX_FOLDER);
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const workspaceRoot = path.join(projects.homeDir, INBOX_FOLDER);
+  const isInsideHome = (folder: string) => {
+    const relative = path.relative(path.resolve(projects.homeDir), path.resolve(folder));
+    return (
+      relative !== "" &&
+      relative !== ".." &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative)
+    );
+  };
+  // A failed repair leaves the Inbox where it is: tasks need its id, not its folder.
+  const repair = Effect.fn("InboxProject.repair")(
+    function* (projectId: ProjectId, folder: string) {
+      const exists = yield* fileSystem.exists(folder).pipe(Effect.orElseSucceed(() => false));
+      if (exists && isInsideHome(folder)) return;
+      yield* projects.moveProject({ projectId, workspaceRoot });
+    },
+    (effect, projectId, folder) =>
+      effect.pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("Could not move the Inbox project back to its folder.", {
+            projectId,
+            folder,
+            workspaceRoot,
+            cause,
+          }),
+        ),
+      ),
+  );
   // Two first person tasks at once must not race to create two projects.
   const lock = yield* Semaphore.make(1);
 
@@ -42,7 +72,11 @@ const make = Effect.gen(function* () {
     const stored = rows[0]?.inboxProjectId ?? null;
     if (stored !== null) {
       const id = ProjectId.make(stored);
-      if (Option.isSome(yield* store.getShell(id))) return id;
+      const shell = yield* store.getShell(id);
+      if (Option.isSome(shell)) {
+        yield* repair(id, shell.value.workspaceRoot);
+        return id;
+      }
     }
     const project = yield* projects.ensureProjectForWorkspaceRoot({
       title: INBOX_PROJECT_TITLE,
