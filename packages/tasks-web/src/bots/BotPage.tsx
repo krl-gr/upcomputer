@@ -11,7 +11,6 @@ import { ArrowLeftIcon, BanIcon, DicesIcon, InfoIcon, XIcon } from "lucide-react
 import { useGT, useMessages } from "gt-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { describeError } from "@t3tools/client-runtime/errors";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   DEFAULT_RUNTIME_MODE,
   EnvironmentId,
@@ -32,7 +31,6 @@ import {
   defaultBotAppearance,
 } from "@t3tools/tasks-contracts/v1";
 import {
-  useProjects,
   useServerConfigs,
   useThreadShell,
   waitForThreadShell,
@@ -99,6 +97,9 @@ import { formatRelativeTimeLabel } from "../../../../apps/web/src/timestampForma
 import { ensureLocalApi } from "../../../../apps/web/src/localApi.ts";
 import { cn, randomUUID } from "../../../../apps/web/src/lib/utils.ts";
 import { readTasksWebClient } from "../environmentApi.ts";
+import type { TasksWebProject } from "../ui/shared.ts";
+import { pickerProjectFor, pickerProjects, taskProjectsOf } from "../ui/taskProjects.ts";
+import { useSidebarProjectSnapshots } from "../ui/useWorkspaceData.ts";
 import { WorkspaceViewLayout } from "../ui/WorkspaceViewLayout.tsx";
 import { useAutosave } from "./botAutosave.ts";
 import {
@@ -194,7 +195,13 @@ function BotForm({
   readonly onBack: () => void;
 }) {
   const gt = useGT();
-  const projects = useProjects().filter((project) => project.environmentId === environmentId);
+  // The bot's own computer, even when the sidebar shows another one.
+  const snapshots = useSidebarProjectSnapshots(false);
+  const projects = useMemo(
+    () => taskProjectsOf(snapshots).filter((project) => project.environmentId === environmentId),
+    [environmentId, snapshots],
+  );
+  const projectOptions = pickerProjects(projects);
   const source = useThreadShell(threadId ? scopeThreadRef(environmentId, threadId) : null);
   const status = useBotStatus(environmentId, bot);
   const navigate = useNavigate();
@@ -217,12 +224,16 @@ function BotForm({
     bot?.agent.config.instructions ??
       "Help the user, remember useful facts, and keep them informed about your work.",
   );
-  const initialProject = bot?.projectId ?? source?.projectId ?? projects[0]?.id ?? null;
+  const initialProject = bot?.projectId ?? source?.projectId ?? projectOptions[0]?.id ?? null;
   const [projectId, setProjectId] = useState<ProjectId | null>(initialProject);
+  const selectedProject = projects.find((project) => project.id === projectId);
+  const selectedProjectOption = selectedProject
+    ? pickerProjectFor(projectOptions, selectedProject)
+    : undefined;
   const [selectedOverride, setSelection] = useState<ModelSelection | undefined>(
     bot?.agent.config.modelSelection ??
       source?.modelSelection ??
-      projects[0]?.defaultModelSelection ??
+      projectOptions[0]?.defaultModelSelection ??
       undefined,
   );
   // A chat turned into a bot keeps its permissions; a new bot gets a new thread's.
@@ -594,23 +605,24 @@ function BotForm({
             )}
             control={
               <Select
-                value={projectId ?? ""}
+                value={selectedProjectOption?.id ?? projectId ?? ""}
                 disabled={!editable || projects.length === 0}
                 onValueChange={(value) => {
-                  const next = projects.find((project) => project.id === value);
-                  if (next) setProjectId(next.id);
+                  const next = projectOptions.find((project) => project.id === value);
+                  if (next && next !== selectedProjectOption) setProjectId(next.id);
                 }}
               >
                 <SelectTrigger aria-label={gt("Project")} className="min-w-48">
                   <SelectValue>
-                    {(() => {
-                      const project = projects.find((item) => item.id === projectId);
-                      return project ? <ProjectLabel project={project} /> : gt("Choose a project");
-                    })()}
+                    {selectedProject ? (
+                      <ProjectLabel project={selectedProject} />
+                    ) : (
+                      gt("Choose a project")
+                    )}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
-                  {projects.map((project) => (
+                  {projectOptions.map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       <ProjectLabel project={project} />
                     </SelectItem>
@@ -732,11 +744,11 @@ function InfoTip({ label, children }: { readonly label: string; readonly childre
   );
 }
 
-function ProjectLabel({ project }: { readonly project: EnvironmentProject }) {
+function ProjectLabel({ project }: { readonly project: TasksWebProject }) {
   return (
     <span className="flex min-w-0 items-center gap-2">
-      <ProjectFavicon project={project} className="size-4 shrink-0" />
-      <span className="truncate">{project.title}</span>
+      <ProjectFavicon project={project.favicon} className="size-4 shrink-0" />
+      <span className="truncate">{project.name}</span>
     </span>
   );
 }

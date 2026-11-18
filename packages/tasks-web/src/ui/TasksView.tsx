@@ -73,6 +73,7 @@ import { TagChipsField } from "./TagChipsField.tsx";
 import { tagSuggestions } from "./tagSuggestions.ts";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import { splitListInput, taskKey, taskMetadataLabel, type TasksWebProject } from "./shared.ts";
+import { pickerProjectFor, pickerProjects } from "./taskProjects.ts";
 import { ListEmptyState } from "./ListEmptyState.tsx";
 import { useTaskArrivals } from "./taskArrivals.ts";
 import "./taskArrival.css";
@@ -380,6 +381,8 @@ export function TasksView(props: TasksViewProps) {
         name: project.name,
         favicon: project.favicon,
         inbox: isInboxRoot(project.workspaceRoot),
+        groupKey: project.groupKey,
+        pickId: project.pickId,
       });
       byEnvironment.set(project.environmentId, list);
     }
@@ -393,6 +396,11 @@ export function TasksView(props: TasksViewProps) {
     props.canMutateEnvironment(project.environmentId),
   );
   const hasReadOnlyProjects = mutableProjects.length < props.projects.length;
+  const projectOptions = useMemo(() => pickerProjects(mutableProjects), [mutableProjects]);
+  const selectedProjectOption = useMemo(
+    () => (selectedProject ? pickerProjectFor(projectOptions, selectedProject) : undefined),
+    [projectOptions, selectedProject],
+  );
   const statusOptions = useMemo(
     () =>
       [
@@ -501,9 +509,9 @@ export function TasksView(props: TasksViewProps) {
     setDetailRunsStatus("idle");
     selectTaskKey(null);
     // Preselect the filtered project (its members, in the sidebar's order).
-    setForm(emptyForm(preferredProject(mutableProjects, orderedProjectFilterKeys(projectFilter))));
+    setForm(emptyForm(preferredProject(projectOptions, orderedProjectFilterKeys(projectFilter))));
     setCreateModeOpen(true);
-  }, [mutableProjects, projectFilter, selectTaskKey]);
+  }, [projectOptions, projectFilter, selectTaskKey]);
 
   // Details subscribe to their own task, including deep links outside loaded pages.
   useEffect(() => {
@@ -1360,12 +1368,16 @@ export function TasksView(props: TasksViewProps) {
                   </DetailSidebarRow>
                   <DetailSidebarRow label={gt("Project")} controlSelector="button">
                     <Select
-                      value={selectedProjectKey(form)}
+                      value={
+                        selectedProjectOption
+                          ? projectKey(selectedProjectOption)
+                          : selectedProjectKey(form)
+                      }
                       onValueChange={(value) => {
-                        const project = mutableProjects.find(
+                        const project = projectOptions.find(
                           (candidate) => projectKey(candidate) === value,
                         );
-                        if (project)
+                        if (project && project !== selectedProjectOption)
                           setForm((current) => ({
                             ...current,
                             environmentId: project.environmentId,
@@ -1395,7 +1407,7 @@ export function TasksView(props: TasksViewProps) {
                         </SelectValue>
                       </SelectTrigger>
                       <SelectPopup>
-                        {mutableProjects.map((project) => (
+                        {projectOptions.map((project) => (
                           <SelectItem key={projectKey(project)} value={projectKey(project)}>
                             {project.name}
                           </SelectItem>

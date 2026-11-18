@@ -46,6 +46,7 @@ import {
 } from "../planner/ui/tasksViewGate.ts";
 import type { AgentProject } from "./AgentsView.tsx";
 import { tasksEnvironmentIds, type TasksWebProject } from "./shared.ts";
+import { taskProjectsOf } from "./taskProjects.ts";
 
 const EMPTY_TASKS: TasksDataState = { byEnvironment: {}, tasks: [] };
 const EMPTY_AGENTS: AgentsDataState = { byEnvironment: {}, agents: [], runs: [] };
@@ -70,10 +71,12 @@ export interface TasksWorkspaceData {
   readonly reload: () => void;
 }
 
-/** The sidebar's logical projects, grouped and ordered as the sidebar shows them. */
-export function useSidebarProjectSnapshots() {
-  // Tasks and Workers follow the sidebar's Computers section.
-  const projects = useSidebarComputerProjects(useProjects(), true);
+/**
+ * The sidebar's logical projects, grouped and ordered as the sidebar shows them. Tasks and
+ * Workers follow the sidebar's Computers section; a screen for one computer passes `scoped` false.
+ */
+export function useSidebarProjectSnapshots(scoped = true) {
+  const projects = useSidebarComputerProjects(useProjects(), scoped);
   const { environments } = useEnvironments();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const grouping = usePrimarySettings(selectProjectGroupingSettings);
@@ -111,30 +114,11 @@ function useWorkspaceProjects(): {
 } {
   const snapshots = useSidebarProjectSnapshots();
   return useMemo(() => {
-    const members = snapshots.flatMap((snapshot) => snapshot.memberProjects);
+    const projects = taskProjectsOf(snapshots);
     return {
-      projects: members.map((member) => ({
-        environmentId: member.environmentId,
-        id: member.id,
-        name: member.title,
-        workspaceRoot: member.workspaceRoot,
-        repositoryIdentity: member.repositoryIdentity,
-        favicon: member,
-      })),
-      agentProjects: members.flatMap((member) =>
-        member.defaultModelSelection
-          ? [
-              {
-                environmentId: member.environmentId,
-                id: member.id,
-                name: member.title,
-                workspaceRoot: member.workspaceRoot,
-                repositoryIdentity: member.repositoryIdentity,
-                favicon: member,
-                defaultModelSelection: member.defaultModelSelection,
-              },
-            ]
-          : [],
+      projects,
+      agentProjects: projects.flatMap(({ defaultModelSelection, ...project }) =>
+        defaultModelSelection ? [{ ...project, defaultModelSelection }] : [],
       ),
     };
   }, [snapshots]);

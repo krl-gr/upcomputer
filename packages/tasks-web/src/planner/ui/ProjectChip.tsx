@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "../../../../../apps/web/src/components/ui/select.tsx";
 import { ProjectRowIcon } from "../../../../../apps/web/src/sidebarProjects/sidebarProjectIcons.tsx";
+import { pickerProjectFor, pickerProjects } from "../../ui/taskProjects.ts";
 
 /** A project the planner can put a task in. The Inbox replaces wande's "Unassigned". */
 export interface PlannerProject {
@@ -17,6 +18,9 @@ export interface PlannerProject {
   readonly name: string;
   readonly favicon: ProjectFaviconProject | null;
   readonly inbox: boolean;
+  /** The sidebar project group; the chip offers one entry per group. */
+  readonly groupKey: string;
+  readonly pickId: string;
 }
 
 /** The Inbox project lives on `<T3 home>/tasks-inbox` (phase 1); its id is not sent to clients. */
@@ -53,11 +57,16 @@ export function ProjectChip(props: {
 }) {
   const gt = useGT();
   const inbox = props.projects.find((project) => project.inbox) ?? null;
-  const others = props.projects.filter((project) => !project.inbox);
+  const others = pickerProjects(props.projects.filter((project) => !project.inbox));
   const selected = props.mixed
     ? null
     : (props.projects.find((project) => project.id === props.value) ?? null);
-  const value = props.mixed ? MIXED : (props.value ?? NEW_INBOX);
+  // A task in any member of a group shows the group's entry as chosen; choosing it changes nothing.
+  const value = props.mixed
+    ? MIXED
+    : selected && !selected.inbox
+      ? (pickerProjectFor(others, selected)?.id ?? selected.id)
+      : (props.value ?? NEW_INBOX);
   const unknown = !props.mixed && selected === null && props.value !== null;
   const label = props.mixed
     ? gt("Mixed", { $context: "a selection of tasks from several projects" })
