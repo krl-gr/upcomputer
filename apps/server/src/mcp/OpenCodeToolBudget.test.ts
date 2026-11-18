@@ -137,4 +137,20 @@ describe("OpenCode session tools", () => {
       expect(sent.length + OPENCODE_OWN_TOOLS_ALLOWANCE).toBeLessThanOrEqual(API_TOOL_LIMIT);
     }),
   );
+
+  it.effect("stay within the limit after a long session searched for every tool", () =>
+    Effect.gen(function* () {
+      const exposure = exposureFor();
+      const searchable = upComputerT3Tools.filter(
+        (tool) => tool.name !== McpToolExposure.TOOL_SEARCH,
+      );
+      for (const tool of searchable) yield* exposure.search(SESSION, tool.name);
+
+      const sent = sentToModel(exposure);
+      expect(sent.length + OPENCODE_OWN_TOOLS_ALLOWANCE).toBeLessThanOrEqual(API_TOOL_LIMIT);
+      expect(sent).toContain("t3-code_tool_search");
+      expect(sent).toContain("t3-code_delegate_task");
+      expect(sent).toContain(`t3-code_${searchable.at(-1)?.name}`);
+    }),
+  );
 });
