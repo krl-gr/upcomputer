@@ -401,8 +401,8 @@ function newTask(
     originThreadId: threadId,
     // The calling thread is the chat its runs report back to. A thread id the
     // caller passes may be copied from history, as in a fork of the chat that
-    // created earlier tasks, and would send the reports there.
-    sourceThreadId: threadId ?? item.sourceThreadId ?? null,
+    // created earlier tasks, and would send the reports there. null opts out.
+    sourceThreadId: item.sourceThreadId === null ? null : (threadId ?? item.sourceThreadId ?? null),
     sourceRunId: item.sourceRunId ?? null,
     metadata: item.metadata ?? null,
     tags: item.tags ?? [],

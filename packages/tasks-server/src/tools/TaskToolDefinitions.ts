@@ -83,7 +83,8 @@ const taskCreateFields = {
   assigneeAgentRunId: { type: ["string", "null"] },
   sourceThreadId: {
     type: ["string", "null"],
-    description: "Ignored when called from a thread: that thread is the source.",
+    description:
+      "Called from a thread, that thread is the source and a thread id here is ignored. null: no report back.",
   },
   sourceRunId: { type: ["string", "null"] },
   metadata: {},

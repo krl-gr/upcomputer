@@ -238,7 +238,8 @@ it.effect("the calling thread is the source, whatever thread id a fork copied fr
       [
         ["one", "thread-fork", "thread-fork"],
         ["two", "thread-fork", "thread-fork"],
-        ["three", "thread-fork", "thread-fork"],
+        // An explicit null still opts out of reports.
+        ["three", null, "thread-fork"],
         ["four", "thread-parent", "thread-parent"],
       ],
     );
