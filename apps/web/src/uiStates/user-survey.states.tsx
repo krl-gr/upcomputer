@@ -6,13 +6,12 @@ import { Dialog } from "../components/ui/dialog";
 import { SidebarMenu, SidebarProvider } from "../components/ui/sidebar";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import { SidebarNotifications } from "../sidebarNotifications/SidebarNotifications";
-import type { SurveyCardLayout } from "../userSurvey/surveyVariant";
 import { UserSurveyDialogPopup, type UserSurveyStatus } from "../userSurvey/UserSurveyDialog";
 import { EMPTY_DRAFT_ANSWER, type SurveyDraft } from "../userSurvey/userSurvey.logic";
 import { captureUiStateSheet, type UiState } from "./uiStateSheet";
 
 /*
- * The survey's card in the notifications popover, and its form in each state.
+ * The survey's card in the notifications popover, and each step of its form.
  * Popups portal to the body, so each state copies the open popup into its cell.
  */
 
@@ -24,7 +23,7 @@ const SURVEY: UserSurvey = {
     {
       id: "q-working",
       type: "single_choice",
-      question: "Is everything working as expected?",
+      question: "Hi 👋 Is everything working fine in Up.computer?",
       optional: false,
       choices: ["Yes", "There are issues"],
       hasOpenChoice: false,
@@ -55,7 +54,7 @@ const SURVEY: UserSurvey = {
     {
       id: "q-else",
       type: "open",
-      question: "Anything else you want to tell us?",
+      question: "Anything else? Leave your email or X handle if you'd like a reply.",
       optional: true,
     },
   ],
@@ -64,7 +63,6 @@ const SURVEY: UserSurvey = {
 const source = vi.hoisted(() => ({
   update: null as DesktopUpdateState | null,
   survey: true,
-  cardLayout: "link" as SurveyCardLayout,
 }));
 
 // Data sources, not UI: the update feed, server configs, environments, Update
@@ -100,10 +98,6 @@ vi.mock("../components/sidebar/useUpdateEverything", async (importOriginal) => {
     }),
   };
 });
-vi.mock("../userSurvey/surveyVariant", () => ({
-  SURVEY_VARIANT: "dialog",
-  surveyCardLayout: () => source.cardLayout,
-}));
 vi.mock("../userSurvey/useUserSurvey", () => ({
   useUserSurvey: () =>
     source.survey
@@ -154,8 +148,9 @@ async function copyPopup(popup: HTMLElement, cell: HTMLElement) {
   cell.querySelector("[data-popup-copy]")!.append(copy);
 }
 
-// The survey card in the popup's copy; the sheet marks it as hovered.
-const SURVEY_CARD = "[data-popup-copy] li:last-child";
+// A chip of the survey card in the popup's copy; the sheet marks it as hovered.
+const FIRST_CHIP = "[data-popup-copy] [role=radio]:first-child";
+const DISMISS = "[data-popup-copy] li:last-child button:not([role])";
 
 function Bell() {
   return (
@@ -172,22 +167,15 @@ function Bell() {
   );
 }
 
-function bell(
-  name: string,
-  update: DesktopUpdateState | null,
-  cardLayout: SurveyCardLayout = "link",
-  hover?: string,
-): UiState {
+function bell(name: string, update: DesktopUpdateState | null, hover?: string): UiState {
   return {
     name,
     render: () => <Bell />,
     ...(hover ? { hover } : {}),
     setup: () => {
       source.update = update;
-      source.cardLayout = cardLayout;
       return () => {
         source.update = null;
-        source.cardLayout = "link";
       };
     },
     settle: async (cell) => {
@@ -205,6 +193,7 @@ function bell(
   };
 }
 
+const YES: SurveyDraft = { "q-working": { ...EMPTY_DRAFT_ANSWER, picked: [0] } };
 const issues = (details: string): SurveyDraft => ({
   "q-working": { ...EMPTY_DRAFT_ANSWER, picked: [1] },
   "q-details": { ...EMPTY_DRAFT_ANSWER, text: details },
@@ -212,10 +201,10 @@ const issues = (details: string): SurveyDraft => ({
 const FILLED: SurveyDraft = {
   ...issues("The sidebar flickers when a thread finishes."),
   "q-missing": { ...EMPTY_DRAFT_ANSWER, picked: [0, 2, 6], otherText: "Calendar sync" },
-  "q-else": { ...EMPTY_DRAFT_ANSWER, text: "Thanks for the quick updates!" },
+  "q-else": { ...EMPTY_DRAFT_ANSWER, text: "Thanks for the quick updates! Reach me at @demo." },
 };
 
-function form(name: string, draft: SurveyDraft, status: UserSurveyStatus): UiState {
+function form(name: string, draft: SurveyDraft, step: number, status: UserSurveyStatus): UiState {
   return {
     name,
     render: () => (
@@ -226,7 +215,10 @@ function form(name: string, draft: SurveyDraft, status: UserSurveyStatus): UiSta
             survey={SURVEY}
             draft={draft}
             status={status}
+            step={step}
+            back={false}
             onDraftChange={() => undefined}
+            onStepChange={() => undefined}
             onSubmit={() => undefined}
             onClose={() => undefined}
           />
@@ -249,30 +241,21 @@ function form(name: string, draft: SurveyDraft, status: UserSurveyStatus): UiSta
   };
 }
 
+const EDITING: UserSurveyStatus = { kind: "editing" };
+
 it("user-survey", async () => {
   // Several sheets: a taller capture comes out blank past about 4000px.
   await captureUiStateSheet(
     "user-survey-card",
     [
       {
-        title: "1. Like the update card: Share on the right, a quiet link below",
-        states: [bell("after an app update", AVAILABLE, "link"), bell("alone", null, "link")],
-      },
-      {
-        title: "2. Two buttons under the text",
-        states: [bell("after an app update", AVAILABLE, "buttons"), bell("alone", null, "buttons")],
-      },
-      {
-        title: "3. The whole card opens the survey",
+        title: "Notifications popover: the card asks the first question",
         states: [
-          bell("after an app update", AVAILABLE, "whole"),
-          bell("pointer over the card: No thanks shows", AVAILABLE, "whole", SURVEY_CARD),
-          bell("alone", null, "whole"),
+          bell("after an app update", AVAILABLE),
+          bell("alone", null),
+          bell("pointer over a chip", AVAILABLE, FIRST_CHIP),
+          bell("pointer over No thanks", AVAILABLE, DISMISS),
         ],
-      },
-      {
-        title: "Before: X in the corner, Share under it",
-        states: [bell("after an app update", AVAILABLE, "corner")],
       },
     ],
     { cellWidth: 360 },
@@ -281,22 +264,21 @@ it("user-survey", async () => {
     "user-survey-form",
     [
       {
-        title: "Survey form",
+        title: "Survey form, one question per step",
         states: [
-          form("empty: Submit waits for the first answer", {}, { kind: "editing" }),
+          form("step 1 after There are issues: details under it", issues(""), 0, EDITING),
+          form("step 1 with Yes, reached with Back", YES, 0, EDITING),
+          form("step 2 after Yes in the card: Skip until a chip is picked", YES, 1, EDITING),
           form(
-            "There are issues: details field under it",
-            issues("The sidebar flickers when a thread finishes."),
-            { kind: "editing" },
-          ),
-          form(
-            "Other ticked: its own field",
+            "step 2 with chips and Other",
             {
-              "q-working": { ...EMPTY_DRAFT_ANSWER, picked: [0] },
+              ...YES,
               "q-missing": { ...EMPTY_DRAFT_ANSWER, picked: [2, 6], otherText: "Calendar sync" },
             },
-            { kind: "editing" },
+            1,
+            EDITING,
           ),
+          form("step 3: the last question", YES, 2, EDITING),
         ],
       },
     ],
@@ -308,12 +290,12 @@ it("user-survey", async () => {
       {
         title: "Sending",
         states: [
-          form("submitting", FILLED, { kind: "submitting" }),
-          form("send failed: error beside Submit", FILLED, {
+          form("submitting", FILLED, 2, { kind: "submitting" }),
+          form("send failed: the error under the text box", FILLED, 2, {
             kind: "failed",
             message: "Could not send your answers. Check your connection and try again.",
           }),
-          form("sent: thank you", FILLED, { kind: "sent" }),
+          form("sent: thank you", FILLED, 2, { kind: "sent" }),
         ],
       },
     ],

@@ -5,6 +5,7 @@ import { type ComponentProps, type ReactNode, useState } from "react";
 
 import { APP_BASE_NAME } from "../branding";
 import { Spinner } from "../components/ui/spinner";
+import { observeResize } from "../lib/observeResize";
 import { cn } from "../lib/utils";
 import {
   type ChoiceQuestion,
@@ -14,11 +15,9 @@ import {
   type SurveyDraft,
   type SurveyDraftAnswer,
   surveyAnswers,
-  surveyBlocks,
 } from "./userSurvey.logic";
 
 export const USER_SURVEY_TITLE = `How can we improve ${APP_BASE_NAME} for you?`;
-export const USER_SURVEY_CARD_DETAIL = "Takes about a minute.";
 export const USER_SURVEY_THANKS = "This helps us decide what to build next.";
 
 export type UserSurveyStatus =
@@ -30,54 +29,65 @@ export type UserSurveyStatus =
 /** Sends the answers; resolves to an error message, or null once they are sent. */
 export type SubmitUserSurvey = (answers: ReadonlyArray<UserSurveyAnswer>) => Promise<string | null>;
 
-/** What every form of the survey draws from. */
+/** What the survey's card and form draw from. */
 export interface SurveyFormProps {
   readonly survey: UserSurvey;
   readonly draft: SurveyDraft;
   readonly status: UserSurveyStatus;
+  /** The step on screen, and whether it was reached by going back. */
+  readonly step: number;
+  readonly back: boolean;
   readonly onDraftChange: (draft: SurveyDraft) => void;
+  readonly onStepChange: (step: number) => void;
   readonly onSubmit: () => void;
   readonly onClose: () => void;
-}
-
-/** "Three quick questions, about a minute." */
-export function surveyLengthLabel(survey: UserSurvey): string {
-  const count = surveyBlocks(survey, {}).length;
-  const words = ["One", "Two", "Three", "Four", "Five"];
-  if (count === 1) return "One quick question.";
-  return `${words[count - 1] ?? count} quick questions, about a minute.`;
 }
 
 interface SurveyFormState {
   readonly surveyId: string | null;
   readonly draft: SurveyDraft;
   readonly status: UserSurveyStatus;
+  readonly step: number;
+  readonly back: boolean;
 }
 
 /**
- * The draft and send status, kept by whoever outlives the form, so closing
- * and reopening keeps what was typed. A new survey starts empty.
+ * The draft, the step and the send status, kept by whoever outlives the form,
+ * so the card can answer the first question and closing keeps what was typed.
+ * A new survey starts empty.
  */
 export function useSurveyForm(survey: UserSurvey | null, onSubmit: SubmitUserSurvey | null) {
   const surveyId = survey?.id ?? null;
-  const [stored, setStored] = useState<SurveyFormState>({
+  const fresh: SurveyFormState = {
     surveyId,
     draft: {},
     status: { kind: "editing" },
-  });
-  const state: SurveyFormState =
-    stored.surveyId === surveyId ? stored : { surveyId, draft: {}, status: { kind: "editing" } };
-  const setStatus = (status: UserSurveyStatus) =>
-    setStored((current) => (current.surveyId === surveyId ? { ...current, status } : current));
+    step: 0,
+    back: false,
+  };
+  const [stored, setStored] = useState(fresh);
+  const state = stored.surveyId === surveyId ? stored : fresh;
+  const update = (change: (current: SurveyFormState) => Partial<SurveyFormState>) =>
+    setStored((current) => {
+      const base = current.surveyId === surveyId ? current : fresh;
+      return { ...base, ...change(base) };
+    });
   return {
     draft: state.draft,
     status: state.status,
-    setDraft: (draft: SurveyDraft) => setStored({ ...state, draft }),
+    step: state.step,
+    back: state.back,
+    setDraft: (draft: SurveyDraft) => update(() => ({ draft })),
+    goTo: (step: number) => update((current) => ({ step, back: step < current.step })),
+    /** The card's answer: the form opens on `step` with it already given. */
+    start: (draft: SurveyDraft, step: number) => update(() => ({ draft, step, back: false })),
     submit: () => {
       if (!survey || !onSubmit) return;
-      setStored({ ...state, status: { kind: "submitting" } });
+      update(() => ({ status: { kind: "submitting" } }));
       void onSubmit(surveyAnswers(survey, state.draft)).then((message) =>
-        setStatus(message === null ? { kind: "sent" } : { kind: "failed", message }),
+        update(() => ({
+          status: message === null ? { kind: "sent" } : { kind: "failed", message },
+        })),
       );
     },
   };
@@ -87,10 +97,9 @@ const chipVariants = cva(
   "inline-flex max-w-full shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap outline-none select-none transition-[background-color,color,scale] duration-150 ease-out focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset active:scale-[0.97] disabled:pointer-events-none motion-reduce:transition-none motion-reduce:active:scale-100",
   {
     variants: {
-      // md is a sidebar row: 32px tall, the control radius, medium 14px text.
+      // sm sits in the notification card; lg is the form's, a step above a sidebar row.
       size: {
         sm: "h-7 px-2.5 text-xs [&_svg]:size-3",
-        md: "h-8 px-3 text-sm [&_svg]:size-3.5",
         lg: "h-9 px-3.5 text-sm [&_svg]:size-3.5",
       },
       picked: {
@@ -103,7 +112,7 @@ const chipVariants = cva(
 
 export type SurveyChipSize = NonNullable<VariantProps<typeof chipVariants>["size"]>;
 
-function SurveyChip({
+export function SurveyChip({
   size,
   picked,
   multiple,
@@ -135,22 +144,42 @@ function SurveyChip({
   );
 }
 
-/** Opens its content from nothing, once, when it mounts. */
-export function Reveal({ children }: { readonly children: ReactNode }) {
+/** Fades its content in, once, when it mounts. `SurveyAutoHeight` makes the room. */
+function FadeIn({ children }: { readonly children: ReactNode }) {
   return (
-    <div className="grid grid-rows-[1fr] opacity-100 transition-[grid-template-rows,opacity] duration-200 ease-out starting:grid-rows-[0fr] starting:opacity-0 motion-reduce:transition-none">
-      <div className="min-h-0 overflow-hidden">{children}</div>
+    <div className="opacity-100 transition-opacity duration-200 ease-out starting:opacity-0 motion-reduce:transition-none">
+      {children}
     </div>
   );
 }
 
+/**
+ * Follows its content's height with a short transition, so a step change or
+ * a field opening resizes the form smoothly instead of jumping.
+ */
+export function SurveyAutoHeight({ children }: { readonly children: ReactNode }) {
+  const [height, setHeight] = useState<number | null>(null);
+  const observe = (node: HTMLDivElement | null) => {
+    if (!node) return;
+    return observeResize(node, () => setHeight(node.offsetHeight));
+  };
+  return (
+    <div
+      className="overflow-hidden transition-[height] duration-200 ease-out motion-reduce:transition-none"
+      style={height === null ? undefined : { height }}
+    >
+      <div ref={observe}>{children}</div>
+    </div>
+  );
+}
+
+// Focus is a darker fill and a hairline in the text colour, not the blue ring.
 const fieldVariants = cva(
-  "w-full rounded-lg bg-foreground/5 text-foreground outline-none transition-[background-color,box-shadow] duration-150 placeholder:text-muted-foreground/75 hover:bg-foreground/7 focus:bg-foreground/3 focus:ring-2 focus:ring-ring/70 focus:ring-inset disabled:opacity-64 max-sm:text-base motion-reduce:transition-none",
+  "w-full rounded-lg bg-foreground/5 text-foreground ring-1 ring-transparent outline-none transition-[background-color,box-shadow] duration-150 ring-inset placeholder:text-muted-foreground/75 hover:bg-foreground/7 focus:bg-foreground/8 focus:ring-foreground/16 disabled:opacity-64 max-sm:text-base motion-reduce:transition-none",
   {
     variants: {
       size: {
         sm: "px-2.5 py-1.5 text-xs leading-4.5",
-        md: "px-3 py-1.75 text-sm leading-5",
         lg: "px-3 py-2 text-sm leading-5",
       },
     },
@@ -172,10 +201,10 @@ function SurveyTextBox({
       rows={lines}
       className={cn(
         fieldVariants({ size }),
-        "block max-h-40 resize-none field-sizing-content wrap-anywhere",
+        "block max-h-48 resize-none field-sizing-content wrap-anywhere",
       )}
       style={{
-        minHeight: `calc(${lines}lh + 2 * var(--spacing) * ${size === "sm" ? 1.5 : size === "md" ? 1.75 : 2})`,
+        minHeight: `calc(${lines}lh + 2 * var(--spacing) * ${size === "sm" ? 1.5 : 2})`,
       }}
       {...props}
     />
@@ -220,7 +249,7 @@ function ChoiceChips({
         })}
       </div>
       {openPicked ? (
-        <Reveal>
+        <FadeIn>
           <div className={size === "sm" ? "pt-1.5" : "pt-2"}>
             <SurveyTextBox
               size={size}
@@ -231,7 +260,7 @@ function ChoiceChips({
               onChange={(event) => onChange({ ...answer, otherText: event.target.value })}
             />
           </div>
-        </Reveal>
+        </FadeIn>
       ) : null}
     </>
   );
@@ -260,7 +289,7 @@ export function SurveyAnswerInput({
     return (
       <SurveyTextBox
         size={size}
-        lines={followUp ? 2 : 3}
+        lines={followUp ? 3 : 5}
         aria-label={question.question}
         placeholder={followUp ? question.question : "Ideas, wishes, rough edges. Anything helps."}
         autoFocus={autoFocus || followUp}
@@ -285,7 +314,7 @@ export function SurveyFollowUps({
   readonly size: SurveyChipSize;
 }) {
   return followUps.map((followUp) => (
-    <Reveal key={followUp.id}>
+    <FadeIn key={followUp.id}>
       <div className={cn("flex flex-col gap-1.5", size === "sm" ? "pt-1.5" : "pt-2")}>
         {followUp.type === "open" ? null : (
           <span className="text-xs text-muted-foreground">{followUp.question}</span>
@@ -298,7 +327,7 @@ export function SurveyFollowUps({
           followUp
         />
       </div>
-    </Reveal>
+    </FadeIn>
   ));
 }
 
@@ -307,8 +336,7 @@ const actionVariants = cva(
   {
     variants: {
       size: {
-        sm: "h-7 px-3 text-xs [&_svg]:size-3",
-        md: "h-8 px-3.5 text-sm [&_svg]:size-3.5",
+        sm: "h-7 px-2.5 text-xs [&_svg]:size-3",
         lg: "h-9 px-4 text-sm [&_svg]:size-3.5",
       },
       tone: {
@@ -360,23 +388,20 @@ export function SurveyError({ status }: { readonly status: UserSurveyStatus }) {
 }
 
 /** The thank-you check: the disc grows in and the tick draws itself, once. */
-export function SurveyThanksMark({ size = "md" }: { readonly size?: "sm" | "md" }) {
+export function SurveyThanksMark() {
   return (
     <span
       aria-hidden
-      className={cn(
-        "grid shrink-0 scale-100 place-items-center bg-success/14 text-success-foreground opacity-100 transition-[scale,opacity] duration-300 ease-out starting:scale-50 starting:opacity-0 motion-reduce:transition-none",
-        size === "sm" ? "size-7 rounded-lg" : "size-12 rounded-full",
-      )}
+      className="grid size-12 shrink-0 scale-100 place-items-center rounded-full bg-success/14 text-success-foreground opacity-100 transition-[scale,opacity] duration-300 ease-out starting:scale-50 starting:opacity-0 motion-reduce:transition-none"
     >
       <svg
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
-        strokeWidth={size === "sm" ? 2.5 : 2.25}
+        strokeWidth={2.25}
         strokeLinecap="round"
         strokeLinejoin="round"
-        className={size === "sm" ? "size-4" : "size-6"}
+        className="size-6"
       >
         <path
           d="M5 12.5 9.5 17 19 7.5"

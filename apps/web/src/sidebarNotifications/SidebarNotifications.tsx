@@ -56,12 +56,11 @@ import {
 import { type SidebarUpdates, useSidebarUpdates } from "./useSidebarUpdates";
 import { useSidebarFooterTooltipSide } from "../adaptiveSidebar/adaptiveSidebar";
 import { BadgedIcon } from "../badgedIcon/BadgedIcon";
-import { type SurveyFormProps, useSurveyForm } from "../userSurvey/surveyParts";
-import { SURVEY_VARIANT, surveyCardLayout } from "../userSurvey/surveyVariant";
+import { useSurveyForm } from "../userSurvey/surveyParts";
 import { UserSurveyCard } from "../userSurvey/UserSurveyCard";
 import { UserSurveyDialog } from "../userSurvey/UserSurveyDialog";
-import { UserSurveyInlineCard } from "../userSurvey/UserSurveyInlineCard";
-import { type UserSurveyHandle, useUserSurvey } from "../userSurvey/useUserSurvey";
+import { stepAfterCardPick } from "../userSurvey/userSurvey.logic";
+import { useUserSurvey } from "../userSurvey/useUserSurvey";
 
 const DISMISSED_KEY = "upcomputer:background-notices-dismissed:v1";
 const DismissedNotices = Schema.Array(Schema.String);
@@ -106,11 +105,6 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
   const [open, setOpen] = useState(false);
   const [surveyOpen, setSurveyOpen] = useState(false);
   const surveyForm = useSurveyForm(userSurvey?.survey ?? null, userSurvey?.submit ?? null);
-  const surveyInline = SURVEY_VARIANT === "inline";
-  const finishInlineSurvey = () => {
-    setSurveyOpen(false);
-    userSurvey?.finish();
-  };
   const { dot, label } = describeSidebarNotificationsButton({
     severities: notices.map((notice) => notice.severity),
     survey: userSurvey !== null,
@@ -131,7 +125,6 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
           onOpenChange={(next) => {
             setOpen(next);
             if (next) userSurvey?.shown();
-            else if (surveyInline && surveyForm.status.kind === "sent") finishInlineSurvey();
           }}
         >
           <Tooltip>
@@ -168,22 +161,21 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
               updates={updates}
               notices={notices}
               dismiss={dismiss}
-              userSurvey={userSurvey}
-              surveyInline={
-                surveyInline && userSurvey
-                  ? {
-                      survey: userSurvey.survey,
-                      draft: surveyForm.draft,
-                      status: surveyForm.status,
-                      onDraftChange: surveyForm.setDraft,
-                      onSubmit: surveyForm.submit,
-                      onClose: finishInlineSurvey,
-                      expanded: surveyOpen,
-                      onExpandedChange: setSurveyOpen,
-                    }
-                  : null
+              surveyCard={
+                userSurvey ? (
+                  <UserSurveyCard
+                    key={userSurvey.survey.id}
+                    survey={userSurvey.survey}
+                    draft={surveyForm.draft}
+                    onStart={(draft) => {
+                      surveyForm.start(draft, stepAfterCardPick(userSurvey.survey, draft));
+                      setOpen(false);
+                      setSurveyOpen(true);
+                    }}
+                    onDismiss={userSurvey.dismiss}
+                  />
+                ) : null
               }
-              onShareSurvey={() => setSurveyOpen(true)}
               onClose={() => setOpen(false)}
             />
           </PopoverPopup>
@@ -197,14 +189,16 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
           restarts={updates.everything.restarts}
           onConfirm={updates.runEverything}
         />
-        {userSurvey && !surveyInline ? (
+        {userSurvey ? (
           <UserSurveyDialog
             key={userSurvey.survey.id}
-            steps={SURVEY_VARIANT === "steps"}
             survey={userSurvey.survey}
             draft={surveyForm.draft}
             status={surveyForm.status}
+            step={surveyForm.step}
+            back={surveyForm.back}
             onDraftChange={surveyForm.setDraft}
+            onStepChange={surveyForm.goTo}
             onSubmit={surveyForm.submit}
             open={surveyOpen}
             onOpenChange={setSurveyOpen}
@@ -277,23 +271,14 @@ function NotificationsPanel({
   updates,
   notices,
   dismiss,
-  userSurvey,
-  surveyInline,
-  onShareSurvey,
+  surveyCard,
   onClose,
 }: {
   readonly updates: SidebarUpdates;
   readonly notices: ReturnType<typeof useBackgroundNotices>["notices"];
   readonly dismiss: (keys: ReadonlyArray<string>) => void;
-  readonly userSurvey: UserSurveyHandle | null;
-  /** The survey as a card that opens into its form here; null for the dialog forms. */
-  readonly surveyInline:
-    | (SurveyFormProps & {
-        readonly expanded: boolean;
-        readonly onExpandedChange: (expanded: boolean) => void;
-      })
-    | null;
-  readonly onShareSurvey: () => void;
+  /** The survey the server offers, as its card; it ranks with the notices. */
+  readonly surveyCard: ReactNode;
   readonly onClose: () => void;
 }) {
   const navigate = useNavigate();
@@ -493,26 +478,8 @@ function NotificationsPanel({
     }
   }
 
-  if (userSurvey) {
-    cards.push({
-      key: `survey:${userSurvey.survey.id}`,
-      rank: "info",
-      occurredAt: null,
-      node:
-        surveyInline && (surveyInline.expanded || surveyInline.status.kind === "sent") ? (
-          <UserSurveyInlineCard {...surveyInline} onDismiss={userSurvey.dismiss} />
-        ) : (
-          <UserSurveyCard
-            layout={surveyCardLayout()}
-            onShare={() => {
-              if (surveyInline) return surveyInline.onExpandedChange(true);
-              onClose();
-              onShareSurvey();
-            }}
-            onDismiss={userSurvey.dismiss}
-          />
-        ),
-    });
+  if (surveyCard) {
+    cards.push({ key: "survey", rank: "info", occurredAt: null, node: surveyCard });
   }
 
   const showsUpdateAll = run === null && updates.runsEverything && pendingUpdates >= 2;

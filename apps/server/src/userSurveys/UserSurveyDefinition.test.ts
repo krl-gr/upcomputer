@@ -33,7 +33,7 @@ describe("parseUserSurveys", () => {
         questions: [
           {
             id: "q-working",
-            question: "Is everything working as expected?",
+            question: "Hi 👋 Is everything working fine in Up.computer?",
             optional: false,
             type: "single_choice",
             choices: ["Yes", "There are issues"],
@@ -65,7 +65,7 @@ describe("parseUserSurveys", () => {
           },
           {
             id: "q-else",
-            question: "Anything else you want to tell us?",
+            question: "Anything else? Leave your email or X handle if you'd like a reply.",
             optional: true,
             type: "open",
           },
@@ -203,7 +203,7 @@ describe("surveySentProperties", () => {
         $survey_questions: [
           {
             id: "q-working",
-            question: "Is everything working as expected?",
+            question: "Hi 👋 Is everything working fine in Up.computer?",
             response: "There are issues",
           },
           {
@@ -216,7 +216,11 @@ describe("surveySentProperties", () => {
             question: "What are you missing?",
             response: ["Voice", "Calendar sync"],
           },
-          { id: "q-else", question: "Anything else you want to tell us?", response: null },
+          {
+            id: "q-else",
+            question: "Anything else? Leave your email or X handle if you'd like a reply.",
+            response: null,
+          },
         ],
         "$survey_response_q-working": "There are issues",
         "$survey_response_q-details": "The sidebar flickers",

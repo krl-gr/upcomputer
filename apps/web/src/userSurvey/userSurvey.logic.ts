@@ -105,3 +105,20 @@ export function pickChoice(
     : answer.picked.filter((current) => current !== index);
   return { ...answer, picked };
 }
+
+/**
+ * The first question, when the notification card can ask it itself: a single
+ * choice short enough to sit in the card as chips.
+ */
+export function surveyCardQuestion(survey: UserSurvey): ChoiceQuestion | null {
+  const first = surveyBlocks(survey, {})[0]?.question;
+  return first?.type === "single_choice" && !first.hasOpenChoice && first.choices.length <= 3
+    ? first
+    : null;
+}
+
+/** The step the form opens on after the card's pick: the first while it still asks, else the next. */
+export function stepAfterCardPick(survey: UserSurvey, draft: SurveyDraft): number {
+  const blocks = surveyBlocks(survey, draft);
+  return blocks.length < 2 || blocks[0]!.followUps.length > 0 ? 0 : 1;
+}
