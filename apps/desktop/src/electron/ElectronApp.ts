@@ -67,6 +67,13 @@ export class ElectronApp extends Context.Service<
       path?: string,
       args?: readonly string[],
     ) => Effect.Effect<boolean>;
+    /**
+     * Runs `effect` with `app.setAsDefaultProtocolClient` turned into a no-op,
+     * for libraries that claim the OS URL scheme handler on their own.
+     */
+    readonly withoutDefaultProtocolClientClaims: <A, E, R>(
+      effect: Effect.Effect<A, E, R>,
+    ) => Effect.Effect<A, E, R>;
     readonly setDesktopName: (desktopName: string) => Effect.Effect<void>;
     readonly setDockIcon: (iconPath: string) => Effect.Effect<void>;
     readonly appendCommandLineSwitch: (switchName: string, value?: string) => Effect.Effect<void>;
@@ -207,6 +214,22 @@ export const make = ElectronApp.of({
         }
         return Electron.app.setAsDefaultProtocolClient(protocol, path, [...(args ?? [])]);
       });
+    },
+  ),
+  withoutDefaultProtocolClientClaims: Effect.fn("ElectronApp.withoutDefaultProtocolClientClaims")(
+    function <A, E, R>(effect: Effect.Effect<A, E, R>) {
+      return Effect.acquireUseRelease(
+        Effect.sync(() => {
+          const original = Electron.app.setAsDefaultProtocolClient;
+          Electron.app.setAsDefaultProtocolClient = () => false;
+          return original;
+        }),
+        () => effect,
+        (original) =>
+          Effect.sync(() => {
+            Electron.app.setAsDefaultProtocolClient = original;
+          }),
+      );
     },
   ),
   setDesktopName: Effect.fn("ElectronApp.setDesktopName")(function (desktopName) {

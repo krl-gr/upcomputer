@@ -139,17 +139,21 @@ export const make = Effect.gen(function* () {
     if (handleOpenUrl(url)) event.preventDefault();
   });
 
+  const createBridge = Effect.try({
+    try: () =>
+      createDesktopClerkBridge(environment.stateDir, environment.isDevelopment, userDataPath),
+    catch: (cause) =>
+      new DesktopClerkBridgeInitializationError({
+        stateDir: environment.stateDir,
+        isDevelopment: environment.isDevelopment,
+        cause,
+      }),
+  });
   yield* Effect.acquireRelease(
-    Effect.try({
-      try: () =>
-        createDesktopClerkBridge(environment.stateDir, environment.isDevelopment, userDataPath),
-      catch: (cause) =>
-        new DesktopClerkBridgeInitializationError({
-          stateDir: environment.stateDir,
-          isDevelopment: environment.isDevelopment,
-          cause,
-        }),
-    }),
+    // The bridge makes this app the OS handler for its scheme on every launch.
+    ElectronProtocol.claimsDesktopSchemeHandler(environment.appVersion)
+      ? createBridge
+      : electronApp.withoutDefaultProtocolClientClaims(createBridge),
     (bridge) =>
       Effect.try({
         try: () => bridge.cleanup(),
