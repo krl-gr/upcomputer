@@ -93,7 +93,8 @@ export function NotificationCard({
         ) : null}
       </p>
       {action ? (
-        <div className="col-start-3 row-span-2 row-start-1 flex items-center gap-1.5 self-center">
+        // Above the dismiss button, whose touch target reaches over a short card.
+        <div className="relative z-1 col-start-3 row-span-2 row-start-1 flex items-center gap-1.5 self-center">
           {action}
         </div>
       ) : null}

@@ -57,7 +57,14 @@ import {
 import { type SidebarUpdates, useSidebarUpdates } from "./useSidebarUpdates";
 import { useSidebarFooterTooltipSide } from "../adaptiveSidebar/adaptiveSidebar";
 import { BadgedIcon } from "../badgedIcon/BadgedIcon";
+import {
+  type SurveyFormProps,
+  USER_SURVEY_CARD_DETAIL,
+  useSurveyForm,
+} from "../userSurvey/surveyParts";
+import { SURVEY_VARIANT } from "../userSurvey/surveyVariant";
 import { USER_SURVEY_TITLE, UserSurveyDialog } from "../userSurvey/UserSurveyDialog";
+import { UserSurveyInlineCard } from "../userSurvey/UserSurveyInlineCard";
 import { type UserSurveyHandle, useUserSurvey } from "../userSurvey/useUserSurvey";
 
 const DISMISSED_KEY = "upcomputer:background-notices-dismissed:v1";
@@ -102,6 +109,12 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
   const userSurvey = useUserSurvey();
   const [open, setOpen] = useState(false);
   const [surveyOpen, setSurveyOpen] = useState(false);
+  const surveyForm = useSurveyForm(userSurvey?.survey ?? null, userSurvey?.submit ?? null);
+  const surveyInline = SURVEY_VARIANT === "inline";
+  const finishInlineSurvey = () => {
+    setSurveyOpen(false);
+    userSurvey?.finish();
+  };
   const { dot, label } = describeSidebarNotificationsButton({
     severities: notices.map((notice) => notice.severity),
     survey: userSurvey !== null,
@@ -122,6 +135,7 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
           onOpenChange={(next) => {
             setOpen(next);
             if (next) userSurvey?.shown();
+            else if (surveyInline && surveyForm.status.kind === "sent") finishInlineSurvey();
           }}
         >
           <Tooltip>
@@ -159,6 +173,20 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
               notices={notices}
               dismiss={dismiss}
               userSurvey={userSurvey}
+              surveyInline={
+                surveyInline && userSurvey
+                  ? {
+                      survey: userSurvey.survey,
+                      draft: surveyForm.draft,
+                      status: surveyForm.status,
+                      onDraftChange: surveyForm.setDraft,
+                      onSubmit: surveyForm.submit,
+                      onClose: finishInlineSurvey,
+                      expanded: surveyOpen,
+                      onExpandedChange: setSurveyOpen,
+                    }
+                  : null
+              }
               onShareSurvey={() => setSurveyOpen(true)}
               onClose={() => setOpen(false)}
             />
@@ -173,13 +201,17 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
           restarts={updates.everything.restarts}
           onConfirm={updates.runEverything}
         />
-        {userSurvey ? (
+        {userSurvey && !surveyInline ? (
           <UserSurveyDialog
             key={userSurvey.survey.id}
+            steps={SURVEY_VARIANT === "steps"}
             survey={userSurvey.survey}
+            draft={surveyForm.draft}
+            status={surveyForm.status}
+            onDraftChange={surveyForm.setDraft}
+            onSubmit={surveyForm.submit}
             open={surveyOpen}
             onOpenChange={setSurveyOpen}
-            onSubmit={userSurvey.submit}
             onSent={userSurvey.finish}
           />
         ) : null}
@@ -250,6 +282,7 @@ function NotificationsPanel({
   notices,
   dismiss,
   userSurvey,
+  surveyInline,
   onShareSurvey,
   onClose,
 }: {
@@ -257,6 +290,13 @@ function NotificationsPanel({
   readonly notices: ReturnType<typeof useBackgroundNotices>["notices"];
   readonly dismiss: (keys: ReadonlyArray<string>) => void;
   readonly userSurvey: UserSurveyHandle | null;
+  /** The survey as a card that opens into its form here; null for the dialog forms. */
+  readonly surveyInline:
+    | (SurveyFormProps & {
+        readonly expanded: boolean;
+        readonly onExpandedChange: (expanded: boolean) => void;
+      })
+    | null;
   readonly onShareSurvey: () => void;
   readonly onClose: () => void;
 }) {
@@ -462,12 +502,14 @@ function NotificationsPanel({
       key: `survey:${userSurvey.survey.id}`,
       rank: "info",
       occurredAt: null,
-      node: (
+      node: surveyInline ? (
+        <UserSurveyInlineCard {...surveyInline} onDismiss={userSurvey.dismiss} />
+      ) : (
         <NotificationCard
           tone="neutral"
           icon={<CircleQuestionMarkIcon />}
           title={USER_SURVEY_TITLE}
-          detail="A short survey, about a minute."
+          detail={USER_SURVEY_CARD_DETAIL}
           action={
             <NotificationButton
               tone="secondary"
