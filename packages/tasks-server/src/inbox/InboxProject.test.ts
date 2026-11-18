@@ -121,33 +121,35 @@ it.effect("the Inbox is created once on its folder, reused, and recreated after 
   }).pipe(Effect.provide(layer));
 });
 
-it.effect("an Inbox whose folder is missing or outside the home moves back, keeping its id", () => {
+it.effect("an Inbox whose folder is missing moves back, keeping its id", () => {
   const { home, projects, layer } = harness();
   const inboxFolder = NodePath.join(home, INBOX_FOLDER);
   return Effect.gen(function* () {
     const inbox = yield* InboxProject;
     const id = yield* inbox.ensure;
 
+    // A folder the user chose stays, inside the home or outside it.
+    const chosen = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "tasks-inbox-chosen-"));
+    directories.push(chosen);
+    for (const folder of [chosen, NodePath.join(home, "projects", "inbox")]) {
+      NodeFS.mkdirSync(folder, { recursive: true });
+      projects[0]!.workspaceRoot = folder;
+      assert.equal(yield* inbox.ensure, id);
+      assert.equal(projects[0]!.workspaceRoot, folder);
+    }
+
+    // A folder on an external drive that is not mounted now stays too.
+    const unmounted = NodePath.join("/Volumes", `tasks-inbox-${id}`, "Inbox");
+    projects[0]!.workspaceRoot = unmounted;
+    assert.equal(yield* inbox.ensure, id);
+    assert.equal(projects[0]!.workspaceRoot, unmounted);
+
     // A database copied from a dev home points at that home's folder, now gone.
-    const devHome = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "tasks-inbox-dev-"));
-    directories.push(devHome);
-    projects[0]!.workspaceRoot = NodePath.join(devHome, ".upcomputer", INBOX_FOLDER);
+    projects[0]!.workspaceRoot = NodePath.join(chosen, ".upcomputer", INBOX_FOLDER);
     NodeFS.rmSync(inboxFolder, { recursive: true });
     assert.equal(yield* inbox.ensure, id);
     assert.equal(projects[0]!.workspaceRoot, inboxFolder);
     assert.ok(NodeFS.statSync(inboxFolder).isDirectory());
-
-    // A folder that exists but lies outside the home moves back too.
-    projects[0]!.workspaceRoot = devHome;
-    assert.equal(yield* inbox.ensure, id);
-    assert.equal(projects[0]!.workspaceRoot, inboxFolder);
-
-    // Another folder inside the home is the user's choice and stays.
-    const moved = NodePath.join(home, "projects", "inbox");
-    NodeFS.mkdirSync(moved, { recursive: true });
-    projects[0]!.workspaceRoot = moved;
-    assert.equal(yield* inbox.ensure, id);
-    assert.equal(projects[0]!.workspaceRoot, moved);
     assert.equal(projects.length, 1);
   }).pipe(Effect.provide(layer));
 });

@@ -18,8 +18,8 @@ export const INBOX_FOLDER = "tasks-inbox";
 export interface InboxProjectShape {
   /**
    * The project for tasks created without one: Inbox on `<T3 home>/tasks-inbox`, created on
-   * first use and kept by id, so a rename keeps it; a deleted one is created again. A folder
-   * missing or outside the home (a database copied from another home) moves back there.
+   * first use and kept by id, so a rename or a move keeps it; a deleted one is created again. A
+   * missing folder (a database copied from another home) moves back there.
    */
   readonly ensure: Effect.Effect<ProjectId, TaskError>;
 }
@@ -35,20 +35,13 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const workspaceRoot = path.join(projects.homeDir, INBOX_FOLDER);
-  const isInsideHome = (folder: string) => {
-    const relative = path.relative(path.resolve(projects.homeDir), path.resolve(folder));
-    return (
-      relative !== "" &&
-      relative !== ".." &&
-      !relative.startsWith(`..${path.sep}`) &&
-      !path.isAbsolute(relative)
-    );
-  };
   // A failed repair leaves the Inbox where it is: tasks need its id, not its folder.
   const repair = Effect.fn("InboxProject.repair")(
     function* (projectId: ProjectId, folder: string) {
-      const exists = yield* fileSystem.exists(folder).pipe(Effect.orElseSucceed(() => false));
-      if (exists && isInsideHome(folder)) return;
+      // A folder on an external drive comes back when the drive is mounted again.
+      if (path.resolve(folder).startsWith("/Volumes/")) return;
+      const exists = yield* fileSystem.exists(folder).pipe(Effect.orElseSucceed(() => true));
+      if (exists) return;
       yield* projects.moveProject({ projectId, workspaceRoot });
     },
     (effect, projectId, folder) =>
