@@ -1,11 +1,17 @@
-import { DesktopHostTelemetryMessage, type DesktopProductEvent } from "@t3tools/contracts";
+import {
+  DesktopHostTelemetryMessage,
+  type DesktopProductEvent,
+  type DesktopSessionStateEntry,
+} from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as DesktopProductEvents from "./DesktopProductEvents.ts";
+import * as DesktopSessionState from "./DesktopSessionState.ts";
 
 const decodeLine = Schema.decodeUnknownSync(Schema.fromJsonString(DesktopHostTelemetryMessage));
 
@@ -102,4 +108,49 @@ it.layer(DesktopProductEvents.layer)("DesktopProductEvents", (it) => {
       assert.equal(names.filter((name) => name === "desktop.renderer.gone").length, 20);
     }),
   );
+});
+
+describe("DesktopProductEvents session state", () => {
+  it.effect("keeps why the primary backend or the main window went away for the next start", () => {
+    const states: Array<DesktopSessionStateEntry> = [];
+    const backendExited = (instance: "primary" | "other", code: number | null) =>
+      ({
+        event: "desktop.backend.exited",
+        instance,
+        code,
+        signal: code === null ? "SIGKILL" : null,
+        uptimeMs: 1,
+        wasReady: true,
+        restarted: true,
+      }) satisfies DesktopProductEvent;
+    return Effect.gen(function* () {
+      const service = yield* DesktopProductEvents.DesktopProductEvents;
+      yield* service.record(backendExited("primary", 1));
+      yield* service.record(backendExited("other", 2));
+      yield* service.record(backendExited("primary", null));
+      yield* service.record(rendererGone);
+      yield* service.record({ ...rendererGone, surface: "preview" });
+      yield* service.record({ ...rendererGone, reason: "clean-exit" });
+
+      assert.deepEqual(states, [
+        { state: "backend_exited", code: 1, signal: null },
+        { state: "backend_exited", code: null, signal: "SIGKILL" },
+        { state: "renderer_gone", reason: "crashed", exitCode: 11 },
+      ]);
+    }).pipe(
+      Effect.provide(
+        DesktopProductEvents.layer.pipe(
+          Layer.provide(
+            Layer.succeed(DesktopSessionState.DesktopSessionState, {
+              sessionId: "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d",
+              recordUnsafe: (last) => {
+                states.push(last);
+              },
+              recoveredUnsafe: () => {},
+            }),
+          ),
+        ),
+      ),
+    );
+  });
 });
