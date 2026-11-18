@@ -77,10 +77,10 @@ export const COPY_RULES: ReadonlyArray<CopyRule> = [
   { pattern: /\bT3%20Code\b/g, replacement: "Up.computer" },
   // After the phrase rules, which can leave "a Up.computer home".
   { pattern: /\b(a|A) Up\.computer\b/g, replacement: "$1n Up.computer" },
-  // The HTML render tools and their errors, which agents read and repeat to the user.
+  // The HTML render tools and the device hosts' errors, which agents read and repeat to the user.
   {
     pattern:
-      /\bT3('s (?:headless browser|browser|home directory)| (?:is (?:still )?installing|could not install|fits the frame|injects its)\b)/g,
+      /\bT3('s (?:headless browser|browser|home directory)| (?:is (?:still )?installing|could not (?:install|read)|fits the frame|injects its)\b)/g,
     replacement: "Up.computer$1",
   },
   // Markdown links to the site. Other t3.codes URLs are upstream's schemas,
