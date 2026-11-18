@@ -85,7 +85,8 @@ function retryDelayMs(failures: number, random: number): number {
 
 const UPCOMPUTER_POSTHOG_PROJECT_KEY = "phc_uqRUAQavAKuUny7uFxm8tqr6nyVDpdoSARKsWNzs8wBx";
 
-const TelemetryEnvConfig = Config.all({
+/** The PostHog project events go to; surveys are read from the same one. */
+export const PostHogProjectConfig = Config.all({
   posthogKey: Config.String("T3CODE_POSTHOG_KEY").pipe(
     // The Up.computer PostHog project, the same one V1 reported to.
     Config.withDefault(UPCOMPUTER_POSTHOG_PROJECT_KEY),
@@ -93,6 +94,11 @@ const TelemetryEnvConfig = Config.all({
   posthogHost: Config.String("T3CODE_POSTHOG_HOST").pipe(
     Config.withDefault("https://us.i.posthog.com"),
   ),
+});
+
+const TelemetryEnvConfig = Config.all({
+  posthogKey: PostHogProjectConfig.pipe(Config.map((project) => project.posthogKey)),
+  posthogHost: PostHogProjectConfig.pipe(Config.map((project) => project.posthogHost)),
   enabled: Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.withDefault(true)),
   flushBatchSize: Config.Number("T3CODE_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
   maxBufferedEvents: Config.Number("T3CODE_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
@@ -183,6 +189,15 @@ export class AnalyticsService extends Context.Service<
       owners: ReadonlyArray<TelemetryOwner>,
       observedBy: "server" | "client",
     ) => Effect.Effect<void>;
+    /**
+     * Sends one event now and says whether PostHog took it. Only for answers the user
+     * chose to send, so it also sends when analytics is off: then the event carries
+     * just `properties` under a one-off anonymous id, and the install stays unidentified.
+     */
+    readonly sendNow: (
+      event: string,
+      properties: Readonly<Record<string, unknown>>,
+    ) => Effect.Effect<boolean>;
     /** False when the install opted out; nothing is recorded or written then. */
     readonly enabled: boolean;
     readonly sessionId: string | undefined;
@@ -335,49 +350,76 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  const sendBatch = Effect.fn("AnalyticsService.sendBatch")(function* (
-    events: ReadonlyArray<BufferedAnalyticsEvent>,
-  ) {
-    if (!(yield* telemetryEnabled) || !distinctId) return;
-
-    const payload = {
-      api_key: telemetryConfig.posthogKey,
-      batch: events.map((event) => ({
-        uuid: event.uuid,
-        event: event.event,
-        distinct_id: distinctId,
-        properties: {
-          ...event.properties,
-          ...(installId === null ? {} : { installId }),
-          $process_person_profile: false,
-          platform: hostPlatform,
-          wsl: Option.getOrUndefined(telemetryConfig.wslDistroName),
-          arch: hostArchitecture,
-          t3CodeVersion: packageJson.version,
-          telemetryChannel: ServerConfig.telemetryChannel,
-          clientType,
-          serverOs: serverOsFromNodePlatform(hostPlatform),
-          serverArch: hostArchitecture,
-          serverWslDistro: Option.getOrUndefined(telemetryConfig.wslDistroName),
-          serverAppVersion: packageJson.version,
-          serverMode: serverConfig.mode,
-          desktopVersion: Option.getOrUndefined(telemetryConfig.desktopVersion),
-          releaseChannel: Option.getOrUndefined(telemetryConfig.releaseChannel),
-          buildKind,
-          isInternal: event.isInternal,
-          sessionId: event.sessionId ?? sessionId,
-        },
-        timestamp: event.capturedAt,
-      })),
-    };
-
-    yield* HttpClientRequest.post(`${telemetryConfig.posthogHost}/batch/`).pipe(
-      HttpClientRequest.bodyJson(payload),
+  const postBatch = (batch: ReadonlyArray<Readonly<Record<string, unknown>>>) =>
+    HttpClientRequest.post(`${telemetryConfig.posthogHost}/batch/`).pipe(
+      HttpClientRequest.bodyJson({ api_key: telemetryConfig.posthogKey, batch }),
       Effect.flatMap(httpClient.execute),
       Effect.flatMap(HttpClientResponse.filterStatusOk),
       Effect.timeout(SEND_TIMEOUT),
     );
+
+  const batchEntries = (events: ReadonlyArray<BufferedAnalyticsEvent>, distinctId: string) =>
+    events.map((event) => ({
+      uuid: event.uuid,
+      event: event.event,
+      distinct_id: distinctId,
+      properties: {
+        ...event.properties,
+        ...(installId === null ? {} : { installId }),
+        $process_person_profile: false,
+        platform: hostPlatform,
+        wsl: Option.getOrUndefined(telemetryConfig.wslDistroName),
+        arch: hostArchitecture,
+        t3CodeVersion: packageJson.version,
+        telemetryChannel: ServerConfig.telemetryChannel,
+        clientType,
+        serverOs: serverOsFromNodePlatform(hostPlatform),
+        serverArch: hostArchitecture,
+        serverWslDistro: Option.getOrUndefined(telemetryConfig.wslDistroName),
+        serverAppVersion: packageJson.version,
+        serverMode: serverConfig.mode,
+        desktopVersion: Option.getOrUndefined(telemetryConfig.desktopVersion),
+        releaseChannel: Option.getOrUndefined(telemetryConfig.releaseChannel),
+        buildKind,
+        isInternal: event.isInternal,
+        sessionId: event.sessionId ?? sessionId,
+      },
+      timestamp: event.capturedAt,
+    }));
+
+  const sendBatch = Effect.fn("AnalyticsService.sendBatch")(function* (
+    events: ReadonlyArray<BufferedAnalyticsEvent>,
+  ) {
+    if (!(yield* telemetryEnabled) || !distinctId) return;
+    yield* postBatch(batchEntries(events, distinctId));
   });
+
+  const sendNow: AnalyticsService["Service"]["sendNow"] = Effect.fn("AnalyticsService.sendNow")(
+    function* (event, properties) {
+      const uuid = yield* crypto.uuidV7();
+      const capturedAt = DateTime.formatIso(yield* DateTime.now);
+      const entry =
+        distinctId !== null && (yield* telemetryEnabled)
+          ? batchEntries(
+              [{ uuid, event, properties, capturedAt, isInternal: yield* internalDevice }],
+              distinctId,
+            )[0]!
+          : {
+              uuid,
+              event,
+              distinct_id: yield* crypto.uuidV4(),
+              properties: { ...properties, $process_person_profile: false },
+              timestamp: capturedAt,
+            };
+      yield* postBatch([entry]);
+      return true;
+    },
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Failed to send an event the user chose to send", { cause }).pipe(
+        Effect.as(false),
+      ),
+    ),
+  );
 
   const takeBatch = Ref.modify(bufferRef, (current) => {
     const nextBatch = current.slice(0, telemetryConfig.flushBatchSize);
@@ -612,6 +654,7 @@ export const make = Effect.gen(function* () {
     recordMilestone,
     flush,
     recordOwners,
+    sendNow,
     enabled,
     sessionId,
     internalDevice,

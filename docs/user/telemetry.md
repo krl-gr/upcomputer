@@ -47,6 +47,15 @@ a [managed policy](./managed-policy.md#other-capabilities).
 The desktop app reads `T3CODE_TELEMETRY_ENABLED` from your shell profile (for example `~/.zshrc`) on macOS and
 Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
 
+## Surveys
+
+Now and then the notifications button shows a short survey from the Up.computer team. **Share**
+opens it. Your answers are sent only when you press **Submit**, and they are sent even when
+product events are off: then the answers go out alone, under a random identifier, with nothing
+else about you or your installation. Close the card to dismiss a survey; it does not come back.
+To find surveys, the server asks PostHog for active ones at most once an hour while the app is
+connected. A managed policy that turns usage data off also turns surveys off.
+
 ## Mark a team or test device
 
 If you work on Up.computer or test it, open **Settings > General > Diagnostics**, select the

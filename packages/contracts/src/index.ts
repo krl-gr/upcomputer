@@ -66,6 +66,7 @@ export * from "./previewCapture.ts";
 export * from "./errorTelemetry.ts";
 export * from "./resourceTelemetry.ts";
 export * from "./usage.ts";
+export * from "./userSurvey.ts";
 export * from "./scheduledTask.ts";
 export * from "./worktreeMcp.ts";
 export * from "./resourceTelemetry.ts";

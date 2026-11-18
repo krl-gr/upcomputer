@@ -1,0 +1,75 @@
+{
+  "surveys": [
+    {
+      "id": "0199a1b2-0000-7000-8000-000000000001",
+      "name": "How can we improve Up.computer",
+      "description": "",
+      "type": "api",
+      "linked_flag_key": null,
+      "targeting_flag_key": null,
+      "internal_targeting_flag_key": "survey-targeting-0199a1b2",
+      "questions": [
+        {
+          "id": "q-working",
+          "type": "single_choice",
+          "question": "Is everything working as expected?",
+          "description": "",
+          "descriptionContentType": "text",
+          "optional": false,
+          "choices": ["Yes", "There are issues"],
+          "branching": { "type": "response_based", "responseValues": { "0": 2 } }
+        },
+        {
+          "id": "q-details",
+          "type": "open",
+          "question": "Can you provide details?",
+          "description": "",
+          "descriptionContentType": "text",
+          "optional": true
+        },
+        {
+          "id": "q-missing",
+          "type": "multiple_choice",
+          "question": "What are you missing?",
+          "description": "",
+          "descriptionContentType": "text",
+          "optional": true,
+          "choices": [
+            "Mobile app",
+            "Claude agents",
+            "Voice",
+            "Access to bots in Slack",
+            "Bot in video calls",
+            "Document editing",
+            "Other"
+          ],
+          "hasOpenChoice": true
+        },
+        {
+          "id": "q-else",
+          "type": "open",
+          "question": "Anything else you want to tell us?",
+          "description": "",
+          "descriptionContentType": "text",
+          "optional": true
+        }
+      ],
+      "conditions": null,
+      "appearance": { "displayThankYouMessage": true },
+      "start_date": "2026-11-18T10:00:00Z",
+      "end_date": null,
+      "current_iteration": null,
+      "current_iteration_start_date": null,
+      "schedule": "once",
+      "enable_partial_responses": false
+    },
+    {
+      "id": "0199a1b2-0000-7000-8000-000000000002",
+      "name": "Website popover",
+      "type": "popover",
+      "questions": [{ "id": "q-site", "type": "open", "question": "How did you find us?" }],
+      "start_date": "2026-11-18T11:00:00Z",
+      "end_date": null
+    }
+  ]
+}

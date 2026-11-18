@@ -354,6 +354,7 @@ it.effect("records only failed calls of tools that hand off no work", () => {
               sessionId: undefined,
               internalDevice: Effect.succeed(false),
               setInternalDevice: (enabled) => Effect.succeed(enabled),
+              sendNow: () => Effect.succeed(true),
             }),
           ),
         ),

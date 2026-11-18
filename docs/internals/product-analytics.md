@@ -7,6 +7,11 @@ carry the same identity and opt-out as server events. Client-use events require 
 authenticated connection, so visiting the hosted app without connecting does not
 count as product use.
 
+Survey answers are the one exception to opt-out: a person who presses Submit chose to
+send them. [UserSurveys](../../apps/server/src/userSurveys/UserSurveys.ts) sends them with
+`AnalyticsService.sendNow`, which with analytics off sends only the answers under a one-off
+random `distinct_id` and creates no install identity. Shown and dismissed events follow opt-out.
+
 ## Installs and owners
 
 `distinct_id` keeps the rule every build has used: the hashed Codex workspace,

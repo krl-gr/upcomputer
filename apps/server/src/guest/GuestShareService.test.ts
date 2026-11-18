@@ -135,6 +135,7 @@ const layerAnalytics = Layer.effectContext(
           sessionId: undefined,
           internalDevice: Effect.succeed(false),
           setInternalDevice: (enabled) => Effect.succeed(enabled),
+          sendNow: () => Effect.succeed(true),
         }),
       ),
     );

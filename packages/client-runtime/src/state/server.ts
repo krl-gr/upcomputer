@@ -1652,6 +1652,18 @@ export function createServerEnvironmentAtoms<R, E>(
         key: ({ environmentId }) => environmentId,
       },
     }),
+    getUserSurvey: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:get-user-survey",
+      tag: WS_METHODS.serverGetUserSurvey,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId }) => environmentId,
+      },
+    }),
+    reportUserSurvey: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:report-user-survey",
+      tag: WS_METHODS.serverReportUserSurvey,
+    }),
     retryResourceTelemetry: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:retry-resource-telemetry",
       tag: WS_METHODS.serverRetryResourceTelemetry,
