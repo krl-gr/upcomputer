@@ -18,6 +18,7 @@ import * as DesktopLifecycle from "./DesktopLifecycle.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
+import * as DesktopSessionState from "../telemetry/DesktopSessionState.ts";
 
 function layerElectronApp(
   appListeners: Map<string, (...args: readonly unknown[]) => void>,
@@ -274,7 +275,7 @@ describe("DesktopLifecycle", () => {
     }),
   );
 
-  it.effect("stops the backend once when Windows ends the session", () =>
+  it.effect("stops the backend once when Windows ends the session, and says the OS ended it", () =>
     Effect.gen(function* () {
       const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
       const shutdownRequested = yield* Deferred.make<void>();
@@ -293,6 +294,12 @@ describe("DesktopLifecycle", () => {
       const quit = Effect.sync(() => {
         events.push("quit");
       }).pipe(Effect.andThen(Deferred.succeed(quitRequested, undefined)), Effect.asVoid);
+      const layerSessionState = Layer.succeed(DesktopSessionState.DesktopSessionState, {
+        sessionId: "6a7b8c9d-0e1f-4a2b-8c3d-4e5f6a7b8c9d",
+        recordUnsafe: (last) => {
+          events.push(`state:${last.state}`);
+        },
+      });
       const layerEnvironment = Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
         platform: "win32",
         isDevelopment: false,
@@ -305,6 +312,7 @@ describe("DesktopLifecycle", () => {
         Layer.provideMerge(layerDesktopWindow()),
         Layer.provideMerge(layerEnvironment),
         Layer.provideMerge(layerDesktopShutdown),
+        Layer.provideMerge(layerSessionState),
         Layer.provideMerge(DesktopState.layer),
       );
       const openWindow = () => {
@@ -328,12 +336,15 @@ describe("DesktopLifecycle", () => {
           const endPreview = openWindow();
 
           endMain(["shutdown"]);
-          endPreview(["shutdown"]);
+          // Windows may end the process once the listener returns, so the state comes first.
+          assert.equal(events[0], "state:os_shutdown");
+          // Restart Manager closing the app for an installer is not the OS ending.
+          endPreview(["close-app"]);
           yield* Deferred.await(shutdownRequested);
           yield* Deferred.succeed(allowShutdown, undefined);
           yield* Deferred.await(quitRequested);
 
-          assert.deepEqual(events, ["request", "quit"]);
+          assert.deepEqual(events, ["state:os_shutdown", "request", "quit"]);
         }),
       ).pipe(Effect.provide(layer));
     }),
