@@ -3,7 +3,12 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { buildSidebarProjectSnapshots } from "../../../../apps/web/src/sidebarProjectGrouping.ts";
 import type { Project } from "../../../../apps/web/src/types.ts";
-import { pickerProjectFor, pickerProjects, taskProjectsOf } from "./taskProjects.ts";
+import {
+  pickerProjectFor,
+  pickerProjects,
+  sameProjectGroup,
+  taskProjectsOf,
+} from "./taskProjects.ts";
 
 const LOCAL = EnvironmentId.make("local");
 const REMOTE = EnvironmentId.make("remote");
@@ -101,5 +106,19 @@ describe("taskProjectsOf", () => {
     expect(
       pickerProjects(projects.filter(({ id }) => id !== "upcomputer")).map(({ id }) => id),
     ).toEqual(["server", "remote-upcomputer", "CSSynthesizer", "english"]);
+  });
+
+  it("treats the members of one group as one project for bulk changes", () => {
+    const projects = taskProjects();
+    const same = (a: string | null, b: string | null) => sameProjectGroup(projects, a, b);
+    // Two checkouts of one repository read the same: not mixed, and choosing the group moves neither.
+    expect(same("server", "upcomputer")).toBe(true);
+    // The same repository on another computer is another group.
+    expect(same("remote-upcomputer", "upcomputer")).toBe(false);
+    expect(same("english", "upcomputer")).toBe(false);
+    // A project the list does not know matches only itself.
+    expect(same("gone", "gone")).toBe(true);
+    expect(same("gone", "upcomputer")).toBe(false);
+    expect(same(null, "upcomputer")).toBe(false);
   });
 });

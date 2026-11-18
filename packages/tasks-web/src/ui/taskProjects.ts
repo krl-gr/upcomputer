@@ -63,3 +63,15 @@ export function pickerProjectFor<P extends GroupedProject>(
 ): P | undefined {
   return options.find((option) => option.groupKey === project.groupKey);
 }
+
+/** Whether two task projects are one picker entry; a project the list does not know matches only itself. */
+export function sameProjectGroup(
+  projects: ReadonlyArray<Pick<GroupedProject, "id" | "groupKey">>,
+  a: string | null,
+  b: string | null,
+): boolean {
+  if (a === b) return true;
+  const groupOf = (id: string | null) => projects.find((project) => project.id === id)?.groupKey;
+  const group = groupOf(a);
+  return group !== undefined && group === groupOf(b);
+}

@@ -15,6 +15,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../../../../../apps/web/src/components/ui/menu.tsx";
+import { sameProjectGroup } from "../../ui/taskProjects.ts";
 import type { PlannerTask } from "../data/pendingOps.ts";
 import { IconAction } from "./IconAction.tsx";
 import { ProjectChip } from "./ProjectChip.tsx";
@@ -36,7 +37,9 @@ export function BulkActions(props: {
   const { store, projects, preferences } = usePlanner();
   const ids = props.selected.map((task) => task.id);
   const firstProject = props.selected[0]?.projectId ?? null;
-  const mixedProject = props.selected.some((task) => task.projectId !== firstProject);
+  const mixedProject = props.selected.some(
+    (task) => !sameProjectGroup(projects, task.projectId, firstProject),
+  );
   const finished = props.selected.filter(isFinished).length;
   const state =
     finished === 0 ? "active" : finished === props.selected.length ? "finished" : "mixed";
@@ -56,8 +59,14 @@ export function BulkActions(props: {
           disabled={none}
           onChange={(projectId) => {
             if (!projectId) return;
+            // A task already in the chosen group keeps its own member's folder.
+            const moving = props.selected.filter(
+              (task) => !sameProjectGroup(projects, task.projectId, projectId),
+            );
             run(() =>
-              Promise.all(ids.map((id) => store.updateTask(id, { projectId: projectId as never }))),
+              Promise.all(
+                moving.map((task) => store.updateTask(task.id, { projectId: projectId as never })),
+              ),
             );
           }}
         />
