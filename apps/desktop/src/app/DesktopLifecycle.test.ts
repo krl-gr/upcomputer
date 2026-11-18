@@ -299,6 +299,7 @@ describe("DesktopLifecycle", () => {
         recordUnsafe: (last) => {
           events.push(`state:${last.state}`);
         },
+        recoveredUnsafe: () => {},
       });
       const layerEnvironment = Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
         platform: "win32",

@@ -39,7 +39,7 @@ const layerBackendConfiguration = (prepared = true) =>
   DesktopBackendConfiguration.layer.pipe(
     Layer.provide(layerShellEnvironment(prepared)),
     Layer.provide(DesktopState.layer),
-    Layer.provide(DesktopSessionState.layer),
+    Layer.provide(DesktopSessionState.layer.pipe(Layer.provide(DesktopManagedPolicy.layerTest()))),
   );
 
 const layerServerExposure = Layer.succeed(DesktopServerExposure.DesktopServerExposure, {

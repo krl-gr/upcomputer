@@ -146,6 +146,7 @@ describe("DesktopProductEvents session state", () => {
               recordUnsafe: (last) => {
                 states.push(last);
               },
+              recoveredUnsafe: () => {},
             }),
           ),
         ),

@@ -15,6 +15,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as DesktopManagedPolicy from "../app/DesktopManagedPolicy.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronPowerMonitor from "../electron/ElectronPowerMonitor.ts";
 
@@ -34,8 +35,14 @@ export class DesktopSessionState extends Context.Service<
   {
     /** One per app launch, so backend restarts stay in the same telemetry session. */
     readonly sessionId: string;
-    /** Writes synchronously and never throws, so OS event listeners can call it. */
+    /**
+     * Writes synchronously and never throws, so OS event listeners can call it.
+     * After os_shutdown it writes nothing more: the OS then kills the renderer
+     * and the backend too, and that is not a crash.
+     */
     readonly recordUnsafe: (last: DesktopSessionStateEntry) => void;
+    /** Records running if `state` is still the last one, as when the main window reloads. */
+    readonly recoveredUnsafe: (state: DesktopSessionStateEntry["state"]) => void;
   }
 >()("@t3tools/desktop/telemetry/DesktopSessionState") {}
 
@@ -46,10 +53,18 @@ export const make = Effect.gen(function* () {
   const env = yield* HostProcess.Environment;
   const sessionId = yield* (yield* SecureRandom.SecureRandom).uuidV4();
   const filePath = environment.path.join(environment.stateDir, DESKTOP_SESSION_STATE_FILE);
+  // A policy that cannot be used keeps the backend from starting, so nothing would read the file.
+  const policyAllows = yield* (yield* DesktopManagedPolicy.DesktopManagedPolicy).read.pipe(
+    Effect.map((found) => found?.document.limits?.telemetry !== false),
+    Effect.orElseSucceed(() => false),
+  );
+  let current: DesktopSessionStateEntry["state"] | undefined;
 
   const recordUnsafe = (last: DesktopSessionStateEntry): void => {
+    if (!policyAllows || current === "os_shutdown") return;
     // Read live: the login shell's environment can bring the opt-out after start.
     if (TELEMETRY_DISABLED.test(env.T3CODE_TELEMETRY_ENABLED?.trim() ?? "")) return;
+    current = last.state;
     const text = encodeState({ sessionId, atMs: clock.currentTimeMillisUnsafe(), last });
     for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt += 1) {
       try {
@@ -61,12 +76,19 @@ export const make = Effect.gen(function* () {
     }
   };
 
-  return DesktopSessionState.of({ sessionId, recordUnsafe });
+  const recoveredUnsafe = (state: DesktopSessionStateEntry["state"]): void => {
+    if (current === state) recordUnsafe({ state: "running" });
+  };
+
+  return DesktopSessionState.of({ sessionId, recordUnsafe, recoveredUnsafe });
 });
 
 export const layer = Layer.effect(DesktopSessionState, make);
 
-const disabled = { recordUnsafe: (_last: DesktopSessionStateEntry) => {} };
+const disabled = {
+  recordUnsafe: (_last: DesktopSessionStateEntry) => {},
+  recoveredUnsafe: (_state: DesktopSessionStateEntry["state"]) => {},
+};
 
 /** Where the app provides the service; tests that build one service alone record nothing. */
 export const optional = Effect.serviceOption(DesktopSessionState).pipe(

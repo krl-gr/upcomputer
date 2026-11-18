@@ -172,7 +172,8 @@ const layerDesktopFoundation = Layer.mergeAll(
   DesktopObservability.layer,
   DesktopRendererHistory.layer.pipe(
     Layer.provideMerge(DesktopProductEvents.layer),
-    Layer.provideMerge(DesktopSessionState.layer),
+    // The same layer as the foundation's, so the policy is still read once.
+    Layer.provideMerge(DesktopSessionState.layer.pipe(Layer.provide(DesktopManagedPolicy.layer))),
   ),
 ).pipe(Layer.provideMerge(layerDesktopEnvironment));
 

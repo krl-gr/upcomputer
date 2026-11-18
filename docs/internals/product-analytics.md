@@ -292,9 +292,13 @@ because Windows may end the process as soon as a session-end listener returns. T
 next desktop backend turns it into `reason`: `os_shutdown`, `suspended`,
 `renderer_gone` (with `rendererReason` and `exitCode`), `backend_exited` (with
 `exitCode` or `exitSignal`), or `unknown` when nothing was recorded after that backend
-started, which includes a force-quit app and every non-desktop server. Crash rates
-should leave out `os_shutdown`, which also does not count toward `uncleanStarts` or
-the crash-loop quiet period.
+started, which includes a force-quit app and every non-desktop server. A main window
+that reloads after its renderer crash records `running` again, so a later force-quit
+is not blamed on that crash. Nothing replaces `os_shutdown` in its session, since the
+OS then also kills the renderer and the backend. Crash rates should leave out
+`os_shutdown`, which also does not count toward `uncleanStarts` or the crash-loop
+quiet period. The file is not written when telemetry is off by environment or managed
+policy.
 
 ## Views and clicks
 
