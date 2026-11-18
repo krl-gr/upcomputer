@@ -16,7 +16,7 @@ import {
 import { UserSurveyStepsPopup } from "./UserSurveySteps";
 import { canSubmitSurvey, surveyBlocks } from "./userSurvey.logic";
 
-export { USER_SURVEY_TITLE, type SubmitUserSurvey, type UserSurveyStatus } from "./surveyParts";
+export { type SubmitUserSurvey, type UserSurveyStatus } from "./surveyParts";
 
 /** The survey in a centered dialog: every question on one sheet, or one per step. */
 export function UserSurveyDialog({

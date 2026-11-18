@@ -18,3 +18,31 @@ function readSurveyVariant(): SurveyVariant {
 
 // Read as the app loads: the router drops the query before the sidebar mounts.
 export const SURVEY_VARIANT = readSurveyVariant();
+
+// Temporary, phase 1b: the popover card's layouts. Pick one with ?surveyCard=1|2|3 (0 is the X and Share).
+export type SurveyCardLayout = "corner" | "link" | "buttons" | "whole";
+
+const CARD_STORAGE_KEY = "upcomputer:dev:survey-card";
+const CARD_BY_NUMBER: Record<string, SurveyCardLayout> = {
+  "0": "corner",
+  "1": "link",
+  "2": "buttons",
+  "3": "whole",
+};
+
+function readSurveyCardLayout(): SurveyCardLayout {
+  try {
+    const asked = new URLSearchParams(window.location.search).get("surveyCard");
+    if (asked && CARD_BY_NUMBER[asked]) window.localStorage.setItem(CARD_STORAGE_KEY, asked);
+    return CARD_BY_NUMBER[window.localStorage.getItem(CARD_STORAGE_KEY) ?? "1"] ?? "link";
+  } catch {
+    return "link";
+  }
+}
+
+const SURVEY_CARD_LAYOUT = readSurveyCardLayout();
+
+/** A function, so the UI states sheet can draw every layout. */
+export function surveyCardLayout(): SurveyCardLayout {
+  return SURVEY_CARD_LAYOUT;
+}

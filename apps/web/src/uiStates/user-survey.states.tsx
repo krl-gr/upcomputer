@@ -6,6 +6,7 @@ import { Dialog } from "../components/ui/dialog";
 import { SidebarMenu, SidebarProvider } from "../components/ui/sidebar";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import { SidebarNotifications } from "../sidebarNotifications/SidebarNotifications";
+import type { SurveyCardLayout } from "../userSurvey/surveyVariant";
 import { UserSurveyDialogPopup, type UserSurveyStatus } from "../userSurvey/UserSurveyDialog";
 import { EMPTY_DRAFT_ANSWER, type SurveyDraft } from "../userSurvey/userSurvey.logic";
 import { captureUiStateSheet, type UiState } from "./uiStateSheet";
@@ -63,6 +64,7 @@ const SURVEY: UserSurvey = {
 const source = vi.hoisted(() => ({
   update: null as DesktopUpdateState | null,
   survey: true,
+  cardLayout: "link" as SurveyCardLayout,
 }));
 
 // Data sources, not UI: the update feed, server configs, environments, Update
@@ -98,6 +100,10 @@ vi.mock("../components/sidebar/useUpdateEverything", async (importOriginal) => {
     }),
   };
 });
+vi.mock("../userSurvey/surveyVariant", () => ({
+  SURVEY_VARIANT: "dialog",
+  surveyCardLayout: () => source.cardLayout,
+}));
 vi.mock("../userSurvey/useUserSurvey", () => ({
   useUserSurvey: () =>
     source.survey
@@ -136,7 +142,8 @@ async function copyPopup(popup: HTMLElement, cell: HTMLElement) {
     popup
       .getAnimations({ subtree: true })
       .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
-      .map((animation) => animation.finished),
+      // A transition its element cancels rejects; the popup is settled either way.
+      .map((animation) => animation.finished.catch(() => undefined)),
   );
   const copy = popup.cloneNode(true) as HTMLElement;
   copy.removeAttribute("data-starting-style");
@@ -146,6 +153,9 @@ async function copyPopup(popup: HTMLElement, cell: HTMLElement) {
   }
   cell.querySelector("[data-popup-copy]")!.append(copy);
 }
+
+// The survey card in the popup's copy; the sheet marks it as hovered.
+const SURVEY_CARD = "[data-popup-copy] li:last-child";
 
 function Bell() {
   return (
@@ -162,14 +172,22 @@ function Bell() {
   );
 }
 
-function bell(name: string, update: DesktopUpdateState | null): UiState {
+function bell(
+  name: string,
+  update: DesktopUpdateState | null,
+  cardLayout: SurveyCardLayout = "link",
+  hover?: string,
+): UiState {
   return {
     name,
     render: () => <Bell />,
+    ...(hover ? { hover } : {}),
     setup: () => {
       source.update = update;
+      source.cardLayout = cardLayout;
       return () => {
         source.update = null;
+        source.cardLayout = "link";
       };
     },
     settle: async (cell) => {
@@ -237,11 +255,24 @@ it("user-survey", async () => {
     "user-survey-card",
     [
       {
-        title: "Notifications popover",
+        title: "1. Like the update card: Share on the right, a quiet link below",
+        states: [bell("after an app update", AVAILABLE, "link"), bell("alone", null, "link")],
+      },
+      {
+        title: "2. Two buttons under the text",
+        states: [bell("after an app update", AVAILABLE, "buttons"), bell("alone", null, "buttons")],
+      },
+      {
+        title: "3. The whole card opens the survey",
         states: [
-          bell("survey card: Share, dismiss", null),
-          bell("survey card after an update", AVAILABLE),
+          bell("after an app update", AVAILABLE, "whole"),
+          bell("pointer over the card: No thanks shows", AVAILABLE, "whole", SURVEY_CARD),
+          bell("alone", null, "whole"),
         ],
+      },
+      {
+        title: "Before: X in the corner, Share under it",
+        states: [bell("after an app update", AVAILABLE, "corner")],
       },
     ],
     { cellWidth: 360 },

@@ -7,7 +7,6 @@ import {
   BellIcon,
   CheckIcon,
   CircleAlertIcon,
-  CircleQuestionMarkIcon,
   ExternalLinkIcon,
   InfoIcon,
   RefreshCwIcon,
@@ -57,13 +56,10 @@ import {
 import { type SidebarUpdates, useSidebarUpdates } from "./useSidebarUpdates";
 import { useSidebarFooterTooltipSide } from "../adaptiveSidebar/adaptiveSidebar";
 import { BadgedIcon } from "../badgedIcon/BadgedIcon";
-import {
-  type SurveyFormProps,
-  USER_SURVEY_CARD_DETAIL,
-  useSurveyForm,
-} from "../userSurvey/surveyParts";
-import { SURVEY_VARIANT } from "../userSurvey/surveyVariant";
-import { USER_SURVEY_TITLE, UserSurveyDialog } from "../userSurvey/UserSurveyDialog";
+import { type SurveyFormProps, useSurveyForm } from "../userSurvey/surveyParts";
+import { SURVEY_VARIANT, surveyCardLayout } from "../userSurvey/surveyVariant";
+import { UserSurveyCard } from "../userSurvey/UserSurveyCard";
+import { UserSurveyDialog } from "../userSurvey/UserSurveyDialog";
 import { UserSurveyInlineCard } from "../userSurvey/UserSurveyInlineCard";
 import { type UserSurveyHandle, useUserSurvey } from "../userSurvey/useUserSurvey";
 
@@ -502,28 +498,20 @@ function NotificationsPanel({
       key: `survey:${userSurvey.survey.id}`,
       rank: "info",
       occurredAt: null,
-      node: surveyInline ? (
-        <UserSurveyInlineCard {...surveyInline} onDismiss={userSurvey.dismiss} />
-      ) : (
-        <NotificationCard
-          tone="neutral"
-          icon={<CircleQuestionMarkIcon />}
-          title={USER_SURVEY_TITLE}
-          detail={USER_SURVEY_CARD_DETAIL}
-          action={
-            <NotificationButton
-              tone="secondary"
-              onClick={() => {
-                onClose();
-                onShareSurvey();
-              }}
-            >
-              Share
-            </NotificationButton>
-          }
-          onDismiss={userSurvey.dismiss}
-        />
-      ),
+      node:
+        surveyInline && (surveyInline.expanded || surveyInline.status.kind === "sent") ? (
+          <UserSurveyInlineCard {...surveyInline} onDismiss={userSurvey.dismiss} />
+        ) : (
+          <UserSurveyCard
+            layout={surveyCardLayout()}
+            onShare={() => {
+              if (surveyInline) return surveyInline.onExpandedChange(true);
+              onClose();
+              onShareSurvey();
+            }}
+            onDismiss={userSurvey.dismiss}
+          />
+        ),
     });
   }
 

@@ -15,6 +15,8 @@ const notificationButtonVariants = cva(
         primary: "bg-foreground text-background hover:bg-foreground/85",
         // The selected sidebar row's tone, darkened enough to show on a light popover.
         secondary: "bg-foreground/8 text-foreground hover:bg-foreground/13",
+        // A second, quieter choice beside a filled button.
+        ghost: "text-muted-foreground hover:bg-foreground/8 hover:text-foreground",
       },
     },
   },
@@ -81,7 +83,7 @@ export function NotificationCard({
       >
         {icon}
       </span>
-      <p className={cn("text-sm leading-4.5 font-medium", onDismiss && "pr-4")}>
+      <p className={cn("text-sm leading-4.5 font-medium text-balance", onDismiss && "pr-4")}>
         {title}
         {time ? (
           <time
