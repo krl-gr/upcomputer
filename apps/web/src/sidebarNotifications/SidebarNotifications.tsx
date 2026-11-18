@@ -7,6 +7,7 @@ import {
   BellIcon,
   CheckIcon,
   CircleAlertIcon,
+  CircleQuestionMarkIcon,
   ExternalLinkIcon,
   InfoIcon,
   RefreshCwIcon,
@@ -56,6 +57,8 @@ import {
 import { type SidebarUpdates, useSidebarUpdates } from "./useSidebarUpdates";
 import { useSidebarFooterTooltipSide } from "../adaptiveSidebar/adaptiveSidebar";
 import { BadgedIcon } from "../badgedIcon/BadgedIcon";
+import { USER_SURVEY_TITLE, UserSurveyDialog } from "../userSurvey/UserSurveyDialog";
+import { type UserSurveyHandle, useUserSurvey } from "../userSurvey/useUserSurvey";
 
 const DISMISSED_KEY = "upcomputer:background-notices-dismissed:v1";
 const DismissedNotices = Schema.Array(Schema.String);
@@ -96,9 +99,12 @@ function useBackgroundNotices() {
 export const SidebarNotifications = memo(function SidebarNotifications() {
   const updates = useSidebarUpdates();
   const { notices, dismiss } = useBackgroundNotices();
+  const userSurvey = useUserSurvey();
   const [open, setOpen] = useState(false);
+  const [surveyOpen, setSurveyOpen] = useState(false);
   const { dot, label } = describeSidebarNotificationsButton({
     severities: notices.map((notice) => notice.severity),
+    survey: userSurvey !== null,
     update: updates.signal,
     updateFailed: hasFailedUpdate({
       app: updates.state ? describeAppUpdateCard(updates.state, updates.action) : null,
@@ -111,7 +117,13 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
   return (
     <>
       <SidebarMenuItem className="shrink-0">
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next);
+            if (next) userSurvey?.shown();
+          }}
+        >
           <Tooltip>
             <TooltipTrigger
               render={
@@ -146,6 +158,8 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
               updates={updates}
               notices={notices}
               dismiss={dismiss}
+              userSurvey={userSurvey}
+              onShareSurvey={() => setSurveyOpen(true)}
               onClose={() => setOpen(false)}
             />
           </PopoverPopup>
@@ -159,6 +173,16 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
           restarts={updates.everything.restarts}
           onConfirm={updates.runEverything}
         />
+        {userSurvey ? (
+          <UserSurveyDialog
+            key={userSurvey.survey.id}
+            survey={userSurvey.survey}
+            open={surveyOpen}
+            onOpenChange={setSurveyOpen}
+            onSubmit={userSurvey.submit}
+            onSent={userSurvey.finish}
+          />
+        ) : null}
       </SidebarMenuItem>
     </>
   );
@@ -225,11 +249,15 @@ function NotificationsPanel({
   updates,
   notices,
   dismiss,
+  userSurvey,
+  onShareSurvey,
   onClose,
 }: {
   readonly updates: SidebarUpdates;
   readonly notices: ReturnType<typeof useBackgroundNotices>["notices"];
   readonly dismiss: (keys: ReadonlyArray<string>) => void;
+  readonly userSurvey: UserSurveyHandle | null;
+  readonly onShareSurvey: () => void;
   readonly onClose: () => void;
 }) {
   const navigate = useNavigate();
@@ -427,6 +455,34 @@ function NotificationsPanel({
         ),
       });
     }
+  }
+
+  if (userSurvey) {
+    cards.push({
+      key: `survey:${userSurvey.survey.id}`,
+      rank: "info",
+      occurredAt: null,
+      node: (
+        <NotificationCard
+          tone="neutral"
+          icon={<CircleQuestionMarkIcon />}
+          title={USER_SURVEY_TITLE}
+          detail="A short survey, about a minute."
+          action={
+            <NotificationButton
+              tone="secondary"
+              onClick={() => {
+                onClose();
+                onShareSurvey();
+              }}
+            >
+              Share
+            </NotificationButton>
+          }
+          onDismiss={userSurvey.dismiss}
+        />
+      ),
+    });
   }
 
   const showsUpdateAll = run === null && updates.runsEverything && pendingUpdates >= 2;
