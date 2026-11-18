@@ -1,88 +1,158 @@
 # FAQ
 
+Up.computer is built and maintained by one person: me. These are the questions I get most often.
+
+## What is Up.computer?
+
+A free, open-source desktop app for coding agents. You bring the agents you already use, such as
+Claude Code, Codex, Cursor or OpenCode, and run them all from one place. You can chat with an agent
+directly, or turn an idea into a task that a worker agent picks up in the background.
+
+Up.computer is a fork of the open-source [pingdotgg/t3code](https://github.com/pingdotgg/t3code)
+project. It keeps that project's agent runtime and adds its own product on top: tasks, workers,
+bots, automations, computer use and its own look.
+
 ## Is Up.computer a harness?
 
-No. A harness is what turns an LLM into an agent: it gives the model tools, a way to call them, runs them, and hands the results back. Claude Code is kind of a harness. It is an interface (the TUI, the Code tab in the desktop app) plus a harness underneath (the Anthropic Agent SDK). Codex is the same split: the app plus the Codex App Server. Up.computer uses those harnesses. It is not a harness, and it does not work without one.
+No. A harness is what turns a language model into an agent. It gives the model tools, runs them,
+and hands the results back. Claude Code is an interface plus a harness underneath (the Claude Agent
+SDK). Codex is the same split: the app plus the Codex App Server.
 
-Chef = LLM. Kitchen = harness. Up.computer = the restaurant that lets you bring whatever kitchen you want. Our MCP is a cookbook we hand the kitchen, but the chef won't open it unless you tell them to :) I wrote the long version here: [What is a harness?](https://t3.gg/blog/post/what-is-a-harness)
+Up.computer uses those harnesses. It does not replace them, and it does not work without one. Think
+of the model as the chef and the harness as the kitchen. Up.computer is the restaurant that lets you
+bring whatever kitchen you like.
 
-Bring your own: Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigravity, Pi, or Muse Code. [Provider setup](./install.md#providers)
+## Why use it instead of Claude Code or the Codex app?
 
-## Why use Up.computer instead of Claude Code or the Codex app?
+- **One app for every agent.** Switch between Claude Code, Codex, Cursor, OpenCode and others
+  without learning a new tool each time.
+- **Work in the background.** Turn a chat into a task. A worker agent picks it up by status and tag
+  while you keep talking. Automations and scheduled tasks start work on their own.
+- **Your own subscriptions.** Each agent runs on the account you already pay for.
+- **Remote access.** Agents run on the computer where Up.computer runs. You can drive them from
+  another computer or a browser. See [Remote access](./remote-access.md).
+- **Open source.** The code is MIT licensed. If I take it in a direction you do not like, you can
+  fork it.
 
-We were inspired by the Codex desktop app, Conductor, Claude Desktop, and Cursor Glass, but none met our bar. What you get:
+## Is it free?
 
-- Bring your own sub. Claude, Codex, and whatever else you already have installed.
-- Best in class remote. Run `up remote` on any box and drive it from anywhere.
-- Best in class mobile app.
-- Truly 100% open source. If we go the wrong direction, fork it.
+Yes. The app is free and open source (MIT). There is nothing to buy. You still pay your agent
+provider as you do today, if you use a paid plan.
 
-Every harness feels nearly identical in here, so you can stop worrying about harnesses and focus on building :) [Install](./install.md)
+UpComputer Connect, the built-in way to reach your computer from other devices, is free too. Each
+account can link up to 3 computers. Phones and browsers that connect to them do not count.
 
-## Can I use Up.computer with my Claude Code subscription?
+## Do I need a subscription?
 
-Yes.
+No. If no agent is set up on your computer, the desktop app installs OpenCode for you on first
+launch. New threads then use a free OpenCode Zen model, with no account needed. If you already use
+Claude Code or Codex and are signed in, the app uses that instead and downloads nothing. See
+[First launch](./welcome-wizard.md#first-launch-of-the-desktop-app).
 
-## How much does Up.computer cost?
+## Can I use my Claude or ChatGPT subscription?
 
-Nothing. There's no way to pay us to use Up.computer. You bring your own sub. It is free and open source (MIT). You still pay your provider like you already do. UpComputer Connect is free too, for now. Every account can connect up to 3 machines running Up.computer. Phones and browsers that connect to them do not count. We don't want to charge for this, but if the bill gets unacceptable we may have to change course. If you hit limits or have issues, you can always fork it, self host, or use Tailscale. [Install](./install.md)
+Yes. Up.computer runs each agent through its own official CLI or SDK, signed in with your own
+account. Sign in to Claude Code with `claude auth login`. For Codex, connect with ChatGPT in
+**Settings → Providers**, or run `codex login`. See [Claude](./providers-claude.md) and
+[Codex](./providers-codex.md).
 
-## Why is my Claude 5-hour limit draining so fast?
+## Which agents are supported?
 
-Up.computer drives Claude through Anthropic's Agent SDK. I confirmed it's a real bug on Anthropic's side: all Agent SDK usage will drain your 5h limits faster than using Claude Code directly. To be clear: this does not affect weekly limits. We have reported it to Anthropic and are hoping for a fix soon. [My post on it](https://x.com/theo/status/2114166439813017873)
+Codex, Claude Code, Cursor, Grok Build, OpenCode, Google Antigravity, Pi, Kiro, Muse Code and fx.
+You can also add any agent from the ACP Registry, or a local ACP command, with **Add provider** in
+**Settings → Providers**. Codex and Claude are on by default. Turn the others on in
+**Settings → Providers**. See [Install](./install.md#providers) and
+[ACP providers](./providers-acp.md).
 
-## How do I use Up.computer remotely?
+## Can I use an API key or OpenRouter instead?
 
-Your agents run wherever Up.computer runs: your desktop, a server, a VPS. You connect to it from anywhere. I do this constantly. Less than 5% of my prompts run on my laptop. Run `up remote` on that machine and you get really good remote support. UpComputer Connect is the easy path. LAN pairing and Tailscale work too, and [app.up.computer](https://app.up.computer) is the web client. [Remote access](./remote-access.md)
+Yes. Add another provider instance in **Settings → Providers** and give it its own keys and
+endpoint. Claude has a full OpenRouter recipe. Your subscription setup stays as it is. See
+[OpenRouter](./providers-claude.md#openrouter) and [Provider instances](./install.md#providers).
 
-## How do I use Up.computer on my phone?
+## Can I use more than one account for a provider?
 
-Get the [iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824) or [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code) app, then connect it to your computer with UpComputer Connect or a pairing link. The phone is a remote. Your computer does the work and needs to stay on. [Mobile setup](./install.md#mobile-app) · [Remote access](./remote-access.md)
+Yes, a few. Add a second provider instance for a work account, for example. Setup guides:
+[Codex](./providers-codex.md#use-multiple-accounts) and
+[Claude](./providers-claude.md#separate-accounts-or-configurations). If you use a
+[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) hub to pool accounts, Up.computer can
+show its pooled limits under Usage. See [Connect a hub](./usage.md#connect-a-cliproxyapi-hub).
+
+## Where is my data?
+
+On your computer. Threads, tasks and settings live in the `.upcomputer` folder in your home
+directory. Your code and prompts go from your computer straight to your agent's provider, such as
+Anthropic or OpenAI. They do not go to me.
+
+UpComputer Connect only sets up the link between your devices. Traffic goes through a Cloudflare
+tunnel that runs on your computer. The relay does not carry your sessions.
+
+Up.computer does send basic product usage events, such as which provider and model ran and token
+totals. They never include prompts, replies or file contents. To turn them off, set
+`T3CODE_TELEMETRY_ENABLED=false` before starting the server. See
+[Product usage data](./telemetry.md) for the full list.
+
+## Does it work on Windows, Mac and Linux?
+
+Yes. There are desktop builds for macOS (Apple Silicon and Intel), Windows and Linux. On Windows you
+can also run agents inside WSL: choose a distro in **Settings → Sharing & access**. See
+[Install](./install.md).
+
+## Windows says "Windows protected your PC". Is that safe?
+
+That is the SmartScreen warning. The Windows installer is not code signed yet, so Windows does not
+recognize it. Select **More info**, then **Run anyway**. Download the installer only from
+[up.computer/download](https://up.computer/download/) or the
+[GitHub releases](https://github.com/krl-gr/upcomputer/releases/latest). The macOS builds are signed
+and notarized.
+
+## How do I use Up.computer from another device?
+
+Your agents run wherever Up.computer runs: your desktop, a server or a VPS. You connect to it from
+elsewhere. UpComputer Connect is the easy path: sign in on both sides and link the computer. Pairing
+over your local network and Tailscale work too. On a server without the desktop app, run
+`up remote`. See [Remote access](./remote-access.md).
+
+There is no Up.computer mobile app yet.
 
 ## Why does UpComputer Connect keep disconnecting?
 
-UpComputer Connect is our built-in alternative to Tailscale for remote connections. If it keeps dropping, open **Settings > Environments**, find the machine, and select **Details**. The first part marked as failed is the cause. I will not be disappointed if you set up Tailscale as a fallback (I do this personally). [UpComputer Connect troubleshooting](./t3-connect-troubleshooting.md)
-
-## Will I get banned for using my subscription?
-
-No. We work with all of the labs and Up.computer is within the TOS of Claude Code, Codex, and Google Antigravity. We worked directly with [SpaceXAI](https://x.com/SpaceXSI/status/2070195830192320600) to collaborate on the Grok Build and Cursor integrations. Everything else uses official ACP bindings.
-
-If it works in Up.computer, you can trust it is safe.
-
-## Can I add a bunch of accounts for one provider?
-
-I don't think Up.computer is the right place to manage a pile of accounts. If we add an auto-switcher, we are risking TOS bans for our users.
-
-A separate work account is fine. Setup for two: [Codex](./providers-codex.md#use-multiple-accounts) · [Claude](./providers-claude.md#separate-accounts-or-configurations). For a bigger pool, manage them outside Up.computer with a self-hosted proxy like [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI). I walked through how I use 6 Claude subs and 3 Codex subs in [this video](https://www.youtube.com/watch?v=D8PikZ1KhUo), and wrote up the setup in [this guide](https://gist.github.com/t3dotgg/59a521d2ee8d70aaf90e280c175072af). Hand it to your agent and it will walk you through it. Early apologies if it gets you banned 💀 After you set up a hub, Up.computer can show its pooled limits under Usage. [Connect a hub](./usage.md#connect-a-cliproxyapi-hub)
-
-## Can I use an API key or OpenRouter instead of a subscription?
-
-Yes. Add another provider instance in Settings and give it its own keys and endpoint. Claude has a full OpenRouter recipe. Your subscription setup stays untouched. [OpenRouter](./providers-claude.md#openrouter) · [Provider instances](./install.md#providers)
-
-## Does Up.computer support local models?
-
-No. Up.computer is a serious developer tool. Locally runnable models are not capable of meaningful engineering work.
-
-## Does my code go to Up.computer servers?
-
-No. Your code and prompts go from your machine to your provider (Anthropic, OpenAI, etc.), not to us. With UpComputer Connect, traffic rides a Cloudflare tunnel (`cloudflared` on your machine). Our relay sets up the link. It does not proxy your HTTP or WebSocket sessions. Up.computer does send basic product usage events (provider, model, token totals, that kind of thing). No prompts, no file contents. That is the same on Tailscale, LAN, or UpComputer Connect. Set `T3CODE_TELEMETRY_ENABLED=false` if you want it off. [Product usage data](./telemetry.md)
+Open **Settings → Environments**, find the computer and select **Details**. The first step marked
+as failed is the cause. Tailscale is a good fallback if Connect keeps dropping. See
+[UpComputer Connect troubleshooting](./t3-connect-troubleshooting.md).
 
 ## Worktrees are eating my disk. How do I clean them up?
 
-Open **Settings → Worktrees → Cleanup** and turn on automatic worktree cleanup. You can also run it now from there. Worktrees add up fast. One user cleared 500 GB. [Storage cleanup](./project-settings.md#storage-cleanup)
-
-## Is there voice input?
-
-Yes. On iPhone and Android, dictation uses on-device speech by default; you can opt in to a paired environment instead. Web and desktop require you to choose an environment first. The transcript goes into your draft for review. See [Voice input](./voice-input.md).
-
-## Does it work on Windows, Mac, and Linux?
-
-Yes, all three. Desktop app, CLI, the works. One catch: there is no `up` binary for Intel Macs, so use the desktop app there. Windows folks can also run agents inside WSL. [Install](./install.md)
+Open **Settings → Worktrees** and turn on **Automatic worktree cleanup**. You can also run a cleanup
+from there right away. See [Storage cleanup](./project-settings.md#storage-cleanup).
 
 ## Will my computer sleep in the middle of a long run?
 
-Not with the desktop app. While an agent works, it keeps the computer from going to sleep and lets it sleep again once nothing is running. An agent waiting for your approval or answer does not count as working. The screen can still turn off, and closing a laptop lid still sleeps it. Turn this off in **Settings → Maintenance → Keep computer awake**. The `up` background service does not do this; on a host that runs it, set the system never to sleep, or start the server under `caffeinate -i` (macOS) or `systemd-inhibit` (Linux).
+Not with the desktop app. While an agent works, it keeps the computer awake, and lets it sleep again
+once nothing is running. An agent waiting for your approval or answer does not count as working. The
+screen can still turn off, and closing a laptop lid still puts it to sleep. Turn this off in
+**Settings → Maintenance → Keep computer awake**.
 
-## Why is my provider not showing up?
+The `up` background service does not do this. On a host that runs it, set the system never to
+sleep, or start the server under `caffeinate -i` (macOS) or `systemd-inhibit` (Linux).
 
-Almost always, the CLI is not installed or not on the `PATH` of the machine that runs the server. (Not your phone. The computer.) Log in on that machine first, like `codex login` or `claude auth login`. Still missing? Point **Binary path** at it in provider settings. Version managers love to cause this one. [Provider setup](./install.md#providers)
+## Is there voice input?
+
+Yes, on web and desktop. Transcription runs on one of your own Up.computer computers, so pick one
+first in **Settings → Voice**. The transcript goes into your draft for you to review before sending.
+See [Voice input](./voice-input.md).
+
+## Why is my agent not showing up?
+
+Almost always, its CLI is not installed or not on the `PATH` of the computer that runs Up.computer.
+Sign in on that computer first, for example with `codex login` or `claude auth login`. Still
+missing? Set **Binary path** in that agent's settings under **Settings → Providers**. Version
+managers often cause this. See [Provider setup](./install.md#providers).
+
+## How do I give feedback or report a bug?
+
+Open an issue on [GitHub](https://github.com/krl-gr/upcomputer/issues). Search first, and keep each
+report to one problem. Steps to reproduce, your OS and the app version help a lot.
+
+Ideas and feature requests are welcome as issues too. For anything private, email
+**support@up.computer**. Report security problems only by email, never in a public issue.

@@ -469,7 +469,7 @@ screenshots, logs, or bug reports.
 
 ## UpComputer Connect troubleshooting
 
-When a UpComputer Connect connection fails, see
+When an UpComputer Connect connection fails, see
 [UpComputer Connect troubleshooting](./t3-connect-troubleshooting.md). It explains each
 error, where the problem is, and how to fix it.
 
