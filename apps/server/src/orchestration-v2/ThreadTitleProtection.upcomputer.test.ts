@@ -116,6 +116,27 @@ it.effect("keeps a rename when the next message follows only maintenance command
   }).pipe(Effect.provide(layer)),
 );
 
+it.effect("keeps a rename made while the first message's title is generating", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const threadId = ThreadId.make("title-rename-during-generation");
+    yield* createThread(threadId);
+    const requestId = yield* send(threadId, "first", "Fix the parser");
+    assert.equal((yield* threadOf(threadId)).titleRegeneration?.requestId, requestId);
+    yield* rename(threadId, "Parser work");
+    yield* orchestrator.dispatch({
+      type: "thread.title.regeneration.complete",
+      commandId: CommandId.make("title-rename-during-generation:complete"),
+      threadId,
+      requestId,
+      title: "Generated title",
+    });
+    const thread = yield* threadOf(threadId);
+    assert.equal(thread.title, "Parser work");
+    assert.isTrue(thread.titleManuallySet);
+  }).pipe(Effect.provide(layer)),
+);
+
 it.effect("lets an explicit regeneration replace a manual title", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
