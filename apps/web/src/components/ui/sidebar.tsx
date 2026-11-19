@@ -878,6 +878,7 @@ export {
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
+  isMobileViewport,
   useSidebar,
   useSidebarVisibility,
 };
