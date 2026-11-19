@@ -42,7 +42,7 @@ import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
 import ThreadSidebar from "./Sidebar";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
-import { PhoneUndoNotice, phoneUndoNoticeShown } from "./sidebar/PhoneUndoNotice.upcomputer";
+import { PhoneUndoNotice, threadUndoNoticeOnScreen } from "./sidebar/PhoneUndoNotice.upcomputer";
 import type { SidebarRouteReveal } from "./sidebar/routeReveal";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { productSurface } from "../product/productFlags";
@@ -61,7 +61,6 @@ import {
   THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
 } from "./threadSidebarWidth";
 import {
-  isMobileViewport,
   Sidebar,
   SidebarProvider,
   SidebarRail,
@@ -267,7 +266,7 @@ function registerThreadUndoCommands(
               terminalFocus: isTerminalFocused(),
               previewFocus: isPreviewFocused(),
               ...readRoutePanelsOpen(router),
-              // Without the notice on screen, text fields keep their own undo.
+              // A hidden sidebar hides the notice, so text fields keep their own undo.
               editableFocus:
                 isEditableFocused(event.target) &&
                 !(readSidebarVisible() && threadUndoClaimsShortcut()),
@@ -306,20 +305,8 @@ export function registerAppShellCommands(router: AnyRouter, shellElement: Elemen
   const readSidebarVisible = () =>
     shellElement.closest('[data-slot="sidebar-wrapper"]')?.getAttribute("data-sidebar-state") ===
     "expanded";
-  // UpComputer: at phone width the page shows the notice while the sheet is closed.
-  const readUndoNoticeVisible = () => {
-    const sidebarVisible = readSidebarVisible();
-    return (
-      sidebarVisible ||
-      phoneUndoNoticeShown({
-        isMobile: isMobileViewport(),
-        openMobile: sidebarVisible,
-        modalPage: isAppModalPage(router.state.location.pathname),
-      })
-    );
-  };
   const disposers = [
-    registerThreadUndoCommands(router, readUndoNoticeVisible),
+    registerThreadUndoCommands(router, () => threadUndoNoticeOnScreen(readSidebarVisible)),
     registerNavigationHistoryCommands(router),
     registerWorkspaceFocusCommands(router),
     registerPullRequestsEscapeCommand(router),

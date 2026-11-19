@@ -3,7 +3,7 @@ import { useLocation } from "@tanstack/react-router";
 import { undoLatestThreadAction } from "../../hooks/showThreadUndoNotice";
 import { cn } from "../../lib/utils";
 import { Kbd } from "../ui/kbd";
-import { useSidebar } from "../ui/sidebar";
+import { isMobileViewport, useSidebar } from "../ui/sidebar";
 import { isAppModalPage } from "./mainAppLocation";
 import { useThreadUndoNoticeView } from "./threadUndoNoticeView.upcomputer";
 import "./phoneUndoNotice.css";
@@ -13,12 +13,20 @@ import "./phoneUndoNotice.css";
  * sheet closed. The open sheet shows the sidebar's own pill instead, and Settings and
  * Usage cover the page.
  */
-export function phoneUndoNoticeShown(input: {
+function phoneUndoNoticeShown(input: {
   readonly isMobile: boolean;
   readonly openMobile: boolean;
   readonly modalPage: boolean;
 }): boolean {
   return input.isMobile && !input.openMobile && !input.modalPage;
+}
+
+/**
+ * Whether a thread undo notice is on screen for Cmd+Z: the sidebar's pill, or at phone
+ * width the page card while the sheet is closed. Its caller already skips Settings and Usage.
+ */
+export function threadUndoNoticeOnScreen(readSidebarVisible: () => boolean): boolean {
+  return readSidebarVisible() || isMobileViewport();
 }
 
 // The sidebar pill's motion: 180ms, 6px toward its resting place on the way in, back on the way out.
