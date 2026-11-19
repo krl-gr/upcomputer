@@ -67,6 +67,11 @@ describe("handing a person task to an agent", () => {
       "status" in handOffPatch({ status: "Review", tags: [], metadata: null }, reviewer),
       false,
     );
+    NodeAssert.equal(
+      "status" in handOffPatch({ status: "needs review", tags: [], metadata: null }, reviewer),
+      false,
+      "start statuses match without case",
+    );
     const anyStatus = agent("any", { startStatuses: [] });
     NodeAssert.equal(
       "status" in handOffPatch({ status: "Done", tags: [], metadata: null }, anyStatus),

@@ -923,11 +923,11 @@ const makeTaskRepository = Effect.gen(function* () {
           ${TASK_COLUMNS}
         FROM tasks
         WHERE (${projectId} IS NULL OR project_id = ${projectId})
-          AND (${status} IS NULL OR status = ${status})
+          AND (${status} IS NULL OR status = ${status} COLLATE NOCASE)
           AND ${archiveCondition(archive)}
           AND ${membershipCondition(audience, kind)}
           AND (${excludeStatusesJson} IS NULL
-            OR status NOT IN (SELECT value FROM json_each(${excludeStatusesJson})))
+            OR status COLLATE NOCASE NOT IN (SELECT value FROM json_each(${excludeStatusesJson})))
           AND (${createdBy} IS NULL OR created_by = ${createdBy})
           AND (${excludeAutomationTasks} = 0
             OR created_by NOT GLOB ${`${AUTOMATION_TASK_CREATOR_PREFIX}*`})

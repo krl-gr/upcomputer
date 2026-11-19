@@ -42,7 +42,7 @@ test("a template keeps prior values for fields the caller left out", () => {
   const existing = {
     title: "Old",
     description: "Old description",
-    status: "in progress",
+    status: "In Progress",
     priority: "high",
     tags: ["maintenance"],
   };
@@ -54,7 +54,7 @@ test("a template keeps prior values for fields the caller left out", () => {
   NodeAssert.deepEqual(fresh, {
     title: "New",
     description: "",
-    status: "new",
+    status: "To Do",
     priority: null,
     tags: [],
   });

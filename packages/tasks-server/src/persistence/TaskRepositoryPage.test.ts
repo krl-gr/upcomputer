@@ -126,11 +126,22 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
       assert.deepStrictEqual(yield* ids({ audience: "person", excludeStatuses: ["Done"] }), [
         "f-mine",
       ]);
+      assert.deepStrictEqual(
+        yield* ids({ audience: "person", excludeStatuses: ["done"] }),
+        ["f-mine"],
+        "excluded statuses ignore case",
+      );
       assert.deepStrictEqual(yield* ids({ kind: "routine" }), ["f-routine"]);
       const searched = yield* repository.search({ audience: "person", status: "Done" });
       assert.deepStrictEqual(
         searched.map(({ id }) => id),
         ["f-done"],
+      );
+      const searchedLowercase = yield* repository.search({ audience: "person", status: "done" });
+      assert.deepStrictEqual(
+        searchedLowercase.map(({ id }) => id),
+        ["f-done"],
+        "the status filter ignores case",
       );
 
       const personPage = yield* repository.page({ audience: "person", status: "Done" });

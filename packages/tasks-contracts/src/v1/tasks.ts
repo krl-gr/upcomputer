@@ -46,8 +46,31 @@ export type TaskAudience = typeof TaskAudience.Type;
 export const TaskKind = Schema.Literals(["task", "routine"]);
 export type TaskKind = typeof TaskKind.Type;
 
+/**
+ * The statuses the UI offers and defaults to, in workflow order. Statuses are
+ * free strings; these spellings keep "done" and "Done" from becoming two.
+ */
+export const TASK_STATUSES = [
+  "Idea",
+  "Backlog",
+  "To Do",
+  "In Progress",
+  "Needs Input",
+  "Needs Review",
+  "Blocked",
+  "Done",
+  "Cancelled",
+] as const;
+export const DEFAULT_TASK_STATUS = "To Do" as const;
+
+/** Status names compare without case or spacing: "done" only respells "Done". */
+export function sameTaskStatus(left: string, right: string): boolean {
+  const normalize = (status: string) => status.trim().replace(/\s+/g, " ").toLowerCase();
+  return normalize(left) === normalize(right);
+}
+
 /** The statuses the planner sets on person tasks: Restore and Done. */
-export const PERSON_OPEN_STATUS = "To Do" as const;
+export const PERSON_OPEN_STATUS = DEFAULT_TASK_STATUS;
 export const PERSON_DONE_STATUS = "Done" as const;
 /**
  * The status the planner's Restore sets on agent tasks. No agent starts on it,
@@ -67,7 +90,7 @@ export function personTaskStatusError(audience: TaskAudience, status: string): s
 
 /** The status a task keeps when it becomes a person task: Done stays done, any other reopens. */
 export function statusForPersonAudience(status: string): string {
-  return status === PERSON_DONE_STATUS ? PERSON_DONE_STATUS : PERSON_OPEN_STATUS;
+  return sameTaskStatus(status, PERSON_DONE_STATUS) ? PERSON_DONE_STATUS : PERSON_OPEN_STATUS;
 }
 
 /** Why a kind and audience cannot go together, or null. Routines are person tasks. */

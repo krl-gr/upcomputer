@@ -772,6 +772,7 @@ test("task_context lists the project's enabled agents with their queues", async 
       yield* task("working", "project-a", "In Progress", ["dev", "extra"]);
       yield* task("untagged", "project-a", "In Progress", []);
       yield* task("parked", "project-a", "Backlog", ["dev"]);
+      yield* task("review", "project-a", "needs review", ["dev"]);
       yield* task("other-project", "project-b", "To Do", ["dev"]);
     }),
   );
@@ -791,7 +792,8 @@ test("task_context lists the project's enabled agents with their queues", async 
     queue: { "To Do": 1, "In Progress": 1 },
     inProgress: ["working"],
   });
-  NodeAssert.deepEqual(byId.reviewer.queue, { "Needs Review": 0, "In Progress": 1 });
+  // Queues count statuses without case.
+  NodeAssert.deepEqual(byId.reviewer.queue, { "Needs Review": 1, "In Progress": 1 });
   NodeAssert.deepEqual(byId.doctor.startRunStatuses, ["failed"]);
   NodeAssert.equal("queue" in byId.doctor, false);
 

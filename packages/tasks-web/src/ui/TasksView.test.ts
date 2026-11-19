@@ -177,7 +177,7 @@ test("the rendered table preserves global order and exposes accessible isolated 
   NodeAssert.match(html, /data-run-count="Failed" aria-label="Show Failed runs \(1\)">1</);
   NodeAssert.match(html, /Load more tasks/);
   NodeAssert.doesNotMatch(html, /tasks loaded|More available/);
-  NodeAssert.match(html, /in progress/);
+  NodeAssert.match(html, /In Progress/, "a lowercase status lists in its canonical spelling");
   NodeAssert.ok(html.indexOf("First") < html.indexOf("Second"));
   NodeAssert.ok(html.indexOf("Second") < html.indexOf("Third"));
   NodeAssert.match(html, /draggable="true"[^>]*aria-label="Reorder First"/);

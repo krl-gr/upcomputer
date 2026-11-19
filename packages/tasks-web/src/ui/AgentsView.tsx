@@ -17,7 +17,11 @@ import type {
   RuntimeMode,
   ThreadId,
 } from "@t3tools/contracts";
-import type { TaskAgentRunTriggerStatus } from "@t3tools/tasks-contracts/v1";
+import {
+  DEFAULT_TASK_STATUS,
+  TASK_STATUSES,
+  type TaskAgentRunTriggerStatus,
+} from "@t3tools/tasks-contracts/v1";
 
 import type { TasksWebRpcClient } from "../rpc/index.ts";
 import type { ScopedTask, ScopedTaskAgent, ScopedTaskAgentRun } from "../state/index.ts";
@@ -56,13 +60,12 @@ import { WorkspaceViewLayout } from "./WorkspaceViewLayout.tsx";
 import { SHOW_MANUAL_CREATE_ACTIONS } from "./manualCreation.ts";
 import { preferredProject } from "./projectFilter.ts";
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
-import { splitListInput, type TasksWebProject } from "./shared.ts";
+import { splitListInput, uniqueStatuses, type TasksWebProject } from "./shared.ts";
 import { ListEmptyState } from "./ListEmptyState.tsx";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import { isBotAgent } from "../bots/botData.tsx";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 
-const TASK_STATUS_ACTIONS = ["new", "in progress", "ready for review", "done"] as const;
 const INSTRUCTIONS_EDITOR_CLASS =
   "min-h-36 w-full flex-1 px-3 py-2 text-lg leading-8 text-foreground";
 const RUNTIME_MODES: ReadonlyArray<{ value: RuntimeMode; label: string }> = [
@@ -151,7 +154,7 @@ function emptyForm(project?: AgentProject): AgentFormState {
     name: "",
     projectKey: project ? projectKey(project) : "",
     enabled: true,
-    startStatuses: "new",
+    startStatuses: DEFAULT_TASK_STATUS,
     startTags: "",
     startRunStatuses: "",
     instructions: "",
@@ -397,7 +400,8 @@ export function AgentsView(props: AgentsViewProps) {
   ]);
   const hasReadOnlyProjects = mutableProjects.length < props.projects.length;
   const statusOptions = useMemo(
-    () => unique([...TASK_STATUS_ACTIONS, ...props.agents.flatMap((agent) => agent.startStatuses)]),
+    () =>
+      uniqueStatuses([...TASK_STATUSES, ...props.agents.flatMap((agent) => agent.startStatuses)]),
     [props.agents],
   );
   const tagOptions = useMemo(

@@ -1,5 +1,10 @@
 import type { ProjectId } from "@t3tools/contracts";
-import type { Task, TaskAgent, TaskAgentRun } from "@t3tools/tasks-contracts/v1";
+import {
+  sameTaskStatus,
+  type Task,
+  type TaskAgent,
+  type TaskAgentRun,
+} from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
@@ -33,9 +38,11 @@ export interface AgentQueue {
   readonly active?: ReadonlyArray<string>;
 }
 
-/** The statuses whose tasks agentQueues needs. */
+/** The statuses whose tasks agentQueues needs, one spelling each: search ignores case. */
 export function queueStatuses(agents: ReadonlyArray<TaskAgent>): ReadonlyArray<string> {
-  return [...new Set([...agents.flatMap((agent) => agent.startStatuses), IN_PROGRESS])];
+  return [...agents.flatMap((agent) => agent.startStatuses), IN_PROGRESS].filter(
+    (status, index, all) => all.findIndex((other) => sameTaskStatus(other, status)) === index,
+  );
 }
 
 export function agentQueues(
@@ -65,11 +72,17 @@ export function agentQueues(
         agentMayTakeTask(agent, task) && agent.startTags.every((tag) => task.tags.includes(tag)),
     );
     const queue = Object.fromEntries(
-      [...agent.startStatuses.filter((status) => status !== IN_PROGRESS), IN_PROGRESS].map(
-        (status) => [status, mine.filter((task) => task.status === status).length],
-      ),
+      [
+        ...agent.startStatuses.filter((status) => !sameTaskStatus(status, IN_PROGRESS)),
+        IN_PROGRESS,
+      ].map((status) => [
+        status,
+        mine.filter((task) => sameTaskStatus(task.status, status)).length,
+      ]),
     );
-    const inProgress = mine.filter((task) => task.status === IN_PROGRESS).map((task) => task.id);
+    const inProgress = mine
+      .filter((task) => sameTaskStatus(task.status, IN_PROGRESS))
+      .map((task) => task.id);
     return { ...base, queue, ...(inProgress.length > 0 ? { inProgress } : {}), ...activeField };
   });
 }

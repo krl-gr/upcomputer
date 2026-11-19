@@ -1,4 +1,5 @@
 import {
+  sameTaskStatus,
   TASK_STATUS_CHANGED_EVENT,
   TaskEventId,
   TaskStatusChangedPayload,
@@ -28,12 +29,6 @@ function eventKind(value: string | null): string {
 }
 
 const decodeStatusChange = Schema.decodeUnknownOption(TaskStatusChangedPayload);
-
-/** Status names compare without case or spacing: "done" only respells "Done". */
-function sameStatus(left: string, right: string): boolean {
-  const normalize = (status: string) => status.trim().replace(/\s+/g, " ").toLowerCase();
-  return normalize(left) === normalize(right);
-}
 
 /** Whether the run itself changed the task status, e.g. with task_update. */
 const runChangedTaskStatus = (
@@ -131,7 +126,7 @@ export const makeTaskAgentResultConsumer =
       // itself during the run, and a respelling of the current status is no change.
       const targetStatus =
         reportedStatus === null ||
-        sameStatus(reportedStatus, task.status) ||
+        sameTaskStatus(reportedStatus, task.status) ||
         (yield* runChangedTaskStatus(repository, task.id, run.id))
           ? null
           : reportedStatus;
