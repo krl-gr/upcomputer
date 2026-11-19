@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckIcon, CopyIcon, MessagesSquareIcon, XIcon } from "lucide-react";
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ScopedThreadRef } from "@t3tools/contracts";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 
 import { WorkspaceEntryIcon } from "../../../../apps/web/src/components/chat/WorkspaceEntryIcon.tsx";
@@ -19,6 +19,26 @@ import { Sheet, SheetPopup, SheetTitle } from "../../../../apps/web/src/componen
 import { useCopyToClipboard } from "../../../../apps/web/src/hooks/useCopyToClipboard.ts";
 import { useMediaQuery } from "../../../../apps/web/src/hooks/useMediaQuery.ts";
 import { useTheme } from "../../../../apps/web/src/hooks/useTheme.ts";
+import { useRightPanelStore } from "../../../../apps/web/src/rightPanelStore.ts";
+import { readProject, readThreadShell } from "../../../../apps/web/src/state/entities.ts";
+import { workerThreadFilePath } from "./workerThreadFile.ts";
+
+/** Opens a file in a worker thread's right panel, by that thread's own workspace. */
+export function openFileInWorkerThread(
+  threadRef: ScopedThreadRef,
+  absolutePath: string,
+  line: number | undefined,
+) {
+  const shell = readThreadShell(threadRef);
+  const workspaceRoot = shell
+    ? (shell.worktreePath ??
+      readProject({ environmentId: threadRef.environmentId, projectId: shell.projectId })
+        ?.workspaceRoot)
+    : undefined;
+  useRightPanelStore
+    .getState()
+    .openFile(threadRef, workerThreadFilePath(absolutePath, workspaceRoot), line);
+}
 
 function fileName(path: string, projectName: string): string {
   return path.split(/[\\/]/).findLast((segment) => segment !== "") ?? projectName;

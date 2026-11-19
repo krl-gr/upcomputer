@@ -32,7 +32,7 @@ import {
 } from "../../../../apps/web/src/components/ui/select.tsx";
 import { ProjectFavicon } from "../../../../apps/web/src/components/ProjectFavicon.tsx";
 import { TaskOutput } from "./TaskOutput.tsx";
-import { useRightPanelStore } from "../../../../apps/web/src/rightPanelStore.ts";
+import { openFileInWorkerThread } from "./TaskFileWindow.tsx";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
 import { TaskThreadLink } from "./TaskThreadLink.tsx";
 import { getTaskRunAgentPresentation } from "./agentModelOptions.ts";
@@ -1004,15 +1004,11 @@ export function TasksView(props: TasksViewProps) {
                       projectId: selectedTask.projectId as ProjectId,
                       onOpenInThread: latestRun
                         ? (absolutePath, line) => {
-                            // Another thread's project can differ, so its panel gets a host path.
-                            useRightPanelStore.getState().openFile(
-                              {
-                                environmentId: latestRun.environmentId,
-                                threadId: latestRun.threadId,
-                              },
-                              absolutePath,
-                              line,
-                            );
+                            const threadRef = {
+                              environmentId: latestRun.environmentId,
+                              threadId: latestRun.threadId,
+                            };
+                            openFileInWorkerThread(threadRef, absolutePath, line);
                             props.onOpenThread(latestRun.environmentId, latestRun.threadId);
                           }
                         : undefined,
