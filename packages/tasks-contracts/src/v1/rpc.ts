@@ -62,6 +62,11 @@ import {
   TaskGetInput,
   TaskPageInput,
   TaskPageResult,
+  TaskListSettings,
+  TaskListSettingsGetInput,
+  TaskListSettingsUpdateInput,
+  TaskStatusCountsInput,
+  TaskStatusCountsResult,
   TaskListItemsInput,
   TaskListItemsResult,
   TaskChange,
@@ -80,12 +85,11 @@ import {
 } from "./tasks.ts";
 
 /**
- * 13: task audience and kind, schedule entries, reorderMany, projectId on
- * update, schedule settings and reminders on the change stream. Version 12
- * shapes still decode in both directions.
+ * 13: audience, kind, schedule, reorderMany; version 12 shapes still decode both ways.
  * 14: markThreadsSeen; threadRunCounts leaves out finished runs already seen.
+ * 15: statusCounts, lastRun on page, list settings and listSettingsChanged.
  */
-export const TASKS_RPC_CONTRACT_VERSION = 14 as const;
+export const TASKS_RPC_CONTRACT_VERSION = 15 as const;
 export const TASKS_RPC_NAMESPACE = "upcomputer.tasks.v1" as const;
 export const TASKS_RPC_CAPABILITY_ID = "upcomputer.tasks.rpc.v1" as const;
 export const TASKS_RPC_CAPABILITY = {
@@ -114,6 +118,7 @@ export const TASKS_RPC_METHODS = {
   create: `${TASKS_RPC_NAMESPACE}.create`,
   search: `${TASKS_RPC_NAMESPACE}.search`,
   page: `${TASKS_RPC_NAMESPACE}.page`,
+  statusCounts: `${TASKS_RPC_NAMESPACE}.statusCounts`,
   items: `${TASKS_RPC_NAMESPACE}.items`,
   runCounts: `${TASKS_RPC_NAMESPACE}.runCounts`,
   threadRunCounts: `${TASKS_RPC_NAMESPACE}.threadRunCounts`,
@@ -144,6 +149,8 @@ export const TASKS_RPC_METHODS = {
   scheduleMoveOpen: `${TASKS_RPC_NAMESPACE}.scheduleMoveOpen`,
   getScheduleSettings: `${TASKS_RPC_NAMESPACE}.getScheduleSettings`,
   updateScheduleSettings: `${TASKS_RPC_NAMESPACE}.updateScheduleSettings`,
+  getListSettings: `${TASKS_RPC_NAMESPACE}.getListSettings`,
+  updateListSettings: `${TASKS_RPC_NAMESPACE}.updateListSettings`,
 } as const;
 
 export const TASK_AGENTS_RPC_METHODS = {
@@ -175,6 +182,11 @@ export const TasksSearchRpc = Rpc.make(TASKS_RPC_METHODS.search, {
 export const TasksPageRpc = Rpc.make(TASKS_RPC_METHODS.page, {
   payload: TaskPageInput,
   success: TaskPageResult,
+  error: TaskError,
+});
+export const TasksStatusCountsRpc = Rpc.make(TASKS_RPC_METHODS.statusCounts, {
+  payload: TaskStatusCountsInput,
+  success: TaskStatusCountsResult,
   error: TaskError,
 });
 export const TasksItemsRpc = Rpc.make(TASKS_RPC_METHODS.items, {
@@ -334,6 +346,17 @@ export const TasksUpdateScheduleSettingsRpc = Rpc.make(TASKS_RPC_METHODS.updateS
   error: TaskError,
 });
 
+export const TasksGetListSettingsRpc = Rpc.make(TASKS_RPC_METHODS.getListSettings, {
+  payload: TaskListSettingsGetInput,
+  success: TaskListSettings,
+  error: TaskError,
+});
+export const TasksUpdateListSettingsRpc = Rpc.make(TASKS_RPC_METHODS.updateListSettings, {
+  payload: TaskListSettingsUpdateInput,
+  success: TaskListSettings,
+  error: TaskError,
+});
+
 export const TasksRpcGroup = RpcGroup.make(
   TasksRunCountsRpc,
   TasksThreadRunCountsRpc,
@@ -342,6 +365,7 @@ export const TasksRpcGroup = RpcGroup.make(
   TasksCreateRpc,
   TasksSearchRpc,
   TasksPageRpc,
+  TasksStatusCountsRpc,
   TasksItemsRpc,
   TasksSubscribeRpc,
   TasksGetRpc,
@@ -368,6 +392,8 @@ export const TasksRpcGroup = RpcGroup.make(
   TasksScheduleMoveOpenRpc,
   TasksGetScheduleSettingsRpc,
   TasksUpdateScheduleSettingsRpc,
+  TasksGetListSettingsRpc,
+  TasksUpdateListSettingsRpc,
 );
 
 export const TaskAgentsUpsertRpc = Rpc.make(TASK_AGENTS_RPC_METHODS.upsert, {
