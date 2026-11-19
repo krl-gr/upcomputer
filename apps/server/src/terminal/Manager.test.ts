@@ -243,6 +243,7 @@ interface CreateManagerOptions {
   >[0]["resolveProviderInstanceEnvironment"];
   managedBinaryCacheDir?: string;
   managedBinaryToolsDir?: string;
+  zshPromptMarksDir?: string;
 }
 
 interface ManagerFixture {
@@ -293,6 +294,9 @@ const createManager = (
           : {}),
         ...(options.resolveProviderInstanceEnvironment !== undefined
           ? { resolveProviderInstanceEnvironment: options.resolveProviderInstanceEnvironment }
+          : {}),
+        ...(options.zshPromptMarksDir !== undefined
+          ? { zshPromptMarksDir: options.zshPromptMarksDir }
           : {}),
         ...(options.managedBinaryCacheDir === undefined
           ? {}
@@ -1882,6 +1886,35 @@ it.layer(
       expect(spawnInput.env.ZELLIJ_SESSION_NAME).toBeUndefined();
       expect(spawnInput.env.ZELLIJ_CONFIG_DIR).toBe("/home/user/.config/zellij");
       expect(ptyAdapter.spawnInputs[1]?.env.TMUX_PANE).toBe("%9");
+    }),
+  );
+
+  it.effect("starts zsh from the prompt-marks startup file and hands back the user's ZDOTDIR", () =>
+    Effect.gen(function* () {
+      const platform = yield* HostProcess.Platform;
+      const fs = yield* FileSystem.FileSystem;
+      const { join } = yield* Path.Path;
+      const marksDir = join(yield* fs.makeTempDirectoryScoped(), "shell-integration", "zsh");
+      let shell = "/bin/zsh";
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        shellResolver: () => shell,
+        env: { ZDOTDIR: "/home/user/.config/zsh" },
+        zshPromptMarksDir: marksDir,
+      });
+      yield* manager.open(openInput());
+      shell = "/bin/bash";
+      yield* manager.open(openInput({ terminalId: "bash" }));
+
+      const [zsh, bash] = ptyAdapter.spawnInputs;
+      if (platform === "win32") {
+        expect(zsh?.env.ZDOTDIR).toBe("/home/user/.config/zsh");
+        return;
+      }
+      expect(zsh?.env.ZDOTDIR).toBe(marksDir);
+      expect(zsh?.env.T3CODE_ZSH_ZDOTDIR).toBe("/home/user/.config/zsh");
+      expect(yield* fs.readFileString(join(marksDir, ".zshenv"))).toContain("133;A");
+      expect(bash?.env.ZDOTDIR).toBe("/home/user/.config/zsh");
+      expect(bash?.env.T3CODE_ZSH_ZDOTDIR).toBeUndefined();
     }),
   );
 
