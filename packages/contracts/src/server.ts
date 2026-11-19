@@ -9,6 +9,7 @@ import {
 import { AuthClientPresentationMetadata, ServerAuthDescriptor } from "./auth.ts";
 import {
   ForwardCompatibleArray,
+  ForwardCompatibleOptional,
   IsoDateTime,
   NonNegativeInt,
   PositiveInt,
@@ -280,7 +281,8 @@ export const ServerProvider = Schema.Struct({
   // UpComputer: set on the placeholder a driver publishes until its first
   // status check finishes, so clients do not present it as a real result.
   statusPending: Schema.optionalKey(Schema.Boolean),
-  statusReason: Schema.optionalKey(ServerProviderStatusReason),
+  // A category this build does not know reads as absent, so the provider still decodes.
+  statusReason: ForwardCompatibleOptional(ServerProviderStatusReason),
   availability: Schema.optional(ServerProviderAvailability),
   unavailableReason: Schema.optional(TrimmedNonEmptyString),
   models: Schema.Array(ServerProviderModel),
