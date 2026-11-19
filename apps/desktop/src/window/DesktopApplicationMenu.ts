@@ -151,6 +151,15 @@ export const make = Effect.gen(function* () {
       if (event.triggeredByAccelerator === true) return;
       runMenuEffect("paste-as-text", dispatchMenuAction("paste-as-text"));
     };
+    // The renderer owns the sidebar.toggle keybinding; the accelerator here is only its label.
+    const toggleSidebarClick = (
+      _item: Electron.MenuItem,
+      _window: Electron.BaseWindow | undefined,
+      event: Electron.KeyboardEvent,
+    ) => {
+      if (event.triggeredByAccelerator === true) return;
+      runMenuEffect("sidebar.toggle", dispatchMenuAction("sidebar.toggle"));
+    };
     const zoomClick = (direction: DesktopWindow.MainWindowZoomDirection) => () => {
       runMenuEffect(`zoom-${direction}`, zoomMainWindow(direction));
     };
@@ -237,6 +246,8 @@ export const make = Effect.gen(function* () {
       {
         label: "View",
         submenu: [
+          { label: "Toggle Sidebar", accelerator: "CmdOrCtrl+B", click: toggleSidebarClick },
+          { type: "separator" },
           /* Native reload/DevTools/zoom roles target focused guests; these commands must target the app. */
           { label: "Reload", accelerator: "CmdOrCtrl+R", click: mainContentsClick("reload") },
           {
@@ -288,8 +299,10 @@ export const make = Effect.gen(function* () {
             visible: false,
             click: zoomClick("out"),
           },
-          { type: "separator" },
-          { role: "togglefullscreen" },
+          // macOS adds its own full screen item to any menu titled View.
+          ...(environment.platform === "darwin"
+            ? []
+            : [{ type: "separator" as const }, { role: "togglefullscreen" as const }]),
         ],
       },
       {
