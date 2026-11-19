@@ -993,6 +993,13 @@ export function TasksView(props: TasksViewProps) {
                     environmentId={selectedTask.environmentId}
                     cwd={selectedTaskProject?.workspaceRoot}
                     filePanelRef={props.filePanelRef}
+                    quoteSource={{
+                      id: selectedTask.id,
+                      title: selectedTask.title,
+                      projectId: selectedTask.projectId,
+                      sourceThreadId: (selectedTask.sourceThreadId as ThreadId | null) ?? null,
+                    }}
+                    onOpenThread={props.onOpenThread}
                   />
                 </DetailSidebarSection>
               ) : null}

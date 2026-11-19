@@ -1,4 +1,4 @@
-import type { AssistantCitation } from "@t3tools/contracts";
+import { isTaskOutputCitation, type AssistantCitation } from "@t3tools/contracts";
 import {
   assistantCitationLabel,
   serializeAssistantCitation,
@@ -111,25 +111,39 @@ export function AssistantCitationChip({
       }
     : undefined;
   const label = assistantCitationLabel(citation);
-  const sourceLinkProps = {
-    to: "/$environmentId/$threadId" as const,
-    params: { environmentId: citation.environmentId, threadId: citation.threadId },
-    hash: assistantCitationHash(citation),
-    "data-markdown-copy": serializeAssistantCitation(citation),
-    resetScroll: false,
-    onClick: (event: ReactMouseEvent<HTMLAnchorElement>) => {
-      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-        return;
+  // UpComputer: a quote from a task's output opens that task.
+  const sourceLinkProps = isTaskOutputCitation(citation)
+    ? {
+        to: "/tasks" as string,
+        search: { task: `${citation.environmentId}:${citation.taskId}` } as never,
+        "data-markdown-copy": serializeAssistantCitation(citation),
       }
-      event.preventDefault();
-      void navigate(assistantCitationNavigation(citation));
-    },
-  };
+    : {
+        to: "/$environmentId/$threadId" as const,
+        params: { environmentId: citation.environmentId, threadId: citation.threadId },
+        hash: assistantCitationHash(citation),
+        "data-markdown-copy": serializeAssistantCitation(citation),
+        resetScroll: false,
+        onClick: (event: ReactMouseEvent<HTMLAnchorElement>) => {
+          if (
+            event.button !== 0 ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.altKey
+          ) {
+            return;
+          }
+          event.preventDefault();
+          void navigate(assistantCitationNavigation(citation));
+        },
+      };
+  const sourceName = isTaskOutputCitation(citation) ? "task output" : "assistant text";
   const composerSourceLink = (
     <Link
       {...sourceLinkProps}
       className="inline-flex min-w-0 items-center gap-[0.2em] self-baseline text-inherit no-underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-current rounded-sm"
-      aria-label={`View cited assistant text: ${label}`}
+      aria-label={`View cited ${sourceName}: ${label}`}
     >
       <QuoteIcon aria-hidden="true" />
       <ContextChipLabel className="max-w-[16em]" dir={textDirection(label)}>
@@ -143,7 +157,7 @@ export function AssistantCitationChip({
         kind="citation"
         icon={<QuoteIcon />}
         label={label}
-        accessibleLabel={`Quoted assistant text: ${label}`}
+        accessibleLabel={`Quoted ${sourceName}: ${label}`}
         copyMarkdown={serializeAssistantCitation(citation)}
       >
         <div className="flex max-h-[calc(var(--available-height)_-_1rem_-_2px)] flex-col items-start gap-3 p-1 text-sm">
@@ -282,6 +296,11 @@ function AssistantCitationQuote({ citation }: { citation: AssistantCitation }) {
         {citation.text}
       </blockquote>
       {citation.comment ? <p dir={textDirection(citation.comment)}>{citation.comment}</p> : null}
+      {isTaskOutputCitation(citation) ? (
+        <p className="text-muted-foreground" dir={textDirection(citation.taskTitle)}>
+          Task: {citation.taskTitle}
+        </p>
+      ) : null}
     </div>
   );
 }
