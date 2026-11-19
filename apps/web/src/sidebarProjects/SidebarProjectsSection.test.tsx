@@ -41,11 +41,28 @@ const spies = vi.hoisted(() => ({
   nativeContextMenu: vi.fn(),
 }));
 
+// The open route and the app's thread and project shells.
+const app = vi.hoisted(() => ({
+  params: {} as Record<string, string>,
+  threads: [] as ReadonlyArray<{
+    readonly id: string;
+    readonly environmentId: string;
+    readonly lineage?: unknown;
+  }>,
+  projects: [] as ReadonlyArray<unknown>,
+}));
 vi.mock("../components/ProjectFavicon", () => ({ ProjectFavicon: () => null }));
 vi.mock("../state/entities", () => ({
   useServerConfigs: () => new Map([[environmentId, { scratchWorkspaceRoot: "/home/scratch" }]]),
   useQuietThreadShells: () => [],
   useDelegatedUnderParent: () => new Set(),
+  useProjects: () => app.projects,
+  readProjects: () => app.projects,
+  readNavigationThreadShells: () => app.threads,
+  readThreadShell: (ref: { environmentId: string; threadId: string }) =>
+    app.threads.find(
+      (candidate) => candidate.id === ref.threadId && candidate.environmentId === ref.environmentId,
+    ) ?? null,
 }));
 vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => environmentId }));
 vi.mock("../hooks/useHandleNewThread", () => ({ useNewThreadHandler: () => spies.newThread }));
@@ -61,7 +78,9 @@ vi.mock("../hooks/useScratchProject", () => ({
 vi.mock("../localApi", () => ({
   readLocalApi: () => ({ contextMenu: { show: spies.nativeContextMenu } }),
 }));
-vi.mock("@tanstack/react-router", () => ({ useRouter: () => ({ navigate: spies.navigate }) }));
+vi.mock("@tanstack/react-router", () => ({
+  useRouter: () => ({ navigate: spies.navigate, state: { matches: [{ params: app.params }] } }),
+}));
 const surface = vi.hoisted(() => ({ sidebarProjects: "upcomputer" as "upstream" | "upcomputer" }));
 vi.mock("../product/productFlags", () => ({
   productSurface: () => surface.sidebarProjects,
@@ -76,8 +95,12 @@ const { DEFAULT_CLIENT_SETTINGS } = await import("@t3tools/contracts/settings");
 const { __setClientSettingsForTests } = await import("../hooks/useSettings");
 const { ALL_PROJECTS_ROW_KEY } = await import("./sidebarProjects.logic");
 const { resolveSidebarProjectScopeKeys } = await import("../sidebarProjectGrouping");
-const { selectAddedProjectInSidebar } = await import("./sidebarProjectScope");
+const { selectAddedProjectInSidebar, useSidebarProjectScope } =
+  await import("./sidebarProjectScope");
 const { useUiStateStore } = await import("../uiStateStore");
+const { useComposerDraftStore } = await import("../composerDraftStore");
+const { claimSidebarThreads } = await import("../product/sidebarThreadClaims");
+const { scopedThreadKey, scopeThreadRef } = await import("@t3tools/client-runtime/environment");
 const { SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, SidebarProjectsSection } =
   await import("./SidebarProjectsSection");
 const { SIDEBAR_THREADS_OPEN_STORAGE_KEY, SidebarThreadsSectionHeader, useSidebarThreadListShown } =
@@ -109,7 +132,12 @@ const PROJECTS = [
   group("design", "Design"),
 ];
 
-const thread = (id: string, projectId: string, linkedProjectIds: string[] = []) => ({
+const thread = (
+  id: string,
+  projectId: string,
+  linkedProjectIds: string[] = [],
+  updatedAt = "2099-01-01T00:00:00.000Z",
+) => ({
   id,
   environmentId,
   projectId,
@@ -117,6 +145,8 @@ const thread = (id: string, projectId: string, linkedProjectIds: string[] = []) 
   archivedAt: null,
   sidebarHidden: false,
   lineage: { relationshipToParent: null },
+  createdAt: updatedAt,
+  updatedAt,
 });
 
 const THREADS = [
@@ -223,6 +253,9 @@ beforeEach(() => {
   window.localStorage.clear();
   __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
   useUiStateStore.setState({ sidebarProjectScopeKeys: [], projectOrder: [] });
+  app.params = {};
+  app.threads = [];
+  app.projects = [];
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -293,6 +326,104 @@ describe("SidebarProjectsSection", () => {
     expect(rowButton("Site").dataset.active).toBe("true");
     expect(rowLabels()).toEqual(["All projects", "UpComputer", "Site", "More"]);
     expect(visibleThreadIds()).toEqual(["in-site"]);
+  });
+
+  it("leaves archived projects out, as Threads and Bots read their scope as All projects", async () => {
+    const archived = { ...group("old", "Old"), archived: true } as SidebarProjectSnapshot;
+    await render([...PROJECTS, archived]);
+    await click(rowButton("More"));
+    expect(
+      [...document.querySelectorAll<HTMLElement>("[role='option']")].map(
+        (option) => option.textContent,
+      ),
+    ).not.toContain("Old");
+
+    // A scope stored before the project was archived.
+    useUiStateStore.setState({ sidebarProjectScopeKeys: [`${environmentId}:/work/old`] });
+    await render([...PROJECTS, archived]);
+    expect(rowButton("All projects").dataset.active).toBe("true");
+    app.projects = [
+      {
+        environmentId,
+        id: "old",
+        title: "Old",
+        workspaceRoot: "/work/old",
+        repositoryIdentity: null,
+        createdAt: "2099-01-01T00:00:00.000Z",
+        updatedAt: "2099-01-01T00:00:00.000Z",
+        archivedAt: "2099-01-02T00:00:00.000Z",
+      },
+    ];
+    function BotsScope() {
+      return <output>{JSON.stringify(useSidebarProjectScope())}</output>;
+    }
+    await act(async () => root.render(<BotsScope />));
+    expect(container.querySelector("output")?.textContent).toBe("null");
+  });
+
+  it("moves an open chat of another project to the picked project's latest thread", async () => {
+    const newer = "2099-01-05T00:00:00.000Z";
+    app.threads = [
+      thread("old-in-upcomputer", "upcomputer", [], "2099-01-01T00:00:00.000Z"),
+      thread("in-site", "site"),
+      thread("latest-in-upcomputer", "upcomputer", [], "2099-01-03T00:00:00.000Z"),
+      // Newer, but Threads lists neither a bot's chat nor a side chat.
+      thread("bot-in-upcomputer", "upcomputer", [], newer),
+      {
+        ...thread("side-in-upcomputer", "upcomputer", [], newer),
+        lineage: { relationshipToParent: null, sideChat: true },
+      },
+    ];
+    app.params = { environmentId, threadId: "in-site" };
+    const release = claimSidebarThreads("bots", [
+      scopedThreadKey(scopeThreadRef(environmentId as never, "bot-in-upcomputer" as never)),
+    ]);
+    try {
+      await render();
+      await click(rowButton("UpComputer"));
+    } finally {
+      release();
+    }
+    expect(spies.navigate).toHaveBeenCalledExactlyOnceWith({
+      to: "/$environmentId/$threadId",
+      params: { environmentId, threadId: "latest-in-upcomputer" },
+    });
+    expect(spies.newThread).not.toHaveBeenCalled();
+  });
+
+  it("moves an open draft of another project like an open thread", async () => {
+    app.threads = [thread("in-upcomputer", "upcomputer")];
+    app.params = { draftId: "draft-in-site" };
+    const projectRef = { environmentId, projectId: "site" } as never;
+    useComposerDraftStore.getState().setProjectDraftThreadId(projectRef, "draft-in-site" as never);
+    try {
+      await render();
+      await click(rowButton("UpComputer"));
+    } finally {
+      useComposerDraftStore.getState().clearProjectDraftThreadId(projectRef);
+    }
+    expect(spies.navigate).toHaveBeenCalledExactlyOnceWith({
+      to: "/$environmentId/$threadId",
+      params: { environmentId, threadId: "in-upcomputer" },
+    });
+  });
+
+  it("opens a new chat in a picked project without threads, and keeps a chat of the pick", async () => {
+    app.threads = [thread("in-site", "site"), thread("in-upcomputer", "upcomputer")];
+    app.params = { environmentId, threadId: "in-site" };
+    await render();
+    await click(rowButton("More"));
+    await click(moreOption("Design"));
+    expect(spies.newThread).toHaveBeenCalledExactlyOnceWith({ environmentId, projectId: "design" });
+    expect(useUiStateStore.getState().sidebarProjectScopeKeys).toEqual(["key-design"]);
+
+    // The open chat is the picked project's, or All projects holds every chat.
+    vi.clearAllMocks();
+    await click(rowButton("More"));
+    await click(moreOption("Site"));
+    await click(rowButton("All projects"));
+    expect(spies.navigate).not.toHaveBeenCalled();
+    expect(spies.newThread).not.toHaveBeenCalled();
   });
 
   it("lists the remaining rows under More and keeps a chosen one visible", async () => {
