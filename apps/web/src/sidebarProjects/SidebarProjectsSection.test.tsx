@@ -44,7 +44,11 @@ const spies = vi.hoisted(() => ({
 // The open route and the app's thread and project shells.
 const app = vi.hoisted(() => ({
   params: {} as Record<string, string>,
-  threads: [] as ReadonlyArray<{ readonly id: string; readonly environmentId: string }>,
+  threads: [] as ReadonlyArray<{
+    readonly id: string;
+    readonly environmentId: string;
+    readonly lineage?: unknown;
+  }>,
   projects: [] as ReadonlyArray<unknown>,
 }));
 vi.mock("../components/ProjectFavicon", () => ({ ProjectFavicon: () => null }));
@@ -94,6 +98,9 @@ const { resolveSidebarProjectScopeKeys } = await import("../sidebarProjectGroupi
 const { selectAddedProjectInSidebar, useSidebarProjectScope } =
   await import("./sidebarProjectScope");
 const { useUiStateStore } = await import("../uiStateStore");
+const { useComposerDraftStore } = await import("../composerDraftStore");
+const { claimSidebarThreads } = await import("../product/sidebarThreadClaims");
+const { scopedThreadKey, scopeThreadRef } = await import("@t3tools/client-runtime/environment");
 const { SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, SidebarProjectsSection } =
   await import("./SidebarProjectsSection");
 const { SIDEBAR_THREADS_OPEN_STORAGE_KEY, SidebarThreadsSectionHeader, useSidebarThreadListShown } =
@@ -355,19 +362,50 @@ describe("SidebarProjectsSection", () => {
   });
 
   it("moves an open chat of another project to the picked project's latest thread", async () => {
+    const newer = "2099-01-05T00:00:00.000Z";
     app.threads = [
       thread("old-in-upcomputer", "upcomputer", [], "2099-01-01T00:00:00.000Z"),
       thread("in-site", "site"),
       thread("latest-in-upcomputer", "upcomputer", [], "2099-01-03T00:00:00.000Z"),
+      // Newer, but Threads lists neither a bot's chat nor a side chat.
+      thread("bot-in-upcomputer", "upcomputer", [], newer),
+      {
+        ...thread("side-in-upcomputer", "upcomputer", [], newer),
+        lineage: { relationshipToParent: null, sideChat: true },
+      },
     ];
     app.params = { environmentId, threadId: "in-site" };
-    await render();
-    await click(rowButton("UpComputer"));
+    const release = claimSidebarThreads("bots", [
+      scopedThreadKey(scopeThreadRef(environmentId as never, "bot-in-upcomputer" as never)),
+    ]);
+    try {
+      await render();
+      await click(rowButton("UpComputer"));
+    } finally {
+      release();
+    }
     expect(spies.navigate).toHaveBeenCalledExactlyOnceWith({
       to: "/$environmentId/$threadId",
       params: { environmentId, threadId: "latest-in-upcomputer" },
     });
     expect(spies.newThread).not.toHaveBeenCalled();
+  });
+
+  it("moves an open draft of another project like an open thread", async () => {
+    app.threads = [thread("in-upcomputer", "upcomputer")];
+    app.params = { draftId: "draft-in-site" };
+    const projectRef = { environmentId, projectId: "site" } as never;
+    useComposerDraftStore.getState().setProjectDraftThreadId(projectRef, "draft-in-site" as never);
+    try {
+      await render();
+      await click(rowButton("UpComputer"));
+    } finally {
+      useComposerDraftStore.getState().clearProjectDraftThreadId(projectRef);
+    }
+    expect(spies.navigate).toHaveBeenCalledExactlyOnceWith({
+      to: "/$environmentId/$threadId",
+      params: { environmentId, threadId: "in-upcomputer" },
+    });
   });
 
   it("opens a new chat in a picked project without threads, and keeps a chat of the pick", async () => {
