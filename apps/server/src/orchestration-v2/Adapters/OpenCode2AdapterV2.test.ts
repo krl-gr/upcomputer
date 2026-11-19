@@ -50,6 +50,7 @@ import * as ProviderContinuationRequests from "@t3tools/provider-core/server/Pro
 import {
   OPENCODE_2_STILL_STOPPING,
   OPENCODE_PROVIDER,
+  OPENCODE_T3_TOOL_SEARCH_INSTRUCTIONS,
   t3McpServerName,
 } from "@t3tools/provider-opencode/testing";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
@@ -95,16 +96,9 @@ const event = (
 });
 const durable = { durable: { aggregateID: SESSION, seq: 1, version: 1 } };
 
-const hiddenT3Tools = (server: string) =>
-  ["preview_*", "t3_preview_*", "computer_*"].map((tool) => ({
-    action: `${server}_${tool}`,
-    resource: "*",
-    effect: "deny",
-  }));
 const mcpRules = [
   { action: "t3-code-*", resource: "*", effect: "deny" },
   { action: "t3-code-thread_opencode2-adapter_*", resource: "*", effect: "allow" },
-  ...hiddenT3Tools("t3-code-thread_opencode2-adapter"),
 ];
 const t3Rules = [{ action: "*", resource: "*", effect: "allow" }, ...mcpRules];
 const TITLE = "Prime check";
@@ -4957,7 +4951,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         config: {
           type: "remote",
           url: "http://127.0.0.1:3773/mcp",
-          headers: { Authorization: "Bearer thread-credential" },
+          headers: { Authorization: "Bearer thread-credential", "t3-tool-exposure": "deferred" },
           oauth: false,
         },
       });
@@ -5029,7 +5023,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
               { action: "*", resource: "*", effect: "allow" },
               { action: "t3-code-*", resource: "*", effect: "deny" },
               { action: `${server}_*`, resource: "*", effect: "allow" },
-              ...hiddenT3Tools(server),
             ],
           }),
         ),
@@ -5040,7 +5033,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           config: {
             type: "remote",
             url: "http://127.0.0.1:3773/mcp",
-            headers: { Authorization: "Bearer thread-credential" },
+            headers: { Authorization: "Bearer thread-credential", "t3-tool-exposure": "deferred" },
             oauth: false,
           },
         }),
@@ -5121,6 +5114,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             value: [
               runtimeInstructions,
               ...(orchestrationInstructions ? [T3_CODE_ORCHESTRATION_INSTRUCTIONS] : []),
+              OPENCODE_T3_TOOL_SEARCH_INSTRUCTIONS,
               "To wait for a background shell you started (tests, a build), call `t3_background_wait` with its shell ID before you end your turn. Do not mark work you leave running, or PRs.",
             ].join("\n\n"),
           }),
@@ -6692,7 +6686,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             { action: "*", resource: "*", effect: "allow" },
             { action: "t3-code-*", resource: "*", effect: "deny" },
             { action: "t3-code-thread_opencode2-adapter_fork_*", resource: "*", effect: "allow" },
-            ...hiddenT3Tools("t3-code-thread_opencode2-adapter_fork"),
           ],
         }),
         reply("session.update", null),

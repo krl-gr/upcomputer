@@ -12,6 +12,8 @@ const DIRECT_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 const MAX_RESULTS = 10;
+// A long session keeps the newest loaded tools only, so its listing stays under 128-tool API limits.
+const MAX_LOADED = 60;
 // Sessions that ended are never reported here, so keep only the newest.
 const MAX_SESSIONS = 256;
 
@@ -53,7 +55,15 @@ export const make = (
     const listed = loaded.get(providerSessionId) ?? new Set<string>();
     loaded.delete(providerSessionId);
     loaded.set(providerSessionId, listed);
-    for (const name of names) listed.add(name);
+    for (const name of names) {
+      if (DIRECT_TOOLS.has(name)) continue;
+      listed.delete(name);
+      listed.add(name);
+    }
+    for (const oldest of listed) {
+      if (listed.size <= MAX_LOADED) break;
+      listed.delete(oldest);
+    }
     for (const oldest of loaded.keys()) {
       if (loaded.size <= MAX_SESSIONS) break;
       loaded.delete(oldest);

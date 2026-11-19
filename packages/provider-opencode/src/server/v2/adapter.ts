@@ -101,9 +101,10 @@ import {
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
 import {
-  OPENCODE_HIDDEN_T3_TOOLS,
   OPENCODE_PROVIDER,
+  OPENCODE_T3_TOOL_SEARCH_INSTRUCTIONS,
   openCodePermissionRequestKind,
+  openCodeT3McpHeaders,
 } from "../adapter.ts";
 import { openCodeCommandFailed, openCodeToolTurnItem } from "../toolItems.ts";
 
@@ -430,8 +431,7 @@ export const t3McpServerName = Effect.fn("t3McpServerName")(function* (threadId:
 /**
  * The rules that keep T3's MCP servers to their own thread, after the mode's:
  * the last matching rule wins, so every thread's T3 server is denied and then
- * this thread's own is allowed again, in every mode. Its tools that would take
- * the session over the 128-tool API limit are denied again.
+ * this thread's own is allowed again, in every mode.
  */
 const mcpRules = (mcpServerName: string | null): ReadonlyArray<Rule> =>
   mcpServerName === null
@@ -439,7 +439,6 @@ const mcpRules = (mcpServerName: string | null): ReadonlyArray<Rule> =>
     : [
         { action: "t3-code-*", resource: "*", effect: "deny" },
         { action: `${mcpServerName}_*`, resource: "*", effect: "allow" },
-        ...OPENCODE_HIDDEN_T3_TOOLS.map((tool) => rule(`${mcpServerName}_${tool}`, "deny")),
       ];
 
 const sessionRules = (
@@ -4246,7 +4245,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
             config: new Mcp.RemoteConfig({
               type: "remote",
               url: mcpSession!.endpoint,
-              headers: { Authorization: wanted.credential },
+              headers: openCodeT3McpHeaders(wanted.credential),
               oauth: false,
             }),
           })
@@ -4271,6 +4270,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           mcpAvailable && McpProviderSession.wantsOrchestrationInstructions(mcpSession),
           mcpSession?.capabilities?.has("device") === true,
         ),
+        mcpAvailable ? OPENCODE_T3_TOOL_SEARCH_INSTRUCTIONS : undefined,
         mcpAvailable
           ? "To wait for a background shell you started (tests, a build), call `t3_background_wait` with its shell ID before you end your turn. Do not mark work you leave running, or PRs."
           : undefined,
