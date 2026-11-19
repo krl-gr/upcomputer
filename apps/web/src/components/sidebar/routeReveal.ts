@@ -61,7 +61,7 @@ export function resolveSidebarRouteReveal<T extends RevealableThread>(input: {
   readonly scopedProjectKeys: ReadonlySet<string> | null;
   readonly delegatedUnderParent: ReadonlySet<string>;
   readonly findThread: (key: string) => T | undefined;
-  /** False while project snapshots load, when a stored scope may not resolve yet. */
+  /** False while a reachable computer is still connecting, so a stored scope may not resolve yet. */
   readonly projectsReady?: boolean;
 }): { readonly pendingKey: string | null; readonly widensScope: boolean } {
   const { reveal, routeKey, isSearching, scopedProjectKeys, delegatedUnderParent, findThread } =

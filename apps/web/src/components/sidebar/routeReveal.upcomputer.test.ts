@@ -23,9 +23,15 @@ describe("resolveSidebarRouteReveal: a scope judged once per route", () => {
 
   it("keeps a scope picked later on the same route, though the thread's row never mounted", () => {
     // A bot's chat is open: Threads lists no row for it, so its reveal stays pending.
-    const resolve = resolver({ observedKey: "environment-test:other", pendingKey: null });
-    expect(resolve(null)).toEqual({ pendingKey: hiddenKey, widensScope: false });
-    expect(resolve(scopedProjectKeys)).toEqual({ pendingKey: hiddenKey, widensScope: false });
+    // Readiness is true even with a computer offline, since the Sidebar reads settled shells.
+    for (const projectsReady of [undefined, true]) {
+      const resolve = resolver({ observedKey: "environment-test:other", pendingKey: null });
+      expect(resolve(null, projectsReady)).toEqual({ pendingKey: hiddenKey, widensScope: false });
+      expect(resolve(scopedProjectKeys, projectsReady)).toEqual({
+        pendingKey: hiddenKey,
+        widensScope: false,
+      });
+    }
   });
 
   it("widens for a stored scope whose project loads after the thread", () => {

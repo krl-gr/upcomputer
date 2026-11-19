@@ -156,6 +156,7 @@ import {
   useWorkspaceSettled,
 } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
+import { allReachableShellsLiveAtom } from "../state/shell";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { isProductFeatureShown, productSurface } from "../product/productFlags";
 import { environmentProjects } from "../state/projects";
@@ -1085,6 +1086,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   );
   const projectScopeFilter = useComboboxFilter();
   const allProjectSnapshotsReady = useAllEnvironmentProjectSnapshotsReady();
+  // Settles for computers that stay offline, unlike project snapshots.
+  const reachableShellsLive = useAtomValue(allReachableShellsLiveAtom);
   const allProjectConfigsReady = useAtomValue(environmentProjects.projectConfigsReadyAtom);
   // Safari may click after Ctrl+click opens settings; suppress that selection until the picker reopens.
   const suppressNextScopeChangeRef = useRef(false);
@@ -1202,7 +1205,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     scopedProjectKeys: chosenScopeProjectKeys,
     delegatedUnderParent,
     findThread: (key) => threads.find((candidate) => threadShellKey(candidate) === key),
-    projectsReady: allProjectSnapshotsReady,
+    projectsReady: reachableShellsLive,
   });
   const projectScopeKeys = revealWidensScope ? [] : chosenProjectScopeKeys;
   const projectScopeKey = projectScopeKeys.length === 0 ? null : projectScopeKeys.join("\n");
