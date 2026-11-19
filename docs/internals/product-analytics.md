@@ -10,8 +10,11 @@ count as product use.
 Survey answers are the one exception to opt-out: a person who presses Send chose to
 send them. [UserSurveys](../../apps/server/src/userSurveys/UserSurveys.ts) sends them with
 `AnalyticsService.sendNow`, which with analytics off sends only the answers under a one-off
-random `distinct_id` and creates no install identity. Shown, dismissed and the partial answer
-from the card follow opt-out. The survey is defined in the app, not in PostHog, so its events
+random `distinct_id` and creates no install identity. That entry also carries
+`$ip: "127.0.0.1"` and `$geoip_disable: true`: PostHog's ingestion replaces a missing or empty
+`$ip` with the request's address, so `null` would not keep it out. Shown, dismissed and the
+partial responses follow opt-out: the card's answer, and the answers so far each time a step
+is left with Continue or Skip. The survey is defined in the app, not in PostHog, so its events
 carry an id PostHog's survey list does not know: read them as events. Who is asked is decided
 from the local thread history (see
 [UserSurveyEligibility](../../apps/server/src/userSurveys/UserSurveyEligibility.ts)), so
