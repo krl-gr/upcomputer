@@ -19,6 +19,7 @@ import {
 import symbolsFontUrl from "./fonts/SymbolsNerdFontMono-Regular.woff2?url";
 import { isMonospaceFamily } from "../../appearanceFonts";
 import { observeResize } from "../../lib/observeResize";
+import { PromptResizeHandoff } from "./promptHandoff";
 
 const DEFAULT_TERMINAL_FONT_SIZE = 12;
 const MIN_TERMINAL_FONT_SIZE = 6;
@@ -547,6 +548,7 @@ export class GhosttyTerminalSurface {
   private sharedGrid: { readonly cols: number; readonly rows: number } | null = null;
   private readonly context: CanvasRenderingContext2D;
   private readonly core: GhosttyTerminalCore;
+  private readonly promptHandoff: PromptResizeHandoff;
   private readonly options: GhosttyTerminalSurfaceOptions;
   private visible: boolean;
   private hasSize = false;
@@ -662,6 +664,7 @@ export class GhosttyTerminalSurface {
     this.scrollbarThumb = scrollbarThumb;
     this.context = context;
     this.core = core;
+    this.promptHandoff = new PromptResizeHandoff(core);
     this.mouseAnyEventTracking = core.isMouseAnyEventTracking();
     this.metrics = metrics;
     this.options = options;
@@ -764,6 +767,7 @@ export class GhosttyTerminalSurface {
 
   write(data: string): void {
     if (this.disposed) return;
+    this.promptHandoff.discard();
     this.core.write(
       data,
       this.synchronizedRenderTimer === null
@@ -780,6 +784,7 @@ export class GhosttyTerminalSurface {
     if (this.disposed) return;
     this.cancelSynchronizedRenderTimer();
     this.lastMouseMotionData = "";
+    this.promptHandoff.discard();
     this.core.resetAndWrite(data);
     this.synchronizeMouseTrackingState();
     this.cursorOn = true;
@@ -931,14 +936,24 @@ export class GhosttyTerminalSurface {
   setSharedGrid(grid: { readonly cols: number; readonly rows: number } | null): void {
     if (this.disposed) return;
     if (this.sharedGrid?.cols === grid?.cols && this.sharedGrid?.rows === grid?.rows) return;
+    const shellCols = this.sharedGrid?.cols;
+    const ptyColsChanged = shellCols !== undefined && grid !== null && grid.cols !== shellCols;
     this.sharedGrid = grid;
-    if (this.hasSize && this.applyGrid()) this.requestRender();
+    const resized = this.hasSize && this.applyGrid(shellCols);
+    // The PTY has its new width, so the shell's SIGWINCH redraw comes next.
+    const released = ptyColsChanged && this.promptHandoff.release(this.cols);
+    if (resized || released) this.requestRender();
   }
 
-  private applyGrid(): boolean {
+  /** `shellCols` is the PTY width the shell last drew at. */
+  private applyGrid(shellCols = this.sharedGrid?.cols): boolean {
     const cols = Math.min(this.sharedGrid?.cols ?? this.measuredCols, this.measuredCols);
     const rows = Math.min(this.sharedGrid?.rows ?? this.measuredRows, this.measuredRows);
     if (cols === this.cols && rows === this.rows) return false;
+    // Only a grid as wide as the PTY shows the prompt as the shell last drew it.
+    if (cols !== this.cols && shellCols === this.cols) {
+      this.promptHandoff.beforeReflow(this.cols);
+    }
     this.cols = cols;
     this.rows = rows;
     this.core.resize(cols, rows, this.metrics.width, this.metrics.height);
@@ -1101,6 +1116,7 @@ export class GhosttyTerminalSurface {
       window.clearTimeout(this.compositionSuppressionTimer);
     }
     this.removeEvents();
+    this.promptHandoff.discard();
     this.core.dispose();
     if (
       this.canvas.parentElement === this.mount ||
