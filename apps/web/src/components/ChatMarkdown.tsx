@@ -67,6 +67,7 @@ import {
   markdownImageSourceFragment,
 } from "@t3tools/client-runtime/markdown-images";
 import { mediaUrlReference } from "@t3tools/client-runtime/media-reference";
+import { markdownFileResource } from "@t3tools/client-runtime/media-source";
 import { mediaKindFromPath, mediaMimeTypeFromExtension } from "@t3tools/shared/mediaPreview";
 import { InlineAudioPreview } from "./files/InlineAudioPreview";
 import { HostImageUrlContext } from "./chat/hostImageUrl";
@@ -202,6 +203,8 @@ import { MarkdownCodeBlock, SuspenseShikiCodeBlock } from "./chat/MarkdownCodeBl
 import { createMarkdownRenderer } from "./chat/markdownRenderer";
 import { splitMarkdownBlocks } from "./chat/markdownStreamBlocks";
 import { MarkdownMermaidCodeBlock } from "./chat/MarkdownMermaidCodeBlock";
+import { HtmlRenderFrame } from "./chat/HtmlRenderFrame";
+import { HTML_RENDER_MARKDOWN_LANGUAGE, readHtmlRenderReference } from "@t3tools/shared/htmlRender";
 import { MarkdownTable } from "./chat/MarkdownTable";
 import { MarkdownDetails } from "./chat/MarkdownDetails";
 import {
@@ -240,7 +243,10 @@ interface ChatMarkdownProps {
   cwd: string | undefined;
   /** Folders the agent worked in before writing `text`, the latest first; read when a link opens. */
   agentDirectories?: (() => ReadonlyArray<string>) | undefined;
+  /** Without a thread, host files load through `environmentId` and `cwd` (a task's output). */
   threadRef?: ScopedThreadRef | undefined;
+  /** Without a thread, the thread whose right panel opens file links, on `environmentId`. */
+  filePanelRef?: ScopedThreadRef | undefined;
   pullRequestPanelRef?: ScopedThreadRef | undefined;
   environmentId?: EnvironmentId | undefined;
   onTaskListChange?: ((input: { markerOffset: number; checked: boolean }) => void) | undefined;
@@ -511,6 +517,7 @@ function useChatMarkdownState({
   cwd,
   agentDirectories,
   threadRef,
+  filePanelRef,
   pullRequestPanelRef,
   environmentId: explicitEnvironmentId,
   onTaskListChange,
@@ -576,6 +583,10 @@ function useChatMarkdownState({
   });
   const pullRequestLinking = usePullRequestLinking(threadRef?.environmentId);
   const environmentId = threadRef?.environmentId ?? explicitEnvironmentId ?? null;
+  const panelRef = threadRef ?? filePanelRef;
+  // Another thread's panel resolves relative paths against its own workspace.
+  const panelFilePath = (path: string) =>
+    threadRef || !cwd ? path : resolveWorkspaceFilePath(path, cwd);
   const canOperateHost = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperatePreview = useEnvironmentScope(environmentId, AuthPreviewOperateScope);
   const isClientHost = useAtomValue(clientHostEnvironmentAtom(environmentId));
@@ -593,14 +604,15 @@ function useChatMarkdownState({
       source,
       resolvedFilePath,
       cwd,
-      threadRef,
+      environmentId,
+      threadId: threadRef?.threadId,
       // Read the connection on click; reconnect replaces it, and subscriptions would refresh every markdown
       // context.
       httpBaseUrl:
         environmentId === null ? undefined : readPreparedConnection(environmentId)?.httpBaseUrl,
       createAssetUrl,
-      onOpenFile: threadRef
-        ? (path) => useRightPanelStore.getState().openFile(threadRef, path)
+      onOpenFile: panelRef
+        ? (path) => useRightPanelStore.getState().openFile(panelRef, panelFilePath(path))
         : undefined,
     }).then(
       (preview) => {
@@ -854,11 +866,11 @@ function useChatMarkdownState({
     return findAgentDirectoryMatch(workspaceRelativePath, agentRoots, searchRoot);
   };
   const openFileInPanel = (fileLinkMeta: MarkdownFileLinkMeta, panelPath: string) => {
-    if (!threadRef) return;
+    if (!panelRef) return;
     // Every open supersedes pending lookups, including synchronous opens.
     const isLatestLookup = claimWorkspaceBasenameLookup();
     const openAt = (path: string) =>
-      useRightPanelStore.getState().openFile(threadRef, path, fileLinkMeta.line);
+      useRightPanelStore.getState().openFile(panelRef, panelFilePath(path), fileLinkMeta.line);
     if (
       fileLinkMeta.workspaceLookupPath === null ||
       !cwd ||
@@ -873,6 +885,7 @@ function useChatMarkdownState({
       openAt(match ?? panelPath);
     })();
   };
+  const canLoadHostFiles = environmentId !== null && (threadRef !== undefined || Boolean(cwd));
   const fileLinkChip = (
     fileLinkMeta: MarkdownFileLinkMeta,
     copyMarkdown: string,
@@ -925,7 +938,7 @@ function useChatMarkdownState({
         )}
         copyMarkdown={copyMarkdown}
         theme={resolvedTheme}
-        threadRef={threadRef}
+        threadRef={panelRef}
         onOpen={
           canOpenApp
             ? async () =>
@@ -945,7 +958,7 @@ function useChatMarkdownState({
         }
         onOpenInPanel={(path) => openFileInPanel(fileLinkMeta, path)}
         onOpenMedia={
-          threadRef && canPreviewMedia
+          canLoadHostFiles && canPreviewMedia
             ? () => openMarkdownMedia(mediaPath, fileLinkMeta.filePath)
             : undefined
         }
@@ -995,6 +1008,8 @@ function useChatMarkdownState({
     openDeferredMarkdownLink,
     openExternalLinkInPreview,
     openMarkdownMedia,
+    panelRef,
+    panelFilePath,
     projects,
     linkedThreadPullRequestFor,
     resolveThreadPullRequest,
@@ -1478,6 +1493,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
       sourceControlMediaRepository,
       imageBaseDir,
       threadRef,
+      panelRef,
+      panelFilePath,
       workspaceMutationId,
       renderContextReference,
       fileLinkChip,
@@ -1511,13 +1528,17 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const authoredSizeStyle = authoredImageSizeStyle(width, height);
     const imageSource = classifyMarkdownImageSource(classifiedSrc, imageBaseDir ?? cwd);
     const mediaKind = mediaKindFromPath(classifiedSrc);
+    const fileResource =
+      imageSource._tag === "WorkspaceFile" && environmentId !== null
+        ? markdownFileResource(threadRef?.threadId, cwd, imageSource.path)
+        : null;
     if (mediaKind === "audio") {
       const filePath = imageSource._tag === "WorkspaceFile" ? imageSource.path : null;
       const name =
         (filePath ?? classifiedSrc.split(/[?#]/, 1)[0] ?? "").split(/[\\/]/).at(-1) ||
         altText ||
         "Audio";
-      if (imageSource._tag !== "Direct" && !(filePath && threadRef)) {
+      if (imageSource._tag !== "Direct" && !(filePath && fileResource)) {
         return <ChatMarkdownImageFallback alt={altText} copyMarkdown={copyMarkdown} kind="audio" />;
       }
       return (
@@ -1525,15 +1546,16 @@ const CHAT_MARKDOWN_COMPONENTS = {
           key={classifiedSrc}
           name={name}
           copyMarkdown={copyMarkdown}
-          {...(filePath && threadRef
+          {...(filePath && fileResource && environmentId !== null
             ? {
-                environmentId: threadRef.environmentId,
-                resource: {
-                  _tag: "media-file" as const,
-                  threadId: threadRef.threadId,
-                  path: filePath,
-                },
-                onOpen: () => useRightPanelStore.getState().openFile(threadRef, filePath),
+                environmentId,
+                resource: fileResource,
+                ...(panelRef
+                  ? {
+                      onOpen: () =>
+                        useRightPanelStore.getState().openFile(panelRef, panelFilePath(filePath)),
+                    }
+                  : {}),
               }
             : imageSource._tag === "Direct"
               ? { src: resolveProtocolRelativeMediaUrl(imageSource.uri) }
@@ -1640,16 +1662,16 @@ const CHAT_MARKDOWN_COMPONENTS = {
         />
       );
     }
-    if (imageSource._tag === "WorkspaceFile" && threadRef) {
+    if (imageSource._tag === "WorkspaceFile" && fileResource && environmentId !== null) {
       return (
         <ChatMarkdownAssetImage
-          environmentId={threadRef.environmentId}
-          resource={{
-            _tag: "media-file",
-            threadId: threadRef.threadId,
-            path: imageSource.path,
-            ...(imageSource.relative ? { hostOnly: true as const } : {}),
-          }}
+          environmentId={environmentId}
+          resource={
+            // A relative path names only the file on the thread's own host.
+            fileResource._tag === "media-file" && imageSource.relative
+              ? { ...fileResource, hostOnly: true as const }
+              : fileResource
+          }
           alt={altText}
           kind={kind}
           copyMarkdown={copyMarkdown}
@@ -1683,6 +1705,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
       onRunShellCommand,
       inline,
       mathEnabled,
+      environmentId,
+      threadRef,
     } = use(ChatMarkdownRendererContext);
     const text = use(ChatMarkdownTextContext);
     const codeBlock = extractCodeBlock(children);
@@ -1691,6 +1715,29 @@ const CHAT_MARKDOWN_COMPONENTS = {
     }
 
     const language = extractFenceLanguage(codeBlock.className);
+    // An html_render page placed in text, such as a task's output, which has no timeline row.
+    const htmlRender =
+      language === HTML_RENDER_MARKDOWN_LANGUAGE &&
+      !inline &&
+      environmentId !== null &&
+      (!isStreaming || isClosedCodeFence(node, text, codeBlock.code))
+        ? readHtmlRenderReference(parseJsonOrNull(codeBlock.code))
+        : undefined;
+    if (htmlRender && environmentId !== null) {
+      return (
+        <div
+          className="my-3 min-w-0"
+          data-markdown-copy={`\`\`\`${HTML_RENDER_MARKDOWN_LANGUAGE}\n${codeBlock.code}\n\`\`\`\n`}
+        >
+          <HtmlRenderFrame
+            key={htmlRender.attachmentId}
+            environmentId={environmentId}
+            htmlRender={htmlRender}
+            threadRef={threadRef}
+          />
+        </div>
+      );
+    }
     if (
       mathEnabled &&
       language === "math" &&
@@ -1758,6 +1805,14 @@ const CHAT_MARKDOWN_COMPONENTS = {
     );
   },
 } satisfies Components;
+
+function parseJsonOrNull(source: string): unknown {
+  try {
+    return JSON.parse(source);
+  } catch {
+    return null;
+  }
+}
 
 const REMARK_MATH: Pluggable = [remarkMath, { singleDollarTextMath: true }];
 // Shared lists, so every message with the same options shares a processor and its cache.

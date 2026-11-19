@@ -19,7 +19,7 @@ import {
 } from "@t3tools/tasks-contracts/v1";
 import { taskRunPresentation, groupTaskRunCounts, runSearchStatus } from "./taskRunPresentation.ts";
 import type { ScopedTaskListItem } from "../state/taskPages.ts";
-import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 
 import type { TasksWebRpcClient } from "../rpc/index.ts";
 import type { ScopedTask, ScopedTaskAgent, ScopedTaskAgentRun } from "../state/index.ts";
@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from "../../../../apps/web/src/components/ui/select.tsx";
 import { ProjectFavicon } from "../../../../apps/web/src/components/ProjectFavicon.tsx";
-import ChatMarkdown from "../../../../apps/web/src/components/ChatMarkdown.tsx";
+import { TaskOutput } from "./TaskOutput.tsx";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
 import { TaskThreadLink } from "./TaskThreadLink.tsx";
 import { getTaskRunAgentPresentation } from "./agentModelOptions.ts";
@@ -66,6 +66,7 @@ import { isInboxRoot, type PlannerProject } from "../planner/ui/ProjectChip.tsx"
 import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { observeResize } from "../../../../apps/web/src/lib/observeResize.ts";
+import { useMediaQuery } from "../../../../apps/web/src/hooks/useMediaQuery.ts";
 import { TableRunCounts } from "./RunCountNumbers.tsx";
 import { TaskHistory, taskHistoryEntries } from "./TaskHistory.tsx";
 import { TaskTagChips } from "./TaskTagChips.tsx";
@@ -174,6 +175,8 @@ export interface TasksViewProps {
   readonly onOpenInPlanner?: (environmentId: EnvironmentId, taskId: string) => void;
   /** `panel` fits a right-panel surface: cards, filters behind a button, stacked details. */
   readonly layout?: "page" | "panel";
+  /** The thread beside a right-panel surface, whose panel opens the output's file links. */
+  readonly filePanelRef?: ScopedThreadRef;
 }
 
 function emptyForm(project?: TasksWebProject): TaskFormState {
@@ -316,6 +319,8 @@ export function TasksView(props: TasksViewProps) {
   const [updatingField, setUpdatingField] = useState<string | null>(null);
   const { projectFilter, filters, onFiltersChange } = props;
   const panel = props.layout === "panel";
+  // A window too narrow for two columns stacks the details under the output, as the panel does.
+  const stackedDetail = useMediaQuery({ max: 900 }) || panel;
   // The list's own width picks table or cards; the first measurement lands before paint.
   const [listElement, setListElement] = useState<HTMLDivElement | null>(null);
   // Before the list is measured the page shows the table; the right panel always shows cards.
@@ -869,8 +874,10 @@ export function TasksView(props: TasksViewProps) {
     }
   }, [form, gt, props, selectedProject]);
 
-  const detailOuterClass = panel ? "flex w-full min-w-0 py-3" : "flex min-h-0 w-full flex-1 py-5";
-  const detailInnerClass = panel
+  const detailOuterClass = stackedDetail
+    ? "flex w-full min-w-0 py-3"
+    : "flex min-h-0 w-full flex-1 py-5";
+  const detailInnerClass = stackedDetail
     ? "flex min-w-0 flex-1 flex-col gap-3"
     : "flex min-h-0 min-w-0 flex-1 gap-5";
 
@@ -988,7 +995,7 @@ export function TasksView(props: TasksViewProps) {
       {selectedTask ? (
         <div className={detailOuterClass}>
           <div className={detailInnerClass}>
-            <main className={panel ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto"}>
+            <main className={stackedDetail ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto"}>
               <DetailSidebarSection
                 key={`${taskKey(selectedTask)}:description`}
                 title={gt("Description")}
@@ -1017,16 +1024,16 @@ export function TasksView(props: TasksViewProps) {
                   title={gt("Output")}
                   defaultOpen
                 >
-                  <ChatMarkdown
+                  <TaskOutput
                     text={selectedTask.output ?? ""}
+                    environmentId={selectedTask.environmentId}
                     cwd={selectedTaskProject?.workspaceRoot}
-                    className="px-3 py-2 text-lg leading-8 text-foreground"
-                    lineBreaks
+                    filePanelRef={props.filePanelRef}
                   />
                 </DetailSidebarSection>
               ) : null}
             </main>
-            <DetailColumn stacked={panel}>
+            <DetailColumn stacked={stackedDetail}>
               <DetailSidebarSection title={gt("Details")}>
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow
@@ -1353,7 +1360,7 @@ export function TasksView(props: TasksViewProps) {
                 onChange={(description) => setForm((current) => ({ ...current, description }))}
               />
             </main>
-            <DetailColumn stacked={panel}>
+            <DetailColumn stacked={stackedDetail}>
               <DetailSidebarSection title={gt("Details")}>
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow label={gt("Title")} controlSelector="input">

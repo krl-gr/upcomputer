@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { ExperimentalWebRightPanelSurfaceProps } from "../../../../apps/web/src/product/WebFeature.ts";
 
 import { deriveProviderInstanceEntries } from "../../../../apps/web/src/providerInstances.ts";
 import { useEnvironmentProviders } from "../../../../apps/web/src/state/environments.ts";
@@ -28,7 +30,7 @@ import { ProjectFilterSelect } from "./ProjectFilterSelect.tsx";
  * Workers side (the page's last choice) with the page's filters, whatever the
  * thread's project, and a task opened inside the panel instead of the URL.
  */
-export default function TasksPanel() {
+export default function TasksPanel(props: ExperimentalWebRightPanelSurfaceProps) {
   const [storedView, setStoredView] = useStoredTasksView();
   const [storedSection, setSection] = useStoredTableSection();
   const [, setPlannerEnvironment] = useStoredPlannerEnvironment();
@@ -74,6 +76,7 @@ export default function TasksPanel() {
   ) : (
     <TablePanel
       viewSwitch={viewSwitch}
+      filePanelRef={scopeThreadRef(props.environmentId, props.threadId)}
       selectedTaskKey={selectedTaskKey}
       onSelectedTaskKeyChange={setSelectedTaskKey}
       onOpenInPlanner={openInPlanner}
@@ -123,6 +126,7 @@ function PlannerPanel(props: {
 
 function TablePanel(props: {
   readonly viewSwitch: ReactNode;
+  readonly filePanelRef: ScopedThreadRef;
   readonly selectedTaskKey: string | undefined;
   readonly onSelectedTaskKeyChange: (taskKey: string | undefined) => void;
   readonly onOpenInPlanner: (environmentId: EnvironmentId, taskId: string) => void;
@@ -153,6 +157,7 @@ function TablePanel(props: {
   return (
     <TasksView
       layout="panel"
+      filePanelRef={props.filePanelRef}
       projects={data.projects}
       tasks={pages.tasks}
       statuses={pages.statuses}

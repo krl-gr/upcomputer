@@ -95,6 +95,7 @@ const HtmlRenderTool = Tool.make(HTML_RENDER_TOOL_NAME, {
       height: Schema.Number,
       heights: Schema.optional(Schema.Array(Schema.Tuple([Schema.Int, Schema.Int]))),
     }),
+    markdown: Schema.String,
     message: Schema.String,
   }),
   failure: OrchestratorMcpFailure,

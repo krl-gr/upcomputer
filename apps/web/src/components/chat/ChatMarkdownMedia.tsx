@@ -338,6 +338,7 @@ type ChatMarkdownAssetResource = Extract<
       | "attachment"
       | "workspace-file"
       | "media-file"
+      | "draft-workspace-file"
       | typeof SOURCE_CONTROL_MEDIA_ASSET
       | "tool-output-image";
   }
@@ -355,7 +356,7 @@ export function assetMediaActionsSource(input: {
 }): MediaActionSource {
   const { environmentId, resource } = input;
   const path =
-    resource._tag === "media-file"
+    resource._tag === "media-file" || resource._tag === "draft-workspace-file"
       ? resource.path
       : resource._tag === "workspace-file" && input.workspaceRoot
         ? `${input.workspaceRoot.replace(/[\\/]+$/, "")}/${resource.path}`

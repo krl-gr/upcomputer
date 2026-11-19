@@ -21,6 +21,14 @@ export interface HtmlRenderReference {
   readonly heights?: ReadonlyArray<readonly [width: number, height: number]>;
 }
 
+/** The fence language that shows an html_render page in markdown, such as a task's output. */
+export const HTML_RENDER_MARKDOWN_LANGUAGE = "html-render";
+
+/** Markdown that shows `reference`'s page where it is placed. */
+export function htmlRenderMarkdown(reference: HtmlRenderReference): string {
+  return `\`\`\`${HTML_RENDER_MARKDOWN_LANGUAGE}\n${JSON.stringify(reference)}\n\`\`\``;
+}
+
 export const HTML_RENDER_MEASURE_WIDTHS = [320, 375, 430, 520, 640, 728, 860, 1000, 1144] as const;
 
 export const HTML_RENDER_COLUMN_WIDTH = 728;

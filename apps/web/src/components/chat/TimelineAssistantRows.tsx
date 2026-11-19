@@ -4,6 +4,7 @@ import { agentWorkingDirectories } from "@t3tools/client-runtime/workspace-basen
 import { memo, use, useState } from "react";
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
+import { AssistantMessageMarkdown } from "./AssistantMessageMarkdown";
 import { GitForkIcon, ReplyIcon } from "lucide-react";
 import { captureAssistantMessageOpening } from "~/lib/assistantTextSelection";
 import { responseContextRecord } from "~/lib/composerContextRecords";
@@ -55,7 +56,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             request={ctx.citationRequest}
             listRef={ctx.listRef}
           >
-            <ChatMarkdown
+            <AssistantMessageMarkdown
               text={messageText}
               renderInsights
               cwd={ctx.markdownCwd}
@@ -66,10 +67,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
               }
               threadRef={ctx.threadRef ?? undefined}
               isStreaming={Boolean(row.message.streaming)}
-              // A chat reply's single line breaks are lines (poems, addresses, label above a path).
-              lineBreaks
               skills={ctx.skills}
-              headingLevelOffset={MESSAGE_HEADING_LEVEL}
               onUseArtifactTemplate={ctx.onUseArtifactTemplate}
               onRunShellCommand={ctx.onRunShellCommand}
               onImageExpand={ctx.onImageExpand}
