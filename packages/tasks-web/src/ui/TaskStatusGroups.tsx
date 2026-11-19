@@ -258,7 +258,8 @@ function GroupHeader(props: {
         drag.pointerDown();
       }}
       onClickCapture={(event) => {
-        if (drag.dropped(group.key)) event.stopPropagation();
+        // A keyboard click (detail 0) never follows a drag.
+        if (event.detail > 0 && drag.dropped(group.key)) event.stopPropagation();
       }}
       onKeyDown={(event: ReactKeyboardEvent) => {
         if (!drag.reorderable || !event.altKey) return;

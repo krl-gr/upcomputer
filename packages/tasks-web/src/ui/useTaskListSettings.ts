@@ -3,7 +3,7 @@ import {
   TaskListSettings,
   type TaskListSettingsUpdateInput,
 } from "@t3tools/tasks-contracts/v1";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useLocalStorage } from "../../../../apps/web/src/hooks/useLocalStorage.ts";
 import { usePrimaryEnvironmentId } from "../../../../apps/web/src/state/environments.ts";
@@ -49,17 +49,18 @@ export function useTaskListSettings(targets: readonly TasksStateTarget[]) {
     );
     return candidates.find((target) => target.environmentId === environmentId) ?? null;
   }, [primaryEnvironmentId, storedPlannerEnvironment, targets]);
+  // Bumped by every read and local change, so a read that started before a change is dropped.
+  const generation = useRef(0);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- follows the source computer's settings and their change stream
   useEffect(() => {
     if (!source) return;
-    let latest = 0;
     let disposed = false;
     const load = () => {
-      const request = ++latest;
+      const request = ++generation.current;
       source.client.tasks.getListSettings({}).then(
         (next) => {
-          if (!disposed && request === latest) setSettings(next);
+          if (!disposed && request === generation.current) setSettings(next);
         },
         // A server without list settings: this device's copy stays.
         () => undefined,
@@ -76,6 +77,7 @@ export function useTaskListSettings(targets: readonly TasksStateTarget[]) {
 
   const update = useCallback(
     (patch: TaskListSettingsUpdateInput) => {
+      generation.current++;
       setSettings((current) => applyTaskListSettings(current, patch));
       if (source?.access.canMutateTasks)
         source.client.tasks.updateListSettings(patch).catch(() => undefined);
