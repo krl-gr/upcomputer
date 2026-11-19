@@ -60,6 +60,13 @@ import {
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { AgentTaskCard } from "./AgentTaskCard.tsx";
 import { TaskFilterRow, TaskFiltersButton } from "./TaskFilters.tsx";
+import {
+  TaskStatusCardGroup,
+  TaskStatusGroupsProvider,
+  TaskStatusTableGroup,
+} from "./TaskStatusGroups.tsx";
+import { statusGroupKey, taskStatusGroups, useTaskStatusGrouping } from "./taskStatusGroups.ts";
+import { setTaskStatusGroupsDesignClient, useStandInRuns } from "./taskStatusGroupsPreview.ts";
 import { taskListLayout } from "./taskListLayout.ts";
 import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
@@ -105,6 +112,7 @@ interface TaskFormState {
 const AUDIENCE_LABELS: Record<TaskAudience, string> = { agent: "Workers", person: "Me" };
 const TASKS_OFFLINE_TEXT =
   "The environment with Tasks is not reachable right now. Tasks show when it connects.";
+const TABLE_CLASS = "w-full min-w-[920px] border-collapse text-left text-sm";
 const OFFLINE_NOTE_CLASS =
   "rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground";
 
@@ -375,10 +383,45 @@ export function TasksView(props: TasksViewProps) {
     [props.statuses, selectedTask, statusFilter],
   );
   // The last-run filter is applied here, to the rows the server returned.
+  // Design only (see taskStatusGroupsPreview.ts): sample tasks and stand-in run counts.
+  const standInRuns = useStandInRuns();
+  const firstEnvironmentId = props.projects[0]?.environmentId;
+  if (import.meta.env.DEV && firstEnvironmentId)
+    setTaskStatusGroupsDesignClient(props.getClient(firstEnvironmentId));
   const filteredTasks = useMemo(
-    () => optimisticTasks.filter((task) => matchesLastRunFilter(task, filters.lastRun)),
-    [filters.lastRun, optimisticTasks],
+    () =>
+      optimisticTasks
+        .map((task) => {
+          const prefix = Object.keys(standInRuns).find((key) => task.title.startsWith(key));
+          return prefix ? ({ ...task, ...standInRuns[prefix] } as ScopedTaskListItem) : task;
+        })
+        .filter((task) => matchesLastRunFilter(task, filters.lastRun)),
+    [filters.lastRun, optimisticTasks, standInRuns],
   );
+  const grouping = useTaskStatusGrouping();
+  const grouped = grouping.enabled;
+  const groups = useMemo(
+    () =>
+      taskStatusGroups({
+        tasks: filteredTasks,
+        statuses: props.statuses,
+        statusFilter: statusFilter === ALL_FILTER ? null : statusFilter,
+        order: grouping.order,
+        open: grouping.open,
+      }),
+    [filteredTasks, grouping.open, grouping.order, props.statuses, statusFilter],
+  );
+  // Design stand-in for the server's count per status: every page is loaded, so a group's
+  // count is its loaded rows. The build asks the server for counts and pages each group.
+  const groupCounts = useMemo(
+    () => Object.fromEntries(groups.map((group) => [group.key, group.tasks.length])),
+    [groups],
+  );
+  const { hasMore, loadingMore, onLoadMore } = props;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- design stand-in: loads the remaining pages so the counts are whole
+  useEffect(() => {
+    if (grouped && hasMore && !loadingMore) onLoadMore();
+  }, [grouped, hasMore, loadingMore, onLoadMore]);
   // The loaded rows, not the optimistic copy, which trails a page by a render.
   const { arrivals, settle: settleArrival } = useTaskArrivals(
     props.tasks.map(taskKey),
@@ -403,7 +446,12 @@ export function TasksView(props: TasksViewProps) {
       if (reorderInFlightRef.current || !props.canMutateEnvironment(task.environmentId)) return;
       const result = planVisibleTaskMove({
         tasks: optimisticTasks,
-        visibleTasks: filteredTasks,
+        // In a grouped list a task moves among its own group's tasks only.
+        visibleTasks: grouped
+          ? filteredTasks.filter(
+              (candidate) => statusGroupKey(candidate.status) === statusGroupKey(task.status),
+            )
+          : filteredTasks,
         task,
         directionOrTarget,
       });
@@ -441,13 +489,16 @@ export function TasksView(props: TasksViewProps) {
         reorderInFlightRef.current = false;
       }
     },
-    [filteredTasks, optimisticTasks, props],
+    [filteredTasks, grouped, optimisticTasks, props],
   );
 
   const dropOn = (task: ScopedTaskListItem) => {
     const dragged = optimisticTasks.find((candidate) => taskKey(candidate) === draggedTaskKey);
     setDraggedTaskKey(null);
-    if (dragged && taskKey(dragged) !== taskKey(task)) void persistVisibleMove(dragged, task);
+    if (!dragged || taskKey(dragged) === taskKey(task)) return;
+    // A task's status changes only through its status picker, never by a drop on another group.
+    if (grouped && statusGroupKey(dragged.status) !== statusGroupKey(task.status)) return;
+    void persistVisibleMove(dragged, task);
   };
   const reorderHandle = (task: ScopedTaskListItem) => (
     <TaskReorderHandle
@@ -821,6 +872,118 @@ export function TasksView(props: TasksViewProps) {
     }
   }, [form, props, selectedProject]);
 
+  const listEmpty = props.tasks.length === 0 || filteredTasks.length === 0;
+  const filtersNarrow =
+    props.tasks.length > 0 ||
+    projectFilter !== null ||
+    statusFilter !== ALL_FILTER ||
+    filters.tags.length > 0 ||
+    archiveFilter !== "active";
+  // Grouped, filters that match nothing still show every group, at 0. A list with no tasks
+  // at all keeps its own empty state.
+  const groupsWhenEmpty = props.status !== "loading" && props.status !== "offline" && filtersNarrow;
+  const renderCard = (task: ScopedTaskListItem) => (
+    <div
+      key={taskKey(task)}
+      className="grid"
+      data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
+      onAnimationEnd={(event) => {
+        if (event.animationName === "task-arrival-tint") settleArrival(taskKey(task));
+      }}
+    >
+      <div className="min-h-0 overflow-hidden">
+        <AgentTaskCard
+          task={task}
+          project={projectsByKey.get(taskProjectKey(task)) ?? null}
+          statuses={
+            statusOptions.includes(task.status)
+              ? statusOptions
+              : [...statusOptions, task.status].sort(compareStatuses)
+          }
+          canMutate={props.canMutateEnvironment(task.environmentId)}
+          dragged={draggedTaskKey === taskKey(task)}
+          reorderable={props.canMutateEnvironment(task.environmentId)}
+          onDragStart={() => setDraggedTaskKey(taskKey(task))}
+          onDragEnd={() => setDraggedTaskKey(null)}
+          onMove={(direction) => void persistVisibleMove(task, direction)}
+          onOpen={() => openTask(task)}
+          onStatusChange={(status) => void updateTaskInline(task, "status", { status })}
+          onDrop={() => dropOn(task)}
+        />
+      </div>
+    </div>
+  );
+  // Auto layout: Runs (w-px) is as narrow as its numbers, and Title (max-w-0) truncates
+  // and takes the width the other columns leave.
+  const tableHead = (
+    <thead className="border-b border-border text-muted-foreground">
+      <tr>
+        <th className="w-12 py-3 pr-2 font-medium">
+          <span className="sr-only">Order</span>
+        </th>
+        {showProjectColumn ? <ProjectIconHeader /> : null}
+        <th className="max-w-0 py-3 pr-4 font-medium">Title</th>
+        <th className="w-40 px-4 py-3 font-medium">Status</th>
+        <th className="w-56 px-4 py-3 font-medium">Tags</th>
+        <th className="w-px py-3 pl-4 text-right font-medium whitespace-nowrap">Runs</th>
+      </tr>
+    </thead>
+  );
+  const renderRow = (task: ScopedTaskListItem) => {
+    const taskProject = projectsByKey.get(taskProjectKey(task)) ?? null;
+    return (
+      <tr
+        key={taskKey(task)}
+        data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
+        onAnimationEnd={(event) => {
+          if (event.animationName === "task-arrival-tint") settleArrival(taskKey(task));
+        }}
+        className={`cursor-pointer border-b border-border transition-colors hover:bg-muted/20 ${
+          draggedTaskKey === taskKey(task) ? "opacity-50" : ""
+        }`}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          dropOn(task);
+        }}
+        onClick={() => openTask(task)}
+      >
+        <td className="py-3 pr-2 align-middle">{reorderHandle(task)}</td>
+        {showProjectColumn ? (
+          <ProjectIconCell project={taskProject?.favicon ?? null} name={task.projectName} />
+        ) : null}
+        <td className="max-w-0 py-4 pr-4 align-middle">
+          <button
+            type="button"
+            className="block max-w-full truncate text-left font-medium text-foreground hover:underline"
+            onClick={(event) => {
+              event.stopPropagation();
+              openTask(task);
+            }}
+          >
+            {task.title}
+          </button>
+          {taskMetadataLabel(task) ? (
+            <div className="truncate text-muted-foreground">{taskMetadataLabel(task)}</div>
+          ) : null}
+        </td>
+        <td className="px-4 py-4 align-middle whitespace-nowrap">
+          {task.status}
+          {task.archivedAt ? <span className="ml-2 text-muted-foreground">Archived</span> : null}
+        </td>
+        <td className="max-w-56 px-4 py-4 align-middle">
+          <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
+        </td>
+        <td className="py-4 pl-4 text-right align-middle whitespace-nowrap">
+          <TableRunCounts
+            groups={groupTaskRunCounts(task.runCounts)}
+            onSelect={(group) => openTask(task, group.status)}
+          />
+        </td>
+      </tr>
+    );
+  };
+
   const detailOuterClass = panel ? "flex w-full min-w-0 py-3" : "flex min-h-0 w-full flex-1 py-5";
   const detailInnerClass = panel
     ? "flex min-w-0 flex-1 flex-col gap-3"
@@ -905,6 +1068,8 @@ export function TasksView(props: TasksViewProps) {
                 onFiltersChange={onFiltersChange}
                 statusOptions={statusOptions}
                 tagOptions={tagOptions}
+                groupByStatus={grouped}
+                onGroupByStatusChange={grouping.setEnabled}
                 projectSelect={props.projectSelect}
                 projectChosen={projectFilter !== null}
                 onProjectReset={() => props.onProjectFilterReset?.()}
@@ -917,6 +1082,8 @@ export function TasksView(props: TasksViewProps) {
                   onFiltersChange={onFiltersChange}
                   statusOptions={statusOptions}
                   tagOptions={tagOptions}
+                  groupByStatus={grouped}
+                  onGroupByStatusChange={grouping.setEnabled}
                 />
               </>
             )}
@@ -1489,15 +1656,11 @@ export function TasksView(props: TasksViewProps) {
                     ))}
               </div>
 
-              {props.tasks.length === 0 || filteredTasks.length === 0 ? (
+              {listEmpty && (!grouped || !groupsWhenEmpty) ? (
                 // Blank while the list loads: it arrives within a moment.
                 props.status === "loading" ? null : props.status === "offline" ? (
                   <ListEmptyState title="Tasks unavailable" hint={TASKS_OFFLINE_TEXT} />
-                ) : props.tasks.length > 0 ||
-                  projectFilter !== null ||
-                  statusFilter !== ALL_FILTER ||
-                  filters.tags.length > 0 ||
-                  archiveFilter !== "active" ? (
+                ) : filtersNarrow ? (
                   <ListEmptyState title="No tasks match the current filters" />
                 ) : (
                   <ListEmptyState
@@ -1505,130 +1668,58 @@ export function TasksView(props: TasksViewProps) {
                     hint="Click + to add one, or ask any thread to plan the work for you."
                   />
                 )
-              ) : cards ? (
-                <div className="flex min-w-0 flex-col">
-                  {filteredTasks.map((task) => (
-                    <div
-                      key={taskKey(task)}
-                      className="grid"
-                      data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
-                      onAnimationEnd={(event) => {
-                        if (event.animationName === "task-arrival-tint")
-                          settleArrival(taskKey(task));
-                      }}
-                    >
-                      <div className="min-h-0 overflow-hidden">
-                        <AgentTaskCard
-                          task={task}
-                          project={projectsByKey.get(taskProjectKey(task)) ?? null}
-                          statuses={
-                            statusOptions.includes(task.status)
-                              ? statusOptions
-                              : [...statusOptions, task.status].sort(compareStatuses)
-                          }
-                          canMutate={props.canMutateEnvironment(task.environmentId)}
-                          dragged={draggedTaskKey === taskKey(task)}
-                          reorderable={props.canMutateEnvironment(task.environmentId)}
-                          onDragStart={() => setDraggedTaskKey(taskKey(task))}
-                          onDragEnd={() => setDraggedTaskKey(null)}
-                          onMove={(direction) => void persistVisibleMove(task, direction)}
-                          onOpen={() => openTask(task)}
-                          onStatusChange={(status) =>
-                            void updateTaskInline(task, "status", { status })
-                          }
-                          onDrop={() => dropOn(task)}
-                        />
-                      </div>
+              ) : grouped ? (
+                <TaskStatusGroupsProvider
+                  groups={groups}
+                  counts={groupCounts}
+                  onReorder={grouping.setOrder}
+                  overlayClassName={cards ? "mx-2 px-1" : "ms-0.5 me-2"}
+                  lineInset={cards ? 8 : 0}
+                >
+                  {cards ? (
+                    <div className="flex min-w-0 flex-col">
+                      {groups.map((group) => (
+                        <TaskStatusCardGroup
+                          key={group.key}
+                          group={group}
+                          count={groupCounts[group.key] ?? 0}
+                          onOpenChange={(open) => grouping.setOpen(group.key, open)}
+                        >
+                          {group.tasks.map(renderCard)}
+                        </TaskStatusCardGroup>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  ) : (
+                    <div className="min-w-0 overflow-x-auto">
+                      <table className={TABLE_CLASS}>
+                        {tableHead}
+                        {groups.map((group) => (
+                          <TaskStatusTableGroup
+                            key={group.key}
+                            group={group}
+                            count={groupCounts[group.key] ?? 0}
+                            columnCount={showProjectColumn ? 6 : 5}
+                            onOpenChange={(open) => grouping.setOpen(group.key, open)}
+                          >
+                            {group.tasks.map(renderRow)}
+                          </TaskStatusTableGroup>
+                        ))}
+                      </table>
+                    </div>
+                  )}
+                </TaskStatusGroupsProvider>
+              ) : cards ? (
+                <div className="flex min-w-0 flex-col">{filteredTasks.map(renderCard)}</div>
               ) : (
                 <div className="min-w-0 overflow-x-auto">
-                  {/* Auto layout: Runs (w-px) is as narrow as its numbers, and Title (max-w-0) truncates
-                  and takes the width the other columns leave. */}
-                  <table className="w-full min-w-[920px] border-collapse text-left text-sm">
-                    <thead className="border-b border-border text-muted-foreground">
-                      <tr>
-                        <th className="w-12 py-3 pr-2 font-medium">
-                          <span className="sr-only">Order</span>
-                        </th>
-                        {showProjectColumn ? <ProjectIconHeader /> : null}
-                        <th className="max-w-0 py-3 pr-4 font-medium">Title</th>
-                        <th className="w-40 px-4 py-3 font-medium">Status</th>
-                        <th className="w-56 px-4 py-3 font-medium">Tags</th>
-                        <th className="w-px py-3 pl-4 text-right font-medium whitespace-nowrap">
-                          Runs
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredTasks.map((task) => {
-                        const taskProject = projectsByKey.get(taskProjectKey(task)) ?? null;
-                        return (
-                          <tr
-                            key={taskKey(task)}
-                            data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
-                            onAnimationEnd={(event) => {
-                              if (event.animationName === "task-arrival-tint")
-                                settleArrival(taskKey(task));
-                            }}
-                            className={`cursor-pointer border-b border-border transition-colors hover:bg-muted/20 ${
-                              draggedTaskKey === taskKey(task) ? "opacity-50" : ""
-                            }`}
-                            onDragOver={(event) => event.preventDefault()}
-                            onDrop={(event) => {
-                              event.preventDefault();
-                              dropOn(task);
-                            }}
-                            onClick={() => openTask(task)}
-                          >
-                            <td className="py-3 pr-2 align-middle">{reorderHandle(task)}</td>
-                            {showProjectColumn ? (
-                              <ProjectIconCell
-                                project={taskProject?.favicon ?? null}
-                                name={task.projectName}
-                              />
-                            ) : null}
-                            <td className="max-w-0 py-4 pr-4 align-middle">
-                              <button
-                                type="button"
-                                className="block max-w-full truncate text-left font-medium text-foreground hover:underline"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  openTask(task);
-                                }}
-                              >
-                                {task.title}
-                              </button>
-                              {taskMetadataLabel(task) ? (
-                                <div className="truncate text-muted-foreground">
-                                  {taskMetadataLabel(task)}
-                                </div>
-                              ) : null}
-                            </td>
-                            <td className="px-4 py-4 align-middle whitespace-nowrap">
-                              {task.status}
-                              {task.archivedAt ? (
-                                <span className="ml-2 text-muted-foreground">Archived</span>
-                              ) : null}
-                            </td>
-                            <td className="max-w-56 px-4 py-4 align-middle">
-                              <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
-                            </td>
-                            <td className="py-4 pl-4 text-right align-middle whitespace-nowrap">
-                              <TableRunCounts
-                                groups={groupTaskRunCounts(task.runCounts)}
-                                onSelect={(group) => openTask(task, group.status)}
-                              />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
+                  <table className={TABLE_CLASS}>
+                    {tableHead}
+                    <tbody>{filteredTasks.map(renderRow)}</tbody>
                   </table>
                 </div>
               )}
-              {props.hasMore ? (
+              {/* Grouped, the list has no Load more: a group loads as it scrolls. */}
+              {props.hasMore && !grouped ? (
                 cards ? (
                   <div className="flex justify-center py-4">
                     <Button

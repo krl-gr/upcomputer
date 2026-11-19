@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../../apps/web/src/components/ui/select.tsx";
+import { Switch } from "../../../../apps/web/src/components/ui/switch.tsx";
 import {
   ALL_FILTER,
   ARCHIVE_OPTIONS,
@@ -30,6 +31,9 @@ interface TaskFilterSelectsProps {
   readonly onFiltersChange: (filters: TasksPageFilters) => void;
   readonly statusOptions: readonly string[];
   readonly tagOptions: readonly string[];
+  /** Groups the list by status. A view choice, not a filter: Reset and the button's number leave it out. */
+  readonly groupByStatus: boolean;
+  readonly onGroupByStatusChange: (groupByStatus: boolean) => void;
 }
 
 function Field(props: { readonly label: string; readonly children: ReactNode }) {
@@ -139,6 +143,22 @@ function TaskFilterSelects(props: TaskFilterSelectsProps & { readonly stacked: b
           </SelectPopup>
         </Select>,
       )}
+      <label
+        className={
+          stacked
+            ? "flex cursor-pointer items-center justify-between gap-3 text-sm text-foreground"
+            : "flex shrink-0 cursor-pointer items-center gap-2 text-sm whitespace-nowrap text-foreground"
+        }
+      >
+        {stacked ? "Group by status" : null}
+        <Switch
+          size="sm"
+          checked={props.groupByStatus}
+          onCheckedChange={props.onGroupByStatusChange}
+          data-group-by-status=""
+        />
+        {stacked ? null : "Group by status"}
+      </label>
     </>
   );
 }
