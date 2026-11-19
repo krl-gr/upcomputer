@@ -1575,6 +1575,22 @@ describe("resolveSidebarRouteReveal", () => {
     expect(resolve(hiddenKey)).toEqual({ pendingKey: hiddenKey, widensScope: true });
   });
 
+  it("keeps a scope picked later on the same route, though the thread's row never mounted", () => {
+    // A bot's chat is open: Threads lists no row for it, so its reveal stays pending.
+    const reveal = { observedKey: "environment-test:other", pendingKey: null };
+    const resolve = (keys: ReadonlySet<string> | null) =>
+      resolveSidebarRouteReveal({
+        reveal,
+        routeKey: hiddenKey,
+        isSearching: false,
+        scopedProjectKeys: keys,
+        delegatedUnderParent: new Set(),
+        findThread,
+      });
+    expect(resolve(null)).toEqual({ pendingKey: hiddenKey, widensScope: false });
+    expect(resolve(scopedProjectKeys)).toEqual({ pendingKey: hiddenKey, widensScope: false });
+  });
+
   it("holds a pending reveal without widening while searching", () => {
     expect(
       resolveSidebarRouteReveal({
