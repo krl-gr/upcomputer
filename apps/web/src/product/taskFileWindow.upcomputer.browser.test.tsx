@@ -67,6 +67,20 @@ vi.mock(import("~/state/filesystem"), async (original) => ({
   ...(await original()),
   useFilesystemReadAccess: () => ({ canReadFiles: true, isPending: false, error: null }),
 }));
+// A link with a folder opens as written once the host says the file is there.
+vi.mock(import("~/state/use-atom-query-runner"), async (original) => {
+  const actual = await original();
+  const { AsyncResult } = await import("effect/reactivity");
+  const { filesystemEnvironment } = await import("~/state/filesystem");
+  const fileExists = async () => AsyncResult.success({ entries: [{ kind: "file" }] });
+  return {
+    ...actual,
+    useAtomQueryRunner: ((family: unknown, ...rest: never[]) =>
+      family === filesystemEnvironment.getMetadata
+        ? fileExists
+        : (actual.useAtomQueryRunner as (...args: unknown[]) => unknown)(family, ...rest)) as never,
+  };
+});
 vi.mock(import("~/remoteOpen"), async (original) => ({
   ...(await original()),
   useRemoteOpenState: () => ({ mode: "local-exec" }) as never,
