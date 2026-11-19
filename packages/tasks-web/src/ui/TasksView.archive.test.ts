@@ -291,6 +291,8 @@ it("the detail moves the task to another project of its environment", async () =
     name: id,
     favicon: null,
     workspaceRoot: `/work/${id}`,
+    groupKey: `${environmentId}\0${id}`,
+    pickId: id,
   });
   await render({
     selected: true,
