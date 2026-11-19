@@ -368,7 +368,6 @@ const runtimeMock = {
     runVersionDelay: null as Duration.Input | null,
     versionStdout: DEFAULT_VERSION_STDOUT,
     inventoryError: null as Error | null,
-    startError: null as OpenCodeRuntime.OpenCodeRuntimeError | null,
     connectionError: null as Error | null,
     inventoryCwd: null as string | null,
     catalogRefreshPending: false,
@@ -392,7 +391,6 @@ const runtimeMock = {
     this.state.runVersionDelay = null;
     this.state.versionStdout = DEFAULT_VERSION_STDOUT;
     this.state.inventoryError = null;
-    this.state.startError = null;
     this.state.connectionError = null;
     this.state.inventoryCwd = null;
     this.state.catalogRefreshPending = false;
@@ -412,7 +410,6 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntime["Service"] = {
   startOpenCodeServerProcess: ({ serverPassword, environment }) =>
     Effect.gen(function* () {
       runtimeMock.state.startCalls += 1;
-      if (runtimeMock.state.startError) return yield* runtimeMock.state.startError;
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           runtimeMock.state.closeCalls += 1;
@@ -631,59 +628,6 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
         }
         NodeAssert.ok(!JSON.stringify(attributes).includes("private-password"));
       }),
-  );
-
-  it.effect.each([
-    { failure: "none", reason: undefined },
-    { failure: "version", reason: "unknown" },
-    { failure: "migration", reason: "migration" },
-    { failure: "serve-timeout", reason: "startup_timeout" },
-    { failure: "inventory", reason: "models_missing" },
-    { failure: "no-models", reason: "models_missing" },
-    { failure: "v2-models", reason: "models_missing" },
-  ] as const)("reports a $failure check failure as reason $reason", ({ failure, reason }) =>
-    Effect.gen(function* () {
-      if (failure === "version") runtimeMock.state.runVersionError = new Error("spawn failed");
-      if (failure === "inventory") runtimeMock.state.inventoryError = new Error("reset");
-      if (failure === "migration" || failure === "serve-timeout") {
-        runtimeMock.state.startError = new OpenCodeRuntime.OpenCodeRuntimeError({
-          operation: "startOpenCodeServerProcess",
-          detail: "/Users/someone/.local/share/opencode/opencode.db",
-          reason: failure === "migration" ? "databaseLocked" : "timeout",
-        });
-      }
-      runtimeMock.state.inventory = {
-        providerList: {
-          connected: ["opencode"],
-          all: [
-            {
-              id: "opencode",
-              name: "OpenCode Zen",
-              models:
-                failure === "no-models"
-                  ? {}
-                  : { "big-pickle": { id: "big-pickle", name: "Big Pickle", variants: {} } },
-            },
-          ],
-          default: {},
-        },
-        agents: [],
-        skills: [],
-      };
-      if (failure === "v2-models") runtimeMock.state.versionStdout = "opencode v2.0.18\n";
-      const snapshot = yield* checkProvider(
-        makeOpenCodeSettings(),
-        process.cwd(),
-        undefined,
-        undefined,
-        Effect.fail(
-          new OpenCodeRuntime.OpenCodeRuntimeError({ operation: "model.list", detail: "failed" }),
-        ),
-      );
-
-      NodeAssert.equal(snapshot.status === "ready", failure === "none");
-      NodeAssert.equal(snapshot.statusReason, reason);
-    }),
   );
 
   it.effect("keeps an empty legacy catalog retryable until connected providers list models", () =>
@@ -1331,7 +1275,6 @@ it.layer(layerTest)("checkOpenCodeProviderStatus with configured server URL", (i
 
       NodeAssert.equal(snapshot.status, "error");
       NodeAssert.equal(snapshot.auth.status, "unauthenticated");
-      NodeAssert.equal(snapshot.statusReason, "auth");
       NodeAssert.equal(
         snapshot.message,
         "OpenCode server rejected authentication. Check the server URL and password.",

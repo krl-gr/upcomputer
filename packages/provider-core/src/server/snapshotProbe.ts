@@ -10,6 +10,7 @@ import type {
   ServerProviderModel,
   ServerProviderUpdateRequiredModel,
   ServerProviderState,
+  ServerProviderStatusReason,
   ServerProviderUsageLimits,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -280,6 +281,7 @@ export function buildServerProvider(input: {
   skills?: ReadonlyArray<ServerProviderSkill>;
   probe: ProviderProbeResult;
   statusPending?: boolean;
+  statusReason?: ServerProviderStatusReason;
 }): ServerProviderDraft {
   const versionAdvisory = input.driver
     ? createProviderVersionAdvisory({
@@ -313,6 +315,7 @@ export function buildServerProvider(input: {
     checkedAt: input.checkedAt,
     ...(input.probe.message ? { message: input.probe.message } : {}),
     ...(input.statusPending ? { statusPending: true } : {}),
+    ...(input.statusReason ? { statusReason: input.statusReason } : {}),
     models: input.models,
     ...(input.updateRequiredModels?.length
       ? { updateRequiredModels: input.updateRequiredModels }
