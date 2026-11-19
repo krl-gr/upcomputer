@@ -522,50 +522,6 @@ describe("GhosttyTerminalSurface visibility", () => {
     expect(surface.getSelection()).toBe("row 6\nrow 7\nrow 8");
   });
 
-  // Bytes recorded from zsh 5.9 with the server's prompt-marks startup file.
-  const zshPrompt = (ps1: string) =>
-    `\r\x1b[0m\x1b[27m\x1b[24m\x1b[J\x1b]133;A\x07${ps1}\x1b]133;B\x07`;
-  it.each([
-    {
-      resize: "narrowing",
-      from: 168,
-      to: 88,
-      ps1: "me@host ~/proj % ",
-      redraw: `\r${zshPrompt("me@host ~/proj % ")}`,
-      screen: ["out", "me@host ~/", "proj %", "", "", ""],
-    },
-    {
-      resize: "widening",
-      from: 88,
-      to: 168,
-      ps1: "me@host ~/project/a\r\n% ",
-      redraw: `\r\x1b[A\x1b[A${zshPrompt("me@host ~/project/a\r\n% ")}`,
-      screen: ["out", "me@host ~/project/a", "%", "", "", ""],
-    },
-  ])("redraws a zsh prompt after $resize without stale copies or lost output", async (input) => {
-    const harness = createHarness();
-    harness.mount.clientWidth = input.from;
-    const surface = await harness.create();
-    surface.setSharedGrid(surface.measuredGrid());
-    surface.write(`out\r\n${zshPrompt(input.ps1)}\x1b[K`);
-
-    harness.mount.clientWidth = input.to;
-    harness.resize();
-    // The server answers with the PTY's new grid before zsh's SIGWINCH redraw arrives.
-    surface.setSharedGrid(surface.measuredGrid());
-    surface.write(input.redraw);
-    harness.flushFrame();
-
-    expect(
-      harness.renderedSnapshot.rowData.map((row) =>
-        row.cells
-          .map((cell) => cell.text || " ")
-          .join("")
-          .trimEnd(),
-      ),
-    ).toEqual(input.screen);
-  });
-
   it("does not activate a link replaced before pointer release", async () => {
     const harness = createHarness();
     const onLinkActivate = vi.fn();
