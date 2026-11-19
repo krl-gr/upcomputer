@@ -60,10 +60,9 @@ import {
   type TasksPageFilters,
 } from "./pageFilters.ts";
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
-import { TaskCard } from "./TaskCard.tsx";
+import { AgentTaskCard } from "./AgentTaskCard.tsx";
 import { TaskFilterRow, TaskFiltersButton } from "./TaskFilters.tsx";
 import { taskListLayout, type TaskListLayout } from "./taskListLayout.ts";
-import { isInboxRoot, type PlannerProject } from "../planner/ui/ProjectChip.tsx";
 import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { observeResize } from "../../../../apps/web/src/lib/observeResize.ts";
@@ -75,7 +74,7 @@ import { TagChipsField } from "./TagChipsField.tsx";
 import { tagSuggestions } from "./tagSuggestions.ts";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import { splitListInput, taskKey, taskMetadataLabel, type TasksWebProject } from "./shared.ts";
-import { pickerProjectFor, pickerProjects } from "./taskProjects.ts";
+import { pickerProjectFor, pickerProjects, sameProjectGroup } from "./taskProjects.ts";
 import { ListEmptyState } from "./ListEmptyState.tsx";
 import { useTaskArrivals } from "./taskArrivals.ts";
 import "./taskArrival.css";
@@ -379,26 +378,17 @@ export function TasksView(props: TasksViewProps) {
     () => new Map(props.projects.map((project) => [projectKey(project), project] as const)),
     [props.projects],
   );
-  // A card's project chip offers the projects of its task's environment.
-  const plannerProjectsByEnvironment = useMemo(() => {
-    const byEnvironment = new Map<EnvironmentId, PlannerProject[]>();
-    for (const project of props.projects) {
-      const list = byEnvironment.get(project.environmentId) ?? [];
-      list.push({
-        id: project.id,
-        name: project.name,
-        favicon: project.favicon,
-        inbox: isInboxRoot(project.workspaceRoot),
-        groupKey: project.groupKey,
-        pickId: project.pickId,
-      });
-      byEnvironment.set(project.environmentId, list);
-    }
-    return byEnvironment;
-  }, [props.projects]);
   const selectedTaskProject = selectedTask
     ? (projectsByKey.get(taskProjectKey(selectedTask)) ?? null)
     : null;
+  // The details' project picker lists the task's environment, one entry per sidebar group.
+  const selectedTaskEnvironmentProjects = useMemo(
+    () =>
+      pickerProjects(
+        props.projects.filter((project) => project.environmentId === selectedTask?.environmentId),
+      ),
+    [props.projects, selectedTask?.environmentId],
+  );
   const taskThreads = detailRuns;
   // Active runs come unfiltered; the history can be filtered by status.
   const latestRun = [...activeRuns, ...detailRuns].reduce<ScopedTaskAgentRun | undefined>(
@@ -1196,15 +1186,76 @@ export function TasksView(props: TasksViewProps) {
                       {selectedTask.id}
                     </button>
                   </DetailSidebarRow>
-                  <DetailSidebarRow label={gt("Project")}>
-                    <span className="flex min-w-0 items-center justify-end gap-2 text-foreground">
-                      {selectedTaskProject ? (
-                        <ProjectFavicon project={selectedTaskProject.favicon} className="size-4" />
-                      ) : null}
-                      <span className="truncate">
-                        {selectedTask.projectName ?? gt("No project")}
+                  <DetailSidebarRow
+                    label={gt("Project")}
+                    controlSelector={
+                      props.canMutateEnvironment(selectedTask.environmentId) ? "button" : undefined
+                    }
+                  >
+                    {props.canMutateEnvironment(selectedTask.environmentId) ? (
+                      <Select
+                        value={
+                          (selectedTaskProject
+                            ? pickerProjectFor(selectedTaskEnvironmentProjects, selectedTaskProject)
+                                ?.id
+                            : undefined) ??
+                          selectedTask.projectId ??
+                          ""
+                        }
+                        onValueChange={(projectId) => {
+                          if (
+                            !projectId ||
+                            sameProjectGroup(props.projects, projectId, selectedTask.projectId)
+                          ) {
+                            return;
+                          }
+                          void updateTaskInline(selectedTask, "project", {
+                            projectId: projectId as ProjectId,
+                          });
+                        }}
+                      >
+                        <SelectTrigger
+                          className={DETAIL_SELECT_TRIGGER_CLASS}
+                          variant="ghost"
+                          aria-label={gt("Task project")}
+                        >
+                          <SelectValue>
+                            <span className="flex min-w-0 items-center justify-end gap-2 text-foreground">
+                              {selectedTaskProject ? (
+                                <ProjectFavicon
+                                  project={selectedTaskProject.favicon}
+                                  className="size-4 shrink-0"
+                                />
+                              ) : null}
+                              <span className="truncate">
+                                {selectedTaskProject?.name ??
+                                  selectedTask.projectName ??
+                                  gt("No project")}
+                              </span>
+                            </span>
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectPopup>
+                          {selectedTaskEnvironmentProjects.map((project) => (
+                            <SelectItem key={project.id} value={project.id}>
+                              {project.name}
+                            </SelectItem>
+                          ))}
+                        </SelectPopup>
+                      </Select>
+                    ) : (
+                      <span className="flex min-w-0 items-center justify-end gap-2 text-foreground">
+                        {selectedTaskProject ? (
+                          <ProjectFavicon
+                            project={selectedTaskProject.favicon}
+                            className="size-4"
+                          />
+                        ) : null}
+                        <span className="truncate">
+                          {selectedTask.projectName ?? gt("No project")}
+                        </span>
                       </span>
-                    </span>
+                    )}
                   </DetailSidebarRow>
                   {/* A person task's tags stay hidden; the planner hands it to an agent. */}
                   {selectedTask.audience === "person" ? null : (
@@ -1579,9 +1630,9 @@ export function TasksView(props: TasksViewProps) {
                       }}
                     >
                       <div className="min-h-0 overflow-hidden">
-                        <TaskCard
+                        <AgentTaskCard
                           task={task}
-                          projects={plannerProjectsByEnvironment.get(task.environmentId) ?? []}
+                          project={projectsByKey.get(taskProjectKey(task)) ?? null}
                           statuses={
                             statusOptions.includes(task.status)
                               ? statusOptions
@@ -1594,15 +1645,9 @@ export function TasksView(props: TasksViewProps) {
                           onDragEnd={() => setDraggedTaskKey(null)}
                           onMove={(direction) => void persistVisibleMove(task, direction)}
                           onOpen={() => openTask(task)}
-                          onProjectChange={(projectId) =>
-                            void updateTaskInline(task, "project", {
-                              projectId: projectId as ProjectId,
-                            })
-                          }
                           onStatusChange={(status) =>
                             void updateTaskInline(task, "status", { status })
                           }
-                          onArchivedChange={(archived) => void setTaskArchived(task, archived)}
                           onDrop={() => dropOn(task)}
                         />
                       </div>

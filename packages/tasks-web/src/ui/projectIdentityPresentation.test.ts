@@ -7,7 +7,7 @@ const tasksSource = NodeFS.readFileSync(new URL("./TasksView.tsx", import.meta.u
 test("task project labels use the primary foreground tone", () => {
   NodeAssert.match(
     tasksSource,
-    /<DetailSidebarRow label=\{gt\("Project"\)\}>[\s\S]*?justify-end gap-2 text-foreground/,
+    /<DetailSidebarRow\s+label=\{gt\("Project"\)\}[\s\S]*?justify-end gap-2 text-foreground/,
   );
   NodeAssert.match(
     tasksSource,
