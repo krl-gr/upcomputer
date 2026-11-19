@@ -407,6 +407,24 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
     forbids: ['Command.make("up", {', 'resolveHostCliCommand("up", '],
   },
   { path: "scripts/lib/public-config.ts", requires: ["applyUpcomputerEnvAliases("] },
+  // Links that send users to a repository: stars, issues and help must reach ours.
+  {
+    path: "apps/web/src/components/GitHubStarPrompt.tsx",
+    requires: ['REPOSITORY = "krl-gr/upcomputer"'],
+    forbids: ["pingdotgg/t3code"],
+  },
+  {
+    path: "apps/web/src/lib/bootError.ts",
+    requires: ["https://github.com/krl-gr/upcomputer/issues/new"],
+    forbids: ["github.com/pingdotgg/t3code/issues"],
+  },
+  {
+    path: "packages/contracts/src/environmentHttp.ts",
+    requires: [
+      "https://github.com/krl-gr/upcomputer/blob/main/docs/user/t3-connect-troubleshooting.md",
+    ],
+    forbids: ["github.com/pingdotgg/t3code"],
+  },
   // Web shell.
   {
     path: "apps/web/src/branding.ts",
