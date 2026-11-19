@@ -70,6 +70,12 @@ literals against it and against the electron-builder config.
   `apps/desktop/src/app/DesktopEnvironment.ts` (window titles, about panel, menus), the sidebar and
   Welcome page (`SidebarChrome.tsx`, `WelcomePage.tsx`), `apps/web/index.html`,
   `apps/web/public/manifest.webmanifest`.
+- **Repository links:** the GitHub star prompt (`GitHubStarPrompt.tsx`), the startup error
+  page's issue and reinstall links (`apps/web/src/lib/bootError.ts`), the UpComputer Connect
+  troubleshooting link (`packages/contracts/src/environmentHttp.ts`) and that guide's "Report a
+  problem" link point at krl-gr/upcomputer or up.computer and are pinned by check-branding, as are
+  the hosted-app name in the policy and triage client text (app.up.computer). Upstream's copies point at pingdotgg/t3code, so a sync that takes their side
+  would have our users star and file issues on T3 Code.
 - **Artwork from V1:** `assets/prod/upcomputer-*` and `assets/dev/upcomputer-blueprint-*` (nightly
   uses the blueprint too), wired in `scripts/lib/brand-assets.ts`, `DesktopAssets.ts` and the dev
   launcher; `apps/web/public` favicons; the app icon replaces the T3 wordmark in `T3Wordmark.tsx`;
