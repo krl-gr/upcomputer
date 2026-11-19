@@ -31,6 +31,8 @@ const PROJECT: TasksViewProps["projects"][number] = {
     faviconPath: null,
     projectIcon: null,
   },
+  groupKey: "upcomputer",
+  pickId: ProjectId.make("project-ui-states"),
 };
 
 function task(index: number, title: string, status: string, tags: string[]) {
