@@ -34,6 +34,9 @@
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/modifiers": "^9.0.0",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@milkdown/core": "7.20.0",
     "@milkdown/ctx": "7.20.0",
     "@milkdown/plugin-block": "7.20.0",
