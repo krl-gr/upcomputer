@@ -58,10 +58,9 @@ import {
   type TasksPageFilters,
 } from "./pageFilters.ts";
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
-import { TaskCard } from "./TaskCard.tsx";
+import { AgentTaskCard } from "./AgentTaskCard.tsx";
 import { TaskFilterRow, TaskFiltersButton } from "./TaskFilters.tsx";
 import { taskListLayout } from "./taskListLayout.ts";
-import { isInboxRoot, type PlannerProject } from "../planner/ui/ProjectChip.tsx";
 import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { observeResize } from "../../../../apps/web/src/lib/observeResize.ts";
@@ -356,21 +355,6 @@ export function TasksView(props: TasksViewProps) {
     () => new Map(props.projects.map((project) => [projectKey(project), project] as const)),
     [props.projects],
   );
-  // A card's project chip offers the projects of its task's environment.
-  const plannerProjectsByEnvironment = useMemo(() => {
-    const byEnvironment = new Map<EnvironmentId, PlannerProject[]>();
-    for (const project of props.projects) {
-      const list = byEnvironment.get(project.environmentId) ?? [];
-      list.push({
-        id: project.id,
-        name: project.name,
-        favicon: project.favicon,
-        inbox: isInboxRoot(project.workspaceRoot),
-      });
-      byEnvironment.set(project.environmentId, list);
-    }
-    return byEnvironment;
-  }, [props.projects]);
   const selectedTaskProject = selectedTask
     ? (projectsByKey.get(taskProjectKey(selectedTask)) ?? null)
     : null;
@@ -1481,9 +1465,9 @@ export function TasksView(props: TasksViewProps) {
                       }}
                     >
                       <div className="min-h-0 overflow-hidden">
-                        <TaskCard
+                        <AgentTaskCard
                           task={task}
-                          projects={plannerProjectsByEnvironment.get(task.environmentId) ?? []}
+                          project={projectsByKey.get(taskProjectKey(task)) ?? null}
                           statuses={
                             statusOptions.includes(task.status)
                               ? statusOptions
@@ -1496,15 +1480,9 @@ export function TasksView(props: TasksViewProps) {
                           onDragEnd={() => setDraggedTaskKey(null)}
                           onMove={(direction) => void persistVisibleMove(task, direction)}
                           onOpen={() => openTask(task)}
-                          onProjectChange={(projectId) =>
-                            void updateTaskInline(task, "project", {
-                              projectId: projectId as ProjectId,
-                            })
-                          }
                           onStatusChange={(status) =>
                             void updateTaskInline(task, "status", { status })
                           }
-                          onArchivedChange={(archived) => void setTaskArchived(task, archived)}
                           onDrop={() => dropOn(task)}
                         />
                       </div>
