@@ -262,6 +262,55 @@ it("tasks-header", async () => {
   );
 });
 
+/**
+ * The wide planner's list column with the sidebar collapsed, as PlannerLayout sizes it at the
+ * default list width: its least width, which clears the sidebar toggle and, on macOS, the traffic
+ * lights (`--workspace-controls-left`), and keeps 324px of header.
+ */
+function CollapsedListColumn(props: {
+  readonly macos: boolean;
+  readonly kind: "task" | "routine";
+}) {
+  return (
+    <SidebarProvider
+      className="min-h-0"
+      defaultOpen={false}
+      style={props.macos ? ({ "--workspace-controls-left": "90px" } as CSSProperties) : undefined}
+    >
+      <div
+        className="-mx-(--sidebar-content-inset) -my-1 flex h-28 flex-col overflow-hidden border border-border bg-background"
+        // The column has no border of its own: the frame's sits outside its width.
+        style={{
+          boxSizing: "content-box",
+          width:
+            "max(420px, calc(var(--workspace-titlebar-content-left) + var(--workspace-gutter-end) + 324px))",
+        }}
+      >
+        <PlannerListHeader frame="wide" kind={props.kind} />
+      </div>
+    </SidebarProvider>
+  );
+}
+
+it("tasks-header-planner-list", async () => {
+  const column = (macos: boolean) =>
+    (["task", "routine"] as const).map((kind): UiState => ({
+      name: `Me · ${kind === "task" ? "Tasks" : "Routines"} (planner)`,
+      render: () => <CollapsedListColumn macos={macos} kind={kind} />,
+    }));
+  await captureUiStateSheet(
+    "tasks-header-planner-list",
+    [
+      {
+        title: "Desktop, macOS, sidebar collapsed, list at its default width (474px)",
+        states: column(true),
+      },
+      { title: "Web, sidebar collapsed, list at its least width (420px)", states: column(false) },
+    ],
+    { cellWidth: 480 },
+  );
+});
+
 // A sheet of its own: one sheet with every width grows too tall to capture whole.
 it("tasks-header-phone", async () => {
   await captureUiStateSheet(
