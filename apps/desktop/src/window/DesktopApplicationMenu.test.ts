@@ -207,6 +207,50 @@ describe("DesktopApplicationMenu", () => {
     }),
   );
 
+  it.effect("leaves full screen to macOS and toggles the sidebar on every platform", () =>
+    Effect.gen(function* () {
+      for (const platform of ["darwin", "linux", "win32"] as const) {
+        const selectedAction = yield* Deferred.make<string>();
+        const applicationMenuTemplate =
+          yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+        yield* configureMenu(selectedAction, applicationMenuTemplate, { platform });
+
+        const template = yield* Deferred.await(applicationMenuTemplate);
+        const viewMenu = template.find((item) => item.label === "View");
+        if (!Array.isArray(viewMenu?.submenu)) {
+          throw new Error("Expected View menu submenu to be an array.");
+        }
+        assert.lengthOf(
+          viewMenu.submenu.filter((item) => item.role === "togglefullscreen"),
+          platform === "darwin" ? 0 : 1,
+          platform,
+        );
+
+        const toggleSidebar = viewMenu.submenu.find((item) => item.label === "Toggle Sidebar");
+        if (typeof toggleSidebar?.click !== "function") {
+          throw new Error("Expected Toggle Sidebar menu item to have a click handler.");
+        }
+        // The renderer already handles the keybinding itself.
+        toggleSidebar.click(
+          {} as Electron.MenuItem,
+          {} as Electron.BrowserWindow,
+          {
+            triggeredByAccelerator: true,
+          } as unknown as KeyboardEvent,
+        );
+        assert.isFalse(yield* Deferred.isDone(selectedAction), platform);
+        toggleSidebar.click(
+          {} as Electron.MenuItem,
+          {} as Electron.BrowserWindow,
+          {
+            triggeredByAccelerator: false,
+          } as unknown as KeyboardEvent,
+        );
+        assert.equal(yield* Deferred.await(selectedAction), "sidebar.toggle", platform);
+      }
+    }),
+  );
+
   it.effect("never binds Cmd/Ctrl+W to closing the window", () =>
     Effect.gen(function* () {
       for (const platform of ["darwin", "linux", "win32"] as const) {
