@@ -65,7 +65,12 @@ import {
   TaskStatusGroupsProvider,
   TaskStatusTableGroup,
 } from "./TaskStatusGroups.tsx";
-import { statusGroupKey, taskStatusGroups, useTaskStatusGrouping } from "./taskStatusGroups.ts";
+import {
+  mergedGroupOrder,
+  statusGroupKey,
+  taskStatusGroups,
+  useTaskStatusGrouping,
+} from "./taskStatusGroups.ts";
 import { setTaskStatusGroupsDesignClient, useStandInRuns } from "./taskStatusGroupsPreview.ts";
 import { taskListLayout } from "./taskListLayout.ts";
 import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";
@@ -400,7 +405,7 @@ export function TasksView(props: TasksViewProps) {
   );
   const grouping = useTaskStatusGrouping();
   const grouped = grouping.enabled;
-  const groups = useMemo(
+  const { groups, order: groupOrder } = useMemo(
     () =>
       taskStatusGroups({
         tasks: filteredTasks,
@@ -438,7 +443,10 @@ export function TasksView(props: TasksViewProps) {
       ].sort((left, right) => left.localeCompare(right)),
     [filters.tags, props.tasks, triggerTags],
   );
+  // Hide what the filter already says: the project with one project chosen, and the
+  // status in a list grouped by status (a card keeps its status select, which changes it).
   const showProjectColumn = projectFilter === null;
+  const showStatusColumn = !grouping.enabled;
   const environmentCount = new Set(props.tasks.map(({ environmentId }) => environmentId)).size;
 
   const persistVisibleMove = useCallback(
@@ -879,9 +887,6 @@ export function TasksView(props: TasksViewProps) {
     statusFilter !== ALL_FILTER ||
     filters.tags.length > 0 ||
     archiveFilter !== "active";
-  // Grouped, filters that match nothing still show every group, at 0. A list with no tasks
-  // at all keeps its own empty state.
-  const groupsWhenEmpty = props.status !== "loading" && props.status !== "offline" && filtersNarrow;
   const renderCard = (task: ScopedTaskListItem) => (
     <div
       key={taskKey(task)}
@@ -895,6 +900,7 @@ export function TasksView(props: TasksViewProps) {
         <AgentTaskCard
           task={task}
           project={projectsByKey.get(taskProjectKey(task)) ?? null}
+          showProject={showProjectColumn}
           statuses={
             statusOptions.includes(task.status)
               ? statusOptions
@@ -923,7 +929,7 @@ export function TasksView(props: TasksViewProps) {
         </th>
         {showProjectColumn ? <ProjectIconHeader /> : null}
         <th className="max-w-0 py-3 pr-4 font-medium">Title</th>
-        <th className="w-40 px-4 py-3 font-medium">Status</th>
+        {showStatusColumn ? <th className="w-40 px-4 py-3 font-medium">Status</th> : null}
         <th className="w-56 px-4 py-3 font-medium">Tags</th>
         <th className="w-px py-3 pl-4 text-right font-medium whitespace-nowrap">Runs</th>
       </tr>
@@ -963,14 +969,21 @@ export function TasksView(props: TasksViewProps) {
           >
             {task.title}
           </button>
-          {taskMetadataLabel(task) ? (
-            <div className="truncate text-muted-foreground">{taskMetadataLabel(task)}</div>
+          {taskMetadataLabel(task) || (!showStatusColumn && task.archivedAt) ? (
+            <div className="truncate text-muted-foreground">
+              {/* Without the Status column, "Archived" moves under the title, as on a card. */}
+              {[!showStatusColumn && task.archivedAt ? "Archived" : null, taskMetadataLabel(task)]
+                .filter(Boolean)
+                .join(" · ")}
+            </div>
           ) : null}
         </td>
-        <td className="px-4 py-4 align-middle whitespace-nowrap">
-          {task.status}
-          {task.archivedAt ? <span className="ml-2 text-muted-foreground">Archived</span> : null}
-        </td>
+        {showStatusColumn ? (
+          <td className="px-4 py-4 align-middle whitespace-nowrap">
+            {task.status}
+            {task.archivedAt ? <span className="ml-2 text-muted-foreground">Archived</span> : null}
+          </td>
+        ) : null}
         <td className="max-w-56 px-4 py-4 align-middle">
           <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
         </td>
@@ -1656,7 +1669,7 @@ export function TasksView(props: TasksViewProps) {
                     ))}
               </div>
 
-              {listEmpty && (!grouped || !groupsWhenEmpty) ? (
+              {listEmpty ? (
                 // Blank while the list loads: it arrives within a moment.
                 props.status === "loading" ? null : props.status === "offline" ? (
                   <ListEmptyState title="Tasks unavailable" hint={TASKS_OFFLINE_TEXT} />
@@ -1672,7 +1685,9 @@ export function TasksView(props: TasksViewProps) {
                 <TaskStatusGroupsProvider
                   groups={groups}
                   counts={groupCounts}
-                  onReorder={grouping.setOrder}
+                  onReorder={(shown, moved) =>
+                    grouping.setOrder(mergedGroupOrder(groupOrder, shown, moved))
+                  }
                   overlayClassName={cards ? "mx-2 px-1" : "ms-0.5 me-2"}
                   lineInset={cards ? 8 : 0}
                 >
@@ -1690,7 +1705,8 @@ export function TasksView(props: TasksViewProps) {
                       ))}
                     </div>
                   ) : (
-                    <div className="min-w-0 overflow-x-auto">
+                    // No scroller of its own here: a group's header sticks to the page's.
+                    <div className="min-w-0">
                       <table className={TABLE_CLASS}>
                         {tableHead}
                         {groups.map((group) => (
@@ -1698,7 +1714,7 @@ export function TasksView(props: TasksViewProps) {
                             key={group.key}
                             group={group}
                             count={groupCounts[group.key] ?? 0}
-                            columnCount={showProjectColumn ? 6 : 5}
+                            columnCount={showProjectColumn ? 5 : 4}
                             onOpenChange={(open) => grouping.setOpen(group.key, open)}
                           >
                             {group.tasks.map(renderRow)}

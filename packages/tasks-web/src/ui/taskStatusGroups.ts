@@ -50,9 +50,11 @@ export interface TaskStatusGroup<T> {
 }
 
 /**
- * One group per status, empty ones included: the standard statuses in the
- * default order, then any other status in the data by name, all re-sorted by
- * the user's own order. A status filter leaves only its group.
+ * One group per status that has tasks: the standard statuses in the default
+ * order, then any other status in the data by name, all re-sorted by the
+ * user's own order. A status without tasks has no group, but keeps its place
+ * in `order`, so its group comes back where it was. A status filter leaves
+ * only its group.
  */
 export function taskStatusGroups<T extends { readonly status: string }>(input: {
   readonly tasks: readonly T[];
@@ -60,7 +62,7 @@ export function taskStatusGroups<T extends { readonly status: string }>(input: {
   readonly statusFilter: string | null;
   readonly order: readonly string[];
   readonly open: Readonly<Record<string, boolean>>;
-}): readonly TaskStatusGroup<T>[] {
+}): { readonly groups: readonly TaskStatusGroup<T>[]; readonly order: readonly string[] } {
   const titles = new Map<string, string>(
     DEFAULT_STATUS_GROUP_ORDER.map((status) => [statusGroupKey(status), status]),
   );
@@ -80,21 +82,44 @@ export function taskStatusGroups<T extends { readonly status: string }>(input: {
     else byKey.set(key, [task]);
   }
 
+  // Every status ever ordered or known now, so a hidden group's place survives a reorder.
   const defaultKeys = [...titles.keys()];
-  const place = (key: string) => {
-    const index = input.order.indexOf(key);
-    return index === -1 ? input.order.length + defaultKeys.indexOf(key) : index;
-  };
+  const order = [...input.order, ...defaultKeys.filter((key) => !input.order.includes(key))];
   const filterKey = input.statusFilter === null ? null : statusGroupKey(input.statusFilter);
-  return defaultKeys
-    .filter((key) => filterKey === null || key === filterKey)
-    .sort((left, right) => place(left) - place(right))
-    .map((key) => ({
-      key,
-      title: titles.get(key) ?? key,
-      tasks: byKey.get(key) ?? [],
-      open: input.open[key] ?? !START_COLLAPSED.has(key),
-    }));
+  return {
+    order,
+    groups: order
+      .filter((key) => (filterKey === null || key === filterKey) && byKey.has(key))
+      .map((key) => ({
+        key,
+        title: titles.get(key) ?? key,
+        tasks: byKey.get(key) ?? [],
+        open: input.open[key] ?? !START_COLLAPSED.has(key),
+      })),
+  };
+}
+
+/**
+ * The full order after one shown group moved: `moved` goes right before the
+ * shown group that now follows it, or right after the one before it. Groups
+ * that are not shown keep their places.
+ */
+export function mergedGroupOrder(
+  order: readonly string[],
+  shown: readonly string[],
+  moved: string,
+): readonly string[] {
+  const index = shown.indexOf(moved);
+  const rest = order.filter((key) => key !== moved);
+  const next = shown[index + 1];
+  const previous = shown[index - 1];
+  const at =
+    next !== undefined
+      ? rest.indexOf(next)
+      : previous !== undefined
+        ? rest.indexOf(previous) + 1
+        : rest.length;
+  return [...rest.slice(0, at), moved, ...rest.slice(at)];
 }
 
 /**

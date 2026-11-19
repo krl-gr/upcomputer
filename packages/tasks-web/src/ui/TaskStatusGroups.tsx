@@ -74,7 +74,8 @@ function scrollerBounds(node: HTMLElement | null): { readonly top: number; reado
 export function TaskStatusGroupsProvider(props: {
   readonly groups: readonly TaskStatusGroup<unknown>[];
   readonly counts: Readonly<Record<string, number>>;
-  readonly onReorder: (keys: readonly string[]) => void;
+  /** The shown groups in their new order, and the group that moved. */
+  readonly onReorder: (keys: readonly string[], moved: string) => void;
   /** The dragged header's side insets, to match the layout it is lifted from. */
   readonly overlayClassName?: string;
   /** How far the drop line stays in from the group's sides: the cards' own inset from the list. */
@@ -114,7 +115,7 @@ export function TaskStatusGroupsProvider(props: {
   );
   const reorder = (key: string, index: number) => {
     const next = movedGroupOrder(keys, key, index);
-    if (next !== keys) props.onReorder(next);
+    if (next !== keys) props.onReorder(next, key);
   };
   const endDrag = () => {
     setActiveKey(null);
@@ -128,7 +129,7 @@ export function TaskStatusGroupsProvider(props: {
       move: (key, direction) => {
         const from = keys.indexOf(key);
         const next = movedGroupOrder(keys, key, direction === "up" ? from - 1 : from + 2);
-        if (next !== keys) props.onReorder(next);
+        if (next !== keys) props.onReorder(next, key);
       },
     }),
     [activeKey, keys, props],
@@ -261,6 +262,12 @@ function GroupHeader(props: {
   );
 }
 
+/**
+ * The current group's header stays at the top of the list while its tasks
+ * scroll under it, on the page's own background.
+ */
+const STICKY_HEADER_CLASS = "sticky top-0 z-10 bg-background";
+
 /** A group in the card list. Its header lines up with the cards' content on both sides. */
 export function TaskStatusCardGroup(props: {
   readonly group: TaskStatusGroup<unknown>;
@@ -282,14 +289,12 @@ export function TaskStatusCardGroup(props: {
           group={group}
           count={props.count}
           onOpenChange={props.onOpenChange}
-          className="px-3"
+          className={cn("px-3", STICKY_HEADER_CLASS)}
         />
         <CollapsiblePanel>
-          {group.tasks.length > 0 ? (
-            <div className={cn("flex min-w-0 flex-col", SIDEBAR_SECTION_HEADER_GAP)}>
-              {props.children}
-            </div>
-          ) : null}
+          <div className={cn("flex min-w-0 flex-col", SIDEBAR_SECTION_HEADER_GAP)}>
+            {props.children}
+          </div>
         </CollapsiblePanel>
       </Collapsible>
     </div>
@@ -314,7 +319,11 @@ export function TaskStatusTableGroup(props: {
       data-task-status-group={group.key}
     >
       <tr>
-        <td colSpan={props.columnCount} className={cn("px-0 pb-1", SIDEBAR_SECTION_GAP)}>
+        {/* A sticky cell holds to the table, so the next group's header slides over this one. */}
+        <td
+          colSpan={props.columnCount}
+          className={cn("px-0 pb-1", SIDEBAR_SECTION_GAP, STICKY_HEADER_CLASS)}
+        >
           <GroupHeader
             group={group}
             count={props.count}
