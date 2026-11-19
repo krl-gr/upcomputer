@@ -18,6 +18,8 @@ const project = (
   id: name,
   name,
   inbox,
+  groupKey: name,
+  pickId: name,
   favicon: {
     environmentId: "env" as ProjectFaviconProject["environmentId"],
     workspaceRoot: `/work/${name}`,

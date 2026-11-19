@@ -13,6 +13,10 @@ export interface TasksWebProject {
     | null
     | undefined;
   readonly favicon: ProjectFaviconProject;
+  /** The sidebar project group within this environment; see `taskProjectsOf`. */
+  readonly groupKey: string;
+  /** The group member a project picker offers. */
+  readonly pickId: ProjectId;
 }
 
 /**

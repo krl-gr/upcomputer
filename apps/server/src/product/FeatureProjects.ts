@@ -35,6 +35,18 @@ export const makeFeatureProjects = Effect.gen(function* () {
         return project;
       },
     ),
+    /** Points a project at `workspaceRoot`, creating the folder; its id, threads and tasks stay. */
+    moveProject: Effect.fn("FeatureProjects.moveProject")(function* (input: {
+      readonly projectId: ProjectId;
+      readonly workspaceRoot: string;
+    }) {
+      yield* fileSystem.makeDirectory(input.workspaceRoot, { recursive: true });
+      return yield* projects.update({
+        commandId: CommandId.make(yield* crypto.uuidV4()),
+        projectId: input.projectId,
+        workspaceRoot: input.workspaceRoot,
+      });
+    }),
   };
 });
 
