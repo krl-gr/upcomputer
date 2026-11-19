@@ -50,7 +50,7 @@ const SURVEY: UserSurvey = {
         "Bots in video calls",
         "Document editing",
         "Collaborative work",
-        "Other",
+        "Write my own",
       ],
       hasOpenChoice: true,
     },
@@ -203,7 +203,7 @@ const issues = (details: string): SurveyDraft => ({
 });
 const FILLED: SurveyDraft = {
   ...issues("The sidebar flickers when a thread finishes."),
-  "q-missing": { ...EMPTY_DRAFT_ANSWER, picked: [0, 2, 7], otherText: "Calendar sync" },
+  "q-missing": { ...EMPTY_DRAFT_ANSWER, picked: [0, 3, 8], otherText: "Calendar sync" },
   "q-else": { ...EMPTY_DRAFT_ANSWER, text: "demo@example.com" },
 };
 
@@ -273,10 +273,10 @@ it("user-survey", async () => {
           form("Something's off, step 1 of 3: the details", issues(""), 0, EDITING),
           form("Something's off, step 2 of 3: Skip until a chip is picked", issues(""), 1, EDITING),
           form(
-            "Something's off, step 2 of 3: chips and Other with its text area",
+            "Something's off, step 2 of 3: chips and Write my own with its text area",
             {
               ...issues("The sidebar flickers when a thread finishes."),
-              "q-missing": { ...EMPTY_DRAFT_ANSWER, picked: [2, 7], otherText: "Calendar sync" },
+              "q-missing": { ...EMPTY_DRAFT_ANSWER, picked: [3, 8], otherText: "Calendar sync" },
             },
             1,
             EDITING,

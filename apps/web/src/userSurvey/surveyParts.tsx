@@ -1,6 +1,6 @@
 import type { UserSurvey, UserSurveyAnswer, UserSurveyQuestion } from "@t3tools/contracts";
 import { cva, type VariantProps } from "class-variance-authority";
-import { CheckIcon, PlusIcon } from "lucide-react";
+import { CheckIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { type ComponentProps, type ReactNode, useState } from "react";
 
 import { APP_BASE_NAME } from "../branding";
@@ -124,12 +124,15 @@ export function SurveyChip({
   size,
   picked,
   multiple,
+  open = false,
   children,
   ...props
 }: Omit<ComponentProps<"button">, "className"> & {
   readonly size: SurveyChipSize;
   readonly picked: boolean;
   readonly multiple: boolean;
+  /** The choice that takes the user's own words. */
+  readonly open?: boolean;
 }) {
   return (
     <button
@@ -140,12 +143,12 @@ export function SurveyChip({
       className={chipVariants({ size, picked })}
       {...props}
     >
-      {multiple ? (
-        picked ? (
-          <CheckIcon aria-hidden strokeWidth={2.5} className="-ml-0.5" />
-        ) : (
-          <PlusIcon aria-hidden className="-ml-0.5 opacity-55" />
-        )
+      {multiple && picked ? (
+        <CheckIcon aria-hidden strokeWidth={2.5} className="-ml-0.5" />
+      ) : open ? (
+        <PencilIcon aria-hidden className="-ml-0.5 opacity-55" />
+      ) : multiple ? (
+        <PlusIcon aria-hidden className="-ml-0.5 opacity-55" />
       ) : null}
       <span className="truncate">{children}</span>
     </button>
@@ -252,6 +255,7 @@ function ChoiceChips({
               size={size}
               multiple={multiple}
               picked={picked}
+              open={isOpenChoice(question, index)}
               onClick={() => onChange(pickChoice(question, answer, index, !picked))}
             >
               {choice}
@@ -266,7 +270,7 @@ function ChoiceChips({
               size={size}
               aria-label={question.choices.at(-1)}
               lines={3}
-              placeholder="Tell us what"
+              placeholder="Tell us in a few words"
               autoFocus
               value={answer.otherText}
               onChange={(event) => onChange({ ...answer, otherText: event.target.value })}
