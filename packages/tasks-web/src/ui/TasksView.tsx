@@ -18,7 +18,7 @@ import {
 } from "@t3tools/tasks-contracts/v1";
 import { taskRunPresentation, groupTaskRunCounts, runSearchStatus } from "./taskRunPresentation.ts";
 import type { ScopedTaskListItem } from "../state/taskPages.ts";
-import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 
 import type { TasksWebRpcClient } from "../rpc/index.ts";
 import type { ScopedTask, ScopedTaskAgent, ScopedTaskAgentRun } from "../state/index.ts";
@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from "../../../../apps/web/src/components/ui/select.tsx";
 import { ProjectFavicon } from "../../../../apps/web/src/components/ProjectFavicon.tsx";
-import ChatMarkdown from "../../../../apps/web/src/components/ChatMarkdown.tsx";
+import { TaskOutput } from "./TaskOutput.tsx";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
 import { TaskThreadLink } from "./TaskThreadLink.tsx";
 import { getTaskRunAgentPresentation } from "./agentModelOptions.ts";
@@ -166,6 +166,8 @@ export interface TasksViewProps {
   readonly onOpenInPlanner?: (environmentId: EnvironmentId, taskId: string) => void;
   /** `panel` fits a right-panel surface: cards, filters behind a button, stacked details. */
   readonly layout?: "page" | "panel";
+  /** The thread beside a right-panel surface, whose panel opens the output's file links. */
+  readonly filePanelRef?: ScopedThreadRef;
 }
 
 function emptyForm(project?: TasksWebProject): TaskFormState {
@@ -981,11 +983,11 @@ export function TasksView(props: TasksViewProps) {
                   title="Output"
                   defaultOpen
                 >
-                  <ChatMarkdown
+                  <TaskOutput
                     text={selectedTask.output ?? ""}
+                    environmentId={selectedTask.environmentId}
                     cwd={selectedTaskProject?.workspaceRoot}
-                    className="px-3 py-2 text-lg leading-8 text-foreground"
-                    lineBreaks
+                    filePanelRef={props.filePanelRef}
                   />
                 </DetailSidebarSection>
               ) : null}

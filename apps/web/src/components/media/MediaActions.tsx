@@ -58,7 +58,9 @@ function canReadHostMedia(environmentId: EnvironmentId | null): boolean {
 export function useMediaActions(source: MediaActionSource) {
   const hostEnvironmentId =
     source.asset &&
-    (source.asset.resource._tag === "workspace-file" || source.asset.resource._tag === "media-file")
+    (source.asset.resource._tag === "workspace-file" ||
+      source.asset.resource._tag === "media-file" ||
+      source.asset.resource._tag === "draft-workspace-file")
       ? source.asset.environmentId
       : null;
   const fileSession = useEnvironmentQuery(

@@ -322,6 +322,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
         | "attachment"
         | "workspace-file"
         | "media-file"
+        | "draft-workspace-file"
         | typeof SOURCE_CONTROL_MEDIA_ASSET
         | "tool-output-image";
     }
@@ -362,7 +363,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     return url === null ? null : url + (props.srcFragment ?? "");
   };
   const path =
-    resource._tag === "media-file"
+    resource._tag === "media-file" || resource._tag === "draft-workspace-file"
       ? resource.path
       : resource._tag === "workspace-file" && props.workspaceRoot
         ? `${props.workspaceRoot.replace(/[\\/]+$/, "")}/${resource.path}`

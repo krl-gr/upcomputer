@@ -109,10 +109,19 @@ describe("resolveMediaSource", () => {
       });
     });
 
-    it("cannot be loaded without a thread to mint through", () => {
+    it("cannot be loaded without a thread or a workspace to mint through", () => {
       expect(resolveMediaSource("/tmp/clip.mp4", { threadId: undefined })).toMatchObject({
         kind: "video",
         access: "unavailable",
+      });
+    });
+
+    it("loads through the workspace when there is no thread", () => {
+      expect(
+        resolveMediaSource("/elsewhere/shot.png", { threadId: undefined, workspaceRoot: "/repo" }),
+      ).toMatchObject({
+        access: "environment",
+        resource: { _tag: "draft-workspace-file", cwd: "/repo", path: "/elsewhere/shot.png" },
       });
     });
   });

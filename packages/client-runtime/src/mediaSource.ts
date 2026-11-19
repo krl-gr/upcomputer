@@ -20,7 +20,23 @@ import {
   type MediaReference,
 } from "./mediaReference.ts";
 
-export type MediaSourceResource = Extract<AssetResource, { readonly _tag: "media-file" }>;
+export type MediaSourceResource = Extract<
+  AssetResource,
+  { readonly _tag: "media-file" | "draft-workspace-file" }
+>;
+
+/**
+ * A host file that markdown shows, asked for through its thread or, for markdown with no thread
+ * (a task's output), through the workspace it was written for.
+ */
+export function markdownFileResource(
+  threadId: ThreadId | undefined,
+  workspaceRoot: string | null | undefined,
+  path: string,
+): MediaSourceResource | null {
+  if (threadId !== undefined) return { _tag: "media-file", threadId, path };
+  return workspaceRoot ? { _tag: "draft-workspace-file", cwd: workspaceRoot, path } : null;
+}
 
 export type ResolvedMediaSource = {
   readonly kind: "image" | "video";
@@ -43,6 +59,7 @@ export type ResolvedMediaSource = {
 );
 
 export interface ResolveMediaSourceInput {
+  /** Without a thread, files load through `workspaceRoot`. */
   readonly threadId: ThreadId | undefined;
   readonly workspaceRoot?: string | null | undefined;
   readonly resolvedFilePath?: string | undefined;
@@ -97,10 +114,7 @@ export function resolveMediaSource(
   if (classified._tag === "Direct") {
     return { ...common, access: "direct", uri: classified.uri };
   }
-  if (input.threadId === undefined) return { ...common, access: "unavailable" };
-  return {
-    ...common,
-    access: "environment",
-    resource: { _tag: "media-file", threadId: input.threadId, path },
-  };
+  const resource = markdownFileResource(input.threadId, input.workspaceRoot, path);
+  if (resource === null) return { ...common, access: "unavailable" };
+  return { ...common, access: "environment", resource };
 }
