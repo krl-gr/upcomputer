@@ -79,6 +79,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as NativeTelemetryClient from "../resourceTelemetry/NativeTelemetryClient.ts";
 import { terminalOutputStream } from "./OutputProtocol.ts";
+import { makeZshPromptMarks } from "./zshPromptMarks.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 
 export {
@@ -1599,6 +1600,8 @@ interface TerminalManagerOptions {
   env?: NodeJS.ProcessEnv;
   managedBinaryCacheDir?: string;
   managedBinaryToolsDir?: string;
+  /** Where zsh finds the startup file that adds prompt marks; unset spawns zsh untouched. */
+  zshPromptMarksDir?: string;
   subprocessInspector?: TerminalSubprocessInspector;
   processTable?: Effect.Effect<
     ReadonlyArray<ResourceMonitorProcessTableEntry>,
@@ -1671,7 +1674,8 @@ export const resolveProviderInstanceTerminalEnvironment = Effect.fn(
 export const make = Effect.fn("TerminalManager.make")(function* (
   deriveConfigMap: typeof deriveProviderInstanceConfigMap,
 ) {
-  const { terminalLogsDir, providerStatusCacheDir, baseDir } = yield* ServerConfig.ServerConfig;
+  const { terminalLogsDir, providerStatusCacheDir, baseDir, stateDir } =
+    yield* ServerConfig.ServerConfig;
   const ptyAdapter = yield* PtyAdapter.PtyAdapter;
   const portDiscovery = yield* PortScanner.PortDiscovery;
   const nativeTelemetry = yield* NativeTelemetryClient.NativeTelemetryClient;
@@ -1698,6 +1702,7 @@ export const make = Effect.fn("TerminalManager.make")(function* (
     ),
     managedBinaryCacheDir: providerStatusCacheDir,
     managedBinaryToolsDir: path.join(baseDir, "tools"),
+    zshPromptMarksDir: path.join(stateDir, "shell-integration", "zsh"),
     registerTerminalProcesses: portDiscovery.registerTerminalProcesses,
     unregisterTerminal: portDiscovery.unregisterTerminal,
     resolveProviderInstanceEnvironment,
@@ -1721,6 +1726,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   // Inherit the full environment minus createTerminalSpawnEnv's blocklist; allowlists silently drop user tooling variables.
   const baseEnv = options.env ?? process.env;
   const shellResolver = options.shellResolver ?? (() => defaultShellResolver(platform, baseEnv));
+  const withZshPromptMarks = yield* makeZshPromptMarks(options.zshPromptMarksDir, platform);
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const resolveLaunchInputEnvironment = Effect.fn("terminal.resolveLaunchInputEnvironment")(
     function* <Input extends TerminalOpenInput | TerminalAttachInput>(
@@ -2616,11 +2622,12 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       );
     }
 
+    const candidateEnv = yield* withZshPromptMarks(candidate.shell, spawnEnv);
     const launch = yield* agentScope.wrap({
       command: candidate.shell,
       args: candidate.args ?? [],
       name: "terminal",
-      env: spawnEnv,
+      env: candidateEnv,
       survivesRestart: true,
     });
     const attempt = yield* Effect.result(
@@ -2630,7 +2637,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         cwd: session.cwd,
         cols: session.cols,
         rows: session.rows,
-        env: spawnEnv,
+        env: candidateEnv,
       }),
     );
 

@@ -530,6 +530,50 @@ export class GhosttyTerminalCore {
     );
   }
 
+  /** Cursor row in the active area. */
+  cursorRow(): number {
+    this.ensureActive();
+    const view = this.runtime.view(this.scratch, 4);
+    view.setUint32(0, 0, true);
+    this.assertSuccess(
+      "ghostty_terminal_get(cursor y)",
+      this.runtime.call("ghostty_terminal_get", this.terminal, 4, this.scratch),
+    );
+    return view.getUint16(0, true);
+  }
+
+  /** OSC 133 prompt state (0 none, 1 prompt, 2 continuation) and soft-wrap of an active-area row. */
+  activeRowPrompt(row: number): { semanticPrompt: number; isWrapContinuation: boolean } {
+    this.ensureActive();
+    const ref = this.gridRef(0, row, 0);
+    try {
+      const view = this.runtime.memoryDataView();
+      view.setBigUint64(this.scratch, 0n, true);
+      this.assertSuccess(
+        "ghostty_grid_ref_row",
+        this.runtime.call("ghostty_grid_ref_row", ref, this.scratch),
+      );
+      const rawRow = this.runtime.memoryDataView().getBigUint64(this.scratch, true);
+      this.runtime.memoryDataView().setUint32(this.scratch + 8, 0, true);
+      this.assertSuccess(
+        "ghostty_row_get(semantic prompt)",
+        this.runtime.call("ghostty_row_get", rawRow, 6, this.scratch + 8),
+      );
+      const semanticPrompt = this.runtime.memoryDataView().getUint32(this.scratch + 8, true);
+      this.runtime.memoryBytes()[this.scratch + 8] = 0;
+      this.assertSuccess(
+        "ghostty_row_get(wrap continuation)",
+        this.runtime.call("ghostty_row_get", rawRow, 2, this.scratch + 8),
+      );
+      return {
+        semanticPrompt,
+        isWrapContinuation: this.runtime.memoryBytes()[this.scratch + 8] !== 0,
+      };
+    } finally {
+      this.runtime.free(ref, this.runtime.layout("GhosttyGridRef").size);
+    }
+  }
+
   isApplicationCursorKeys(): boolean {
     this.ensureActive();
     this.runtime.bytes(this.scratch, 1)[0] = 0;
@@ -1147,15 +1191,53 @@ export class GhosttyTerminalCore {
     };
   }
 
-  private gridRef(col: number, row: number, tag: 1 | 2 = 1): number {
+  /** Follows the start of an active-area row through scrolling and reflow until freed. */
+  trackActiveRow(row: number): number {
+    this.ensureActive();
+    const point = this.allocPoint(0, row, 0);
+    this.runtime.view(this.scratch, 4).setUint32(0, 0, true);
+    const result = this.runtime.call(
+      "ghostty_terminal_grid_ref_track",
+      this.terminal,
+      point,
+      this.scratch,
+    );
+    this.runtime.free(point, this.runtime.layout("GhosttyPoint").size);
+    this.assertSuccess("ghostty_terminal_grid_ref_track", result);
+    return this.runtime.view(this.scratch, 4).getUint32(0, true);
+  }
+
+  /** The active-area row a tracked reference points at now, or null once it left the active area. */
+  trackedActiveRow(ref: number): number | null {
+    this.ensureActive();
+    const layout = this.runtime.layout("GhosttyPointCoordinate");
+    const coordinate = this.runtime.alloc(layout.size);
+    const row =
+      this.runtime.call("ghostty_tracked_grid_ref_point", ref, 0, coordinate) === GHOSTTY_SUCCESS
+        ? this.runtime.readField(coordinate, "GhosttyPointCoordinate", "y")
+        : null;
+    this.runtime.free(coordinate, layout.size);
+    return row;
+  }
+
+  freeTrackedRow(ref: number): void {
+    this.runtime.call("ghostty_tracked_grid_ref_free", ref);
+  }
+
+  private allocPoint(col: number, row: number, tag: 0 | 1 | 2): number {
     const pointLayout = this.runtime.layout("GhosttyPoint");
     const point = this.runtime.alloc(pointLayout.size);
     this.runtime.setField(point, "GhosttyPoint", "tag", tag);
     const pointValue = pointLayout.fields.value!;
-    const valueOffset = pointValue.offset;
-    const view = this.runtime.view(point + valueOffset, pointValue.size);
+    const view = this.runtime.view(point + pointValue.offset, pointValue.size);
     view.setUint16(0, Math.max(0, col), true);
     view.setUint32(4, Math.max(0, row), true);
+    return point;
+  }
+
+  private gridRef(col: number, row: number, tag: 0 | 1 | 2 = 1): number {
+    const pointLayout = this.runtime.layout("GhosttyPoint");
+    const point = this.allocPoint(col, row, tag);
     const gridRefSize = this.runtime.layout("GhosttyGridRef").size;
     const gridRef = this.runtime.alloc(gridRefSize);
     this.runtime.setField(gridRef, "GhosttyGridRef", "size", gridRefSize);
