@@ -83,6 +83,17 @@ function retryDelayMs(failures: number, random: number): number {
   return Math.round(ceiling / 2 + (ceiling / 2) * random);
 }
 
+/**
+ * For an answer sent with analytics off. PostHog fills `$ip` from the request unless the
+ * event carries a non-empty one (`sanitizeEvent` in PostHog's ingestion), so this is the
+ * value PostHog writes for its own server-side events; `$geoip_disable` skips the location.
+ */
+const ANONYMOUS_EVENT_PROPERTIES = {
+  $process_person_profile: false,
+  $ip: "127.0.0.1",
+  $geoip_disable: true,
+} as const;
+
 const UPCOMPUTER_POSTHOG_PROJECT_KEY = "phc_uqRUAQavAKuUny7uFxm8tqr6nyVDpdoSARKsWNzs8wBx";
 
 const DesktopBuildKindConfig = Config.Literals(
@@ -200,7 +211,8 @@ export class AnalyticsService extends Context.Service<
     /**
      * Sends one event now and says whether PostHog took it. Only for answers the user
      * chose to send, so it also sends when analytics is off: then the event carries
-     * just `properties` under a one-off anonymous id, and the install stays unidentified.
+     * just `properties` under a one-off anonymous id, asks PostHog to keep no IP address
+     * or location, and the install stays unidentified.
      */
     readonly sendNow: (
       event: string,
@@ -352,68 +364,73 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  const postBatch = (batch: ReadonlyArray<Readonly<Record<string, unknown>>>) =>
-    HttpClientRequest.post(`${telemetryConfig.posthogHost}/batch/`).pipe(
-      HttpClientRequest.bodyJson({ api_key: telemetryConfig.posthogKey, batch }),
-      Effect.flatMap(httpClient.execute),
-      Effect.flatMap(HttpClientResponse.filterStatusOk),
-      Effect.timeout(SEND_TIMEOUT),
-    );
-
-  const batchEntries = (events: ReadonlyArray<BufferedAnalyticsEvent>, distinctId: string) =>
-    events.map((event) => ({
-      uuid: event.uuid,
-      event: event.event,
-      distinct_id: distinctId,
-      properties: {
-        ...event.properties,
-        ...(installId === null ? {} : { installId }),
-        $process_person_profile: false,
-        platform: hostPlatform,
-        wsl: Option.getOrUndefined(telemetryConfig.wslDistroName),
-        arch: hostArchitecture,
-        t3CodeVersion: packageJson.version,
-        telemetryChannel: ServerConfig.telemetryChannel,
-        clientType,
-        serverOs: serverOsFromNodePlatform(hostPlatform),
-        serverArch: hostArchitecture,
-        serverWslDistro: Option.getOrUndefined(telemetryConfig.wslDistroName),
-        serverAppVersion: packageJson.version,
-        serverMode: serverConfig.mode,
-        desktopVersion: Option.getOrUndefined(telemetryConfig.desktopVersion),
-        releaseChannel: Option.getOrUndefined(telemetryConfig.releaseChannel),
-        buildKind,
-        isInternal: event.isInternal,
-        sessionId: event.sessionId ?? sessionId,
-      },
-      timestamp: event.capturedAt,
-    }));
-
   const sendBatch = Effect.fn("AnalyticsService.sendBatch")(function* (
     events: ReadonlyArray<BufferedAnalyticsEvent>,
   ) {
     if (!(yield* telemetryEnabled) || !distinctId) return;
-    yield* postBatch(batchEntries(events, distinctId));
+
+    const payload = {
+      api_key: telemetryConfig.posthogKey,
+      batch: events.map((event) => ({
+        uuid: event.uuid,
+        event: event.event,
+        distinct_id: distinctId,
+        properties: {
+          ...event.properties,
+          ...(installId === null ? {} : { installId }),
+          $process_person_profile: false,
+          platform: hostPlatform,
+          wsl: Option.getOrUndefined(telemetryConfig.wslDistroName),
+          arch: hostArchitecture,
+          t3CodeVersion: packageJson.version,
+          telemetryChannel: ServerConfig.telemetryChannel,
+          clientType,
+          serverOs: serverOsFromNodePlatform(hostPlatform),
+          serverArch: hostArchitecture,
+          serverWslDistro: Option.getOrUndefined(telemetryConfig.wslDistroName),
+          serverAppVersion: packageJson.version,
+          serverMode: serverConfig.mode,
+          desktopVersion: Option.getOrUndefined(telemetryConfig.desktopVersion),
+          releaseChannel: Option.getOrUndefined(telemetryConfig.releaseChannel),
+          buildKind,
+          isInternal: event.isInternal,
+          sessionId: event.sessionId ?? sessionId,
+        },
+        timestamp: event.capturedAt,
+      })),
+    };
+
+    yield* HttpClientRequest.post(`${telemetryConfig.posthogHost}/batch/`).pipe(
+      HttpClientRequest.bodyJson(payload),
+      Effect.flatMap(httpClient.execute),
+      Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.timeout(SEND_TIMEOUT),
+    );
   });
 
   const sendNow: AnalyticsService["Service"]["sendNow"] = Effect.fn("AnalyticsService.sendNow")(
     function* (event, properties) {
       const uuid = yield* crypto.uuidV7();
       const capturedAt = DateTime.formatIso(yield* DateTime.now);
-      const entry =
-        distinctId !== null && (yield* telemetryEnabled)
-          ? batchEntries(
-              [{ uuid, event, properties, capturedAt, isInternal: yield* internalDevice }],
-              distinctId,
-            )[0]!
-          : {
-              uuid,
-              event,
-              distinct_id: yield* crypto.uuidV4(),
-              properties: { ...properties, $process_person_profile: false },
-              timestamp: capturedAt,
-            };
-      yield* postBatch([entry]);
+      if (distinctId !== null && (yield* telemetryEnabled)) {
+        yield* sendBatch([
+          { uuid, event, properties, capturedAt, isInternal: yield* internalDevice },
+        ]);
+        return true;
+      }
+      const entry = {
+        uuid,
+        event,
+        distinct_id: yield* crypto.uuidV4(),
+        properties: { ...properties, ...ANONYMOUS_EVENT_PROPERTIES },
+        timestamp: capturedAt,
+      };
+      yield* HttpClientRequest.post(`${telemetryConfig.posthogHost}/batch/`).pipe(
+        HttpClientRequest.bodyJson({ api_key: telemetryConfig.posthogKey, batch: [entry] }),
+        Effect.flatMap(httpClient.execute),
+        Effect.flatMap(HttpClientResponse.filterStatusOk),
+        Effect.timeout(SEND_TIMEOUT),
+      );
       return true;
     },
     Effect.catchCause((cause) =>

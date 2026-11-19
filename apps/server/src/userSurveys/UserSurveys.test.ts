@@ -190,6 +190,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("UserSurveys", (i
       // With analytics on, the answer carries the usual app details.
       assert.strictEqual(sent!.properties.$process_person_profile, false);
       assert.isString(sent!.properties.t3CodeVersion);
+      assert.notProperty(sent!.properties, "$ip");
     }),
   );
 
@@ -224,6 +225,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("UserSurveys", (i
         const [sent] = posthog.sent;
         assert.match(sent!.distinct_id, /^[0-9a-f-]{36}$/);
         assert.deepEqual(Object.keys(sent!.properties).toSorted(), [
+          "$geoip_disable",
+          "$ip",
           "$process_person_profile",
           "$survey_completed",
           "$survey_id",
@@ -234,6 +237,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("UserSurveys", (i
           "$survey_response_working",
           "$survey_submission_id",
         ]);
+        // PostHog would store the request's IP and its location unless the event says otherwise.
+        assert.strictEqual(sent!.properties.$ip, "127.0.0.1");
+        assert.strictEqual(sent!.properties.$geoip_disable, true);
         // No install identity is created for it.
         const stateDir = path.join(baseDir, "userdata");
         assert.isFalse(yield* fileSystem.exists(path.join(stateDir, "telemetry-id")));
