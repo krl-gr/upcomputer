@@ -1,3 +1,4 @@
+import { useGT, useLocale } from "gt-react";
 import { useEffect, useSyncExternalStore } from "react";
 
 import {
@@ -16,13 +17,6 @@ import { parseTimestampDate } from "../timestampFormat";
  */
 export type TimelineMinimapTick = TimelineMinimapItem & { readonly lastRowIndex?: number };
 
-const dayFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
-const dayWithYearFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
-
 /**
  * One tick per local calendar day instead of one per user message. A day's
  * tick jumps to its first message; its tooltip names the day and counts its
@@ -32,6 +26,8 @@ const dayWithYearFormatter = new Intl.DateTimeFormat("en-US", {
 export function groupTimelineMinimapItemsByDay(
   items: ReadonlyArray<TimelineMinimapItem>,
   rows: ReadonlyArray<MessagesTimelineRow>,
+  gt: ReturnType<typeof useGT>,
+  locale: string,
   now: Date = new Date(),
 ): TimelineMinimapTick[] {
   const days: Array<{ key: string; date: Date | null; items: TimelineMinimapItem[] }> = [];
@@ -43,20 +39,29 @@ export function groupTimelineMinimapItemsByDay(
     if (last && (key === null || key === last.key)) last.items.push(item);
     else days.push({ key: key ?? "", date, items: [item] });
   }
+  const dayFormat = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" });
+  const dayWithYearFormat = new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
   return days.map((day, index) => {
     const [first] = day.items as [TimelineMinimapItem, ...TimelineMinimapItem[]];
     const next = days[index + 1]?.items[0];
     const label = day.date
-      ? (day.date.getFullYear() === now.getFullYear() ? dayFormatter : dayWithYearFormatter).format(
+      ? (day.date.getFullYear() === now.getFullYear() ? dayFormat : dayWithYearFormat).format(
           day.date,
         )
-      : "Earlier";
+      : gt("Earlier", { $context: "minimap tick for messages without a date" });
     const count = day.items.length;
     return {
       id: first.id,
       rowIndex: first.rowIndex,
       lastRowIndex: next ? next.rowIndex - 1 : rows.length - 1,
-      userText: `${label} · ${count} message${count === 1 ? "" : "s"}`,
+      userText: gt("{day} · {count, plural, one {# message} other {# messages}}", {
+        day: label,
+        count,
+      }),
       assistantText: first.userText,
     };
   });
@@ -108,11 +113,13 @@ export function useTimelineMinimapTicks(
   rows: ReadonlyArray<MessagesTimelineRow>,
   threadKey: string,
 ): ReadonlyArray<TimelineMinimapTick> {
+  const gt = useGT();
+  const locale = useLocale();
   const groupsByDay = useSyncExternalStore(
     subscribe,
     () => byDay.has(threadKey),
     () => false,
   );
   const items = deriveTimelineMinimapItems(rows);
-  return groupsByDay ? groupTimelineMinimapItemsByDay(items, rows) : items;
+  return groupsByDay ? groupTimelineMinimapItemsByDay(items, rows, gt, locale) : items;
 }

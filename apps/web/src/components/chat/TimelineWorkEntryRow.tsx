@@ -1,5 +1,6 @@
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import { WorkLogDetails, WorkLogRow } from "./WorkLog";
+import { useGT } from "gt-react";
 import {
   getQuestionAnswerPreview,
   getQuestionAnswerText,
@@ -226,6 +227,7 @@ export function ViewedImagesTimelineRow({
 }
 
 function WorkEntryLogRow(props: WorkEntryRowProps) {
+  const gt = useGT();
   const { workEntry, workspaceRoot, displayLabel } = props;
   const ctx = use(TimelineRowCtx);
   const { threadRef, onImageExpand, timestampFormat } = ctx;
@@ -352,11 +354,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               >
                 {action === "retry" ? <RotateCcwIcon aria-hidden /> : null}
                 {action === "switch_model"
-                  ? "Switch provider or model"
+                  ? gt("Switch provider or model")
                   : action === "open_settings" || action === "open_bot_settings"
-                    ? "Open settings"
+                    ? gt("Open settings")
                     : // Retry sends now; the label already says when the limit resets.
-                      "Retry"}
+                      gt("Retry")}
               </Button>
             ))}
           </div>

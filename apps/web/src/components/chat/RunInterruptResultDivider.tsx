@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, OrchestrationV2TurnItem } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import { CheckIcon, CircleStopIcon, XIcon, type LucideIcon } from "lucide-react";
 
 import { environmentThreadDetails } from "../../state/threads";
@@ -44,7 +45,8 @@ function RunInterruptResultDividerView(props: {
   readonly resultMessage: string;
   readonly requestMessage: string | null;
 }) {
-  const presentation = runInterruptResultPresentation(props);
+  const gt = useGT();
+  const presentation = runInterruptResultPresentation(props, gt);
   return (
     <TimelineSystemDivider
       label={presentation.label}

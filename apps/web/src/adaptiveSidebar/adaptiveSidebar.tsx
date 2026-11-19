@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
+import { useGT } from "gt-react";
 import { SearchIcon, SquarePenIcon } from "lucide-react";
 import {
   useState,
@@ -299,14 +300,17 @@ const COMPACT_BUTTON_CLASS =
  * and the command palette searches without it, as upstream's compact sidebar did.
  */
 export function SidebarCompactSearch() {
+  const gt = useGT();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   if (!isAdaptive()) return null;
   const shortcutLabel = shortcutLabelForCommand(keybindings, "commandPalette.toggle");
   return (
-    <SidebarCompactTooltip label={shortcutLabel ? `Search (${shortcutLabel})` : "Search"}>
+    <SidebarCompactTooltip
+      label={shortcutLabel ? gt("Search ({shortcut})", { shortcut: shortcutLabel }) : gt("Search")}
+    >
       <button
         type="button"
-        aria-label="Search"
+        aria-label={gt("Search")}
         data-sidebar-compact-search=""
         data-track="sidebar.search"
         onClick={() => openCommandPalette()}
@@ -326,12 +330,13 @@ export function SidebarCompactNewThread(props: {
   readonly tooltip: string;
   readonly onClick: (event: ReactMouseEvent) => void;
 }) {
+  const gt = useGT();
   if (!isAdaptive()) return null;
   return (
     <SidebarCompactTooltip label={props.tooltip}>
       <button
         type="button"
-        aria-label="New thread"
+        aria-label={gt("New thread")}
         data-sidebar-compact-new-thread=""
         data-track="sidebar.new_thread"
         onClick={props.onClick}

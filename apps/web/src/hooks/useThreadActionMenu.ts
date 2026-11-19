@@ -17,6 +17,7 @@ import { useRouter } from "@tanstack/react-router";
 
 import { pickSnoozePreset, resolveSnoozePresets } from "../components/Sidebar.snooze";
 import { productThreadActions, runProductThreadAction } from "../product/threadActions";
+import { useMessages } from "gt-react";
 import {
   buildThreadActionMenuItems,
   threadActionRequiresOperate,
@@ -69,6 +70,7 @@ export function useThreadActionMenu(input: {
   readonly canShareWithGuest: boolean;
 }) {
   const { threadRef, projectCwd, onStartRename, onFind, canShareWithGuest } = input;
+  const m = useMessages();
   const router = useRouter();
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -130,10 +132,10 @@ export function useThreadActionMenu(input: {
       };
       const isRegeneratingTitle = thread.titleRegeneration != null;
       const snoozePresets = resolveSnoozePresets(now, timestampFormat, threadRef.environmentId);
-      const featureActions = productThreadActions({
-        environmentId: threadRef.environmentId,
-        threadId: threadRef.threadId,
-      });
+      const featureActions = productThreadActions(
+        { environmentId: threadRef.environmentId, threadId: threadRef.threadId },
+        m,
+      );
       const items = buildThreadActionMenuItems({
         canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
         canFind: onFind !== undefined,

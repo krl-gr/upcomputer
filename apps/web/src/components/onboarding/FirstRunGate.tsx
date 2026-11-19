@@ -3,7 +3,8 @@ import { toastManager } from "~/components/ui/toast";
 import { useAtomValue } from "@effect/atom-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { Atom } from "effect/reactivity";
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
+import { useGT } from "gt-react";
 
 import {
   ensureClientSettingsHydrated,
@@ -80,6 +81,7 @@ export function FirstRunGate({
   readonly hostedStatic: boolean;
   readonly children: React.ReactNode;
 }) {
+  const gt = useGT();
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const hydrationStatus = useClientSettingsHydrationStatus();
@@ -147,18 +149,20 @@ export function FirstRunGate({
     if (transitioned !== gateState) setGateState(transitioned);
   }
 
+  const warnSetupNotSaved = useEffectEvent(() =>
+    toastManager.add({
+      type: "warning",
+      title: gt("Setup wasn't saved"),
+      description: gt(
+        "Up.computer couldn't save that setup is finished, so you might see it again. Your projects are not affected.",
+      ),
+    }),
+  );
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists onboarding completion to settings once the gate settles on skipping the wizard
   useEffect(() => {
     if (decision === "wizard" || !hydrated) return;
     if (persistCompletion && onboardingCompletedAt === null) {
-      void completeOnboarding().catch(() =>
-        toastManager.add({
-          type: "warning",
-          title: "Setup wasn't saved",
-          description:
-            "Up.computer couldn't save that setup is finished, so you might see it again. Your projects are not affected.",
-        }),
-      );
+      void completeOnboarding().catch(() => warnSetupNotSaved());
     }
   }, [decision, hydrated, onboardingCompletedAt, persistCompletion]);
 
@@ -217,19 +221,24 @@ function FirstRunRecovery({
   readonly reason: "settings" | "connection";
   readonly retrying?: boolean;
 }) {
+  const gt = useGT();
   const settingsReadFailed = reason === "settings";
   return (
     <main className="flex h-dvh min-h-0 items-center justify-center bg-background px-6 text-foreground">
       <div className="flex max-w-sm flex-col items-center text-center">
         <h1 className="text-lg font-semibold">
           {settingsReadFailed
-            ? "Couldn't read your settings"
-            : "Up.computer is taking too long to start"}
+            ? gt("Couldn't read your settings")
+            : gt("Up.computer is taking too long to start")}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           {settingsReadFailed
-            ? "Your saved settings couldn't be loaded. Try again, and restart the app if it keeps happening."
-            : "Up.computer on this computer hasn't answered yet. Reload, and if it keeps happening, restart the app."}
+            ? gt(
+                "Your saved settings couldn't be loaded. Try again, and restart the app if it keeps happening.",
+              )
+            : gt(
+                "Up.computer on this computer hasn't answered yet. Reload, and if it keeps happening, restart the app.",
+              )}
         </p>
         <Button
           className="mt-5"
@@ -245,7 +254,7 @@ function FirstRunRecovery({
           }}
         >
           <RefreshIcon refreshing={retrying} />
-          {settingsReadFailed ? "Retry" : "Reload"}
+          {settingsReadFailed ? gt("Retry") : gt("Reload")}
         </Button>
       </div>
     </main>

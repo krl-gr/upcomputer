@@ -1,5 +1,6 @@
 import { ComputerUseRpcGroup } from "@t3tools/computer-use-contracts/rpc";
 import { Globe2Icon, MonitorCogIcon } from "lucide-react";
+import { msg } from "gt-react";
 
 // The pure host module: the product entry imports this file while the
 // connection runtime is still initializing. The pages load on first visit.
@@ -13,7 +14,7 @@ export const COMPUTER_USE_WEB_FEATURE = defineExperimentalWebFeature({
   settings: [
     {
       id: "browser-use",
-      label: "Browser Use",
+      label: msg("Browser Use"),
       path: "/settings/browser-use",
       order: 10,
       icon: Globe2Icon,
@@ -21,7 +22,7 @@ export const COMPUTER_USE_WEB_FEATURE = defineExperimentalWebFeature({
     },
     {
       id: "computer-use",
-      label: "Computer Use",
+      label: msg("Computer Use"),
       path: "/settings/computer-use",
       order: 20,
       icon: MonitorCogIcon,

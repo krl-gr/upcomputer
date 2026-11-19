@@ -6,6 +6,7 @@ import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { FolderPlusIcon, MessageSquareDashedIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useGT } from "gt-react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
 import { shortcutLabelForCommand } from "~/keybindings";
@@ -84,6 +85,7 @@ export function DraftHeroHeadline({
   activeProjectRef,
   activeProjectTitle,
 }: DraftHeroHeadlineProps) {
+  const gt = useGT();
   const projects = useProjects();
   const { environments } = useEnvironments();
   const providersByEnvironment = useEnvironmentProviders();
@@ -178,7 +180,7 @@ export function DraftHeroHeadline({
   const pickerItems: readonly PickerItem[] = useOrderWhileOpen(
     [
       ...(scratchWorkspaceRoot !== null && !isScratchDraft && showsDraftHeroNoProjectItem()
-        ? [{ value: NO_PROJECT_VALUE, label: "No project" }]
+        ? [{ value: NO_PROJECT_VALUE, label: gt("No project") }]
         : []),
       ...menuEntries.map(({ group }) => ({ value: group.projectKey, label: group.displayName })),
       { value: ADD_PROJECT_VALUE, label: "Add project" },

@@ -2,6 +2,7 @@
 import { useMemo } from "react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { useGT, useMessages } from "gt-react";
 
 import { useThreadShell } from "../../../../apps/web/src/state/entities.ts";
 import { formatRelativeTimeLabel } from "../../../../apps/web/src/timestampFormat.ts";
@@ -31,6 +32,8 @@ const MUTED_TEXT_CLASS = "text-muted-foreground dark:text-white/50";
  * link reads its title and status there and the chat route opens it directly.
  */
 export function TaskThreadLink(props: TaskThreadLinkProps) {
+  const gt = useGT();
+  const m = useMessages();
   const threadRef = useMemo(
     () => scopeThreadRef(props.environmentId, props.threadId),
     [props.environmentId, props.threadId],
@@ -64,7 +67,7 @@ export function TaskThreadLink(props: TaskThreadLinkProps) {
         <span className="flex min-w-0 items-center gap-1.5">
           {runStatusPresentation ? (
             <span className={cn("shrink-0", LABEL_TEXT_CLASS, runStatusPresentation.className)}>
-              {runStatusPresentation.label}
+              {m(runStatusPresentation.label)}
             </span>
           ) : null}
           <span className={cn("min-w-0 flex-1 truncate", LABEL_COLOR_CLASS, LABEL_TEXT_CLASS)}>
@@ -78,7 +81,7 @@ export function TaskThreadLink(props: TaskThreadLinkProps) {
         ) : null}
       </span>
       <span className={cn("ml-auto shrink-0 pl-2 text-right", MUTED_TEXT_CLASS, LABEL_TEXT_CLASS)}>
-        {unavailable ? "Unavailable" : available ? timeLabel : "Loading…"}
+        {unavailable ? gt("Unavailable") : available ? timeLabel : gt("Loading…")}
       </span>
     </button>
   );

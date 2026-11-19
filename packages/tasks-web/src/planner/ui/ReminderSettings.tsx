@@ -1,3 +1,4 @@
+import { T, useGT } from "gt-react";
 import { useCallback, useEffect, useState } from "react";
 import type {
   TaskScheduleSettings,
@@ -36,6 +37,7 @@ function timeZones(): string[] {
 
 /** The environment's schedule settings, read when the settings open. */
 function useScheduleSettings(environmentId: string) {
+  const gt = useGT();
   const [settings, setSettings] = useState<TaskScheduleSettings | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -67,12 +69,12 @@ function useScheduleSettings(environmentId: string) {
         .then(setSettings, (error: unknown) =>
           toastManager.add({
             type: "error",
-            title: "Couldn't change the reminder settings",
+            title: gt("Couldn't change the reminder settings"),
             description: errorMessage(error),
           }),
         );
     },
-    [environmentId],
+    [environmentId, gt],
   );
   return [settings, update, loadFailed, retry] as const;
 }
@@ -83,32 +85,35 @@ function useScheduleSettings(environmentId: string) {
  * zone its dates and times are in.
  */
 export function ReminderSettings() {
+  const gt = useGT();
   const { environmentId } = usePlanner();
   const [settings, update, loadFailed, retry] = useScheduleSettings(environmentId);
   if (!settings && loadFailed)
     return (
       <p className="text-xs text-muted-foreground">
-        Up.computer couldn't load your reminder settings from this computer.{" "}
-        <button type="button" className="underline" onClick={retry}>
-          Retry
-        </button>
+        <T>
+          Up.computer couldn't load your reminder settings from this computer.{" "}
+          <button type="button" className="underline" onClick={retry}>
+            Retry
+          </button>
+        </T>
       </p>
     );
   if (!settings)
-    return <p className="text-xs text-muted-foreground">Loading the reminder settings…</p>;
+    return <p className="text-xs text-muted-foreground">{gt("Loading the reminder settings…")}</p>;
   const zone = settings.scheduleTimeZone ?? settings.serverTimeZone;
   const browser = browserTimeZone();
   return (
     <div className="flex flex-col gap-4">
       <Label className="flex items-center justify-between gap-3">
-        Reminders
+        {gt("Reminders")}
         <Switch
           checked={settings.remindersEnabled}
           onCheckedChange={(checked) => update({ remindersEnabled: checked })}
         />
       </Label>
       <div className="flex flex-col gap-1.5">
-        <Label>Remind before</Label>
+        <Label>{gt("Remind before")}</Label>
         <Select
           disabled={!settings.remindersEnabled}
           value={String(settings.reminderLeadMinutes)}
@@ -117,21 +122,21 @@ export function ReminderSettings() {
           }}
         >
           <SelectTrigger size="sm">
-            <SelectValue>{leadLabel(settings.reminderLeadMinutes)}</SelectValue>
+            <SelectValue>{leadLabel(settings.reminderLeadMinutes, gt)}</SelectValue>
           </SelectTrigger>
           <SelectPopup>
             {[...new Set([...LEAD_MINUTES, settings.reminderLeadMinutes])]
               .sort((a, b) => a - b)
               .map((minutes) => (
                 <SelectItem key={minutes} value={String(minutes)}>
-                  {leadLabel(minutes)}
+                  {leadLabel(minutes, gt)}
                 </SelectItem>
               ))}
           </SelectPopup>
         </Select>
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label>Time zone of the schedule</Label>
+        <Label>{gt("Time zone of the schedule")}</Label>
         <Select
           value={settings.scheduleTimeZone ?? SERVER_ZONE}
           onValueChange={(value) => {
@@ -140,11 +145,14 @@ export function ReminderSettings() {
         >
           <SelectTrigger size="sm">
             <SelectValue>
-              {settings.scheduleTimeZone ?? `Server's (${settings.serverTimeZone})`}
+              {settings.scheduleTimeZone ??
+                gt("Server's ({zone})", { zone: settings.serverTimeZone })}
             </SelectValue>
           </SelectTrigger>
           <SelectPopup>
-            <SelectItem value={SERVER_ZONE}>Server's ({settings.serverTimeZone})</SelectItem>
+            <SelectItem value={SERVER_ZONE}>
+              {gt("Server's ({zone})", { zone: settings.serverTimeZone })}
+            </SelectItem>
             {timeZones().map((name) => (
               <SelectItem key={name} value={name}>
                 {name}
@@ -154,7 +162,10 @@ export function ReminderSettings() {
         </Select>
         {zone !== browser ? (
           <p className="text-xs text-muted-foreground">
-            Times are reminded as {zone} time; this device is on {browser}.
+            {gt("Times are reminded as {zone} time; this device is on {browser}.", {
+              zone,
+              browser,
+            })}
           </p>
         ) : null}
       </div>
@@ -162,6 +173,6 @@ export function ReminderSettings() {
   );
 }
 
-function leadLabel(minutes: number): string {
-  return minutes === 0 ? "At the start" : formatDuration(minutes);
+function leadLabel(minutes: number, gt: ReturnType<typeof useGT>): string {
+  return minutes === 0 ? gt("At the start") : formatDuration(minutes, gt);
 }

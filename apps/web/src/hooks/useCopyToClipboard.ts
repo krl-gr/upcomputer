@@ -5,6 +5,7 @@ import {
   encodeComposerContextClipboardHtml,
 } from "@t3tools/shared/composerContextClipboard";
 import { useStableCallback } from "./useStableCallback";
+import { useGT } from "gt-react";
 
 export class ClipboardApiUnavailableError extends Schema.TaggedError<ClipboardApiUnavailableError>()(
   "ClipboardApiUnavailableError",
@@ -193,13 +194,14 @@ export async function readTextFromClipboard(target = "text"): Promise<string> {
 }
 
 // Loaded lazily, and outside the hook for the React Compiler: the toast module imports this hook.
-function showCopyFailedToast() {
+function showCopyFailedToast(gt: ReturnType<typeof useGT>) {
   void import("~/components/ui/toast").then(({ toastManager }) =>
     toastManager.add({
       type: "error",
-      title: "Couldn't copy",
-      description:
+      title: gt("Couldn't copy"),
+      description: gt(
         "Up.computer couldn't copy to your clipboard. Select the text and copy it yourself.",
+      ),
       data: { hideCopyButton: true },
     }),
   );
@@ -218,6 +220,7 @@ export function useCopyToClipboard<TContext = void>({
   onError?: (error: Error, ctx: TContext) => void;
   extraFlavors?: Readonly<Record<string, string>>;
 } = {}): { copyToClipboard: (value: string, ctx: TContext) => void; isCopied: boolean } {
+  const gt = useGT();
   const [isCopied, setIsCopied] = React.useState(false);
   const timeoutIdRef = React.useRef<NodeJS.Timeout | null>(null);
   const copyToClipboard = useStableCallback((value: string, ctx: TContext): void => {
@@ -245,7 +248,7 @@ export function useCopyToClipboard<TContext = void>({
           return;
         }
         // Most callers pass no onError; a silent failed copy reads as success.
-        showCopyFailedToast();
+        showCopyFailedToast(gt);
       },
     );
   });

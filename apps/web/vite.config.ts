@@ -98,8 +98,16 @@ const unitTestProject = {
     setupFiles: [
       "../../packages/shared/src/testing/longTempDir.ts",
       "../../packages/shared/src/testing/providerEnv.ts",
+      "./test/i18nSetup.ts",
     ],
     alias: [
+      // gt-react's Node entry needs a GTProvider around every render; the app's browser build does not.
+      {
+        find: /^gt-react$/,
+        replacement: NodeURL.fileURLToPath(
+          new URL("./node_modules/gt-react/dist/index.client.mjs", import.meta.url),
+        ),
+      },
       {
         find: /^(?:\.\.\/product|\.)\/productEntry$/,
         replacement: NodeURL.fileURLToPath(new URL("./test/coreProductEntry.ts", import.meta.url)),
@@ -210,6 +218,7 @@ const uiStatesProject = {
       instances: [{ browser: "chromium" }],
       commands: {
         ...browserTestProject.test.browser.commands,
+        uiStatesLocale: () => process.env.T3CODE_UI_STATES_LOCALE || null,
         writeUiStatesSheet: async (
           context,
           fileName: string,

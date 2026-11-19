@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { useState } from "react";
+import { useGT, useMessages } from "gt-react";
 import {
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
   DEFAULT_UNIFIED_SETTINGS,
@@ -86,6 +87,8 @@ const EFFORT_DISPLAY_LABELS: Record<EffortDisplay, string> = {
 };
 
 export function AppearanceSettingsPanel() {
+  const gt = useGT();
+  const m = useMessages();
   const {
     appearanceMode,
     refreshTheme,
@@ -260,7 +263,10 @@ export function AppearanceSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("thread-details")}
-          description="Show the thread details button with the environment, Open in and Git actions. Turn off to hide the button and its card."
+          title={m(searchableSetting("thread-details").title)}
+          description={gt(
+            "Show the thread details button with the environment, Open in and Git actions. Turn off to hide the button and its card.",
+          )}
           resetAction={
             settings.threadDetailsEnabled !== DEFAULT_UNIFIED_SETTINGS.threadDetailsEnabled ? (
               <SettingResetButton
@@ -279,7 +285,7 @@ export function AppearanceSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ threadDetailsEnabled: Boolean(checked) })
               }
-              aria-label="Show thread details"
+              aria-label={gt("Show thread details")}
             />
           }
         />

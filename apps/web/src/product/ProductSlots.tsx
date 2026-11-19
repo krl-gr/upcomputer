@@ -1,5 +1,6 @@
 import { createElement, lazy, Suspense, type ComponentType, type ReactNode } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useMessages } from "gt-react";
 
 import { BlankWorkspacePage } from "../components/BlankWorkspacePage";
 import {
@@ -67,6 +68,7 @@ function useNavigateTo() {
 
 /** Feature entries in the sidebar's primary navigation. */
 export function ProductSidebarNavigation() {
+  const m = useMessages();
   const navigateTo = useNavigateTo();
   const pathname = useLocation({ select: (location) => location.pathname });
   if (rowNavigation.length === 0) return null;
@@ -78,14 +80,14 @@ export function ProductSidebarNavigation() {
           const Accessory = item.accessory;
           return (
             <SidebarMenuItem key={item.id}>
-              <SidebarCompactTooltip label={item.label}>
+              <SidebarCompactTooltip label={m(item.label)}>
                 <SidebarMenuButton
                   data-track={`nav.${item.id}`}
                   isActive={isExperimentalWebNavigationActive(item, pathname)}
                   onClick={() => navigateTo(item.path)}
                 >
                   {Icon ? <Icon /> : null}
-                  <span className="flex-1 truncate">{item.label}</span>
+                  <span className="flex-1 truncate">{m(item.label)}</span>
                   {Accessory ? (
                     <span className="ml-auto shrink-0 tabular-nums">
                       <Accessory />
@@ -103,6 +105,7 @@ export function ProductSidebarNavigation() {
 
 /** Feature entries placed in the sidebar footer, as its utility buttons are. */
 export function ProductSidebarFooterNavigation() {
+  const m = useMessages();
   const navigateTo = useNavigateTo();
   const pathname = useLocation({ select: (location) => location.pathname });
   const tooltipSide = useSidebarFooterTooltipSide();
@@ -114,7 +117,7 @@ export function ProductSidebarFooterNavigation() {
           <TooltipTrigger
             render={
               <SidebarMenuButton
-                aria-label={item.label}
+                aria-label={m(item.label)}
                 data-track={`nav.${item.id}`}
                 isActive={isExperimentalWebNavigationActive(item, pathname)}
                 onClick={() => navigateTo(item.path)}
@@ -124,7 +127,7 @@ export function ProductSidebarFooterNavigation() {
               </SidebarMenuButton>
             }
           />
-          <TooltipPopup side={tooltipSide}>{item.label}</TooltipPopup>
+          <TooltipPopup side={tooltipSide}>{m(item.label)}</TooltipPopup>
         </Tooltip>
       </SidebarMenuItem>
     );
@@ -133,6 +136,7 @@ export function ProductSidebarFooterNavigation() {
 
 /** Feature settings sections, after core's in the settings navigation. */
 export function ProductSettingsNavItems(props: { readonly pathname: string }) {
+  const m = useMessages();
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
   return WEB_PRODUCT.settings.map((page) => {
@@ -156,7 +160,7 @@ export function ProductSettingsNavItems(props: { readonly pathname: string }) {
           }}
         >
           {Icon ? <Icon /> : null}
-          <span className="truncate">{page.label}</span>
+          <span className="truncate">{m(page.label)}</span>
         </SidebarMenuButton>
       </SidebarMenuItem>
     );

@@ -3,6 +3,7 @@ import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useGT } from "gt-react";
 
 import { isElectron } from "../env";
 import { BlankWorkspacePage } from "../components/BlankWorkspacePage";
@@ -196,7 +197,8 @@ function HomeWaiting({
 }: {
   readonly waitingOn: ReadonlyArray<WaitingWorkspaceEnvironment>;
 }) {
-  const { text, unreachable } = describeWorkspaceWaiting(waitingOn);
+  const gt = useGT();
+  const { text, unreachable } = describeWorkspaceWaiting(waitingOn, gt);
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
       {isElectron ? <WorkspacePageHeader electron /> : null}
@@ -206,7 +208,7 @@ function HomeWaiting({
           {unreachable ? (
             <div className="mt-5 flex justify-center">
               <Button render={<Link to="/settings/connections" />} size="sm" variant="outline">
-                Check Connections
+                {gt("Check Connections")}
               </Button>
             </div>
           ) : null}

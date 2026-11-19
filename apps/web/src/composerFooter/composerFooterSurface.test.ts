@@ -1,4 +1,5 @@
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
+import { gtFallback } from "gt-react";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { ProviderInstanceEntry } from "../providerInstances";
@@ -37,14 +38,17 @@ function label(input: {
     snapshot,
     models: [],
   };
-  return composerModelPickerLabel({
-    activeInstanceId: instanceId,
-    model: glm,
-    instanceEntries: [entry],
-    modelOptionsByInstance: new Map([
-      [instanceId, input.options.map((option) => ({ ...option, isCustom: false }))],
-    ]),
-  });
+  return composerModelPickerLabel(
+    {
+      activeInstanceId: instanceId,
+      model: glm,
+      instanceEntries: [entry],
+      modelOptionsByInstance: new Map([
+        [instanceId, input.options.map((option) => ({ ...option, isCustom: false }))],
+      ]),
+    },
+    gtFallback,
+  );
 }
 
 describe("composerModelPickerLabel", () => {

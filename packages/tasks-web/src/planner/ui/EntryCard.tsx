@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useDraggable, type DraggableSyntheticListeners } from "@dnd-kit/core";
+import { useGT, useLocale } from "gt-react";
 import {
   CheckIcon,
   CircleCheckIcon,
@@ -87,8 +88,10 @@ function EntryBody(props: {
   readonly compact?: boolean;
   readonly trailing?: ReactNode;
 }) {
+  const gt = useGT();
+  const locale = useLocale();
   const { preferences, projectById } = usePlanner();
-  const timing = entryTimingLabel(props.entry);
+  const timing = entryTimingLabel(props.entry, locale, gt);
   const taskFinished = props.task ? isFinished(props.task) : false;
   const muted = handled(props.entry) || taskFinished;
   return (
@@ -121,7 +124,7 @@ function EntryBody(props: {
                 "line-through",
             )}
           >
-            {props.task?.title ?? "Loading…"}
+            {props.task?.title ?? gt("Loading…")}
           </div>
           {timing && !props.compact ? (
             <div className="mt-0.5 text-xs text-muted-foreground tabular-nums">{timing}</div>
@@ -141,11 +144,12 @@ function EntryButtons(props: {
   readonly selected: boolean;
   readonly handlers: EntryCardHandlers;
 }) {
+  const gt = useGT();
   const { entry, handlers } = props;
   if (props.selectMode)
     return (
       <IconAction
-        label={props.selected ? "Deselect" : "Select"}
+        label={props.selected ? gt("Deselect") : gt("Select")}
         size="icon-micro"
         pressed={props.selected}
         onClick={(event) => {
@@ -166,7 +170,7 @@ function EntryButtons(props: {
       )}
     >
       <IconAction
-        label={entry.status === "done" ? "Mark as not done" : "Mark as done"}
+        label={entry.status === "done" ? gt("Mark as not done") : gt("Mark as done")}
         size="icon-micro"
         onClick={(event) => {
           event.stopPropagation();
@@ -176,7 +180,7 @@ function EntryButtons(props: {
         {entry.status === "done" ? <CircleCheckIcon /> : <CircleIcon />}
       </IconAction>
       <IconAction
-        label="More options"
+        label={gt("More options")}
         size="icon-micro"
         onClick={(event) => {
           event.stopPropagation();
@@ -257,6 +261,7 @@ export const CalendarEntryCard = memo(function CalendarEntryCard(props: {
   readonly handlers: EntryCardHandlers;
   readonly onResize: (entry: TaskScheduleEntry, durationMinutes: number) => void;
 }) {
+  const gt = useGT();
   const { entry, position, handlers } = props;
   const { preferences } = usePlanner();
   const surface = useEntrySurface(entry, props.task);
@@ -354,7 +359,7 @@ export const CalendarEntryCard = memo(function CalendarEntryCard(props: {
         <div
           className="absolute right-1 bottom-0 left-1 h-2 cursor-ns-resize touch-none"
           role="separator"
-          aria-label="Drag to change the duration"
+          aria-label={gt("Drag to change the duration")}
           onPointerDown={startResize}
           // Pointer capture sends the click that ends a resize here; it must not open the card.
           onClick={(event) => event.stopPropagation()}

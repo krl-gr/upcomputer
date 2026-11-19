@@ -1,5 +1,6 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { isBotChatThread } from "@t3tools/tasks-web/feature";
+import { msg } from "gt-react";
 
 import type {
   ExperimentalWebThreadAccessoryProps,
@@ -24,9 +25,13 @@ export function threadProjectMoveActions(
   return [
     {
       id: "move-to-project",
-      label: "Move to project",
+      label: msg("Move to project"),
       icon: "folder",
-      choices: targets.map((target) => ({ id: target.id, label: target.label })),
+      choices: targets.map((target) => ({
+        id: target.id,
+        label: target.label,
+        message: target.isScratch,
+      })),
       ...(unavailableReason === null ? {} : { unavailableReason }),
       run: (_context, choiceId) => {
         const target = targets.find((candidate) => candidate.id === choiceId);

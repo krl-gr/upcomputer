@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
+import { useGT, useLocale } from "gt-react";
 import { MoreHorizontalIcon, Trash2Icon, XIcon } from "lucide-react";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
@@ -31,8 +32,6 @@ export interface QueueDropIndicator {
   readonly beforeEntryId: string | null;
 }
 
-const weekdayFormatter = new Intl.DateTimeFormat(undefined, { weekday: "short" });
-
 export interface WeekSelection {
   readonly active: boolean;
   readonly ids: ReadonlySet<string>;
@@ -44,10 +43,13 @@ export interface WeekSelection {
  * date under the weekday.
  */
 export function DayHeaderLabel(props: { readonly date: string; readonly marked: boolean }) {
+  const locale = useLocale();
   const day = dateOfKey(props.date);
   return (
     <>
-      <span className="text-xs font-semibold text-foreground">{weekdayFormatter.format(day)}</span>
+      <span className="text-xs font-semibold text-foreground">
+        {day.toLocaleDateString(locale, { weekday: "short" })}
+      </span>
       <span
         className={cn(
           "rounded-full px-1.5 text-xs font-semibold tabular-nums",
@@ -72,6 +74,7 @@ const QueueDayColumn = memo(function QueueDayColumn(props: {
   readonly onMark: (date: string) => void;
   readonly onDayMenu: (date: string, point: MenuPoint) => void;
 }) {
+  const gt = useGT();
   const { date, entries } = props.day;
   const { setNodeRef: setDropNode } = useDroppable({
     id: `column-${date}`,
@@ -95,7 +98,7 @@ const QueueDayColumn = memo(function QueueDayColumn(props: {
         <DayHeaderLabel date={date} marked={props.marked} />
         <span className="absolute right-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
           <IconAction
-            label="Day options"
+            label={gt("Day options")}
             size="icon-micro"
             onClick={(event) => {
               event.stopPropagation();
@@ -134,6 +137,7 @@ function DayTimingWindow(props: {
   readonly tasks: ReadonlyMap<string, PlannerTask>;
   readonly onClose: () => void;
 }) {
+  const gt = useGT();
   const { store } = usePlanner();
   const [position, setPosition] = useState<{ x: number; y: number } | undefined>();
   return (
@@ -147,25 +151,29 @@ function DayTimingWindow(props: {
       header={
         <>
           <h2 className="min-w-0 flex-1 truncate pt-1 text-base font-semibold text-foreground">
-            Set time & duration
+            {gt("Set time & duration")}
           </h2>
-          <IconAction label="Close" variant="outline" size="icon-sm" onClick={props.onClose}>
+          <IconAction label={gt("Close")} variant="outline" size="icon-sm" onClick={props.onClose}>
             <XIcon />
           </IconAction>
         </>
       }
     >
       {props.entries.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">No entries on this day.</p>
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          {gt("No entries on this day.")}
+        </p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Entry</TableHead>
-              <TableHead>Start time</TableHead>
-              <TableHead>Duration</TableHead>
               <TableHead>
-                <span className="sr-only">Delete</span>
+                {gt("Entry", { $context: "column header: a planned day entry" })}
+              </TableHead>
+              <TableHead>{gt("Start time")}</TableHead>
+              <TableHead>{gt("Duration")}</TableHead>
+              <TableHead>
+                <span className="sr-only">{gt("Delete")}</span>
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -174,7 +182,7 @@ function DayTimingWindow(props: {
               <TableRow key={entry.id}>
                 <TableCell className="max-w-40">
                   <span className="block truncate">
-                    {props.tasks.get(entry.taskId)?.title ?? "Loading…"}
+                    {props.tasks.get(entry.taskId)?.title ?? gt("Loading…")}
                   </span>
                 </TableCell>
                 <TableCell className="w-32">
@@ -200,7 +208,7 @@ function DayTimingWindow(props: {
                   <Button
                     size="icon-xs"
                     variant="ghost-destructive"
-                    aria-label="Delete entry"
+                    aria-label={gt("Delete entry")}
                     onClick={() => void store.deleteEntries([entry.id])}
                   >
                     <Trash2Icon />
@@ -227,6 +235,7 @@ export function WeekQueue(props: {
   readonly entryMenu: EntryMenuTarget | null;
   readonly onEntryMenuClose: () => void;
 }) {
+  const gt = useGT();
   const { store } = usePlanner();
   const [dayMenu, setDayMenu] = useState<{ date: string; point: MenuPoint } | null>(null);
   const [timingDate, setTimingDate] = useState<string | null>(null);
@@ -263,13 +272,13 @@ export function WeekQueue(props: {
               // Wande moves to tomorrow (relative to today), not to the column's next day.
               onClick={() => void store.moveOpen(dayMenu.date, addDays(today, 1))}
             >
-              Reschedule incomplete
+              {gt("Reschedule incomplete")}
             </MenuItem>
             <MenuItem
               disabled={(menuDay?.entries.length ?? 0) === 0}
               onClick={() => setTimingDate(dayMenu.date)}
             >
-              Set time & duration
+              {gt("Set time & duration")}
             </MenuItem>
           </>
         ) : null}

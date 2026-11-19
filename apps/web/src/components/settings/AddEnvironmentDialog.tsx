@@ -3,6 +3,7 @@ import { ChevronsLeftRightEllipsisIcon, PlusIcon, TerminalIcon } from "lucide-re
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import { useAtomValue } from "@effect/atom-react";
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { useGT } from "gt-react";
 import {
   type DesktopDiscoveredSshHost,
   type DesktopSshEnvironmentTarget,
@@ -87,6 +88,7 @@ export function AddEnvironmentDialog({
   readonly onOpenChange: (open: boolean) => void;
   readonly onErrorChange: (error: string | null) => void;
 }) {
+  const gt = useGT();
   const desktopBridge = window.desktopBridge;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const connectPairing = useAtomCommand(connectPairingAtom, { reportFailure: false });
@@ -224,7 +226,7 @@ export function AddEnvironmentDialog({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Couldn't add the computer",
+          title: gt("Couldn't add the computer"),
           description: message,
         }),
       );
@@ -244,7 +246,7 @@ export function AddEnvironmentDialog({
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Couldn't add the computer",
+            title: gt("Couldn't add the computer"),
             description: message,
           }),
         );

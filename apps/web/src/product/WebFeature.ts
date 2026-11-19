@@ -73,7 +73,12 @@ export interface ExperimentalWebThreadAction {
   /** A context menu icon name, such as "bot"; desktop menus show none. */
   readonly icon?: string;
   /** Makes the entry a submenu; `run` receives the chosen id. */
-  readonly choices?: ReadonlyArray<{ readonly id: string; readonly label: string }>;
+  readonly choices?: ReadonlyArray<{
+    readonly id: string;
+    readonly label: string;
+    /** The label is `msg()` text to translate, not a name. */
+    readonly message?: boolean;
+  }>;
   /** Why the action cannot run now, shown greyed out in its submenu instead of choices. */
   readonly unavailableReason?: string;
   readonly run: (context: ExperimentalWebThreadActionContext, choiceId?: string) => void;

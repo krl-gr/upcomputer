@@ -3,6 +3,7 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/models";
 import type { OrchestrationV2ShellThreadStatus, ProjectId } from "@t3tools/contracts";
+import { msg } from "gt-react";
 
 export type ThreadProjectMoveSubject = Pick<
   EnvironmentThreadShell,
@@ -34,14 +35,16 @@ const BUSY_STATUSES: ReadonlySet<OrchestrationV2ShellThreadStatus> = new Set([
  * `thread.project.move` check: no subagent, no worktree, no queued or live run, no open request.
  */
 function threadProjectMoveBlocker(thread: ThreadProjectMoveSubject): string | null {
-  if (thread.lineage.relationshipToParent === "subagent") return "Subagents stay with their parent";
-  if (thread.worktreePath !== null) return "Threads in a worktree cannot move";
+  if (thread.lineage.relationshipToParent === "subagent") {
+    return msg("Subagents stay with their parent");
+  }
+  if (thread.worktreePath !== null) return msg("Threads in a worktree cannot move");
   if (
     BUSY_STATUSES.has(thread.source.status) ||
     (thread.source.activityRunStatus ?? null) !== null ||
     thread.source.pendingRuntimeRequest !== null
   )
-    return "Available when the thread is idle";
+    return msg("Available when the thread is idle");
   return null;
 }
 
@@ -69,20 +72,20 @@ export function threadProjectMoveTargets(
         ...named,
         {
           id: scratch.id,
-          label: "No project",
+          label: msg("No project"),
           workspaceRoot: scratch.workspaceRoot,
           isScratch: true,
         },
       ];
 }
 
-/** The reason the move is unavailable, counting a computer with no other project. */
+/** The reason the move is unavailable, counting a computer with no other project. `msg()` text. */
 export function threadProjectMoveUnavailableReason(
   thread: ThreadProjectMoveSubject,
   targets: ReadonlyArray<ThreadProjectMoveTarget>,
 ): string | null {
   return (
     threadProjectMoveBlocker(thread) ??
-    (targets.length === 0 ? "No other project on this computer" : null)
+    (targets.length === 0 ? msg("No other project on this computer") : null)
   );
 }

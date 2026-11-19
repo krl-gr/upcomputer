@@ -5,6 +5,7 @@ import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import * as React from "react";
+import type { useGT } from "gt-react";
 import {
   isAtomCommandInterrupted,
   type AtomCommandResult,
@@ -83,17 +84,21 @@ export function describeWorkspaceWaiting(
     readonly isPrimary: boolean;
     readonly unreachable: boolean;
   }>,
+  gt: ReturnType<typeof useGT>,
 ): { readonly text: string; readonly unreachable: boolean } {
-  const name = (environment: (typeof waitingOn)[number]) =>
-    environment.isPrimary ? "this device" : environment.label;
   const unreachable = waitingOn.filter((environment) => environment.unreachable);
   const [firstUnreachable] = unreachable;
   if (firstUnreachable !== undefined) {
     return {
       text:
-        unreachable.length === 1
-          ? `Can’t reach ${name(firstUnreachable)} right now.`
-          : `Can’t reach ${unreachable.length} environments right now.`,
+        unreachable.length > 1
+          ? gt(
+              "{count, plural, one {Can’t reach # environment right now.} other {Can’t reach # environments right now.}}",
+              { count: unreachable.length },
+            )
+          : firstUnreachable.isPrimary
+            ? gt("Can’t reach this device right now.")
+            : gt("Can’t reach {name} right now.", { name: firstUnreachable.label }),
       unreachable: true,
     };
   }
@@ -101,10 +106,15 @@ export function describeWorkspaceWaiting(
   return {
     text:
       first === undefined
-        ? "Connecting…"
-        : waitingOn.length === 1
-          ? `Connecting to ${name(first)}…`
-          : `Connecting to ${waitingOn.length} environments…`,
+        ? gt("Connecting…")
+        : waitingOn.length > 1
+          ? gt(
+              "{count, plural, one {Connecting to # environment…} other {Connecting to # environments…}}",
+              { count: waitingOn.length },
+            )
+          : first.isPrimary
+            ? gt("Connecting to this device…")
+            : gt("Connecting to {name}…", { name: first.label }),
     unreachable: false,
   };
 }

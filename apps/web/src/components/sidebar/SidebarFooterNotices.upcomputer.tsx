@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { DesktopBridge } from "@t3tools/contracts";
 import { type ReactNode, useEffect, useId, useState } from "react";
+import { T, useGT } from "gt-react";
 
 import { isElectron } from "../../env";
 import { undoLatestThreadAction, useThreadUndoNotice } from "../../hooks/showThreadUndoNotice";
@@ -125,8 +126,31 @@ const UNDO_ICONS = {
   Discarded: Trash2Icon,
 } as const;
 
+/** What the undo notice says it did, with the thread count when there are several. */
+function undoNoticeLabel(
+  action: keyof typeof UNDO_ICONS,
+  count: number,
+  gt: ReturnType<typeof useGT>,
+): string {
+  switch (action) {
+    case "Archived":
+      return gt("{count, plural, =1 {Archived} one {Archived #} other {Archived #}}", { count });
+    case "Snoozed":
+      return gt("{count, plural, =1 {Snoozed} one {Snoozed #} other {Snoozed #}}", { count });
+    case "Settled":
+      return gt("{count, plural, =1 {Settled} one {Settled #} other {Settled #}}", { count });
+    case "Unpinned":
+      return gt("{count, plural, =1 {Unpinned} one {Unpinned #} other {Unpinned #}}", { count });
+    case "Discarded":
+      return gt("{count, plural, =1 {Discarded} one {Discarded #} other {Discarded #}}", {
+        count,
+      });
+  }
+}
+
 /** The thread undo notice: what just happened, and Undo with its shortcut. */
 function SidebarUndoNoticePill() {
+  const gt = useGT();
   const notice = useThreadUndoNotice((state) => state.notice);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const current = notice ? { action: notice.action, count: notice.count } : null;
@@ -152,11 +176,11 @@ function SidebarUndoNoticePill() {
       tone="neutral"
       exiting={!current}
       icon={<Icon className="size-3.5 shrink-0" />}
-      label={visible.count === 1 ? visible.action : `${visible.action} ${visible.count}`}
+      label={undoNoticeLabel(visible.action, visible.count, gt)}
       action={{
         label: (
           <>
-            Undo
+            <T>Undo</T>
             {shortcut ? <Kbd>{shortcut}</Kbd> : null}
           </>
         ),
@@ -168,6 +192,7 @@ function SidebarUndoNoticePill() {
 
 /** The desktop app's warning that an Intel build runs on Apple Silicon. */
 function SidebarArchitecturePill() {
+  const gt = useGT();
   const state = useDesktopUpdateState();
   const [pending, setPending] = useState(false);
   if (!state || !shouldShowArm64IntelBuildWarning(state)) return null;
@@ -182,15 +207,15 @@ function SidebarArchitecturePill() {
   const action: PillAction | null =
     updateAction === "download"
       ? {
-          label: "Download",
+          label: gt("Download"),
           disabled: pending,
           onClick: () => run((bridge) => downloadLocalUpdate(bridge, { notifyDownloaded: true })),
         }
       : updateAction === "install"
         ? {
-            label: "Restart",
+            label: gt("Restart"),
             disabled: pending,
-            onClick: () => run((bridge) => confirmAndInstallLocalUpdate(bridge, state)),
+            onClick: () => run((bridge) => confirmAndInstallLocalUpdate(bridge, state, gt)),
           }
         : null;
 
@@ -198,7 +223,7 @@ function SidebarArchitecturePill() {
     <SidebarFooterPill
       tone="warning"
       icon={<TriangleAlertIcon className="size-3.5 shrink-0" />}
-      label="Intel build on Apple Silicon"
+      label={gt("Intel build on Apple Silicon")}
       description={getArm64IntelBuildWarningDescription(state)}
       {...(action ? { action } : {})}
     />

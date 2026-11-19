@@ -250,6 +250,7 @@ import {
   isFirstRunAgentChecking,
 } from "../../onboardingSurface/upComputerOnboarding.logic";
 import { useFirstRunAgentStatus } from "../../onboardingSurface/FirstRunAgent";
+import { useGT, useMessages } from "gt-react";
 import { ComposerControl } from "./ComposerControl";
 import { isProductFeatureShown } from "../../product/productFlags";
 import {
@@ -520,6 +521,8 @@ const NO_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const NO_PROVIDER_SLASH_COMMANDS: ServerProvider["slashCommands"] = [];
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
+  const gt = useGT();
+  const m = useMessages();
   const {
     composerDraftTarget,
     environmentId,
@@ -968,7 +971,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
   const firstRunAgentPlaceholder =
     firstRunAgentStatus?.kind === "preparing"
-      ? "Setting up your agent. This takes a moment the first time."
+      ? gt("Setting up your agent. This takes a moment the first time.")
       : firstRunAgentStatus?.kind === "failed"
         ? firstRunAgentStatus.message
         : null;
@@ -993,7 +996,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const providerSendBlockReason =
     getAntigravitySendBlockReason(selectedProviderEntry?.snapshot, selectedModel) ??
     (selectedProviderEntry?.driverKind === "opencode" && selectedModel.trim().length === 0
-      ? "Choose an OpenCode model before sending."
+      ? gt("Choose an OpenCode model before sending.")
       : null);
   const sendDisabledReason =
     externalSendDisabledReason ??
@@ -2523,8 +2526,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         className="shrink-0"
       >
         {firstRunAgentStatus.progress === null
-          ? "Setting up your agent…"
-          : `Setting up your agent… ${Math.round(firstRunAgentStatus.progress * 100)}%`}
+          ? gt("Setting up your agent…")
+          : gt("Setting up your agent… {percent}%", {
+              percent: Math.round(firstRunAgentStatus.progress * 100),
+            })}
       </ComposerControl>
     ) : firstRunAgentStatus?.kind === "failed" ? (
       <>
@@ -2536,7 +2541,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           className="shrink-0"
         >
           <RefreshCwIcon className="size-4" />
-          {firstRunAgent.retrying ? "Retrying…" : "Retry"}
+          {firstRunAgent.retrying ? gt("Retrying…") : gt("Retry")}
         </ComposerControl>
         <ComposerControl
           type="button"
@@ -2549,7 +2554,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           }}
           className="shrink-0"
         >
-          Connect another agent
+          {gt("Connect another agent")}
         </ComposerControl>
       </>
     ) : null;
@@ -3883,7 +3888,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               ? (firstRunAgentPlaceholder ??
                                 "Enable a provider in Settings to send a message")
                               : (offeredPromptSuggestion ??
-                                composerIdlePlaceholder(routeKind === "server"))
+                                m(composerIdlePlaceholder(routeKind === "server")))
                     }
                     placeholderSuffix={
                       offeredPromptSuggestion !== null ? (

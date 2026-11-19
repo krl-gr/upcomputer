@@ -15,6 +15,7 @@ import type {
   TaskChange,
 } from "@t3tools/tasks-contracts/v1";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
+import { msg } from "gt-react";
 
 import type { TasksWebRpcClient } from "../../rpc/index.ts";
 import { reuseRows } from "../../state/recent.ts";
@@ -37,6 +38,7 @@ export interface AutomationStoreOptions {
   readonly batchMs?: number;
   /** How long the store stays live after its last release. */
   readonly releaseMs?: number;
+  /** `title` is English, from `msg()`; the handler translates it. */
   readonly onError?: (title: string, error: unknown) => void;
   readonly now?: () => number;
   /** How long after a due run the list is read again (the scheduler ticks every 30 s). */
@@ -287,7 +289,7 @@ export class AutomationStore {
   /** Creates or saves an automation; resolves to the saved one, or null on failure. */
   upsert(input: TaskAutomationUpsertInput): Promise<TaskAutomation | null> {
     return this.write(
-      input.id ? "Could not save the automation" : "Could not create the automation",
+      input.id ? msg("Could not save the automation") : msg("Could not create the automation"),
       () => this.client.automations.upsert(input),
       (automation) => this.merge(automation),
     );
@@ -295,7 +297,9 @@ export class AutomationStore {
 
   async setStatus(id: string, status: TaskAutomationStatus): Promise<boolean> {
     const saved = await this.write(
-      status === "enabled" ? "Could not enable the automation" : "Could not pause the automation",
+      status === "enabled"
+        ? msg("Could not enable the automation")
+        : msg("Could not pause the automation"),
       () => this.client.automations.setStatus({ id: id as TaskAutomationId, status }),
       (automation) => this.merge(automation),
     );
@@ -304,7 +308,7 @@ export class AutomationStore {
 
   async remove(id: string): Promise<boolean> {
     const done = await this.write(
-      "Could not delete the automation",
+      msg("Could not delete the automation"),
       () => this.client.automations.delete({ id: id as TaskAutomationId }).then(() => true),
       () => {
         this.rows = this.rows.filter((row) => row.id !== id);
@@ -325,7 +329,7 @@ export class AutomationStore {
     this.pendingOrder = { op, ids };
     this.emit();
     const saved = await this.write(
-      "Could not move the automation",
+      msg("Could not move the automation"),
       () =>
         this.client.automations.reorder({
           id: id as TaskAutomationId,

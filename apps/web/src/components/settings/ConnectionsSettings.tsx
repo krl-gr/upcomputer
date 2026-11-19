@@ -4,6 +4,7 @@ import { useSearch } from "@tanstack/react-router";
 import { ChevronRightIcon, EllipsisIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { type ReactNode, useState } from "react";
+import { useGT } from "gt-react";
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
@@ -256,6 +257,7 @@ function ConnectionsSettingsContent({
   readonly accessEnvironmentId: EnvironmentId | null;
   readonly accessEnvironmentPicker?: ReactNode;
 }) {
+  const gt = useGT();
   const desktopBridge = window.desktopBridge;
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
@@ -672,7 +674,9 @@ function ConnectionsSettingsContent({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: `Couldn't turn the computer ${enabled ? "on" : "off"}`,
+          title: enabled
+            ? gt("Couldn't turn the computer on")
+            : gt("Couldn't turn the computer off"),
           description: message,
         }),
       );
@@ -692,7 +696,7 @@ function ConnectionsSettingsContent({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Couldn't remove the computer",
+          title: gt("Couldn't remove the computer"),
           description: message,
         }),
       );
@@ -838,7 +842,7 @@ function ConnectionsSettingsContent({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Couldn't change the WSL setting",
+          title: gt("Couldn't change the WSL setting"),
           description: message,
         }),
       );
@@ -937,7 +941,7 @@ function ConnectionsSettingsContent({
         return (
           <SettingsRow
             {...searchableSetting("wsl-backend")}
-            description="Couldn't load the WSL setting."
+            description={gt("Couldn't load the WSL setting.")}
             status={<span className="block text-destructive">{desktopWslError}</span>}
             control={
               <Button

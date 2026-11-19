@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import { AsyncResult } from "effect/reactivity";
+import { useGT } from "gt-react";
 import {
   ChevronDownIcon,
   Clock3Icon,
@@ -374,6 +375,7 @@ export function ScheduledTasksSettings(target: {
   readonly environmentId?: EnvironmentId;
   readonly taskId?: ScheduledTaskId | undefined;
 }) {
+  const gt = useGT();
   const { scope, environments, connectedEnvironments, environment } = useSettingsScope();
   const [editor, setEditor] = useState<{
     environmentId: EnvironmentId;
@@ -438,6 +440,7 @@ export function ScheduledTasksSettings(target: {
     <SettingsPageContainer>
       <SettingsSection
         {...searchableSetting("scheduled-tasks")}
+        title={gt("Scheduled prompts")}
         variant="plain"
         headerAction={
           <Button
@@ -450,7 +453,7 @@ export function ScheduledTasksSettings(target: {
             }
           >
             <PlusIcon className="size-3" />
-            New prompt
+            {gt("New prompt")}
           </Button>
         }
       >
@@ -464,9 +467,9 @@ export function ScheduledTasksSettings(target: {
               <EmptyMedia variant="icon">
                 <Clock3Icon />
               </EmptyMedia>
-              <EmptyTitle>No environments available</EmptyTitle>
+              <EmptyTitle>{gt("No environments available")}</EmptyTitle>
               <EmptyDescription>
-                Connect an environment to manage scheduled prompts.
+                {gt("Connect an environment to manage scheduled prompts.")}
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -662,6 +665,7 @@ function ScheduledTaskEnvironmentSection({
   readonly taskId?: ScheduledTaskId | undefined;
   readonly onEdit: (environmentId: EnvironmentId, task: ScheduledTask) => void;
 }) {
+  const gt = useGT();
   const { scope } = useSettingsScope();
   const connected =
     environment.connection.phase === "connected" && environment.serverConfig !== null;
@@ -690,26 +694,33 @@ function ScheduledTaskEnvironmentSection({
     >
       {!connected ? (
         <SettingsRow
-          title="Environment disconnected"
-          description={`Reconnect ${environment.label} to view its scheduled prompts.`}
+          title={gt("Environment disconnected")}
+          description={gt("Reconnect {environment} to view its scheduled prompts.", {
+            environment: environment.label,
+          })}
         />
       ) : tasksQuery.error ? (
-        <SettingsRow title="Could not load scheduled prompts" description={tasksQuery.error} />
+        <SettingsRow
+          title={gt("Could not load scheduled prompts")}
+          description={tasksQuery.error}
+        />
       ) : !tasks ? (
-        <SettingsRow title="Loading scheduled prompts…" role="status" />
+        <SettingsRow title={gt("Loading scheduled prompts…")} role="status" />
       ) : (
         <>
           {taskId && !linkedTask ? (
             <SettingsRow
-              title="Prompt unavailable"
-              description="This prompt was deleted or belongs to a different project. Check your project filter."
+              title={gt("Prompt unavailable")}
+              description={gt(
+                "This prompt was deleted or belongs to a different project. Check your project filter.",
+              )}
               role="status"
             />
           ) : null}
           {tasks.length === 0 ? (
             <SettingsRow
-              title="No scheduled prompts"
-              description="No prompts match this environment and project selection."
+              title={gt("No scheduled prompts")}
+              description={gt("No prompts match this environment and project selection.")}
             />
           ) : (
             tasks.map((task) => (
@@ -739,6 +750,7 @@ function ScheduledTaskRow({
   readonly timeZone: string | undefined;
   readonly onEdit: () => void;
 }) {
+  const gt = useGT();
   const canOperate = useAtomValue(
     serverEnvironment.upsertScheduledTask.permissionAtom(environmentId),
   );
@@ -775,7 +787,7 @@ function ScheduledTaskRow({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not update scheduled prompt",
+          title: gt("Could not update scheduled prompt"),
           description: String(squashAtomCommandFailure(result)),
         }),
       );
@@ -1219,6 +1231,7 @@ function ScheduledTaskDestination({
   /** Absent on servers that predate thread modes. */
   readonly onThreadModeChange: ((mode: ScheduledTaskThreadMode) => void) | undefined;
 }) {
+  const gt = useGT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = threadId === null ? null : scopeThreadRef(environmentId, threadId);
@@ -1342,7 +1355,9 @@ function ScheduledTaskDestination({
       <div className="space-y-1 text-sm">
         <p className="text-muted-foreground">{detail}</p>
         {threadMode !== "new_thread" ? (
-          <p className="text-muted-foreground">Deleting the thread also deletes this prompt.</p>
+          <p className="text-muted-foreground">
+            {gt("Deleting the thread also deletes this prompt.")}
+          </p>
         ) : null}
       </div>
     </Field>
@@ -1362,6 +1377,7 @@ function ScheduledTaskEditorForm({
   readonly onSavingChange: (saving: boolean) => void;
   readonly onClose: () => void;
 }) {
+  const gt = useGT();
   const { scope, connectedEnvironments } = useSettingsScope();
   const [environmentId, setEnvironmentId] = useState(initialEnvironmentId);
   const environment = useEnvironment(environmentId);
@@ -1480,7 +1496,10 @@ function ScheduledTaskEditorForm({
       !projects.some((project) => project.id === selectedProjectId) ||
       selection === null
     ) {
-      reportFailure("Scheduled prompt is incomplete", "Add a title, prompt, project, and model.");
+      reportFailure(
+        gt("Scheduled prompt is incomplete"),
+        gt("Add a title, prompt, project, and model."),
+      );
       return;
     }
     const parsedFilters = parseWebhookFilterDrafts(draft.filters);
@@ -1512,8 +1531,10 @@ function ScheduledTaskEditorForm({
     }
     if (schedule.type === "once" && !offersOnce) {
       reportFailure(
-        "Once is not available here",
-        "This environment runs an older Up.computer. Update it to schedule a one-time prompt, or pick another schedule.",
+        gt("Once is not available here"),
+        gt(
+          "This environment runs an older Up.computer. Update it to schedule a one-time prompt, or pick another schedule.",
+        ),
       );
       return;
     }
@@ -1563,7 +1584,7 @@ function ScheduledTaskEditorForm({
     if (result._tag === "Failure") {
       submissionPending.current = false;
       if (!isAtomCommandInterrupted(result)) {
-        reportFailure("Could not save scheduled prompt", squashAtomCommandFailure(result));
+        reportFailure(gt("Could not save scheduled prompt"), squashAtomCommandFailure(result));
       }
       return;
     }
@@ -1573,7 +1594,7 @@ function ScheduledTaskEditorForm({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{draft.editingId ? "Edit prompt" : "New prompt"}</DialogTitle>
+        <DialogTitle>{draft.editingId ? gt("Edit prompt") : gt("New prompt")}</DialogTitle>
         <DialogDescription>
           Run a prompt automatically on an interval, at a fixed time, once at a set date, or when a
           webhook is called.
@@ -1655,7 +1676,7 @@ function ScheduledTaskEditorForm({
           ) : null}
           {editingTaskMissing ? (
             <p className="text-xs text-destructive" role="status">
-              This scheduled prompt no longer exists.
+              {gt("This scheduled prompt no longer exists.")}
             </p>
           ) : null}
           <Field label="Name" htmlFor="scheduled-task-title">
@@ -1876,7 +1897,10 @@ function ScheduledTaskEditorForm({
             {webhookDenial !== undefined ? (
               <ManagedNotice>
                 {draft.scheduleMode === "webhook"
-                  ? `${webhookDenial} Switch this prompt to a time or an interval, or turn it off, to save it.`
+                  ? gt(
+                      "{webhookDenial} Switch this prompt to a time or an interval, or turn it off, to save it.",
+                      { webhookDenial },
+                    )
                   : webhookDenial}
               </ManagedNotice>
             ) : null}

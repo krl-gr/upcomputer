@@ -1,6 +1,7 @@
 import "../index.css";
 
-import type { ReactNode } from "react";
+import { GTProvider } from "gt-react";
+import type { ComponentProps, ReactNode } from "react";
 import { commands } from "vite-plus/test/browser";
 
 import { act, render, type Screen } from "../../test/render";
@@ -10,6 +11,8 @@ declare module "vite-plus/test/browser" {
   interface BrowserCommands {
     /** Defined in vite.config.ts. Writes the sheet element to `<fileName>.png`. */
     writeUiStatesSheet: (fileName: string, density?: UiStateDensity) => Promise<void>;
+    /** Defined in vite.config.ts. The UI language `vp run ui-states --locale` asked for. */
+    uiStatesLocale: () => Promise<string | null>;
   }
 }
 
@@ -91,12 +94,34 @@ function element<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-async function renderState(state: UiState, cell: HTMLElement, stack: AsyncDisposableStack) {
+type Translate = (node: ReactNode) => ReactNode;
+
+/** Wraps states in the requested UI language, as the app's I18nProvider does. */
+async function loadTranslate(locale: string | null): Promise<Translate> {
+  if (locale === null) return (node) => node;
+  const module: {
+    default: NonNullable<ComponentProps<typeof GTProvider>["translations"]>[string];
+  } = await import(`../i18n/translations/${locale}.json`);
+  const translations = { [locale]: module.default };
+  document.documentElement.lang = locale;
+  return (node) => (
+    <GTProvider locale={locale} translations={translations}>
+      {node}
+    </GTProvider>
+  );
+}
+
+async function renderState(
+  state: UiState,
+  cell: HTMLElement,
+  stack: AsyncDisposableStack,
+  translate: Translate,
+) {
   const undo = state.setup?.();
   try {
     const host = document.createElement("div");
     cell.append(host);
-    const screen: Screen = await render(state.render(), { container: host });
+    const screen: Screen = await render(translate(state.render()), { container: host });
     stack.use(screen);
     await state.settle?.(host);
     if (undo) {
@@ -131,6 +156,9 @@ export async function captureUiStateSheet(
   } = {},
 ) {
   const { columns, densities, cellWidth } = options;
+  const locale = await commands.uiStatesLocale();
+  const translate = await loadTranslate(locale);
+  const fileName = locale === null ? name : `${name}-${locale}`;
   for (const theme of THEMES) {
     applyTheme(theme);
     await using stack = new AsyncDisposableStack();
@@ -138,7 +166,7 @@ export async function captureUiStateSheet(
     sheet.dataset.uiStatesSheet = "";
     document.body.append(sheet);
     stack.defer(() => sheet.remove());
-    const title = element("div", "text-base font-semibold", `${name} · ${theme}`);
+    const title = element("div", "text-base font-semibold", `${fileName} · ${theme}`);
     sheet.append(title);
     if (columns) {
       const header = element("div", "flex items-center gap-4 text-sm font-semibold");
@@ -172,18 +200,18 @@ export async function captureUiStateSheet(
           row.append(...cells, element("div", "w-72 text-xs text-muted-foreground", state.name));
         }
         section.append(row);
-        for (const cell of cells) await renderState(state, cell, stack);
+        for (const cell of cells) await renderState(state, cell, stack, translate);
       }
     }
     emulateHoverInStyleSheets();
     await document.fonts.ready;
     if (!densities) {
-      await commands.writeUiStatesSheet(`${name}-${theme}`);
+      await commands.writeUiStatesSheet(`${fileName}-${theme}`);
       continue;
     }
     for (const density of densities) {
-      title.textContent = `${name} · ${theme} · ${DENSITY_TITLES[density]}`;
-      await commands.writeUiStatesSheet(`${name}-${theme}-${density}`, density);
+      title.textContent = `${fileName} · ${theme} · ${DENSITY_TITLES[density]}`;
+      await commands.writeUiStatesSheet(`${fileName}-${theme}-${density}`, density);
     }
   }
 }

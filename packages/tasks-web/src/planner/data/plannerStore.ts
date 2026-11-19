@@ -29,6 +29,7 @@ import {
 } from "@t3tools/tasks-contracts/v1";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import type { ProjectId } from "@t3tools/contracts";
+import { msg } from "gt-react";
 
 import type { TasksWebRpcClient } from "../../rpc/index.ts";
 import { TaskPageLoader, type TaskPageLoadState } from "../../state/taskPageLoader.ts";
@@ -91,6 +92,7 @@ export interface PlannerStoreOptions {
   readonly batchMs?: number;
   /** How long the store stays live after its last release. */
   readonly releaseMs?: number;
+  /** `title` is English, from `msg()`; the handler translates it. */
   readonly onError?: (title: string, error: unknown) => void;
   readonly now?: () => string;
 }
@@ -775,7 +777,9 @@ export class PlannerStore {
     readonly kind?: PlannerKind;
   }): Promise<boolean> {
     return this.write(
-      input.kind === "routine" ? "Could not create the routine" : "Could not create the task",
+      input.kind === "routine"
+        ? msg("Could not create the routine")
+        : msg("Could not create the task"),
       null,
       () =>
         this.client.tasks.create({
@@ -797,7 +801,7 @@ export class PlannerStore {
 
   updateTask(id: string, patch: Omit<TaskPatch, "archivedAt">): Promise<boolean> {
     return this.write(
-      "Could not update the task",
+      msg("Could not update the task"),
       (view) => patchTask(view, id, patch),
       () =>
         this.client.tasks.update({
@@ -816,7 +820,7 @@ export class PlannerStore {
   archive(ids: readonly string[]): Promise<boolean> {
     const archivedAt = this.now();
     return this.write(
-      ids.length === 1 ? "Could not archive the task" : "Could not archive the tasks",
+      ids.length === 1 ? msg("Could not archive the task") : msg("Could not archive the tasks"),
       (view) => ids.reduce((next, id) => patchTask(next, id, { archivedAt }), view),
       () => this.client.tasks.archive({ ids: ids as TaskId[] }),
       () => this.refetchTasks(ids),
@@ -849,7 +853,7 @@ export class PlannerStore {
       if (status !== null && status !== task.status) statuses.set(id, status);
     }
     return this.write(
-      ids.length === 1 ? "Could not restore the task" : "Could not restore the tasks",
+      ids.length === 1 ? msg("Could not restore the task") : msg("Could not restore the tasks"),
       (current) =>
         ids.reduce((next, id) => {
           const status = statuses.get(id);
@@ -871,7 +875,7 @@ export class PlannerStore {
   async deleteTasks(ids: readonly string[]): Promise<void> {
     for (const id of ids) {
       await this.write(
-        "Could not delete the task",
+        msg("Could not delete the task"),
         null,
         () => this.client.tasks.delete({ id: id as TaskId }),
         () => {
@@ -902,7 +906,7 @@ export class PlannerStore {
       ...("afterTaskId" in anchor ? { afterTaskId: anchor.afterTaskId as TaskId } : {}),
     };
     return this.write(
-      ids.length === 1 ? "Could not move the task" : "Could not move the tasks",
+      ids.length === 1 ? msg("Could not move the task") : msg("Could not move the tasks"),
       (view) => reorderTasks(view, ids, anchor),
       async () =>
         ids.length === 1
@@ -928,7 +932,7 @@ export class PlannerStore {
       updatedAt: timestamp,
     }));
     return this.write(
-      "Could not schedule the task",
+      msg("Could not schedule the task"),
       (view) => addEntries(view, input.date, temporary, input.placement),
       () => this.client.tasks.scheduleAdd(input),
       (result) => this.mergeWrittenEntries(result.entries),
@@ -941,7 +945,7 @@ export class PlannerStore {
       ...(input.durationMinutes !== undefined ? { durationMinutes: input.durationMinutes } : {}),
     };
     return this.write(
-      input.ids.length === 1 ? "Could not move the entry" : "Could not move the entries",
+      input.ids.length === 1 ? msg("Could not move the entry") : msg("Could not move the entries"),
       (view) => moveEntries(view, input.ids, input.date, input.placement, timing),
       () => this.client.tasks.scheduleMove(input),
       (result) => this.mergeWrittenEntries(result.entries),
@@ -955,7 +959,7 @@ export class PlannerStore {
       ...(input.durationMinutes !== undefined ? { durationMinutes: input.durationMinutes } : {}),
     };
     return this.write(
-      "Could not update the entry",
+      msg("Could not update the entry"),
       (view) => patchEntry(view, input.id, patch),
       () => this.client.tasks.scheduleUpdate(input),
       (result) => this.mergeWrittenEntries(result.entries),
@@ -964,7 +968,7 @@ export class PlannerStore {
 
   deleteEntries(ids: readonly string[]): Promise<boolean> {
     return this.write(
-      ids.length === 1 ? "Could not delete the entry" : "Could not delete the entries",
+      ids.length === 1 ? msg("Could not delete the entry") : msg("Could not delete the entries"),
       (view) => removeEntries(view, new Set(ids)),
       () => this.client.tasks.scheduleDelete({ ids: ids as TaskScheduleEntryId[] }),
       (result) => this.forgetEntries(result.entries.map((entry) => entry.id)),
@@ -973,7 +977,7 @@ export class PlannerStore {
 
   copyEntries(input: TaskScheduleCopyInput): Promise<boolean> {
     return this.write(
-      "Could not copy the entries",
+      msg("Could not copy the entries"),
       null,
       () => this.client.tasks.scheduleCopy(input),
       (result) => this.mergeWrittenEntries(result.entries),
@@ -983,7 +987,7 @@ export class PlannerStore {
   /** "Reschedule incomplete": every open entry of a day to the end of another. */
   moveOpen(fromDate: string, toDate: string): Promise<boolean> {
     return this.write(
-      "Could not reschedule the day",
+      msg("Could not reschedule the day"),
       null,
       () => this.client.tasks.scheduleMoveOpen({ fromDate, toDate }),
       (result) => this.mergeWrittenEntries(result.entries),

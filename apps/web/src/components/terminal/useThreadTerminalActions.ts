@@ -7,6 +7,7 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { nextTerminalId } from "@t3tools/shared/terminalLabels";
+import { useGT } from "gt-react";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { randomUUID } from "~/lib/utils";
@@ -31,9 +32,10 @@ export interface TerminalLaunchLocation {
 
 /** Allocate terminal ids and launch locations centrally so all surfaces share one view of sessions. */
 export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
+  const gt = useGT();
   const openTerminalCommand = useAtomCommand(terminalEnvironment.open, {
     label: "terminal open",
-    failureToast: "Terminal didn't start",
+    failureToast: gt("Terminal didn't start"),
   });
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalCommand = useAtomCommand(terminalEnvironment.close, "terminal close");

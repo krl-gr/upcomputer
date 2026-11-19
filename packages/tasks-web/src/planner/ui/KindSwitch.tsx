@@ -1,10 +1,10 @@
+import { useGT } from "gt-react";
+
 import {
   ToggleGroup,
   ToggleGroupItem,
 } from "../../../../../apps/web/src/components/ui/toggle-group.tsx";
 import type { PlannerKind } from "../data/preferences.ts";
-
-const LABELS: Record<PlannerKind, string> = { task: "Tasks", routine: "Routines" };
 
 const kindOf = (value: unknown) => (value === "task" || value === "routine" ? value : null);
 
@@ -16,9 +16,10 @@ export function KindSwitch(props: {
   readonly value: PlannerKind;
   readonly onChange: (kind: PlannerKind) => void;
 }) {
+  const gt = useGT();
   return (
     <ToggleGroup
-      aria-label="Tasks or routines"
+      aria-label={gt("Tasks or routines")}
       variant="segmented-outline"
       value={[props.value]}
       onValueChange={(value) => {
@@ -26,8 +27,8 @@ export function KindSwitch(props: {
         if (next) props.onChange(next);
       }}
     >
-      <ToggleGroupItem value="task">{LABELS.task}</ToggleGroupItem>
-      <ToggleGroupItem value="routine">{LABELS.routine}</ToggleGroupItem>
+      <ToggleGroupItem value="task">{gt("Tasks")}</ToggleGroupItem>
+      <ToggleGroupItem value="routine">{gt("Routines")}</ToggleGroupItem>
     </ToggleGroup>
   );
 }

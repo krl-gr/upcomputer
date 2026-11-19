@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { BotIcon, ListTodoIcon, MessageSquareTextIcon } from "lucide-react";
+import { msg } from "gt-react";
 
 // The pure host module, not the web extension API: the product entry imports
 // this file while the connection runtime is still initializing, so nothing here
@@ -113,7 +114,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   settings: [
     {
       id: "instructions",
-      label: "Instructions",
+      label: msg("Instructions"),
       path: "/settings/instructions",
       order: 40,
       icon: MessageSquareTextIcon,
@@ -123,7 +124,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   rightPanelSurfaces: [
     {
       id: "tasks",
-      label: "Tasks",
+      label: msg("Tasks"),
       shortcut: "K",
       icon: ListTodoIcon,
       load: () => import("./ui/TasksPanel.tsx"),
@@ -140,7 +141,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   navigation: [
     {
       id: "tasks",
-      label: "Tasks",
+      label: msg("Tasks"),
       path: "/tasks",
       order: 20,
       icon: ListTodoIcon,
@@ -148,7 +149,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
     },
     {
       id: "agents",
-      label: "Workers",
+      label: msg("Workers"),
       path: "/workers",
       order: 30,
       icon: BotIcon,

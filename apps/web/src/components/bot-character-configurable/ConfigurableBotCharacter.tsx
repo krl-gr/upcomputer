@@ -1,4 +1,5 @@
 /* oxlint-disable shadcn/no-unknown-classes, shadcn/no-raw-colors -- SVG artwork uses colocated CSS and fixed illustration colors independent of UI tokens. */
+import { useMessages } from "gt-react";
 import { useId, useLayoutEffect, useRef } from "react";
 import { EyeAccessories, FaceAccessories, Headwear } from "./Accessories";
 import {
@@ -37,12 +38,13 @@ export function ConfigurableBotCharacter({
   decorative = false,
   label,
 }: ConfigurableBotCharacterProps) {
+  const m = useMessages();
   const id = `cbc-${useId().replace(/:/g, "")}`;
   const root = usePausedWhenHidden();
   const changed = useStateChanged(state);
   const shape = botShapes.find((entry) => entry.id === appearance.shape) ?? botShapes[4];
   const color = botColors.find((entry) => entry.id === appearance.color) ?? botColors[4];
-  const stateLabel = botStates.find((entry) => entry.id === state)?.label ?? botStates[0].label;
+  const stateLabel = m(botStates.find((entry) => entry.id === state)?.label ?? botStates[0].label);
   const pixels = Number.isFinite(size) ? Math.max(24, size) : 64;
   const compact = botStatusDetail(pixels) === "compact";
   // The cage is the whole limited picture, so a small avatar frames the cage, not the body.

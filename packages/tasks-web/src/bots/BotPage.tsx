@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 import { ArrowLeftIcon, BanIcon, InfoIcon, XIcon } from "lucide-react";
+import { useGT, useMessages } from "gt-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { describeError } from "@t3tools/client-runtime/errors";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
@@ -145,6 +146,8 @@ function BotRouteContent({
   readonly botId: string | null;
   readonly threadId: string | null;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const { bots, loaded, error } = useBots(environmentId);
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
@@ -160,9 +163,9 @@ function BotRouteContent({
   }
   if (botId) {
     return (
-      <WorkspaceViewLayout title="Bot" onNavigateBack={back} navigateOnEscape={false}>
+      <WorkspaceViewLayout title={gt("Bot")} onNavigateBack={back} navigateOnEscape={false}>
         <p className="py-6 text-sm text-muted-foreground">
-          {error || (loaded ? "This bot no longer exists." : "")}
+          {m(error) || (loaded ? gt("This bot no longer exists.") : "")}
         </p>
       </WorkspaceViewLayout>
     );
@@ -190,6 +193,7 @@ function BotForm({
   readonly threadId?: ThreadId;
   readonly onBack: () => void;
 }) {
+  const gt = useGT();
   const projects = useProjects().filter((project) => project.environmentId === environmentId);
   const source = useThreadShell(threadId ? scopeThreadRef(environmentId, threadId) : null);
   const status = useBotStatus(environmentId, bot);
@@ -198,7 +202,7 @@ function BotForm({
   const [id] = useState(
     () => bot?.agent.id ?? TaskAgentId.make(threadId ? `bot:${threadId}` : `bot:${randomUUID()}`),
   );
-  const [name, setName] = useState(bot?.agent.name ?? source?.title ?? "New bot");
+  const [name, setName] = useState(bot?.agent.name ?? source?.title ?? gt("New bot"));
   // A rename made elsewhere, such as in the chat or by an agent, shows here unless the field
   // holds typing not saved yet. Left stale, the next save of another field would undo it.
   const [savedName, setSavedName] = useState(bot?.agent.name);
@@ -299,13 +303,16 @@ function BotForm({
       setError(cause);
       toastManager.add({
         type: "error",
-        title: "Couldn't save the bot",
+        title: gt("Couldn't save the bot"),
         description: errorToastDescription(
           cause,
           undefined,
-          `Couldn't save ${input.name}'s settings: ${errorReason(cause)}. Try again.`,
+          gt("Couldn't save {name}'s settings: {reason}. Try again.", {
+            name: input.name,
+            reason: errorReason(cause, gt),
+          }),
         ),
-        actionProps: { children: "Retry", onClick: () => retrySave.current() },
+        actionProps: { children: gt("Retry"), onClick: () => retrySave.current() },
       });
       throw cause;
     }
@@ -333,7 +340,7 @@ function BotForm({
       await run();
       botsChanged();
     } catch (cause) {
-      if (errorCode(cause) === "bot_chat_unavailable") setAdoptRefusal(errorText(cause));
+      if (errorCode(cause) === "bot_chat_unavailable") setAdoptRefusal(errorText(cause, gt));
       else setError(cause);
     } finally {
       setBusy(false);
@@ -346,7 +353,9 @@ function BotForm({
       const ready = await waitForThreadShell(scopeThreadRef(environmentId, saved.threadId));
       if (!ready) {
         throw new Error(
-          "The bot was saved, but its chat has not reached this client. Reconnect and open it from Bots.",
+          gt(
+            "The bot was saved, but its chat has not reached this client. Reconnect and open it from Bots.",
+          ),
         );
       }
       await navigate({
@@ -377,12 +386,12 @@ function BotForm({
 
   return (
     <WorkspaceViewLayout
-      title={bot ? bot.agent.name : threadId ? "Turn into bot" : "New bot"}
+      title={bot ? bot.agent.name : threadId ? gt("Turn into bot") : gt("New bot")}
       onNavigateBack={onBack}
       navigateOnEscape={false}
       inset={false}
       leadingAction={{
-        ariaLabel: "Back",
+        ariaLabel: gt("Back"),
         track: "bots.back",
         icon: <ArrowLeftIcon className="size-4" />,
         onClick: onBack,
@@ -391,9 +400,9 @@ function BotForm({
         bot
           ? undefined
           : {
-              ariaLabel: "Create bot",
+              ariaLabel: gt("Create bot"),
               track: "bots.create_save",
-              label: busy ? "Creating…" : "Create bot",
+              label: busy ? gt("Creating…") : gt("Create bot"),
               hideIcon: true,
               disabled: !editable || draft === null,
               onClick: create,
@@ -403,7 +412,7 @@ function BotForm({
       <WorkspacePageContainer>
         <BotError error={error} className="px-3 sm:px-4" />
         {bot && restoreNotices.length > 0 ? (
-          <SettingsSection title="Problems" hideTitle>
+          <SettingsSection title={gt("Problems")} hideTitle>
             {restoreNotices.map((notice) => (
               <SettingsRow
                 key={notice.id}
@@ -418,7 +427,7 @@ function BotForm({
                       if (draft) void act(() => client.save(draft));
                     }}
                   >
-                    Save again
+                    {gt("Save again")}
                   </Button>
                 }
               >
@@ -429,14 +438,14 @@ function BotForm({
             ))}
           </SettingsSection>
         ) : null}
-        <SettingsSection title="Appearance">
+        <SettingsSection title={gt("Appearance")}>
           <div className="flex flex-col items-center gap-2 px-3 pt-6 pb-4 sm:px-4">
             <CharacterPreview appearance={appearance} state={status.state} />
             <div className="w-full max-w-sm text-lg font-semibold [&_input]:text-center">
               <Input
                 unstyled
-                aria-label="Name"
-                placeholder="Name"
+                aria-label={gt("Name")}
+                placeholder={gt("Name")}
                 value={name}
                 disabled={!editable}
                 aria-invalid={name.trim() === ""}
@@ -452,13 +461,13 @@ function BotForm({
           />
         </SettingsSection>
 
-        <SettingsSection title="Instructions" hideTitle>
-          <SettingsRow title="Instructions">
+        <SettingsSection title={gt("Instructions")} hideTitle>
+          <SettingsRow title={gt("Instructions")}>
             <div className="pt-1 pb-2 text-sm text-foreground [&_textarea]:resize-none [&_textarea]:px-0">
               <Textarea
                 unstyled
-                aria-label="Instructions"
-                placeholder="What the bot does and how"
+                aria-label={gt("Instructions")}
+                placeholder={gt("What the bot does and how")}
                 value={instructions}
                 disabled={!editable}
                 aria-invalid={instructions.trim() === ""}
@@ -469,9 +478,9 @@ function BotForm({
           </SettingsRow>
         </SettingsSection>
 
-        <SettingsSection title="Model" hideTitle>
+        <SettingsSection title={gt("Model")} hideTitle>
           <SettingsRow
-            title="Model"
+            title={gt("Model")}
             control={
               selection ? (
                 <div className="flex items-center gap-1">
@@ -507,13 +516,15 @@ function BotForm({
                   ) : null}
                 </div>
               ) : (
-                <span className="text-sm text-muted-foreground">Configure a provider first</span>
+                <span className="text-sm text-muted-foreground">
+                  {gt("Configure a provider first")}
+                </span>
               )
             }
           />
           <SettingsRow
-            title="Permissions"
-            description="For the bot's chat and its background tasks."
+            title={gt("Permissions")}
+            description={gt("For the bot's chat and its background tasks.")}
             control={
               <Select
                 value={runtimeMode}
@@ -522,7 +533,7 @@ function BotForm({
                   if (value) setRuntimeMode(value);
                 }}
               >
-                <SelectTrigger size="sm" aria-label="Permissions">
+                <SelectTrigger size="sm" aria-label={gt("Permissions")}>
                   <PermissionIcon className="size-3.5 shrink-0 text-muted-foreground" />
                   <SelectValue>{runtimeModeConfig[runtimeMode].label}</SelectValue>
                 </SelectTrigger>
@@ -550,10 +561,12 @@ function BotForm({
           />
         </SettingsSection>
 
-        <SettingsSection id={PROJECTS_SECTION_ID} title="Project" hideTitle>
+        <SettingsSection id={PROJECTS_SECTION_ID} title={gt("Project")} hideTitle>
           <SettingsRow
-            title="Project"
-            description="Where the bot works. Its chat moves with it, and its memory stays the same."
+            title={gt("Project")}
+            description={gt(
+              "Where the bot works. Its chat moves with it, and its memory stays the same.",
+            )}
             control={
               <Select
                 value={projectId ?? ""}
@@ -563,11 +576,11 @@ function BotForm({
                   if (next) setProjectId(next.id);
                 }}
               >
-                <SelectTrigger aria-label="Project" className="min-w-48">
+                <SelectTrigger aria-label={gt("Project")} className="min-w-48">
                   <SelectValue>
                     {(() => {
                       const project = projects.find((item) => item.id === projectId);
-                      return project ? <ProjectLabel project={project} /> : "Choose a project";
+                      return project ? <ProjectLabel project={project} /> : gt("Choose a project");
                     })()}
                   </SelectValue>
                 </SelectTrigger>
@@ -586,10 +599,12 @@ function BotForm({
         {bot ? (
           <>
             <MemorySections bot={bot} environmentId={environmentId} />
-            <SettingsSection title="Remove">
+            <SettingsSection
+              title={gt("Remove", { $context: "settings section that removes a bot" })}
+            >
               <SettingsRow
-                title="Remove bot"
-                description="Deletes its memory. Its chat returns to Threads."
+                title={gt("Remove bot")}
+                description={gt("Deletes its memory. Its chat returns to Threads.")}
                 control={
                   <Button
                     variant="destructive-outline"
@@ -602,7 +617,7 @@ function BotForm({
                       );
                     }}
                   >
-                    Remove
+                    {gt("Remove", { $context: "button that removes a bot" })}
                   </Button>
                 }
               />
@@ -618,14 +633,18 @@ function BotForm({
       >
         <AlertDialogPopup>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete bot and its memory?</AlertDialogTitle>
+            <AlertDialogTitle>{gt("Delete bot and its memory?")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {bot?.agent.name} is a bot. Deleting it also deletes its {removal}{" "}
-              {removal === 1 ? "memory" : "memories"}, and its chat becomes a normal chat.
+              {gt(
+                "{name} is a bot. Deleting it also deletes its {count, plural, one {# memory} other {# memories}}, and its chat becomes a normal chat.",
+                { name: bot?.agent.name ?? "", count: removal ?? 0 },
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+            <AlertDialogClose render={<Button variant="outline" />}>
+              {gt("Cancel")}
+            </AlertDialogClose>
             <Button
               variant="destructive"
               onClick={() => {
@@ -633,7 +652,7 @@ function BotForm({
                 remove();
               }}
             >
-              Delete
+              {gt("Delete")}
             </Button>
           </AlertDialogFooter>
         </AlertDialogPopup>
@@ -646,11 +665,11 @@ function BotForm({
       >
         <AlertDialogPopup>
           <AlertDialogHeader>
-            <AlertDialogTitle>Can't use this chat</AlertDialogTitle>
+            <AlertDialogTitle>{gt("Can't use this chat")}</AlertDialogTitle>
             <AlertDialogDescription>{adoptRefusal}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogClose render={<Button variant="outline" />}>OK</AlertDialogClose>
+            <AlertDialogClose render={<Button variant="outline" />}>{gt("OK")}</AlertDialogClose>
           </AlertDialogFooter>
         </AlertDialogPopup>
       </AlertDialog>
@@ -662,10 +681,11 @@ const PROJECTS_SECTION_ID = "bot-projects";
 
 /** A failed bot action: plain words, with the raw error behind Details. */
 function BotError({ error, className }: { readonly error: unknown; readonly className: string }) {
+  const gt = useGT();
   if (error === null) return null;
   return (
     <div role="alert" className={cn("grid gap-1", className)}>
-      <p className="text-sm text-destructive">{errorText(error)}</p>
+      <p className="text-sm text-destructive">{errorText(error, gt)}</p>
       <ErrorDetails detail={describeError(error).detail} />
     </div>
   );
@@ -761,14 +781,16 @@ function AppearancePicker({
   readonly disabled: boolean;
   readonly onAppearanceChange: (appearance: BotAppearance) => void;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   return (
     <>
-      <SettingsRow title="Shape">
-        <div role="group" aria-label="Shape" className="flex flex-wrap gap-1 pt-2 pb-2">
+      <SettingsRow title={gt("Shape")}>
+        <div role="group" aria-label={gt("Shape")} className="flex flex-wrap gap-1 pt-2 pb-2">
           {botAppearanceCatalog.shapes.map((shape) => (
             <Tile
               key={shape.id}
-              label={shape.label}
+              label={m(shape.label)}
               selected={appearance.shape === shape.id}
               disabled={disabled}
               onSelect={() => onAppearanceChange({ ...appearance, shape: shape.id })}
@@ -783,12 +805,12 @@ function AppearancePicker({
           ))}
         </div>
       </SettingsRow>
-      <SettingsRow title="Color">
-        <div role="group" aria-label="Color" className="flex flex-wrap gap-1.5 pt-2 pb-2">
+      <SettingsRow title={gt("Color")}>
+        <div role="group" aria-label={gt("Color")} className="flex flex-wrap gap-1.5 pt-2 pb-2">
           {botAppearanceCatalog.colors.map((color) => (
             <Tile
               key={color.id}
-              label={color.label}
+              label={m(color.label)}
               round
               selected={appearance.color === color.id}
               disabled={disabled}
@@ -803,12 +825,12 @@ function AppearancePicker({
           ))}
         </div>
       </SettingsRow>
-      <SettingsRow title="Accessories">
-        <div role="group" aria-label="Accessories" className="flex flex-wrap gap-1 pt-2 pb-2">
+      <SettingsRow title={gt("Accessories")}>
+        <div role="group" aria-label={gt("Accessories")} className="flex flex-wrap gap-1 pt-2 pb-2">
           {botAppearanceCatalog.accessories.map((accessory) => (
             <Tile
               key={accessory.id}
-              label={accessory.label}
+              label={m(accessory.label)}
               selected={appearance.accessory === accessory.id}
               disabled={disabled}
               onSelect={() => onAppearanceChange({ ...appearance, accessory: accessory.id })}
@@ -833,6 +855,7 @@ function MemorySections({
   readonly bot: Bot;
   readonly environmentId: EnvironmentId;
 }) {
+  const gt = useGT();
   const client = readTasksWebClient(environmentId).bots;
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.remember);
   const thread = useThreadShell(scopeThreadRef(environmentId, bot.threadId));
@@ -873,19 +896,24 @@ function MemorySections({
   const inContext = new Set(context.selected.map((entry) => entry.id));
   return (
     <SettingsSection
-      title="Memory"
+      title={gt("Memory")}
       titleAction={
-        <InfoTip label="About memory">
-          Up to 200 facts the bot saves in its chat. The chat's context holds what fits the budget,
-          your facts first, and the bot reads the rest when needed. The bot cannot change or forget
-          facts you edited.
+        <InfoTip label={gt("About memory")}>
+          {gt(
+            "Up to 200 facts the bot saves in its chat. The chat's context holds what fits the budget, your facts first, and the bot reads the rest when needed. The bot cannot change or forget facts you edited.",
+          )}
         </InfoTip>
       }
     >
       {context.selected.length < context.entries.length ? (
         <p className="px-3 pt-3 pb-1 text-xs text-muted-foreground sm:px-4">
-          {context.entries.length - context.selected.length} of {context.entries.length} facts
-          don&apos;t fit the chat&apos;s context. The bot can still look them up.
+          {gt(
+            "{outside} of {count, plural, one {# fact} other {# facts}} {outside, plural, one {doesn't fit the chat's context. The bot can still look it up.} other {don't fit the chat's context. The bot can still look them up.}}",
+            {
+              outside: context.entries.length - context.selected.length,
+              count: context.entries.length,
+            },
+          )}
         </p>
       ) : null}
       {context.entries.map((entry) => (
@@ -900,7 +928,9 @@ function MemorySections({
           onDelete={() => {
             const text = entry.text.length > 200 ? `${entry.text.slice(0, 199)}…` : entry.text;
             void ensureLocalApi()
-              .dialogs.confirm(`Delete this memory?\n${text}`, { variant: "destructive" })
+              .dialogs.confirm(gt("Delete this memory?\n{text}", { text }), {
+                variant: "destructive",
+              })
               .then((confirmed) => {
                 if (confirmed)
                   void mutate(() => client.forget({ agentId: bot.agent.id, id: entry.id }));
@@ -910,7 +940,7 @@ function MemorySections({
       ))}
       {entries?.length === 0 ? (
         <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-          No memories yet. Say “Remember: …” in the chat.
+          {gt("No memories yet. Say “Remember: …” in the chat.")}
         </p>
       ) : null}
       <BotError error={error} className="px-3 py-3 sm:px-4" />
@@ -949,6 +979,7 @@ function MemoryEntry({
   readonly onSave: (text: string) => void;
   readonly onDelete: () => void;
 }) {
+  const gt = useGT();
   const [text, setText] = useState<string | null>(null);
   // Saving or cancelling removes the field, which can blur it once more.
   const open = useRef(false);
@@ -976,7 +1007,7 @@ function MemoryEntry({
           <div className="text-sm text-foreground [&_textarea]:min-h-0 [&_textarea]:resize-none [&_textarea]:p-0">
             <Textarea
               unstyled
-              aria-label="Memory text"
+              aria-label={gt("Memory text")}
               autoFocus
               maxLength={2000}
               value={text}
@@ -1005,7 +1036,7 @@ function MemoryEntry({
           </button>
         )}
         <p className="truncate text-xs text-muted-foreground">
-          {editing ? "Enter to save · Esc to cancel" : formatRelativeTimeLabel(entry.updatedAt)}
+          {editing ? gt("Enter to save · Esc to cancel") : formatRelativeTimeLabel(entry.updatedAt)}
         </p>
       </div>
       {editing ? null : (
@@ -1015,7 +1046,7 @@ function MemoryEntry({
               <Button
                 size="icon-xs"
                 variant="ghost-muted"
-                aria-label="Delete memory"
+                aria-label={gt("Delete memory")}
                 disabled={disabled}
                 className="opacity-0 group-focus-within/memory:opacity-100 group-any-hover/memory:opacity-100 pointer-coarse:opacity-100"
                 onClick={onDelete}
@@ -1024,7 +1055,7 @@ function MemoryEntry({
               </Button>
             }
           />
-          <TooltipPopup side="top">Delete memory</TooltipPopup>
+          <TooltipPopup side="top">{gt("Delete memory")}</TooltipPopup>
         </Tooltip>
       )}
     </div>

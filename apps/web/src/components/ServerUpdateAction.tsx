@@ -35,6 +35,7 @@ import {
   SERVER_UP_TO_DATE_NOTE,
   useIsServerStillUpToDate,
 } from "~/serverUpToDate/serverUpToDate";
+import { useMessages } from "gt-react";
 import { ManagedControl } from "./ManagedPolicy";
 import { manualServerUpdateCommand } from "~/versionSkew";
 import { crossesReleaseTrack } from "@t3tools/shared/cliRelease";
@@ -294,6 +295,7 @@ export function ServerUpdateAction({
   const canUpdate = useAtomValue(sessionStateAtom, canUpdateServer);
   const updatesDenial = managedUpdatesDenial(useManagedPolicy(environmentId));
   const upToDate = useIsServerStillUpToDate()({ environmentId, targetVersion });
+  const m = useMessages();
   const update = useServerUpdate();
   const updatesInstall =
     installation?.kind === "npm-global" || installation?.kind === "t3-launcher";
@@ -358,7 +360,7 @@ export function ServerUpdateAction({
 
   if (upToDate) {
     return appearance === "icon" ? null : (
-      <span className="text-muted-foreground text-xs">{SERVER_UP_TO_DATE_NOTE}</span>
+      <span className="text-muted-foreground text-xs">{m(SERVER_UP_TO_DATE_NOTE)}</span>
     );
   }
 

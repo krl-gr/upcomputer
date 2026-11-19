@@ -10,6 +10,7 @@ import {
   type ThreadStatusLabelKind,
 } from "../../../../apps/web/src/sidebarThreadRow/ThreadStatusLabel.tsx";
 import type { SidebarThreadSummary } from "../../../../apps/web/src/types.ts";
+import { msg } from "gt-react";
 
 export type { BotCharacterState };
 
@@ -17,7 +18,7 @@ export interface BotStatus {
   readonly state: BotCharacterState;
   /** The thread status label, word for word; null while idle. */
   readonly label: ThreadStatusLabelEntry | null;
-  /** What the shared label leaves out, such as a background task being the cause. */
+  /** What the shared label leaves out, such as a background task being the cause. English, from `msg()`. */
   readonly detail: string | null;
 }
 
@@ -61,7 +62,7 @@ export function botChatStatus(chat: BotChatInput | null): BotStatusCandidate | n
   if (!chat) return null;
   const status = resolveSidebarThreadStatus(chat);
   if (status === "ready" && chat.interactionMode === "plan" && chat.hasActionableProposedPlan)
-    return { kind: "input", detail: "Plan ready for review" };
+    return { kind: "input", detail: msg("Plan ready for review") };
   const kind = resolveSidebarV2TopStatus({
     status,
     isUnread: hasUnseenCompletion(chat),
@@ -89,10 +90,10 @@ export function botTaskStatus(
 ): BotStatusCandidate | null {
   if (runStatus === "running" || runStatus?.startsWith("finalizing:")) {
     if (taskThread?.hasPendingApprovals)
-      return { kind: "approval", detail: "Background task needs approval" };
+      return { kind: "approval", detail: msg("Background task needs approval") };
     if (taskThread?.hasPendingUserInput)
-      return { kind: "input", detail: "Background task asks a question" };
-    return { kind: "waiting", detail: "Waiting for its background task" };
+      return { kind: "input", detail: msg("Background task asks a question") };
+    return { kind: "waiting", detail: msg("Waiting for its background task") };
   }
   if (
     seen.completedAt != null &&
@@ -100,14 +101,14 @@ export function botTaskStatus(
     Date.parse(seen.lastVisitedAt) >= Date.parse(seen.completedAt)
   )
     return null;
-  if (runStatus === "blocked") return { kind: "input", detail: "Background task is blocked" };
+  if (runStatus === "blocked") return { kind: "input", detail: msg("Background task is blocked") };
   if (runStatus === "interrupted")
-    return { kind: "failed", detail: "Background task was interrupted" };
+    return { kind: "failed", detail: msg("Background task was interrupted") };
   if (runStatus === "failed")
     return taskThread?.runtime?.status === "failed" &&
       taskThread.runtime.lastErrorClass === "usage_limit"
-      ? { kind: "limited", detail: "Background task hit a provider limit" }
-      : { kind: "failed", detail: "Background task failed" };
+      ? { kind: "limited", detail: msg("Background task hit a provider limit") }
+      : { kind: "failed", detail: msg("Background task failed") };
   return null;
 }
 
@@ -130,9 +131,9 @@ export function botTaskRunRequest(
 
 export function botTaskRunRequestStatus(request: BotTaskRunRequest): BotStatusCandidate | null {
   if (request === "approval")
-    return { kind: "approval", detail: "A task from this chat needs approval" };
+    return { kind: "approval", detail: msg("A task from this chat needs approval") };
   if (request === "input")
-    return { kind: "input", detail: "A task from this chat asks a question" };
+    return { kind: "input", detail: msg("A task from this chat asks a question") };
   return null;
 }
 

@@ -1,4 +1,5 @@
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useGT } from "gt-react";
 
 import { Popover, PopoverPopup } from "../../../../apps/web/src/components/ui/popover.tsx";
 
@@ -30,6 +31,7 @@ export function DetailAutocompleteInput({
   readonly className: string;
   readonly onChange: (value: string) => void;
 }) {
+  const gt = useGT();
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
   const listboxId = useId();
@@ -124,7 +126,11 @@ export function DetailAutocompleteInput({
         className="w-48 min-w-48 max-w-[calc(100vw-24px)]"
         padding="compact"
       >
-        <div id={listboxId} role="listbox" aria-label={`${ariaLabel} suggestions`}>
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label={gt("{label} suggestions", { label: ariaLabel })}
+        >
           {suggestions.map((option, index) => (
             <button
               key={option}

@@ -1,3 +1,4 @@
+import { useGT, useMessages } from "gt-react";
 import { BotIcon } from "lucide-react";
 
 import { cn } from "../../../../../apps/web/src/lib/utils.ts";
@@ -16,6 +17,8 @@ import { usePlanner } from "./plannerContext.ts";
  * handing it to an agent is the window's "Hand to a worker".
  */
 export function RunSummary(props: { readonly task: PlannerTask }) {
+  const gt = useGT();
+  const m = useMessages();
   const { triggerTags, openInTable } = usePlanner();
   const { task } = props;
   const latest = taskRunPresentation(task.latestRunStatus ?? undefined, false);
@@ -26,14 +29,14 @@ export function RunSummary(props: { readonly task: PlannerTask }) {
         <>
           <TablePill>
             <BotIcon className="size-3.5" aria-hidden />
-            Workers
+            {gt("Workers")}
           </TablePill>
           <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
         </>
       ) : null}
       {latest ? (
         <span className={cn("text-xs", latest.className)} data-latest-run-status="">
-          {latest.label}
+          {m(latest.label)}
         </span>
       ) : null}
       {groups.length > 0 ? (
