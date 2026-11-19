@@ -22,6 +22,7 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
+import * as DesktopSessionState from "../telemetry/DesktopSessionState.ts";
 
 export class DesktopLifecycleRelaunchError extends Schema.TaggedError<DesktopLifecycleRelaunchError>()(
   "DesktopLifecycleRelaunchError",
@@ -190,7 +191,7 @@ function handleBeforeQuit(
 }
 
 function quitFromSignal(
-  signal: "SIGINT" | "SIGTERM",
+  signal: "SIGINT" | "SIGTERM" | "session-end",
   runEffect: <A, E>(
     effect: Effect.Effect<A, E, DesktopLifecycleRegistrationServices>,
   ) => Promise<A>,
@@ -333,7 +334,23 @@ export const make = DesktopLifecycle.of({
       { prepend: true },
     );
 
-    if (environment.platform !== "win32") {
+    if (environment.platform === "win32") {
+      // Windows skips before-quit at shutdown and logoff and may end the process
+      // once the listener returns, so the OS end is written down synchronously
+      // and the stop is best effort.
+      const sessionState = yield* DesktopSessionState.optional;
+      yield* electronApp.on(
+        "browser-window-created",
+        (_event: Electron.Event, window: Electron.BrowserWindow) => {
+          window.on("session-end", (event) => {
+            if (event.reasons.some((reason) => reason !== "close-app")) {
+              sessionState.recordUnsafe({ state: "os_shutdown" });
+            }
+            quitFromSignal("session-end", runEffect, quit);
+          });
+        },
+      );
+    } else {
       yield* addScopedListener(process, "SIGINT", () => {
         quitFromSignal("SIGINT", runEffect, quit);
       });

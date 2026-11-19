@@ -73,6 +73,7 @@ import * as DesktopLegacyLocalStorage from "./app/DesktopLegacyLocalStorage.ts";
 import * as DesktopTelemetryPublisher from "./telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopProductEvents from "./telemetry/DesktopProductEvents.ts";
 import * as DesktopRendererHistory from "./telemetry/DesktopRendererHistory.ts";
+import * as DesktopSessionState from "./telemetry/DesktopSessionState.ts";
 import * as DesktopUpdatePolicy from "./updates/DesktopUpdatePolicy.ts";
 import * as DesktopUpdates from "./updates/DesktopUpdates.ts";
 import * as BrowserImport from "./preview/BrowserImport/BrowserImport.ts";
@@ -169,7 +170,11 @@ const layerDesktopFoundation = Layer.mergeAll(
   DesktopAssets.layer,
   DesktopPrimaryPaste.layer,
   DesktopObservability.layer,
-  DesktopRendererHistory.layer.pipe(Layer.provideMerge(DesktopProductEvents.layer)),
+  DesktopRendererHistory.layer.pipe(
+    Layer.provideMerge(DesktopProductEvents.layer),
+    // The same layer as the foundation's, so the policy is still read once.
+    Layer.provideMerge(DesktopSessionState.layer.pipe(Layer.provide(DesktopManagedPolicy.layer))),
+  ),
 ).pipe(Layer.provideMerge(layerDesktopEnvironment));
 
 const layerDesktopSsh = layerDesktopSshEnvironment.pipe(
@@ -209,6 +214,7 @@ const layerDesktopBackend = DesktopBackendPool.layer.pipe(
   Layer.provideMerge(DesktopWslEnvironment.layer),
   Layer.provideMerge(DesktopWslServerTree.layer),
   Layer.provideMerge(DesktopTelemetryPublisher.layer),
+  Layer.provideMerge(DesktopSessionState.layerPowerEvents),
   Layer.provideMerge(DesktopShellEnvironment.layer),
   Layer.provideMerge(layerDesktopWindow),
 );

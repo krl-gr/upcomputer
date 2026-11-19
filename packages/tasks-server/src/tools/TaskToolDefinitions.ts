@@ -81,7 +81,11 @@ const taskCreateFields = {
   priority: { type: ["string", "null"] },
   createdBy: id,
   assigneeAgentRunId: { type: ["string", "null"] },
-  sourceThreadId: { type: ["string", "null"] },
+  sourceThreadId: {
+    type: ["string", "null"],
+    description:
+      "Called from a thread, that thread is the source and a thread id here is ignored. null: no report back.",
+  },
   sourceRunId: { type: ["string", "null"] },
   metadata: {},
   tags,

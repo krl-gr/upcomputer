@@ -182,6 +182,8 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
   useEffect(() => {
     if (!ready || completed.current) return;
     completed.current = true;
+    // The Welcome page at /welcome finished it and reported it already.
+    if (onboardingCompleted) return;
     recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "ready" });
     void completeOnboarding()
       .then(() => {
@@ -198,7 +200,7 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
       .catch(() => {
         completed.current = false;
       });
-  }, [environmentId, ready, recordClientEvent, setSetup]);
+  }, [environmentId, onboardingCompleted, ready, recordClientEvent, setSetup]);
 
   // Only a window that onboarded a new user starts this, so installs onboarded
   // before never report it, and an app closed sooner reports nothing.
@@ -226,6 +228,20 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
   ]);
 
   return null;
+}
+
+/**
+ * The environment whose `FirstRunAgentStarter` runs, kept for the session once
+ * the gate first asks for it. The gate's evidence changes as soon as the user
+ * adds a project or sends a message, while setup, `ready`, `onboarding.completed`
+ * and the idle report may still be to come.
+ */
+export function useFirstRunAgentStarterEnvironment(
+  requested: EnvironmentId | null,
+): EnvironmentId | null {
+  const [kept, setKept] = useState<EnvironmentId | null>(null);
+  if (kept === null && requested !== null) setKept(requested);
+  return kept ?? requested;
 }
 
 /**

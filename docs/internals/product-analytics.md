@@ -280,6 +280,26 @@ stop. A desktop backend restart keeps the app's session, so `previousSessionId` 
 server that did not stop. A start after ten unclean starts within an hour records
 nothing until it has stayed up for ten minutes, so a crash loop cannot flood PostHog.
 
+The event's time is when the session that left the marker started, and its uuid was
+written into that marker, so a marker the server could not replace or remove is sent
+again as the same event and PostHog keeps one copy (count distinct uuids to be exact
+before its merge). A marker write or remove that still fails after retries puts its
+errno code in `sessionMarkerError` on `server.started` or `server.stopped`.
+
+A dead backend cannot say why it died, so the desktop app keeps its session's last
+lifecycle change in `telemetry-desktop-state` beside the marker, written synchronously
+because Windows may end the process as soon as a session-end listener returns. The
+next desktop backend turns it into `reason`: `os_shutdown`, `suspended`,
+`renderer_gone` (with `rendererReason` and `exitCode`), `backend_exited` (with
+`exitCode` or `exitSignal`), or `unknown` when nothing was recorded after that backend
+started, which includes a force-quit app and every non-desktop server. A main window
+that reloads after its renderer crash records `running` again, so a later force-quit
+is not blamed on that crash. Nothing replaces `os_shutdown` in its session, since the
+OS then also kills the renderer and the backend. Crash rates should leave out
+`os_shutdown`, which also does not count toward `uncleanStarts` or the crash-loop
+quiet period. The file is not written when telemetry is off by environment or managed
+policy.
+
 ## Views and clicks
 
 `app.view.opened` names the section a window shows, `ui.click` a click on a

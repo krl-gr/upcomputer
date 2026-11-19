@@ -29,6 +29,20 @@ describe("resolveOpenCodeServerPassword", () => {
   });
 });
 
+describe("classifyStartupExit", () => {
+  it.each([
+    ["SQLiteError: database is locked (SQLITE_BUSY)", "databaseLocked"],
+    [
+      "Error: Unexpected error\n\nFailed query: \n        CREATE TABLE `workspace` (\n          `id` text PRIMARY KEY\n        );\n\nparams: \n",
+      "databaseLocked",
+    ],
+    ["Failed query: select * from `session`\nparams: ", undefined],
+    ["Invalid configuration", undefined],
+  ])("classifies %j", (stderr, reason) => {
+    expect(OpenCodeRuntime.classifyStartupExit(stderr)).toBe(reason);
+  });
+});
+
 function makeHealthClient(
   result: (options?: { readonly signal?: AbortSignal }) => Promise<unknown>,
 ): OpencodeClient {

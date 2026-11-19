@@ -524,6 +524,8 @@ jobs:
       - name: Build desktop artifact
         shell: bash
         env:
+          # The bundled server stamps this on every PostHog event; forks report "dev".
+          T3CODE_TELEMETRY_CHANNEL: ${{ github.repository == 'krl-gr/upcomputer' && needs.preflight.outputs.release_channel || 'dev' }}
           T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: ${{ steps.resource_monitor_cache.outputs.cache-hit == 'true' }}
           T3CODE_DESKTOP_REUSE_LINUX_CAPTURE_HELPERS: ${{ steps.capture_helper_cache.outputs.cache-hit == 'true' }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}

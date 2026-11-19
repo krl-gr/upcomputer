@@ -64,7 +64,11 @@ vi.mock("../hooks/useSettings", () => ({
 vi.mock("../hooks/useRecordClientEvent", () => ({ useRecordClientEvent: () => mocks.record }));
 vi.mock("../onboarding/firstRun", () => ({ completeOnboarding: () => mocks.complete() }));
 
-import { FirstRunAgentStarter, useFirstRunAgentStatus } from "./FirstRunAgent";
+import {
+  FirstRunAgentStarter,
+  useFirstRunAgentStarterEnvironment,
+  useFirstRunAgentStatus,
+} from "./FirstRunAgent";
 import {
   FIRST_RUN_AGENT_ACTIVATION_WAIT_MS,
   FIRST_SCREEN_IDLE_THRESHOLD_MS,
@@ -249,4 +253,32 @@ it("does not report a window that did not onboard a new user", async () => {
 
   await update(() => vi.advanceTimersByTime(FIRST_SCREEN_IDLE_THRESHOLD_MS * 2));
   expect(idleEvents()).toEqual([]);
+});
+
+/** The gate's part: it asks for the starter only while its decision is the wizard. */
+function Gate({ requested }: { readonly requested: EnvironmentId | null }) {
+  const starterEnvironmentId = useFirstRunAgentStarterEnvironment(requested);
+  return starterEnvironmentId === null ? null : (
+    <FirstRunAgentStarter environmentId={starterEnvironmentId} />
+  );
+}
+
+it("finishes setup and reports it after the gate stops asking for the starter", async () => {
+  const renderGate = (requested: EnvironmentId | null) =>
+    act(async () => {
+      root.render(
+        <RegistryContext.Provider value={registry}>
+          <Gate requested={requested} />
+        </RegistryContext.Provider>,
+      );
+    });
+  await renderGate(environmentId);
+  expect(mocks.startInstall).toHaveBeenCalled();
+  // Home's scratch project, or a project the user adds, ends the wizard decision mid-download.
+  await renderGate(null);
+  await update(() => registry.set(testAtoms.install, installState("kept", { phase: "succeeded" })));
+  await update(() => registry.set(testAtoms.providers, [openCode()]));
+
+  expect(mocks.events).toContainEqual({ event: "onboarding.first_run_agent", outcome: "ready" });
+  expect(mocks.events.map((event) => event.event)).toContain("onboarding.completed");
 });

@@ -12,6 +12,8 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
+import * as DesktopSessionState from "./DesktopSessionState.ts";
+
 // The app session's crash events wait here while no backend is running, as
 // after the backend itself died. A crash loop fills it; the oldest go first.
 const QUEUE_CAPACITY = 32;
@@ -59,11 +61,30 @@ export class DesktopProductEvents extends Context.Service<
 /** @public */
 export const make = Effect.gen(function* () {
   const runFork = Effect.runForkWith(yield* Effect.context<never>());
+  const sessionState = yield* DesktopSessionState.optional;
   const queue = yield* Queue.sliding<DesktopProductEvent>(QUEUE_CAPACITY);
   const counts = new Map<string, number>();
   const seenErrors = new Set<string>();
 
   const recordUnsafe = (event: DesktopProductEvent) => {
+    // Kept on disk too, so the next backend can say why this session's backend went away.
+    if (event.event === "desktop.backend.exited" && event.instance === "primary") {
+      sessionState.recordUnsafe({
+        state: "backend_exited",
+        code: event.code,
+        signal: event.signal,
+      });
+    } else if (
+      event.event === "desktop.renderer.gone" &&
+      event.surface === "main" &&
+      event.reason !== "clean-exit"
+    ) {
+      sessionState.recordUnsafe({
+        state: "renderer_gone",
+        reason: event.reason,
+        exitCode: event.exitCode,
+      });
+    }
     if (event.event === "app.error") {
       if (seenErrors.has(event.stackHash)) return;
       seenErrors.add(event.stackHash);

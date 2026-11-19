@@ -4869,7 +4869,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   };
           return {
             ...thread,
-            ...(command.title === undefined ? {} : { title: command.title }),
+            ...(command.title === undefined
+              ? {}
+              : { title: command.title, titleManuallySet: true }),
             ...(command.limitRecovery === undefined ? {} : { limitRecovery }),
             ...(command.limitRecovery !== undefined &&
             limitRecovery?.snooze === true &&
@@ -5188,7 +5190,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           return thread.titleRegeneration?.requestId === command.requestId
             ? {
                 ...thread,
-                ...(command.title === undefined ? {} : { title: command.title }),
+                ...(command.title === undefined
+                  ? {}
+                  : { title: command.title, titleManuallySet: false }),
                 ...(command.outcome === undefined
                   ? {}
                   : {
@@ -7212,6 +7216,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         0 &&
       !hasTitleSetBeforeFirstMessage(projection.thread, command.titleSeed);
     if (
+      projection.thread.titleManuallySet !== true &&
       !isNativeMaintenanceCommand(command) &&
       (seedsUntitledThread || (command.createdBy === "user" && (yield* onlyMaintenanceHistory)))
     ) {
