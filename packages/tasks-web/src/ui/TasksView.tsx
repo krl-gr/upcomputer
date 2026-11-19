@@ -997,7 +997,7 @@ export function TasksView(props: TasksViewProps) {
                       id: selectedTask.id,
                       title: selectedTask.title,
                       projectId: selectedTask.projectId,
-                      sourceThreadId: (selectedTask.sourceThreadId as ThreadId | null) ?? null,
+                      rootThreadId: selectedTask.rootThreadId,
                     }}
                     onOpenThread={props.onOpenThread}
                   />

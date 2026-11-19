@@ -28,14 +28,15 @@ import {
   type AssistantCitationSourceAnchor,
 } from "../../../../apps/web/src/lib/assistantTextSelection.ts";
 import { useThreadShell } from "../../../../apps/web/src/state/entities.ts";
+import { taskQuoteDestinationLabel, taskQuoteTarget } from "./taskQuoteTarget.ts";
 
 /** The task an output belongs to, as a quote from it names it. */
 export interface TaskOutputQuoteSource {
   readonly id: string;
   readonly title: string;
   readonly projectId: ProjectId;
-  /** The chat that created the task, where a quote goes from the Tasks page. */
-  readonly sourceThreadId: ThreadId | null;
+  /** The chat the task's chain started from, where a quote goes from the Tasks page. */
+  readonly rootThreadId: ThreadId | null;
 }
 
 /** The blocks a quote button offers: a list item, or a paragraph outside one. */
@@ -98,12 +99,17 @@ function QuotableTaskOutput(props: {
   const [block, setBlock] = useState<HTMLElement | null>(null);
   const composerRef = useComposerHandleContext();
   const newThread = useNewThreadHandler();
-  const sourceThreadRef = useMemo(
-    () => (task.sourceThreadId ? scopeThreadRef(environmentId, task.sourceThreadId) : null),
-    [environmentId, task.sourceThreadId],
+  const rootThreadRef = useMemo(
+    () => (task.rootThreadId ? scopeThreadRef(environmentId, task.rootThreadId) : null),
+    [environmentId, task.rootThreadId],
   );
-  const sourceThread = useThreadShell(sourceThreadRef);
-  const sourceThreadOpen = sourceThread !== null && sourceThread.deletedAt === null;
+  const rootThread = useThreadShell(rootThreadRef);
+  const target = taskQuoteTarget({
+    besideThreadRef: panelThreadRef,
+    environmentId,
+    rootThreadId: task.rootThreadId,
+    rootThread: rootThread && rootThread.deletedAt === null ? rootThread : null,
+  });
   const taskSource = useMemo(
     () => ({
       environmentId,
@@ -113,9 +119,20 @@ function QuotableTaskOutput(props: {
     [environmentId, task.id, task.title],
   );
 
-  const cite = (citation: AssistantCitation, sourceAnchor: AssistantCitationSourceAnchor) => {
-    if (panelThreadRef) {
-      const inserted = composerRef?.current?.citeAssistantText(citation, sourceAnchor) ?? false;
+  // A selection's Cite opens the comment box, as in chat. The quote button only drops the quote.
+  const cite = (
+    citation: AssistantCitation,
+    sourceAnchor: AssistantCitationSourceAnchor,
+    options?: { readonly withComment?: boolean },
+  ) => {
+    if (target.kind === "beside") {
+      const composer = composerRef?.current;
+      const inserted =
+        options?.withComment === false
+          ? (composer?.insertTextAtEnd(formatAssistantCitationForComposer(citation), {
+              ensureLeadingBoundary: true,
+            }) ?? false)
+          : (composer?.citeAssistantText(citation, sourceAnchor) ?? false);
       if (!inserted) {
         toastManager.add({
           type: "warning",
@@ -128,35 +145,48 @@ function QuotableTaskOutput(props: {
     }
     const quote = formatAssistantCitationForComposer(citation);
     const store = useComposerDraftStore.getState();
-    const appendTo = (target: Parameters<typeof store.setPrompt>[0]) => {
-      const prompt = store.getComposerDraft(target)?.prompt ?? "";
+    const appendTo = (draftTarget: Parameters<typeof store.setPrompt>[0]) => {
+      const prompt = store.getComposerDraft(draftTarget)?.prompt ?? "";
       if (prompt.includes(quote.trim())) return;
-      store.setPrompt(target, `${prompt}${prompt && !/\s$/.test(prompt) ? " " : ""}${quote}`);
+      store.setPrompt(draftTarget, `${prompt}${prompt && !/\s$/.test(prompt) ? " " : ""}${quote}`);
     };
-    if (sourceThreadRef && sourceThreadOpen && onOpenThread) {
-      appendTo(sourceThreadRef);
-      onOpenThread(sourceThreadRef.environmentId, sourceThreadRef.threadId);
+    if (target.kind === "root" && onOpenThread) {
+      appendTo(target.threadRef);
+      onOpenThread(target.threadRef.environmentId, target.threadRef.threadId);
       return true;
     }
-    // No chat created this task: a new chat in its project takes the quote.
+    // A draft that already has text keeps it, so the quote is appended to it as well.
     void newThread(scopeProjectRef(environmentId, task.projectId), { prompt: quote }).then(
       (draft) => draft && appendTo(draft.draftId),
     );
     return true;
   };
 
-  const citeBlock = (target: HTMLElement) => {
+  const citeBlock = (element: HTMLElement) => {
     const selection = window.getSelection();
     if (!viewport || !selection) return;
     // The same capture a selection gets, so a block quote and a selected quote are one kind.
+    // The range runs from the block's first visible character to its last.
+    const texts: Text[] = [];
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (/\S/.test((node as Text).data)) texts.push(node as Text);
+    }
+    const first = texts[0];
+    const last = texts.at(-1);
+    if (!first || !last) return;
     const range = document.createRange();
-    range.selectNodeContents(target);
+    range.setStart(first, first.data.search(/\S/));
+    range.setEnd(last, last.data.trimEnd().length);
     selection.removeAllRanges();
     selection.addRange(range);
     const captured = captureAssistantTextSelection(viewport, selection);
     selection.removeAllRanges();
     if (!captured) return;
-    if (captured.selector.text.length > ASSISTANT_CITATION_MAX_TEXT_LENGTH) {
+    // Sub-items leave runs of blank lines. A source is found by its text with whitespace
+    // collapsed, so one line break per run still finds it.
+    const text = captured.selector.text.replace(/\s*\n\s*/g, "\n");
+    if (text.length > ASSISTANT_CITATION_MAX_TEXT_LENGTH) {
       toastManager.add({
         type: "warning",
         title: "This part is too long to quote",
@@ -165,8 +195,9 @@ function QuotableTaskOutput(props: {
       return;
     }
     cite(
-      { version: 1, ...taskSource, ...captured.selector },
+      { version: 1, ...taskSource, ...captured.selector, text },
       { source: captured.source, range: captured.range, viewport },
+      { withComment: false },
     );
     setBlock(null);
   };
@@ -214,11 +245,7 @@ function QuotableTaskOutput(props: {
     };
   }, [viewport]);
 
-  const destination = panelThreadRef
-    ? "Cite in chat"
-    : sourceThreadOpen
-      ? `Cite in "${sourceThread.title}"`
-      : "Cite in a new chat";
+  const destination = taskQuoteDestinationLabel(target);
   const top =
     block && viewport && block.isConnected
       ? block.getBoundingClientRect().top - viewport.getBoundingClientRect().top

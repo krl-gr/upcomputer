@@ -1,11 +1,16 @@
 import type { PreparedConnection } from "@t3tools/client-runtime/connection";
-import { EnvironmentId, ThreadId, type AssetResource } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId, type AssetResource } from "@t3tools/contracts";
+import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
 import { TaskOutput } from "@t3tools/tasks-web";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { act, render } from "../../test/render";
 import { AssistantMessageMarkdown } from "../components/chat/AssistantMessageMarkdown";
+import type { ChatComposerHandle } from "../components/chat/ChatComposer";
+import { ComposerHandleContext } from "../composerHandleContext";
+import { findAssistantCitationSourceAnchor } from "../lib/assistantTextSelection";
 import { useRightPanelStore } from "../rightPanelStore";
 
 const IMAGE_URL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
@@ -167,5 +172,54 @@ describe("task output", () => {
       [panelRef, "/Users/someone/research/capture.mjs", undefined],
       [panelRef, "/repo/notes/plan.md", undefined],
     ]);
+  });
+
+  it("drops a whole list item into the composer beside it in one click, with no comment box", async () => {
+    setup();
+    const insertTextAtEnd = vi.fn<ChatComposerHandle["insertTextAtEnd"]>(() => true);
+    const citeAssistantText = vi.fn<ChatComposerHandle["citeAssistantText"]>(() => true);
+    const composer = { current: { insertTextAtEnd, citeAssistantText } as never };
+    await using screen = await render(
+      <ComposerHandleContext value={composer}>
+        <TaskOutput
+          text={[
+            "Pick one:",
+            "",
+            "- A. Tile (recommended)",
+            "  - Undo stays inline",
+            "- B. Banner",
+          ].join("\n")}
+          environmentId={environmentId}
+          cwd="/repo"
+          filePanelRef={panelRef}
+          quoteSource={{
+            id: "task-1",
+            title: "Undo notice",
+            projectId: ProjectId.make("project-1"),
+            rootThreadId: null,
+          }}
+        />
+      </ComposerHandleContext>,
+    );
+    await userEvent.hover(screen.getByRole("listitem").first(), { position: { x: 8, y: 8 } });
+    await userEvent.click(screen.getByRole("button", { name: "Cite in chat: this part" }));
+
+    expect(citeAssistantText).not.toHaveBeenCalled();
+    expect(insertTextAtEnd).toHaveBeenCalledTimes(1);
+    const [text, options] = insertTextAtEnd.mock.calls[0]!;
+    expect(options).toEqual({ ensureLeadingBoundary: true });
+    const citations = collectAssistantCitations(text).map(({ citation }) => citation);
+    expect(citations).toEqual([
+      expect.objectContaining({
+        environmentId,
+        taskId: "task-1",
+        taskTitle: "Undo notice",
+        text: "A. Tile (recommended)\nUndo stays inline",
+      }),
+    ]);
+    expect(findAssistantCitationSourceAnchor(document, citations[0]!)?.range.toString()).toMatch(
+      /^A\. Tile \(recommended\)\s+Undo stays inline$/,
+    );
+    await expect.element(screen.getByRole("button", { name: /^Cite in/ })).not.toBeInTheDocument();
   });
 });
