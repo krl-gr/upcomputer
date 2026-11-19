@@ -131,7 +131,8 @@ const renderedReply = (container: HTMLElement) =>
 async function renderLoaded(element: Parameters<typeof render>[0]) {
   const screen = await render(element);
   await expect.element(screen.getByAltText("Funnel")).toHaveAttribute("src", IMAGE_URL);
-  await expect.element(screen.getByTitle("First-run funnel")).toBeInTheDocument();
+  // The frame takes its color-scheme style on load; comparing earlier races it.
+  await expect.element(screen.getByTitle("First-run funnel")).toHaveAttribute("style");
   return screen;
 }
 

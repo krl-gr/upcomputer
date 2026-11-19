@@ -247,6 +247,8 @@ interface ChatMarkdownProps {
   threadRef?: ScopedThreadRef | undefined;
   /** Without a thread, the thread whose right panel opens file links, on `environmentId`. */
   filePanelRef?: ScopedThreadRef | undefined;
+  /** Without a thread or a panel, opens a file link by host path (the Tasks page's file window). */
+  onOpenFile?: ((path: string, line?: number) => void) | undefined;
   pullRequestPanelRef?: ScopedThreadRef | undefined;
   environmentId?: EnvironmentId | undefined;
   onTaskListChange?: ((input: { markerOffset: number; checked: boolean }) => void) | undefined;
@@ -518,6 +520,7 @@ function useChatMarkdownState({
   agentDirectories,
   threadRef,
   filePanelRef,
+  onOpenFile,
   pullRequestPanelRef,
   environmentId: explicitEnvironmentId,
   onTaskListChange,
@@ -866,11 +869,13 @@ function useChatMarkdownState({
     return findAgentDirectoryMatch(workspaceRelativePath, agentRoots, searchRoot);
   };
   const openFileInPanel = (fileLinkMeta: MarkdownFileLinkMeta, panelPath: string) => {
-    if (!panelRef) return;
+    if (!panelRef && !onOpenFile) return;
     // Every open supersedes pending lookups, including synchronous opens.
     const isLatestLookup = claimWorkspaceBasenameLookup();
     const openAt = (path: string) =>
-      useRightPanelStore.getState().openFile(panelRef, panelFilePath(path), fileLinkMeta.line);
+      panelRef
+        ? useRightPanelStore.getState().openFile(panelRef, panelFilePath(path), fileLinkMeta.line)
+        : onOpenFile?.(path, fileLinkMeta.line);
     if (
       fileLinkMeta.workspaceLookupPath === null ||
       !cwd ||
@@ -939,6 +944,7 @@ function useChatMarkdownState({
         copyMarkdown={copyMarkdown}
         theme={resolvedTheme}
         threadRef={panelRef}
+        opensInFileWindow={panelRef === undefined && onOpenFile !== undefined}
         onOpen={
           canOpenApp
             ? async () =>

@@ -40,6 +40,8 @@ interface MarkdownFileLinkProps {
   copyMarkdown: string;
   theme: "light" | "dark";
   threadRef?: ScopedThreadRef | undefined;
+  /** No thread panel: `onOpenInPanel` opens the file in a window, after media. */
+  opensInFileWindow?: boolean | undefined;
   onOpen?: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
   onOpenInPanel: (panelPath: string, line: number | undefined) => void;
   resolveCopyPaths: () => Promise<ReturnType<typeof markdownFileCopyPaths>>;
@@ -65,6 +67,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
   copyMarkdown,
   theme,
   threadRef,
+  opensInFileWindow = false,
   onOpen,
   onOpenInPanel,
   openInEditorMenuLabel,
@@ -119,6 +122,10 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
     }
     if (onOpenMedia) {
       onOpenMedia();
+      return;
+    }
+    if (opensInFileWindow && panelPath) {
+      onOpenInPanel(panelPath, line);
       return;
     }
     handleOpenInEditor();
@@ -308,7 +315,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
 
   const canOpenInEditor = onOpen !== undefined;
   const canOpenInBrowser = onOpenInBrowser !== undefined;
-  const canOpenInPanel = threadRef !== undefined && Boolean(panelPath);
+  const canOpenInPanel = (threadRef !== undefined || opensInFileWindow) && Boolean(panelPath);
   const hasPrimaryAction = hasMarkdownFilePrimaryAction({
     canOpenInEditor,
     canOpenInBrowser,
@@ -412,6 +419,7 @@ function areMarkdownFileLinkPropsEqual(
     previous.theme === next.theme &&
     previous.threadRef === next.threadRef &&
     previous.isAppBundle === next.isAppBundle &&
+    previous.opensInFileWindow === next.opensInFileWindow &&
     previous.onOpen === next.onOpen &&
     previous.onOpenInPanel === next.onOpenInPanel &&
     previous.openInEditorMenuLabel === next.openInEditorMenuLabel &&

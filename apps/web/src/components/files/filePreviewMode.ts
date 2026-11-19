@@ -47,12 +47,12 @@ export function shouldShowFileExplorer(input: {
  */
 export function workspaceAssetResource(input: {
   readonly kind: "workspace-file" | "media-file";
-  readonly threadRef: ScopedThreadRef;
+  readonly threadRef: ScopedThreadRef | undefined;
   readonly draft: boolean;
   readonly workspaceRoot: string;
   readonly absolutePath: string;
 }): AssetResource {
-  if (input.draft) {
+  if (input.draft || input.threadRef === undefined) {
     return { _tag: "draft-workspace-file", cwd: input.workspaceRoot, path: input.absolutePath };
   }
   const insideWorkspace =
@@ -62,4 +62,25 @@ export function workspaceAssetResource(input: {
     threadId: input.threadRef.threadId,
     path: input.absolutePath,
   };
+}
+
+/** Any host file as a download: through the thread when there is one, else the project folder. */
+export function hostFileDownloadResource(input: {
+  readonly threadRef: ScopedThreadRef | undefined;
+  readonly workspaceRoot: string;
+  readonly absolutePath: string;
+}): Extract<AssetResource, { _tag: "media-file" | "draft-workspace-file" }> {
+  return input.threadRef
+    ? {
+        _tag: "media-file",
+        threadId: input.threadRef.threadId,
+        path: input.absolutePath,
+        disposition: "attachment",
+      }
+    : {
+        _tag: "draft-workspace-file",
+        cwd: input.workspaceRoot,
+        path: input.absolutePath,
+        disposition: "attachment",
+      };
 }

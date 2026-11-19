@@ -33,6 +33,7 @@ import {
 } from "../../../../apps/web/src/components/ui/select.tsx";
 import { ProjectFavicon } from "../../../../apps/web/src/components/ProjectFavicon.tsx";
 import { TaskOutput } from "./TaskOutput.tsx";
+import { openFileInWorkerThread } from "./TaskFileWindow.tsx";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
 import { TaskThreadLink } from "./TaskThreadLink.tsx";
 import { getTaskRunAgentPresentation } from "./agentModelOptions.ts";
@@ -399,6 +400,11 @@ export function TasksView(props: TasksViewProps) {
     ? (projectsByKey.get(taskProjectKey(selectedTask)) ?? null)
     : null;
   const taskThreads = detailRuns;
+  // Active runs come unfiltered; the history can be filtered by status.
+  const latestRun = [...activeRuns, ...detailRuns].reduce<ScopedTaskAgentRun | undefined>(
+    (latest, run) => (latest === undefined || run.startedAt > latest.startedAt ? run : latest),
+    undefined,
+  );
   const mutableProjects = props.projects.filter((project) =>
     props.canMutateEnvironment(project.environmentId),
   );
@@ -1029,6 +1035,20 @@ export function TasksView(props: TasksViewProps) {
                     environmentId={selectedTask.environmentId}
                     cwd={selectedTaskProject?.workspaceRoot}
                     filePanelRef={props.filePanelRef}
+                    fileWindow={{
+                      projectName: selectedTask.projectName ?? "Project",
+                      projectId: selectedTask.projectId as ProjectId,
+                      onOpenInThread: latestRun
+                        ? (absolutePath, line) => {
+                            const threadRef = {
+                              environmentId: latestRun.environmentId,
+                              threadId: latestRun.threadId,
+                            };
+                            openFileInWorkerThread(threadRef, absolutePath, line);
+                            props.onOpenThread(latestRun.environmentId, latestRun.threadId);
+                          }
+                        : undefined,
+                    }}
                   />
                 </DetailSidebarSection>
               ) : null}
