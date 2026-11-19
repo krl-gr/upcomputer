@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -20,7 +21,10 @@ import {
   type Modifier,
 } from "@dnd-kit/core";
 
-import { Collapsible, CollapsiblePanel } from "../../../../apps/web/src/components/ui/collapsible.tsx";
+import {
+  Collapsible,
+  CollapsiblePanel,
+} from "../../../../apps/web/src/components/ui/collapsible.tsx";
 import { cn } from "../../../../apps/web/src/lib/utils.ts";
 import {
   SIDEBAR_DIM_TEXT,
@@ -33,6 +37,9 @@ import { movedGroupOrder, type TaskStatusGroup } from "./taskStatusGroups.ts";
 interface GroupDragState {
   readonly keys: readonly string[];
   readonly activeKey: string | null;
+  /** A drop ends with a click on the header, which must not toggle the group it moved. */
+  readonly dropped: (key: string) => boolean;
+  readonly pointerDown: () => void;
   readonly reorderable: boolean;
   readonly move: (key: string, direction: "up" | "down") => void;
 }
@@ -40,6 +47,8 @@ interface GroupDragState {
 const GroupDragContext = createContext<GroupDragState>({
   keys: [],
   activeKey: null,
+  dropped: () => false,
+  pointerDown: () => undefined,
   reorderable: false,
   move: () => undefined,
 });
@@ -55,7 +64,10 @@ interface GroupDrop {
 }
 
 /** The list's own scroller: a drop line outside it would draw over the page header. */
-function scrollerBounds(node: HTMLElement | null): { readonly top: number; readonly bottom: number } {
+function scrollerBounds(node: HTMLElement | null): {
+  readonly top: number;
+  readonly bottom: number;
+} {
   for (let parent = node?.parentElement; parent; parent = parent.parentElement) {
     const overflow = getComputedStyle(parent).overflowY;
     if (overflow === "auto" || overflow === "scroll") {
@@ -73,7 +85,6 @@ function scrollerBounds(node: HTMLElement | null): { readonly top: number; reado
  */
 export function TaskStatusGroupsProvider(props: {
   readonly groups: readonly TaskStatusGroup<unknown>[];
-  readonly counts: Readonly<Record<string, number>>;
   /** The shown groups in their new order, and the group that moved. */
   readonly onReorder: (keys: readonly string[], moved: string) => void;
   /** The dragged header's side insets, to match the layout it is lifted from. */
@@ -86,6 +97,7 @@ export function TaskStatusGroupsProvider(props: {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [drop, setDrop] = useState<GroupDrop | null>(null);
   const pointerY = useRef(0);
+  const lastDragged = useRef<string | null>(null);
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
@@ -125,6 +137,10 @@ export function TaskStatusGroupsProvider(props: {
     () => ({
       keys,
       activeKey,
+      dropped: (key) => lastDragged.current === key,
+      pointerDown: () => {
+        lastDragged.current = null;
+      },
       reorderable: keys.length > 1,
       move: (key, direction) => {
         const from = keys.indexOf(key);
@@ -140,7 +156,10 @@ export function TaskStatusGroupsProvider(props: {
       sensors={sensors}
       collisionDetection={collisionDetection}
       modifiers={[verticalOnly]}
-      onDragStart={(event) => setActiveKey(String(event.active.id))}
+      onDragStart={(event) => {
+        lastDragged.current = String(event.active.id);
+        setActiveKey(String(event.active.id));
+      }}
       onDragMove={(event) => {
         const over = event.over;
         const node = event.collisions?.[0]?.data?.droppableContainer?.node?.current ?? null;
@@ -180,7 +199,7 @@ export function TaskStatusGroupsProvider(props: {
               title={activeGroup.title}
               open={activeGroup.open}
               onToggle={() => undefined}
-              action={<GroupCount count={props.counts[activeGroup.key] ?? 0} />}
+              action={<GroupCount count={activeGroup.count} />}
             />
           </div>
         ) : null}
@@ -223,16 +242,12 @@ function useGroupDrag(key: string) {
  */
 function GroupHeader(props: {
   readonly group: TaskStatusGroup<unknown>;
-  readonly count: number;
   readonly onOpenChange: (open: boolean) => void;
   readonly className?: string;
 }) {
   const { group } = props;
   const drag = useContext(GroupDragContext);
   const { setNodeRef, listeners } = useDraggable({ id: group.key, disabled: !drag.reorderable });
-  // A drop ends with a click on the header, which must not toggle the group.
-  const dragged = useRef(false);
-  if (drag.activeKey === group.key) dragged.current = true;
   return (
     <div
       ref={setNodeRef}
@@ -240,10 +255,10 @@ function GroupHeader(props: {
       data-task-status-group-header={group.key}
       {...listeners}
       onPointerDownCapture={() => {
-        dragged.current = false;
+        drag.pointerDown();
       }}
       onClickCapture={(event) => {
-        if (dragged.current) event.stopPropagation();
+        if (drag.dropped(group.key)) event.stopPropagation();
       }}
       onKeyDown={(event: ReactKeyboardEvent) => {
         if (!drag.reorderable || !event.altKey) return;
@@ -256,7 +271,7 @@ function GroupHeader(props: {
         title={group.title}
         open={group.open}
         onToggle={() => props.onOpenChange(!group.open)}
-        action={<GroupCount count={props.count} />}
+        action={<GroupCount count={group.count} />}
       />
     </div>
   );
@@ -271,7 +286,6 @@ const STICKY_HEADER_CLASS = "sticky top-0 z-10 bg-background";
 /** A group in the card list. Its header lines up with the cards' content on both sides. */
 export function TaskStatusCardGroup(props: {
   readonly group: TaskStatusGroup<unknown>;
-  readonly count: number;
   readonly onOpenChange: (open: boolean) => void;
   readonly children: ReactNode;
 }) {
@@ -287,7 +301,6 @@ export function TaskStatusCardGroup(props: {
       <Collapsible open={group.open}>
         <GroupHeader
           group={group}
-          count={props.count}
           onOpenChange={props.onOpenChange}
           className={cn("px-3", STICKY_HEADER_CLASS)}
         />
@@ -304,7 +317,6 @@ export function TaskStatusCardGroup(props: {
 /** A group in the table: a body of its own, so every group keeps the table's columns. */
 export function TaskStatusTableGroup(props: {
   readonly group: TaskStatusGroup<unknown>;
-  readonly count: number;
   readonly columnCount: number;
   readonly onOpenChange: (open: boolean) => void;
   readonly children: ReactNode;
@@ -324,15 +336,52 @@ export function TaskStatusTableGroup(props: {
           colSpan={props.columnCount}
           className={cn("px-0 pb-1", SIDEBAR_SECTION_GAP, STICKY_HEADER_CLASS)}
         >
-          <GroupHeader
-            group={group}
-            count={props.count}
-            onOpenChange={props.onOpenChange}
-            className="-ms-0.5 -me-2"
-          />
+          <GroupHeader group={group} onOpenChange={props.onOpenChange} className="-ms-0.5 -me-2" />
         </td>
       </tr>
       {group.open ? props.children : null}
     </tbody>
+  );
+}
+
+/**
+ * The end of an open group whose server has more: calls `onVisible` once it
+ * scrolls into view, as the list's own scroller shows it.
+ */
+export function TaskGroupMore(props: {
+  readonly row: boolean;
+  readonly columnCount: number;
+  readonly onVisible: () => void;
+}) {
+  const ref = useRef<HTMLElement | null>(null);
+  const onVisible = useRef(props.onVisible);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the observer below calls the latest handler
+  useEffect(() => {
+    onVisible.current = props.onVisible;
+  });
+  // One observer for the element's life: a new one reports "visible" again before the rows
+  // of the page just loaded have rendered, and would load the next page too.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- watches the element's visibility in its scroller
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) onVisible.current();
+      },
+      { rootMargin: "0px 0px 400px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const attach = (node: HTMLElement | null) => {
+    ref.current = node;
+  };
+  return props.row ? (
+    <tr aria-hidden data-task-group-more="">
+      <td colSpan={props.columnCount} className="h-px p-0" ref={attach} />
+    </tr>
+  ) : (
+    <div aria-hidden data-task-group-more="" className="h-px" ref={attach} />
   );
 }

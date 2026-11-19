@@ -6,6 +6,7 @@ import type { TasksStateTarget } from "../state/tasksState.ts";
 import {
   filterByProjectFilter,
   orderedProjectFilterKeys,
+  planStatusGroupLanes,
   planTaskQueryLanes,
   preferredProject,
   type ViewProjectFilter,
@@ -137,4 +138,70 @@ test("the tag filter asks the server for tasks with every selected tag", () => {
     pageSize: 100,
   });
   NodeAssert.notEqual(withoutTags[0]?.key, lanes[0]?.key, "a tag change replaces the query");
+});
+
+test("the last run filter goes to the server, with No runs as none", () => {
+  const search = (lastRun: string) =>
+    planTaskQueryLanes({
+      targets: [target("laptop", ["p-main"])],
+      projectFilter: null,
+      statusFilter: "__all__",
+      lastRun,
+      pageSize: 100,
+    })[0]?.search;
+  NodeAssert.deepEqual(search("__all__"), { audience: "agent", limit: 100 });
+  NodeAssert.deepEqual(search("failed"), { audience: "agent", lastRun: "failed", limit: 100 });
+  NodeAssert.deepEqual(search("__none__"), { audience: "agent", lastRun: "none", limit: 100 });
+});
+
+test("a grouped list pages each open group with tasks by itself, and a collapsed one not at all", () => {
+  const lanes = planTaskQueryLanes({
+    targets: [target("laptop", ["p-main"]), target("remote", ["p-remote"])],
+    projectFilter: null,
+    statusFilter: "__all__",
+    pageSize: 100,
+  });
+  const [laptop, remote] = lanes;
+  const plan = (
+    counts: Parameters<typeof planStatusGroupLanes>[0]["counts"],
+    statusFilter = "__all__",
+  ) =>
+    planStatusGroupLanes({
+      lanes,
+      counts,
+      // Done is collapsed.
+      open: (key) => key !== "done",
+      statusFilter,
+    }).map((lane) => [lane.target.environmentId, lane.search.status ?? null, lane.group ?? null]);
+
+  NodeAssert.deepEqual(
+    plan({
+      [laptop!.key]: [
+        { status: "Done", count: 300 },
+        { status: "To Do", count: 4 },
+        { status: "to do", count: 1 },
+      ],
+      // The remote's counts are still loading: no lanes yet.
+    }),
+    [
+      ["laptop", "To Do", "to do"],
+      ["laptop", "to do", "to do"],
+    ],
+  );
+  NodeAssert.deepEqual(
+    plan(
+      {
+        [laptop!.key]: [
+          { status: "To Do", count: 4 },
+          { status: "Backlog", count: 2 },
+        ],
+      },
+      "Backlog",
+    ),
+    [["laptop", "Backlog", "backlog"]],
+    "the status filter leaves its group",
+  );
+  // A server without counts lists every status in one lane, as an ungrouped list does.
+  NodeAssert.deepEqual(plan({ [laptop!.key]: [], [remote!.key]: null }), [["remote", null, null]]);
+  NodeAssert.deepEqual(plan({ [remote!.key]: null }, "Backlog"), [["remote", "Backlog", null]]);
 });

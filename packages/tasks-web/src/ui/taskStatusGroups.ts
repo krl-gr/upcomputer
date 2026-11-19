@@ -1,8 +1,3 @@
-import * as Schema from "effect/Schema";
-import { useCallback } from "react";
-
-import { useLocalStorage } from "../../../../apps/web/src/hooks/useLocalStorage.ts";
-
 /** The standard statuses, in the order their groups show by default. */
 export const DEFAULT_STATUS_GROUP_ORDER = [
   "Needs Input",
@@ -25,39 +20,42 @@ export function statusGroupKey(status: string): string {
   return status.trim().toLowerCase();
 }
 
-/**
- * Grouping of the agents' task list by status: on or off, the user's group
- * order, and which groups are open. Design stand-in: kept per device in local
- * storage; the build stores it with the tasks so it follows the user.
- */
-const TaskStatusGrouping = Schema.Struct({
-  enabled: Schema.optional(Schema.Boolean),
-  /** Group keys in the user's order. A group missing here keeps its default place. */
-  order: Schema.optional(Schema.Array(Schema.String)),
-  /** Group key to open. A group missing here takes its default. */
-  open: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
-});
-type TaskStatusGrouping = typeof TaskStatusGrouping.Type;
+export function sameStatusGroup(left: string, right: string): boolean {
+  return statusGroupKey(left) === statusGroupKey(right);
+}
 
-const STORAGE_KEY = "upcomputer:tasks:status-groups";
-const DEFAULT_GROUPING: TaskStatusGrouping = {};
+/** The tasks of one status's group, in their order: where a task of that status can move. */
+export function tasksOfGroup<T extends { readonly status: string }>(
+  tasks: readonly T[],
+  status: string,
+): readonly T[] {
+  return tasks.filter((task) => sameStatusGroup(task.status, status));
+}
+
+/** Whether a group is open: the user's choice, else open but for Done and Cancelled. */
+export function isStatusGroupOpen(open: Readonly<Record<string, boolean>>, key: string): boolean {
+  return open[key] ?? !START_COLLAPSED.has(key);
+}
 
 export interface TaskStatusGroup<T> {
   readonly key: string;
   readonly title: string;
+  /** The server's count for the list's filters; loaded tasks may be fewer. */
+  readonly count: number;
   readonly tasks: readonly T[];
   readonly open: boolean;
 }
 
 /**
- * One group per status that has tasks: the standard statuses in the default
- * order, then any other status in the data by name, all re-sorted by the
- * user's own order. A status without tasks has no group, but keeps its place
- * in `order`, so its group comes back where it was. A status filter leaves
- * only its group.
+ * One group per status with tasks (counted, or loaded before its count
+ * arrives), in the user's order. A status without tasks keeps its place in
+ * `order`, so its group comes back where it was.
  */
 export function taskStatusGroups<T extends { readonly status: string }>(input: {
   readonly tasks: readonly T[];
+  /** Tasks per status key, from the server. */
+  readonly counts: ReadonlyMap<string, number>;
+  /** Status names to title the groups. */
   readonly statuses: readonly string[];
   readonly statusFilter: string | null;
   readonly order: readonly string[];
@@ -89,12 +87,17 @@ export function taskStatusGroups<T extends { readonly status: string }>(input: {
   return {
     order,
     groups: order
-      .filter((key) => (filterKey === null || key === filterKey) && byKey.has(key))
+      .filter(
+        (key) =>
+          (filterKey === null || key === filterKey) &&
+          ((input.counts.get(key) ?? 0) > 0 || byKey.has(key)),
+      )
       .map((key) => ({
         key,
         title: titles.get(key) ?? key,
+        count: input.counts.get(key) ?? byKey.get(key)?.length ?? 0,
         tasks: byKey.get(key) ?? [],
-        open: input.open[key] ?? !START_COLLAPSED.has(key),
+        open: isStatusGroupOpen(input.open, key),
       })),
   };
 }
@@ -139,29 +142,4 @@ export function movedGroupOrder(
   next.splice(from, 1);
   next.splice(to, 0, activeKey);
   return next;
-}
-
-export function useTaskStatusGrouping() {
-  const [stored, setStored] = useLocalStorage(STORAGE_KEY, DEFAULT_GROUPING, TaskStatusGrouping);
-  const setEnabled = useCallback(
-    (enabled: boolean) => setStored((current) => ({ ...current, enabled })),
-    [setStored],
-  );
-  const setOrder = useCallback(
-    (order: readonly string[]) => setStored((current) => ({ ...current, order: [...order] })),
-    [setStored],
-  );
-  const setOpen = useCallback(
-    (key: string, open: boolean) =>
-      setStored((current) => ({ ...current, open: { ...current.open, [key]: open } })),
-    [setStored],
-  );
-  return {
-    enabled: stored.enabled ?? true,
-    order: stored.order ?? [],
-    open: stored.open ?? {},
-    setEnabled,
-    setOrder,
-    setOpen,
-  };
 }

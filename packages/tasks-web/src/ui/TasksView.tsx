@@ -61,17 +61,18 @@ import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { AgentTaskCard } from "./AgentTaskCard.tsx";
 import { TaskFilterRow, TaskFiltersButton } from "./TaskFilters.tsx";
 import {
+  TaskGroupMore,
   TaskStatusCardGroup,
   TaskStatusGroupsProvider,
   TaskStatusTableGroup,
 } from "./TaskStatusGroups.tsx";
 import {
   mergedGroupOrder,
-  statusGroupKey,
+  sameStatusGroup,
   taskStatusGroups,
-  useTaskStatusGrouping,
+  tasksOfGroup,
 } from "./taskStatusGroups.ts";
-import { setTaskStatusGroupsDesignClient, useStandInRuns } from "./taskStatusGroupsPreview.ts";
+import type { TasksViewGrouping } from "./useTaskList.ts";
 import { taskListLayout } from "./taskListLayout.ts";
 import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
@@ -150,12 +151,14 @@ export interface TasksViewProps {
   readonly onProjectFilterReset?: () => void;
   /** The Me / Workers switch and the Tasks / Automations switch, at the left of the header. */
   readonly viewSwitch?: ReactNode;
-  /** Task status (server), last run (client), tags (server, all required) and archive (server). */
+  /** Task status, last run, tags (all required) and archive, all applied by the server. */
   readonly filters: TasksPageFilters;
   readonly onFiltersChange: (filters: TasksPageFilters) => void;
   readonly hasMore: boolean;
   readonly loadingMore: boolean;
   readonly onLoadMore: () => void;
+  /** Grouping by status; without it the list is never grouped. */
+  readonly grouping?: TasksViewGrouping;
   readonly agents: readonly ScopedTaskAgent[];
   readonly runs: readonly ScopedTaskAgentRun[];
   /** Resolves run harness and model display names. */
@@ -387,53 +390,39 @@ export function TasksView(props: TasksViewProps) {
       ].sort(compareStatuses),
     [props.statuses, selectedTask, statusFilter],
   );
-  // The last-run filter is applied here, to the rows the server returned.
-  // Design only (see taskStatusGroupsPreview.ts): sample tasks and stand-in run counts.
-  const standInRuns = useStandInRuns();
-  const firstEnvironmentId = props.projects[0]?.environmentId;
-  if (import.meta.env.DEV && firstEnvironmentId)
-    setTaskStatusGroupsDesignClient(props.getClient(firstEnvironmentId));
+  // The server applies the last-run filter; an older one does not, so the loaded rows are checked too.
   const filteredTasks = useMemo(
-    () =>
-      optimisticTasks
-        .map((task) => {
-          const prefix = Object.keys(standInRuns).find((key) => task.title.startsWith(key));
-          return prefix ? ({ ...task, ...standInRuns[prefix] } as ScopedTaskListItem) : task;
-        })
-        .filter((task) => matchesLastRunFilter(task, filters.lastRun)),
-    [filters.lastRun, optimisticTasks, standInRuns],
+    () => optimisticTasks.filter((task) => matchesLastRunFilter(task, filters.lastRun)),
+    [filters.lastRun, optimisticTasks],
   );
-  const grouping = useTaskStatusGrouping();
-  const grouped = grouping.enabled;
+  const grouping = props.grouping;
+  const grouped = grouping?.settings.groupByStatus ?? false;
   const { groups, order: groupOrder } = useMemo(
     () =>
       taskStatusGroups({
-        tasks: filteredTasks,
+        tasks: grouped ? filteredTasks : [],
+        counts: grouping?.counts ?? new Map(),
         statuses: props.statuses,
         statusFilter: statusFilter === ALL_FILTER ? null : statusFilter,
-        order: grouping.order,
-        open: grouping.open,
+        order: grouping?.settings.statusGroupOrder ?? [],
+        open: grouping?.settings.statusGroupOpen ?? {},
       }),
-    [filteredTasks, grouping.open, grouping.order, props.statuses, statusFilter],
+    [filteredTasks, grouped, grouping, props.statuses, statusFilter],
   );
-  // Design stand-in for the server's count per status: every page is loaded, so a group's
-  // count is its loaded rows. The build asks the server for counts and pages each group.
-  const groupCounts = useMemo(
-    () => Object.fromEntries(groups.map((group) => [group.key, group.tasks.length])),
-    [groups],
-  );
-  const { hasMore, loadingMore, onLoadMore } = props;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- design stand-in: loads the remaining pages so the counts are whole
-  useEffect(() => {
-    if (grouped && hasMore && !loadingMore) onLoadMore();
-  }, [grouped, hasMore, loadingMore, onLoadMore]);
+  const groupsLoading = [...(grouping?.paging.values() ?? [])].some((paging) => paging.loading);
   // The loaded rows, not the optimistic copy, which trails a page by a render.
   const { arrivals, settle: settleArrival } = useTaskArrivals(
     props.tasks.map(taskKey),
     // A computer going offline or coming back resets the baseline, so its rows don't replay as new.
-    JSON.stringify([projectFilter?.key ?? null, filters, props.offlineEnvironmentIds ?? []]),
+    JSON.stringify([
+      projectFilter?.key ?? null,
+      filters,
+      props.offlineEnvironmentIds ?? [],
+      grouped,
+    ]),
     props.status === "ready",
-    props.loadingMore,
+    // A group's first page, as it opens, brings old tasks too.
+    props.loadingMore || groupsLoading,
   );
   const triggerTags = useMemo(() => agentTriggerTags(props.agents), [props.agents]);
   const tagOptions = useMemo(
@@ -446,7 +435,7 @@ export function TasksView(props: TasksViewProps) {
   // Hide what the filter already says: the project with one project chosen, and the
   // status in a list grouped by status (a card keeps its status select, which changes it).
   const showProjectColumn = projectFilter === null;
-  const showStatusColumn = !grouping.enabled;
+  const showStatusColumn = !grouped;
   const environmentCount = new Set(props.tasks.map(({ environmentId }) => environmentId)).size;
 
   const persistVisibleMove = useCallback(
@@ -455,11 +444,7 @@ export function TasksView(props: TasksViewProps) {
       const result = planVisibleTaskMove({
         tasks: optimisticTasks,
         // In a grouped list a task moves among its own group's tasks only.
-        visibleTasks: grouped
-          ? filteredTasks.filter(
-              (candidate) => statusGroupKey(candidate.status) === statusGroupKey(task.status),
-            )
-          : filteredTasks,
+        visibleTasks: grouped ? tasksOfGroup(filteredTasks, task.status) : filteredTasks,
         task,
         directionOrTarget,
       });
@@ -505,7 +490,7 @@ export function TasksView(props: TasksViewProps) {
     setDraggedTaskKey(null);
     if (!dragged || taskKey(dragged) === taskKey(task)) return;
     // A task's status changes only through its status picker, never by a drop on another group.
-    if (grouped && statusGroupKey(dragged.status) !== statusGroupKey(task.status)) return;
+    if (grouped && !sameStatusGroup(dragged.status, task.status)) return;
     void persistVisibleMove(dragged, task);
   };
   const reorderHandle = (task: ScopedTaskListItem) => (
@@ -880,11 +865,15 @@ export function TasksView(props: TasksViewProps) {
     }
   }, [form, props, selectedProject]);
 
-  const listEmpty = props.tasks.length === 0 || filteredTasks.length === 0;
+  // Grouped, a group shows by its server count, even closed with no rows loaded.
+  const listEmpty = grouped
+    ? groups.length === 0
+    : props.tasks.length === 0 || filteredTasks.length === 0;
   const filtersNarrow =
     props.tasks.length > 0 ||
     projectFilter !== null ||
     statusFilter !== ALL_FILTER ||
+    filters.lastRun !== ALL_FILTER ||
     filters.tags.length > 0 ||
     archiveFilter !== "active";
   const renderCard = (task: ScopedTaskListItem) => (
@@ -997,6 +986,30 @@ export function TasksView(props: TasksViewProps) {
     );
   };
 
+  const groupBySelect = grouping
+    ? {
+        groupByStatus: grouped,
+        onGroupByStatusChange: (groupByStatus: boolean) =>
+          grouping.onSettingsChange({ groupByStatus }),
+      }
+    : {};
+  const setGroupOpen = (key: string, open: boolean) =>
+    grouping?.onSettingsChange({ statusGroupOpen: { [key]: open } });
+  // The end of an open group with more on the server: its next page loads when this scrolls into view.
+  const groupMore = (key: string, loaded: number, row: boolean) => {
+    const paging = grouping?.paging.get(key);
+    if (!grouping || !paging?.hasMore) return null;
+    return (
+      <TaskGroupMore
+        // A new observer per page, so a short page that leaves the end in view loads the next one.
+        key={`more:${loaded}`}
+        row={row}
+        columnCount={showProjectColumn ? 5 : 4}
+        onVisible={() => grouping.onLoadGroup(key)}
+      />
+    );
+  };
+
   const detailOuterClass = panel ? "flex w-full min-w-0 py-3" : "flex min-h-0 w-full flex-1 py-5";
   const detailInnerClass = panel
     ? "flex min-w-0 flex-1 flex-col gap-3"
@@ -1081,8 +1094,7 @@ export function TasksView(props: TasksViewProps) {
                 onFiltersChange={onFiltersChange}
                 statusOptions={statusOptions}
                 tagOptions={tagOptions}
-                groupByStatus={grouped}
-                onGroupByStatusChange={grouping.setEnabled}
+                {...groupBySelect}
                 projectSelect={props.projectSelect}
                 projectChosen={projectFilter !== null}
                 onProjectReset={() => props.onProjectFilterReset?.()}
@@ -1095,8 +1107,7 @@ export function TasksView(props: TasksViewProps) {
                   onFiltersChange={onFiltersChange}
                   statusOptions={statusOptions}
                   tagOptions={tagOptions}
-                  groupByStatus={grouped}
-                  onGroupByStatusChange={grouping.setEnabled}
+                  {...groupBySelect}
                 />
               </>
             )}
@@ -1681,12 +1692,13 @@ export function TasksView(props: TasksViewProps) {
                     hint="Click + to add one, or ask any thread to plan the work for you."
                   />
                 )
-              ) : grouped ? (
+              ) : grouped && grouping ? (
                 <TaskStatusGroupsProvider
                   groups={groups}
-                  counts={groupCounts}
                   onReorder={(shown, moved) =>
-                    grouping.setOrder(mergedGroupOrder(groupOrder, shown, moved))
+                    grouping.onSettingsChange({
+                      statusGroupOrder: mergedGroupOrder(groupOrder, shown, moved),
+                    })
                   }
                   overlayClassName={cards ? "mx-2 px-1" : "ms-0.5 me-2"}
                   lineInset={cards ? 8 : 0}
@@ -1697,10 +1709,10 @@ export function TasksView(props: TasksViewProps) {
                         <TaskStatusCardGroup
                           key={group.key}
                           group={group}
-                          count={groupCounts[group.key] ?? 0}
-                          onOpenChange={(open) => grouping.setOpen(group.key, open)}
+                          onOpenChange={(open) => setGroupOpen(group.key, open)}
                         >
                           {group.tasks.map(renderCard)}
+                          {groupMore(group.key, group.tasks.length, false)}
                         </TaskStatusCardGroup>
                       ))}
                     </div>
@@ -1713,11 +1725,11 @@ export function TasksView(props: TasksViewProps) {
                           <TaskStatusTableGroup
                             key={group.key}
                             group={group}
-                            count={groupCounts[group.key] ?? 0}
                             columnCount={showProjectColumn ? 5 : 4}
-                            onOpenChange={(open) => grouping.setOpen(group.key, open)}
+                            onOpenChange={(open) => setGroupOpen(group.key, open)}
                           >
                             {group.tasks.map(renderRow)}
+                            {groupMore(group.key, group.tasks.length, true)}
                           </TaskStatusTableGroup>
                         ))}
                       </table>
@@ -1734,8 +1746,8 @@ export function TasksView(props: TasksViewProps) {
                   </table>
                 </div>
               )}
-              {/* Grouped, the list has no Load more: a group loads as it scrolls. */}
-              {props.hasMore && !grouped ? (
+              {/* Grouped, a group loads as it scrolls; Load more stays for a server without counts. */}
+              {props.hasMore ? (
                 cards ? (
                   <div className="flex justify-center py-4">
                     <Button

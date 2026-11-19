@@ -15,7 +15,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../../apps/web/src/components/ui/select.tsx";
-import { Switch } from "../../../../apps/web/src/components/ui/switch.tsx";
 import {
   ALL_FILTER,
   ARCHIVE_OPTIONS,
@@ -31,9 +30,12 @@ interface TaskFilterSelectsProps {
   readonly onFiltersChange: (filters: TasksPageFilters) => void;
   readonly statusOptions: readonly string[];
   readonly tagOptions: readonly string[];
-  /** Groups the list by status. A view choice, not a filter: Reset and the button's number leave it out. */
-  readonly groupByStatus: boolean;
-  readonly onGroupByStatusChange: (groupByStatus: boolean) => void;
+  /**
+   * Groups the list by status, when the list can be grouped. A view choice,
+   * not a filter: Reset and the button's number leave it out.
+   */
+  readonly groupByStatus?: boolean;
+  readonly onGroupByStatusChange?: (groupByStatus: boolean) => void;
 }
 
 function Field(props: { readonly label: string; readonly children: ReactNode }) {
@@ -143,22 +145,28 @@ function TaskFilterSelects(props: TaskFilterSelectsProps & { readonly stacked: b
           </SelectPopup>
         </Select>,
       )}
-      <label
-        className={
-          stacked
-            ? "flex cursor-pointer items-center justify-between gap-3 text-sm text-foreground"
-            : "flex shrink-0 cursor-pointer items-center gap-2 text-sm whitespace-nowrap text-foreground"
-        }
-      >
-        {stacked ? "Group by status" : null}
-        <Switch
-          size="sm"
-          checked={props.groupByStatus}
-          onCheckedChange={props.onGroupByStatusChange}
-          data-group-by-status=""
-        />
-        {stacked ? null : "Group by status"}
-      </label>
+      {props.onGroupByStatusChange === undefined
+        ? null
+        : field(
+            "Group",
+            <Select
+              value={props.groupByStatus ? "status" : "none"}
+              onValueChange={(value) => {
+                if (value) props.onGroupByStatusChange?.(value === "status");
+              }}
+            >
+              <SelectTrigger className={width("w-36")} size="sm" aria-label="Group tasks">
+                <SelectValue>
+                  {stacked ? null : "Group: "}
+                  {props.groupByStatus ? "Status" : "None"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                <SelectItem value="status">Status</SelectItem>
+                <SelectItem value="none">None</SelectItem>
+              </SelectPopup>
+            </Select>,
+          )}
     </>
   );
 }
