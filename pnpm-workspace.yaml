@@ -133,6 +133,9 @@ overrides:
   expo-modules-core: 58.0.22
   # Keep jsdom's optional peer consistent so Vite+ has one test-runner instance.
   "@exodus/bytes>@noble/hashes": "1.8.0"
+  # @cloudflare/unenv-preset peers on this exact version, but alchemy's runtime
+  # takes a caret range, so lockfile-free installs drift to a newer prerelease.
+  unenv: 2.0.0-rc.24
   # Earlier React Navigation declarations create a circular type alias in TypeScript 7.
   # Move this with @react-navigation/native: an older core than it requires crashes
   # every native stack at launch.
