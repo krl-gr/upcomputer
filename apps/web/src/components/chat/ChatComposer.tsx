@@ -971,7 +971,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
   const firstRunAgentPlaceholder =
     firstRunAgentStatus?.kind === "preparing"
-      ? gt("Setting up your agent. This takes a moment the first time.")
+      ? firstRunAgentStatus.slow
+        ? gt("Still starting your agent. The first start can take a minute or two.")
+        : gt("Setting up your agent. This takes a moment the first time.")
       : firstRunAgentStatus?.kind === "failed"
         ? firstRunAgentStatus.message
         : null;
@@ -2525,11 +2527,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         data-chat-first-run-agent="preparing"
         className="shrink-0"
       >
-        {firstRunAgentStatus.progress === null
-          ? gt("Setting up your agent…")
-          : gt("Setting up your agent… {percent}%", {
-              percent: Math.round(firstRunAgentStatus.progress * 100),
-            })}
+        {firstRunAgentStatus.slow
+          ? gt("Still starting your agent…")
+          : firstRunAgentStatus.progress === null
+            ? gt("Setting up your agent…")
+            : gt("Setting up your agent… {percent}%", {
+                percent: Math.round(firstRunAgentStatus.progress * 100),
+              })}
       </ComposerControl>
     ) : firstRunAgentStatus?.kind === "failed" ? (
       <>

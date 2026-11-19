@@ -9,6 +9,7 @@ import {
 import { AuthClientPresentationMetadata, ServerAuthDescriptor } from "./auth.ts";
 import {
   ForwardCompatibleArray,
+  ForwardCompatibleOptional,
   IsoDateTime,
   NonNegativeInt,
   PositiveInt,
@@ -53,6 +54,16 @@ const ServerConfigIssues = ForwardCompatibleArray(ServerConfigIssue);
 
 export const ServerProviderState = Schema.Literals(["ready", "warning", "error", "disabled"]);
 export type ServerProviderState = typeof ServerProviderState.Type;
+
+/** UpComputer: why a status check did not reach `ready`, in categories only, never its text. */
+export const ServerProviderStatusReason = Schema.Literals([
+  "migration",
+  "startup_timeout",
+  "models_missing",
+  "auth",
+  "unknown",
+]);
+export type ServerProviderStatusReason = typeof ServerProviderStatusReason.Type;
 
 export const ServerProviderAuthStatus = Schema.Literals([
   "authenticated",
@@ -270,6 +281,8 @@ export const ServerProvider = Schema.Struct({
   // UpComputer: set on the placeholder a driver publishes until its first
   // status check finishes, so clients do not present it as a real result.
   statusPending: Schema.optionalKey(Schema.Boolean),
+  // A category this build does not know reads as absent, so the provider still decodes.
+  statusReason: ForwardCompatibleOptional(ServerProviderStatusReason),
   availability: Schema.optional(ServerProviderAvailability),
   unavailableReason: Schema.optional(TrimmedNonEmptyString),
   models: Schema.Array(ServerProviderModel),
@@ -1192,6 +1205,12 @@ export const UI_TRACK_TARGET_PATTERN = /^[a-z0-9_.-]{1,64}$/;
 /** A click on an element without a valid `data-track` name. */
 export const UI_UNTRACKED_TARGET = "untracked";
 
+export const FirstRunAgentFailureReason = Schema.Literals([
+  "install",
+  ...ServerProviderStatusReason.literals,
+]);
+export type FirstRunAgentFailureReason = typeof FirstRunAgentFailureReason.Type;
+
 /**
  * UI events the server records as product telemetry, so they share the
  * install's identity with its server events. Bounded values only.
@@ -1225,6 +1244,10 @@ export const ClientTelemetryEvent = Schema.Union([
   Schema.Struct({
     event: Schema.Literal("onboarding.first_run_agent"),
     outcome: Schema.Literals(["started", "ready", "failed", "retried", "connect_other"]),
+    /** With `failed`: the install, or the first agent's start after it. */
+    reason: Schema.optionalKey(FirstRunAgentFailureReason),
+    /** With `retried`: the app's own second attempt after the first failed, not a Retry press. */
+    automatic: Schema.optionalKey(Schema.Literal(true)),
   }),
   Schema.Struct({
     event: Schema.Literal("onboarding.completed"),

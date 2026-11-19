@@ -4,6 +4,7 @@ import {
   type ServerProviderModel,
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
+  type ServerProviderStatusReason,
   settingsSecretLiteral,
 } from "@t3tools/contracts";
 import type { OpenCodeSettings } from "../settings.ts";
@@ -152,6 +153,35 @@ function formatOpenCodeProbeError(input: {
         ? "OpenCode is installed but didn't report its models. Refresh to try again."
         : "OpenCode is installed but couldn't be started. Reinstall or update it, then refresh.",
   };
+}
+
+/**
+ * UpComputer: with the 20 s version probe, 15 s catalog refresh and 30 s serve
+ * start, a first check ends in about 80 s, inside the first-run composer's 90 s.
+ */
+const OPENCODE_INVENTORY_TIMEOUT_MS = 15_000;
+
+/**
+ * UpComputer: the category a failed check reports, read from error tags and
+ * structured reasons only. A failure after the server started is about models.
+ */
+function openCodeStatusReason(
+  cause: unknown,
+  phase: "version" | "inventory" | "models",
+): ServerProviderStatusReason {
+  let current = cause;
+  for (let depth = 0; depth < 8 && typeof current === "object" && current !== null; depth++) {
+    if (Cause.isTimeoutError(current)) return "startup_timeout";
+    if (OpenCodeRuntime.isOpenCodeRuntimeError(current)) {
+      if (current.reason === "databaseLocked") return "migration";
+      if (current.reason === "timeout") return "startup_timeout";
+      if (current.reason === "version_unsupported") return "unknown";
+      // A serve that exited, found no port or could not spawn never got to list models.
+      if (current.operation === "startOpenCodeServerProcess") return "unknown";
+    }
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return phase === "version" ? "unknown" : "models_missing";
 }
 
 // The status check owns the span; keep handled failures visible without adding another span.
@@ -803,6 +833,7 @@ const checkOpenCode2 = Effect.fn("checkOpenCode2")(function* (
       ),
       slashCommands: [COMPACT_SLASH_COMMAND],
       probe: probe("error", "OpenCode could not load its model list."),
+      statusReason: openCodeStatusReason(Cause.squash(result.cause), "models"),
     });
   }
   if (result.value.length === 0) {
@@ -825,6 +856,7 @@ const checkOpenCode2 = Effect.fn("checkOpenCode2")(function* (
             `OpenCode ${version} lists ${result.value.length} model${result.value.length === 1 ? "" : "s"}.`,
           )
         : probe("warning", "OpenCode 2 is running, but it did not list any models yet."),
+    ...(result.value.length > 0 ? {} : { statusReason: "models_missing" }),
   });
 });
 
@@ -877,6 +909,8 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
         auth: { status: failure.authStatus ?? "unknown" },
         message: failure.message,
       },
+      statusReason:
+        failure.authStatus === "unauthenticated" ? "auth" : openCodeStatusReason(cause, phase),
     });
   };
 
@@ -930,11 +964,17 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
         auth: { status: "unknown" },
         message: `OpenCode v${probed.version} is too old. Upgrade to v${OpenCodeRuntime.MINIMUM_OPENCODE_VERSION} or newer.`,
       },
+      statusReason: "unknown",
     });
   }
 
   const installedVersion = isExternalServer ? {} : { installedVersion: probed.version };
   let version = probed.version;
+  const inventoryTimeoutMs = resolveProviderProbeTimeoutMs(
+    "opencode",
+    OPENCODE_INVENTORY_TIMEOUT_MS,
+    environment,
+  );
   const loadInventory = Effect.fnUntraced(function* (server: {
     readonly url: string;
     readonly serverPassword?: string;
@@ -942,13 +982,24 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
   }) {
     // Preserve the helper's version even when its inventory request fails.
     version = server.version;
-    return yield* openCodeRuntime.loadOpenCodeInventory(
-      openCodeRuntime.createOpenCodeSdkClient({
-        baseUrl: server.url,
-        directory: cwd,
-        ...(server.serverPassword !== undefined ? { serverPassword: server.serverPassword } : {}),
-      }),
-    );
+    const inventory = yield* openCodeRuntime
+      .loadOpenCodeInventory(
+        openCodeRuntime.createOpenCodeSdkClient({
+          baseUrl: server.url,
+          directory: cwd,
+          ...(server.serverPassword !== undefined ? { serverPassword: server.serverPassword } : {}),
+        }),
+      )
+      .pipe(Effect.timeoutOption(inventoryTimeoutMs));
+    // UpComputer: a hung request would hold the provider's refresh lock, so no Refresh could run.
+    if (Option.isNone(inventory)) {
+      return yield* new OpenCodeRuntime.OpenCodeRuntimeError({
+        operation: "loadOpenCodeInventory",
+        detail: `OpenCode did not list its models within ${inventoryTimeoutMs / 1_000} seconds.`,
+        reason: "timeout",
+      });
+    }
+    return inventory.value;
   });
   // UpComputer: `opencode serve` keeps the models.dev catalog it loaded for its first request:
   // the copy bundled in the binary on a cold cache, else the cached copy, however old. The fresh
@@ -1037,6 +1088,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
                 ? "Connected to the configured OpenCode server, but it did not report any connected upstream providers."
                 : "OpenCode is available, but it did not report any connected upstream providers.",
       },
+      ...(catalogReady ? {} : { statusReason: "models_missing" }),
     }),
     ...installedVersion,
   };

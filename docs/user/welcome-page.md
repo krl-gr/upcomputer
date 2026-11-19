@@ -20,7 +20,8 @@ If OpenCode 1.14.19 or newer is already installed, the app uses it and
 downloads nothing. If an agent you already use, such as Claude or Codex, is
 installed and signed in, the app keeps it for new threads and downloads nothing.
 
-If the download fails, for example without a network connection, the composer says
+If the download or OpenCode's first start fails, for example without a network
+connection, the app tries once more by itself. If that fails too, the composer says
 why. Select **Retry**, or **Connect another agent** to set up Codex, Claude or
 another agent on the Welcome page instead.
 
