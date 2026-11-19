@@ -39,7 +39,7 @@ function endpointLabel(environment: RelayClientEnvironmentRecord): string {
 
 function confirmDeregister(environment: RelayClientEnvironmentRecord, onConfirm: () => void) {
   const title = "Deregister server?";
-  const message = `“${environment.label}” will be removed from this account. T3 Connect access will be revoked, any managed tunnel will be removed, and a host space will become available. Local connections on your devices are not changed.`;
+  const message = `“${environment.label}” will be removed from this account. UpComputer Connect access will be revoked, any managed tunnel will be removed, and a host space will become available. Local connections on your devices are not changed.`;
   Dialog.confirm({ title, message, confirmText: "Deregister", destructive: true, onConfirm });
 }
 
@@ -138,7 +138,7 @@ export function T3ConnectProfilePage() {
       {environmentsState.error ? (
         <>
           <ClerkRow
-            title="Could not load T3 Connect environments"
+            title="Could not load UpComputer Connect environments"
             subtitle={environmentsState.error}
           />
           {errorTraceId ? (
@@ -198,7 +198,7 @@ export function T3ConnectProfilePage() {
       ) : (
         <ClerkRow
           title="No servers registered"
-          subtitle="Link a server from its local Settings to reach it through T3 Connect."
+          subtitle="Link a server from its local Settings to reach it through UpComputer Connect."
         />
       )}
 
