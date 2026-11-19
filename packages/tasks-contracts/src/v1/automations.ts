@@ -8,7 +8,7 @@ import {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-import { TaskId, TaskRank, TaskTag } from "./tasks.ts";
+import { DEFAULT_TASK_STATUS, TaskId, TaskRank, TaskTag } from "./tasks.ts";
 
 export const TaskAutomationId = TrimmedNonEmptyString.pipe(Schema.brand("TaskAutomationId"));
 export type TaskAutomationId = typeof TaskAutomationId.Type;
@@ -215,7 +215,7 @@ export const AutomationUpdateInput = Schema.Struct({
 });
 export type AutomationUpdateInput = typeof AutomationUpdateInput.Type;
 
-export const DEFAULT_AUTOMATION_TASK_STATUS = "new" as const;
+export const DEFAULT_AUTOMATION_TASK_STATUS = DEFAULT_TASK_STATUS;
 export const DEFAULT_AUTOMATION_TIMEZONE = "UTC" as const;
 export const DEFAULT_AUTOMATION_CATCH_UP_POLICY: TaskAutomationCatchUpPolicy = "fire-once";
 

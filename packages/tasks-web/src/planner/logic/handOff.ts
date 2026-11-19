@@ -1,3 +1,5 @@
+import { sameTaskStatus } from "@t3tools/tasks-contracts/v1";
+
 /** An agent a person can hand a task to. */
 export interface HandOffAgent {
   readonly id: string;
@@ -44,7 +46,8 @@ export function handOffPatch(
 ) {
   if (!agent) return { audience: "agent" as const };
   const startStatus =
-    agent.startStatuses.length === 0 || agent.startStatuses.includes(task.status)
+    agent.startStatuses.length === 0 ||
+    agent.startStatuses.some((status) => sameTaskStatus(status, task.status))
       ? null
       : agent.startStatuses[0];
   const metadata =

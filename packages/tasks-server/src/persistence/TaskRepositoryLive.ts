@@ -38,6 +38,7 @@ import {
   TaskThreadRunCountsResult,
   DEFAULT_TASK_REMINDER_LEAD_MINUTES,
   PERSON_DONE_STATUS,
+  sameTaskStatus,
   personTaskStatusError,
   statusForPersonAudience,
   taskKindAudienceError,
@@ -575,11 +576,11 @@ const makeTaskRepository = Effect.gen(function* () {
   /** A list's filters as a WHERE condition on `tasks`, shared by its pages and its counts. */
   const listCondition = (filter: typeof ListConditionFields.Encoded) => sql`
     (${filter.projectId} IS NULL OR project_id = ${filter.projectId})
-    AND (${filter.status} IS NULL OR status = ${filter.status})
+    AND (${filter.status} IS NULL OR status = ${filter.status} COLLATE NOCASE)
     AND ${archiveCondition(filter.archive)}
     AND ${membershipCondition(filter.audience, filter.kind)}
     AND (${filter.excludeStatusesJson} IS NULL
-      OR status NOT IN (SELECT value FROM json_each(${filter.excludeStatusesJson})))
+      OR status COLLATE NOCASE NOT IN (SELECT value FROM json_each(${filter.excludeStatusesJson})))
     AND (${filter.createdBy} IS NULL OR created_by = ${filter.createdBy})
     AND (${filter.excludeAutomationTasks} = 0
       OR created_by NOT GLOB ${`${AUTOMATION_TASK_CREATOR_PREFIX}*`})
@@ -2801,7 +2802,7 @@ const makeTaskRepository = Effect.gen(function* () {
   const lastDoneAt = (taskId: TaskId) =>
     sql<{ createdAt: string }>`SELECT created_at AS "createdAt" FROM task_events
       WHERE task_id = ${taskId} AND kind = ${TASK_STATUS_CHANGED_EVENT}
-        AND json_extract(payload_json, '$.to') = ${PERSON_DONE_STATUS}
+        AND TRIM(json_extract(payload_json, '$.to')) = ${PERSON_DONE_STATUS} COLLATE NOCASE
       ORDER BY created_at DESC, rowid DESC LIMIT 1`.pipe(
       Effect.map((rows) => rows[0]?.createdAt ?? null),
     );
@@ -2976,7 +2977,9 @@ const makeTaskRepository = Effect.gen(function* () {
           }> = [];
           const reminders = due.flatMap((row): TaskReminder[] => {
             if (row.status !== "open" || row.startTime === null || row.title === null) return [];
-            if (row.taskStatus === PERSON_DONE_STATUS || row.archivedAt !== null) return [];
+            if (row.archivedAt !== null) return [];
+            if (row.taskStatus !== null && sameTaskStatus(row.taskStatus, PERSON_DONE_STATUS))
+              return [];
             const startsAt = scheduledInstant(row.date, row.startTime, settings.timeZone);
             if (startsAt === null) return [];
             if (startsAt <= DateTime.toEpochMillis(now)) {

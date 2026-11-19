@@ -11,7 +11,11 @@ import {
 import { ArrowLeftIcon, GripVerticalIcon } from "lucide-react";
 import { msg, useGT, useMessages } from "gt-react";
 import {
+  AGENT_RESTORED_STATUS,
+  DEFAULT_TASK_STATUS,
+  sameTaskStatus,
   TASK_HISTORY_EVENT_KINDS,
+  TASK_STATUSES,
   TaskId,
   type TaskArchiveFilter,
   type TaskAudience,
@@ -86,7 +90,13 @@ import { TaskTagChips } from "./TaskTagChips.tsx";
 import { TagChipsField } from "./TagChipsField.tsx";
 import { tagSuggestions } from "./tagSuggestions.ts";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
-import { splitListInput, taskKey, taskMetadataLabel, type TasksWebProject } from "./shared.ts";
+import {
+  splitListInput,
+  taskKey,
+  taskMetadataLabel,
+  uniqueStatuses,
+  type TasksWebProject,
+} from "./shared.ts";
 import { pickerProjectFor, pickerProjects, sameProjectGroup } from "./taskProjects.ts";
 import { ListEmptyState } from "./ListEmptyState.tsx";
 import { useTaskArrivals } from "./taskArrivals.ts";
@@ -94,16 +104,10 @@ import "./taskArrival.css";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import { useComputerName } from "../../../../apps/web/src/sidebarComputers/useSidebarComputers.ts";
 
-const STATUS_ORDER = [
-  "new",
-  "to do",
-  "backlog",
-  "restored",
-  "in progress",
-  "ready for review",
-  "done",
-  "closed",
-];
+/** The canonical statuses in workflow order, with Restore's status next to To Do. */
+const STATUS_ORDER = TASK_STATUSES.flatMap((status) =>
+  status === DEFAULT_TASK_STATUS ? [status, AGENT_RESTORED_STATUS] : [status],
+);
 
 type InlineTaskUpdate = Partial<
   Pick<ScopedTask, "title" | "description" | "status" | "tags" | "audience" | "projectId">
@@ -200,7 +204,7 @@ function emptyForm(project?: TasksWebProject): TaskFormState {
     title: "",
     environmentId: project?.environmentId ?? null,
     projectId: project?.id ?? "",
-    status: "new",
+    status: DEFAULT_TASK_STATUS,
     tags: "",
     description: "",
   };
@@ -266,8 +270,8 @@ function shortTaskId(id: string): string {
 }
 
 function compareStatuses(left: string, right: string): number {
-  const leftIndex = STATUS_ORDER.indexOf(left.toLowerCase());
-  const rightIndex = STATUS_ORDER.indexOf(right.toLowerCase());
+  const leftIndex = STATUS_ORDER.findIndex((status) => sameTaskStatus(status, left));
+  const rightIndex = STATUS_ORDER.findIndex((status) => sameTaskStatus(status, right));
   if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
   if (leftIndex === -1) return 1;
   if (rightIndex === -1) return -1;
@@ -422,13 +426,11 @@ export function TasksView(props: TasksViewProps) {
   );
   const statusOptions = useMemo(
     () =>
-      [
-        ...new Set([
-          ...props.statuses,
-          ...(statusFilter === ALL_FILTER ? [] : [statusFilter]),
-          ...(selectedTask ? [selectedTask.status] : []),
-        ]),
-      ].sort(compareStatuses),
+      uniqueStatuses([
+        ...props.statuses,
+        ...(statusFilter === ALL_FILTER ? [] : [statusFilter]),
+        ...(selectedTask ? [selectedTask.status] : []),
+      ]).sort(compareStatuses),
     [props.statuses, selectedTask, statusFilter],
   );
   // The server applies the last-run filter; an older one does not, so the loaded rows are checked too.
@@ -940,7 +942,7 @@ export function TasksView(props: TasksViewProps) {
           project={projectsByKey.get(taskProjectKey(task)) ?? null}
           showProject={showProjectColumn}
           statuses={
-            statusOptions.includes(task.status)
+            statusOptions.some((status) => sameTaskStatus(status, task.status))
               ? statusOptions
               : [...statusOptions, task.status].sort(compareStatuses)
           }
@@ -1710,7 +1712,7 @@ export function TasksView(props: TasksViewProps) {
                     <input
                       className={DETAIL_INPUT_CLASS}
                       value={form.status}
-                      placeholder="new"
+                      placeholder={DEFAULT_TASK_STATUS}
                       aria-label={gt("Task status")}
                       onChange={(event) =>
                         setForm((current) => ({ ...current, status: event.target.value }))

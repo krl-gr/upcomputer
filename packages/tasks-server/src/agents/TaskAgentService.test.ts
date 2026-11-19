@@ -154,6 +154,11 @@ test("a person task starts only an agent with start tags it carries, and a routi
     "catch-all",
   );
   NodeAssert.equal(startsForTask(agent({ startTags: [] }), task({ status: "new" }), nowMs), true);
+  NodeAssert.equal(
+    startsForTask(agent({ startTags: [] }), task({ status: "New" }), nowMs),
+    true,
+    "start statuses match without case",
+  );
   NodeAssert.equal(startsForTask(agent(), { ...person, kind: "routine" }, nowMs), false);
 });
 

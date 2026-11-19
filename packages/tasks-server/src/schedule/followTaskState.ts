@@ -1,4 +1,8 @@
-import { PERSON_DONE_STATUS, type TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
+import {
+  PERSON_DONE_STATUS,
+  sameTaskStatus,
+  type TaskScheduleEntry,
+} from "@t3tools/tasks-contracts/v1";
 
 /** What of a task its entries follow. */
 export interface FollowedTaskState {
@@ -9,7 +13,7 @@ export interface FollowedTaskState {
 /** Statuses that mean the task was dropped. No status of the task system is reserved for it. */
 const CANCELLED_STATUSES = new Set(["cancelled", "canceled"]);
 
-const isDone = (state: FollowedTaskState) => state.status === PERSON_DONE_STATUS;
+const isDone = (state: FollowedTaskState) => sameTaskStatus(state.status, PERSON_DONE_STATUS);
 const isCancelled = (state: FollowedTaskState) =>
   CANCELLED_STATUSES.has(state.status.toLowerCase());
 

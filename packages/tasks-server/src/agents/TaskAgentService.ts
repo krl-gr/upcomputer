@@ -1,4 +1,5 @@
 import {
+  sameTaskStatus,
   TaskAgentRunId,
   TaskEventId,
   type Task,
@@ -146,7 +147,7 @@ export function releasedRunId(input: {
 export const BLOCKED_TASK_STATUS = "Blocked";
 
 export function isBlockedTaskStatus(status: string): boolean {
-  return status.trim().replace(/\s+/g, " ").toLowerCase() === BLOCKED_TASK_STATUS.toLowerCase();
+  return sameTaskStatus(status, BLOCKED_TASK_STATUS);
 }
 
 /** Longest task output a blocked release copies into its result event. */
@@ -209,6 +210,10 @@ export function agentMayTakeTask(
   return task.audience !== "person" || agent.startTags.length > 0;
 }
 
+function startsOnStatus(agent: Pick<TaskAgent, "startStatuses">, status: string): boolean {
+  return agent.startStatuses.some((startStatus) => sameTaskStatus(startStatus, status));
+}
+
 /**
  * Task-state part of an agent's trigger. Whether a matching agent actually
  * starts also depends on its previous runs (see `startAgent`).
@@ -227,7 +232,7 @@ export function startsForTask(agent: TaskAgent, task: Task, nowMs: number): bool
   }
   if (task.archivedAt !== null) return false;
   if (task.notBefore !== null && Date.parse(task.notBefore) > nowMs) return false;
-  if (agent.startStatuses.length > 0 && !agent.startStatuses.includes(task.status)) return false;
+  if (agent.startStatuses.length > 0 && !startsOnStatus(agent, task.status)) return false;
   if (agent.startTags.length === 0) return true;
   const tags = new Set(task.tags);
   return agent.startTags.every((tag) => tags.has(tag));
@@ -248,9 +253,7 @@ export function noMatchingAgentReason(
     return null;
   }
   if (task.notBefore !== null && Date.parse(task.notBefore) > nowMs) return null;
-  const onStatus = agents.filter(
-    (agent) => agent.enabled && agent.startStatuses.includes(task.status),
-  );
+  const onStatus = agents.filter((agent) => agent.enabled && startsOnStatus(agent, task.status));
   if (onStatus.length === 0) return null;
   if (agents.some((agent) => startsForTask(agent, task, nowMs))) return null;
   return `No enabled worker starts on "${task.status}" with these tags, so this task will wait. Pick a worker, or change the status or tags.`;

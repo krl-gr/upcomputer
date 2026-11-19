@@ -179,7 +179,8 @@ test("reopening a Done task reopens only today's entry it closed", () =>
     const [, , doneByHand] = yield* plan(task, monday, wednesday, wednesday);
     yield* schedule.update({ id: doneByHand!, status: "done" });
 
-    yield* setStatus(task, "Done");
+    // An agent may spell Done in lowercase.
+    yield* setStatus(task, "done");
     assert.deepStrictEqual(yield* entriesOf(task), [
       `${monday} done`,
       `${wednesday} done`,
