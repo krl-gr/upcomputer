@@ -33,6 +33,11 @@ await vi.hoisted(async () => {
     }
   }
   Object.defineProperty(globalThis, "window", { configurable: true, value: window });
+  // The font rows read the font loading state, which jsdom does not implement.
+  Object.defineProperty(window.document, "fonts", {
+    configurable: true,
+    value: { status: "loaded", addEventListener() {}, removeEventListener() {} },
+  });
   // The tab strip measures itself and the menus wait for animations; jsdom has neither.
   globalThis.ResizeObserver ??= class {
     observe() {}
@@ -246,7 +251,6 @@ describe("the terminal surface in the UpComputer product", () => {
       hasCloudPublicConfig: true,
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
-      hasMacProviderSettingsEnvironment: true,
       canManageLocalBackend: true,
       isWslSettingsRowVisible: true,
       hasThreadAutoSettlement: true,

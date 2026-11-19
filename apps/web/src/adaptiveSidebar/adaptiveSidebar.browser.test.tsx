@@ -171,19 +171,22 @@ function SidebarFrame(props: { readonly compact: boolean }) {
     <SidebarProvider className="min-h-0" data-sidebar-compact={String(props.compact)}>
       <div data-app-sidebar="" style={{ width: props.compact ? SIDEBAR_COMPACT_WIDTH : 256 }}>
         <div data-sidebar="sidebar" data-slot="sidebar-inner" className="flex h-80 flex-col">
-          <div data-sidebar-chrome-header="" className="relative h-(--workspace-topbar-height)" />
-          <SidebarContent>
-            {Array.from({ length: 30 }, (_, index) => (
-              <button key={index} type="button" className="h-8 shrink-0">
-                {`Row ${index}`}
-              </button>
-            ))}
-          </SidebarContent>
-          <SidebarFooter ref={observeSidebarFooterHeight}>
-            <SidebarMenu>
-              <SidebarMenuButton>Settings</SidebarMenuButton>
-            </SidebarMenu>
-          </SidebarFooter>
+          {/* Upstream's folder drop zone (`SidebarFolderDrop`) wraps the sidebar's parts. */}
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <div data-sidebar-chrome-header="" className="relative h-(--workspace-topbar-height)" />
+            <SidebarContent>
+              {Array.from({ length: 30 }, (_, index) => (
+                <button key={index} type="button" className="h-8 shrink-0">
+                  {`Row ${index}`}
+                </button>
+              ))}
+            </SidebarContent>
+            <SidebarFooter ref={observeSidebarFooterHeight}>
+              <SidebarMenu>
+                <SidebarMenuButton>Settings</SidebarMenuButton>
+              </SidebarMenu>
+            </SidebarFooter>
+          </div>
         </div>
       </div>
     </SidebarProvider>
@@ -230,9 +233,11 @@ describe("sidebar scroll under the titlebar row and footer", () => {
     expect(hitAt(box.left + 4, box.top + 4)).toBe(settings);
     const edge = footer.getBoundingClientRect();
     await vi.waitFor(() =>
-      expect(footer.parentElement!.style.getPropertyValue("--sidebar-footer-height")).toBe(
-        `${edge.height}px`,
-      ),
+      expect(
+        footer
+          .closest<HTMLElement>("[data-sidebar=sidebar]")!
+          .style.getPropertyValue("--sidebar-footer-height"),
+      ).toBe(`${edge.height}px`),
     );
     expect(hitAt(edge.left + 20, edge.top + 2)).toBe(footer);
     const viewport = screen.container.querySelector<HTMLElement>(

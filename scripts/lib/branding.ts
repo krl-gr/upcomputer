@@ -66,7 +66,6 @@ export const COPY_RULES: ReadonlyArray<CopyRule> = [
   REMOTE_COMMAND_RULE,
   CLI_COMMAND_RULE,
   { pattern: /\bT3 Code\b/g, replacement: "Up.computer" },
-  { pattern: /\b(a|A) Up\.computer\b/g, replacement: "$1n Up.computer" },
   { pattern: /\ba T3 thread\b/g, replacement: "an Up.computer thread" },
   {
     pattern: /\bT3 (thread|threads|server|home|process|system footprint)\b/g,
@@ -74,6 +73,10 @@ export const COPY_RULES: ReadonlyArray<CopyRule> = [
   },
   { pattern: /\bT3 Server\b/g, replacement: "Up.computer server" },
   { pattern: /\bT3 Connect\b/g, replacement: "UpComputer Connect" },
+  // URL-encoded, as in links that prefill the name in another app.
+  { pattern: /\bT3%20Code\b/g, replacement: "Up.computer" },
+  // After the phrase rules, which can leave "a Up.computer home".
+  { pattern: /\b(a|A) Up\.computer\b/g, replacement: "$1n Up.computer" },
   // The HTML render tools and their errors, which agents read and repeat to the user.
   {
     pattern:
@@ -99,6 +102,9 @@ const COPY_ROOTS = [
 ] as const;
 
 const COPY_EXTENSIONS = /\.(ts|tsx|mjs|cjs|js|html|md)$/;
+
+/** The web app's UI translations (gt-react catalogs), in every language. */
+const TRANSLATION_FILE = /^apps\/web\/src\/i18n\/translations\/[\w-]+\.json$/;
 
 /**
  * User docs, on top of the copy rules: the home directory, the hosted app, the
@@ -139,6 +145,7 @@ const COPY_EXCLUDED = [
 ] as const;
 
 export function isCopyFile(path: string): boolean {
+  if (TRANSLATION_FILE.test(path)) return true;
   return (
     COPY_ROOTS.some((root) => path === root || path.startsWith(root)) &&
     COPY_EXTENSIONS.test(path) &&
@@ -420,7 +427,7 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
     requires: ['href="/apple-touch-icon.png"'],
   },
   { path: "apps/web/src/components/sidebar/SidebarChrome.tsx", requires: ["{APP_BASE_NAME}"] },
-  { path: "apps/web/src/components/onboarding/WelcomeWizard.tsx", requires: ["{APP_BASE_NAME}"] },
+  { path: "apps/web/src/components/onboarding/WelcomePage.tsx", requires: ["{APP_BASE_NAME}"] },
   {
     path: "apps/web/src/components/desktopUpdate.logic.ts",
     requires: ["UPCOMPUTER_UPDATE_REPOSITORY", '"core-v"'],

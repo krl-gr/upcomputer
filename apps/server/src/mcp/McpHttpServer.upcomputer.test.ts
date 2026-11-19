@@ -12,6 +12,7 @@ import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import { ServerProduct, composeExperimentalServerFeatures } from "../product/ServerProduct.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as PullRequestReviewGuideService from "../pullRequest/PullRequestReviewGuideService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
@@ -46,6 +47,7 @@ const listToolsAsAgent = Effect.gen(function* () {
         McpToolAccessTestkit.liveThreadsLayer,
         Layer.mock(ProjectService.ProjectService)({}),
         Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
+        Layer.mock(PullRequestService.PullRequestService)({}),
         Layer.mock(Orchestrator.OrchestratorV2)({}),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
         NodeServices.layer,

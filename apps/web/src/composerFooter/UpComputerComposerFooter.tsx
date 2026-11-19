@@ -1,13 +1,9 @@
-import type { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
+import type { RuntimeMode } from "@t3tools/contracts";
 import { LockIcon, LockOpenIcon, PaperclipIcon } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useState } from "react";
 
 import { CompactComposerControlsMenu } from "../components/chat/CompactComposerControlsMenu";
-import {
-  ComposerControl,
-  ComposerControlIcon,
-  ComposerSelectControl,
-} from "../components/chat/ComposerControl";
+import { ComposerControlIcon, ComposerSelectControl } from "../components/chat/ComposerControl";
 import { useComposerMenuProps } from "../components/chat/composerEventScope";
 import type { runtimeModeConfig } from "../components/chat/runtimeModeConfig";
 import { useComposerMenuState } from "../components/chat/useComposerMenuState";
@@ -38,9 +34,6 @@ export interface UpComputerComposerFooterProps {
   modelPicker: ReactNode;
   /** Upstream's "Open provider settings" control, shown instead of the controls when set. */
   providerUnavailableControl: ReactNode;
-  showInteractionModeToggle: boolean;
-  interactionMode: ProviderInteractionMode;
-  onToggleInteractionMode: () => void;
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -166,35 +159,6 @@ function useComposerFooterControlsLayout() {
   return { attachRow: setRow, ...layout };
 }
 
-/** "Build" or "Plan"; a click toggles upstream's interaction mode. */
-function InteractionModeControl(props: {
-  interactionMode: ProviderInteractionMode;
-  onToggle: () => void;
-}) {
-  const plan = props.interactionMode === "plan";
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <ComposerControl
-            type="button"
-            className={COMPOSER_CONTROL_TEXT_TRIGGER_CLASS}
-            aria-pressed={plan}
-            data-composer-footer-mode={props.interactionMode}
-            data-track="composer.plan_mode"
-            onClick={props.onToggle}
-          />
-        }
-      >
-        {plan ? "Plan" : "Build"}
-      </TooltipTrigger>
-      <TooltipPopup side="top">
-        {plan ? "Plan mode: click to return to Build" : "Build mode: click to plan first"}
-      </TooltipPopup>
-    </Tooltip>
-  );
-}
-
 /**
  * The access label ("Full access", "Supervised"), as V1's runtime control
  * showed it, with upstream's access list as its menu. When the row runs out
@@ -271,7 +235,7 @@ function AccessControl(props: {
   );
 }
 
-type FooterBlockId = "mode" | "access";
+type FooterBlockId = "access";
 
 /**
  * The composer footer in V1's layout, built from upstream's controls: attach,
@@ -289,12 +253,8 @@ export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
   const { attachRow, hiddenCount, iconOnlyCount } = useComposerFooterControlsLayout();
   const [actions, setActions] = useState<HTMLDivElement | null>(null);
   useCompactComposerActionsWidth(actions, props.compact === true);
-  // Priority order, V1's: the last block loses its label and folds first, so
-  // access goes to its lock first, then the mode.
-  const blocks: FooterBlockId[] = [
-    ...(props.showInteractionModeToggle ? (["mode"] as const) : []),
-    "access",
-  ];
+  // V1's folding: access loses its label to a lock first, then folds away.
+  const blocks: FooterBlockId[] = ["access"];
   const hiddenBlocks = new Set(blocks.slice(Math.max(0, blocks.length - hiddenCount)));
   const renderBlock = (id: FooterBlockId, content: ReactNode) => {
     const index = blocks.indexOf(id);
@@ -344,18 +304,6 @@ export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
                 <FooterSeparator />
               </>
             ) : null}
-            {props.showInteractionModeToggle
-              ? renderBlock(
-                  "mode",
-                  <>
-                    <InteractionModeControl
-                      interactionMode={props.interactionMode}
-                      onToggle={props.onToggleInteractionMode}
-                    />
-                    <FooterSeparator />
-                  </>,
-                )
-              : null}
             {props.modelPicker}
             {renderBlock(
               "access",
@@ -380,13 +328,11 @@ export function UpComputerComposerFooter(props: UpComputerComposerFooterProps) {
             >
               <FooterSeparator />
               <CompactComposerControlsMenu
-                interactionMode={props.interactionMode}
                 runtimeMode={props.runtimeMode}
                 runtimeModeOptions={props.runtimeModeOptions}
+                showPermissions
                 hidden={hiddenBlocks.size === 0}
                 triggerClassName={COMPOSER_CONTROL_ICON_TRIGGER_CLASS}
-                showInteractionModeToggle={hiddenBlocks.has("mode")}
-                onToggleInteractionMode={props.onToggleInteractionMode}
                 onRuntimeModeChange={props.onRuntimeModeChange}
               />
             </div>

@@ -14,6 +14,7 @@ import { lazy, Suspense, useEffect, useEffectEvent, useRef, useState } from "rea
 import { CopyIcon } from "lucide-react";
 
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
+import { isWebUrl } from "../../browser/webUrl";
 import { ensureLocalApi } from "../../localApi";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -145,6 +146,10 @@ export function ProviderAuthenticationSection({
 
   async function openBrowser() {
     if (!url || readOnly) return;
+    if (!isWebUrl(url)) {
+      setError("This sign-in link is not a web address, so it was not opened.");
+      return;
+    }
     const requiresConsent = interaction?.type === "browser" && interaction.requiresConsent;
     // Reserve tabs before awaiting consent; browsers block later opens.
     const pending = requiresConsent && !window.desktopBridge ? window.open("", "_blank") : null;

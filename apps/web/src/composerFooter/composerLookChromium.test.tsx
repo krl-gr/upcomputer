@@ -136,7 +136,6 @@ const TRAITS = {
   modelOptions: undefined,
   promptUltrathink: "none" as const,
   onPromptEdit: () => undefined,
-  planModeEnabled: true,
 };
 
 /**
@@ -144,7 +143,7 @@ const TRAITS = {
  * including the class upstream gives its model picker there, inside V1's
  * card, with the send button and a context row icon.
  */
-function ComposerUnderTest(props: { mode: boolean; attach: boolean }) {
+function ComposerUnderTest(props: { attach: boolean }) {
   return (
     <div data-composer-card className={COMPOSER_CARD_CLASS}>
       <UpComputerComposerFooter
@@ -166,9 +165,6 @@ function ComposerUnderTest(props: { mode: boolean; attach: boolean }) {
           />
         }
         providerUnavailableControl={null}
-        showInteractionModeToggle={props.mode}
-        interactionMode="default"
-        onToggleInteractionMode={() => undefined}
         runtimeMode="full-access"
         runtimeModeOptions={runtimeModeOptions.map((mode) => ({
           mode,
@@ -187,7 +183,7 @@ function ComposerUnderTest(props: { mode: boolean; attach: boolean }) {
   );
 }
 
-async function renderMarkup(props: { mode: boolean; attach: boolean }): Promise<string> {
+async function renderMarkup(props: { attach: boolean }): Promise<string> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -372,7 +368,6 @@ const FOLDS = [
   { name: "all shown", hiddenCount: 0, iconOnlyCount: 0, width: 900 },
   { name: "access as a lock", hiddenCount: 0, iconOnlyCount: 1, width: 620 },
   { name: "access folded into …", hiddenCount: 1, iconOnlyCount: 0, width: 520 },
-  { name: "everything folded into …", hiddenCount: 2, iconOnlyCount: 0, width: 400 },
 ];
 
 describe.skipIf(browser === null)("composer footer separators (real layout in Chromium)", () => {
@@ -387,32 +382,30 @@ describe.skipIf(browser === null)("composer footer separators (real layout in Ch
   });
 
   it("puts the same gap on both sides of every separator, at every width and fold", async () => {
-    for (const mode of [true, false]) {
-      for (const attach of [true, false]) {
-        for (const state of FOLDS) {
-          fold.hiddenCount = state.hiddenCount;
-          fold.iconOnlyCount = state.iconOnlyCount;
-          const markup = await renderMarkup({ mode, attach });
-          await page.setContent(
-            documentHtml({
-              css,
-              markup,
-              theme: UPCOMPUTER_THEME,
-              appearance: "light",
-              width: state.width,
-            }),
-          );
-          const { gaps, overflows } = await page.evaluate(measureSeparatorGaps);
-          const where = `${state.name} at ${state.width}px, mode ${mode}, attach ${attach}`;
-          expect(overflows, `the row overflows: ${where}`).toBe(false);
-          expect(gaps.length, where).toBeGreaterThan(0);
-          for (const gap of gaps) {
-            const label = `${gap.between} (${gap.left}px / ${gap.right}px), ${where}`;
-            expect(gap.left, label).toBeGreaterThan(0);
-            expect(Math.abs(gap.left - gap.right), label).toBeLessThanOrEqual(0.5);
-            // V1's spacing: the row's 2px gap and the 8px to the neighbour's content.
-            expect(Math.abs(gap.left - 10), label).toBeLessThanOrEqual(0.5);
-          }
+    for (const attach of [true, false]) {
+      for (const state of FOLDS) {
+        fold.hiddenCount = state.hiddenCount;
+        fold.iconOnlyCount = state.iconOnlyCount;
+        const markup = await renderMarkup({ attach });
+        await page.setContent(
+          documentHtml({
+            css,
+            markup,
+            theme: UPCOMPUTER_THEME,
+            appearance: "light",
+            width: state.width,
+          }),
+        );
+        const { gaps, overflows } = await page.evaluate(measureSeparatorGaps);
+        const where = `${state.name} at ${state.width}px, attach ${attach}`;
+        expect(overflows, `the row overflows: ${where}`).toBe(false);
+        expect(gaps.length, where).toBeGreaterThan(0);
+        for (const gap of gaps) {
+          const label = `${gap.between} (${gap.left}px / ${gap.right}px), ${where}`;
+          expect(gap.left, label).toBeGreaterThan(0);
+          expect(Math.abs(gap.left - gap.right), label).toBeLessThanOrEqual(0.5);
+          // V1's spacing: the row's 2px gap and the 8px to the neighbour's content.
+          expect(Math.abs(gap.left - 10), label).toBeLessThanOrEqual(0.5);
         }
       }
     }
@@ -433,7 +426,7 @@ describe.skipIf(browser === null)("composer colors follow the theme", () => {
   });
 
   async function colorsIn(theme: ThemeDefinition, appearance: ThemeAppearance) {
-    const markup = await renderMarkup({ mode: true, attach: true });
+    const markup = await renderMarkup({ attach: true });
     await page.setContent(documentHtml({ css, markup, theme, appearance, width: 900 }));
     return page.evaluate(measureComposerColors);
   }

@@ -1,4 +1,5 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { EllipsisIcon } from "lucide-react";
 import {
@@ -32,7 +33,9 @@ const MENU_CLOSING_KEYS = new Set(["Escape", "Enter", " ", "Tab"]);
 /** The draft's first line, or its attachment count when it has no text. */
 function draftPreview(composer: ComposerThreadDraftState): string {
   const prompt =
-    replaceComposerContextReferences(composer.prompt, (occurrence) => occurrence.label)
+    assistantCitationsToPlainText(
+      replaceComposerContextReferences(composer.prompt, (occurrence) => occurrence.label),
+    )
       .trim()
       .split("\n", 1)[0] ?? "";
   if (prompt.length > 0) return prompt;

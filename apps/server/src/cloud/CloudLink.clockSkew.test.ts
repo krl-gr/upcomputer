@@ -40,6 +40,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfigModule from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
 import * as CliTokenManager from "./CliTokenManager.ts";
 import * as CloudLink from "./CloudLink.ts";
@@ -218,7 +219,12 @@ const provideCloudLink =
       Effect.provide(
         ServerConfigModule.layerTest("/", { prefix: "t3-cloud-clock-skew-test-" }).pipe(
           Layer.provideMerge(
-            Layer.mergeAll(NodeServices.layer, NodeCryptoLayer.layer, ManagedPolicy.layerTest()),
+            Layer.mergeAll(
+              NodeServices.layer,
+              NodeCryptoLayer.layer,
+              ManagedPolicy.layerTest(),
+              ServerSettings.ServerSettingsService.layerTest(),
+            ),
           ),
         ),
       ),
@@ -396,6 +402,15 @@ describe("relay proofs on a computer with a skewed clock", () => {
                   subject: options?.subject ?? "cloud-connect",
                   createdAt,
                   expiresAt: DateTime.addDuration(createdAt, options?.ttl ?? Duration.minutes(2)),
+                };
+              }),
+            // Upstream's Connect device approval mints the relay credential here now.
+            issueConnectCredential: () =>
+              Effect.gen(function* () {
+                const createdAt = yield* DateTime.now;
+                return {
+                  credential: "pairing-credential",
+                  expiresAt: DateTime.addDuration(createdAt, Duration.minutes(2)),
                 };
               }),
           },

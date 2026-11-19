@@ -503,7 +503,6 @@ function BotForm({
                         })
                       }
                       allowPromptInjectedEffort={false}
-                      planModeEnabled={false}
                     />
                   ) : null}
                 </div>

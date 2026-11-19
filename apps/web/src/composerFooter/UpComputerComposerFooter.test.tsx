@@ -49,7 +49,6 @@ vi.mock("../components/ui/tooltip", () => ({
   ),
 }));
 
-import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 
 import { runtimeModeConfig, runtimeModeOptions } from "../components/chat/runtimeModeConfig";
@@ -60,7 +59,6 @@ import {
 } from "./composerLookStyles";
 
 const { deriveProviderInstanceEntries } = await import("../providerInstances");
-const { ContextWindowMeter } = await import("../components/chat/ContextWindowMeter");
 const { ComposerFooterModelPicker } = await import("./ComposerFooterModelPicker");
 const { UpComputerComposerFooter } = await import("./UpComputerComposerFooter");
 const {
@@ -91,19 +89,8 @@ const claudeEntry = (() => {
   return deriveProviderInstanceEntries([provider])[0]!;
 })();
 
-const usage = {
-  usedTokens: 420_000,
-  maxTokens: 1_000_000,
-  usedPercentage: 42,
-  remainingTokens: 580_000,
-  remainingPercentage: 58,
-  updatedAt: "2026-10-06T00:00:00.000Z",
-} as unknown as ContextWindowSnapshot;
-
 const spies = {
-  onToggleInteractionMode: vi.fn(),
   onRuntimeModeChange: vi.fn(),
-  onCompact: vi.fn(),
   onModelChange: vi.fn(),
   onAttach: vi.fn(),
 };
@@ -132,22 +119,10 @@ function footerProps(
     attach: { input: <input type="file" className="hidden" />, open: spies.onAttach },
     modelPicker: modelPicker(),
     providerUnavailableControl: null,
-    showInteractionModeToggle: true,
-    interactionMode: "default",
-    onToggleInteractionMode: spies.onToggleInteractionMode,
     runtimeMode: "full-access",
     runtimeModeOptions: runtimeModeOptions.map((mode) => ({ mode, ...runtimeModeConfig[mode] })),
     onRuntimeModeChange: spies.onRuntimeModeChange,
-    primaryActions: (
-      <>
-        <ContextWindowMeter
-          usage={usage}
-          modelDisplayName="Claude Opus 5.5"
-          onCompact={spies.onCompact}
-        />
-        <button type="submit" aria-label="Send message" />
-      </>
-    ),
+    primaryActions: <button type="submit" aria-label="Send message" />,
     ...overrides,
   };
 }
@@ -278,13 +253,13 @@ describe("UpComputerComposerFooter", () => {
           element.querySelector('[data-chat-provider-model-picker-label="true"]')?.textContent ??
           element.textContent,
       );
-    expect(left).toEqual(["Attach files", "Build", "Claude · Opus 5.5", "Access: Full access"]);
+    expect(left).toEqual(["Attach files", "Claude · Opus 5.5", "Access: Full access"]);
     const right = container.querySelector('[data-chat-composer-actions="right"]')!;
     expect(
       Array.from(right.querySelectorAll("button")).map((button) =>
         button.getAttribute("aria-label"),
       ),
-    ).toEqual(["Context window 42% used", "Send message"]);
+    ).toEqual(["Send message"]);
   });
 
   it("shows the provider and model in one label, and keeps upstream's trigger for several models", async () => {
@@ -309,20 +284,6 @@ describe("UpComputerComposerFooter", () => {
     expect(
       container.querySelector('[data-chat-provider-model-picker-label="true"]')?.textContent,
     ).toBe("Opus 5.5");
-  });
-
-  it("labels the mode Build or Plan, and a click toggles it", async () => {
-    await render(footerProps());
-    const build = buttonByText("Build")!;
-    expect(build.getAttribute("aria-pressed")).toBe("false");
-    await click(build);
-    expect(spies.onToggleInteractionMode).toHaveBeenCalledTimes(1);
-
-    await render(footerProps({ interactionMode: "plan" }));
-    expect(buttonByText("Plan")?.getAttribute("aria-pressed")).toBe("true");
-
-    await render(footerProps({ showInteractionModeToggle: false }));
-    expect(block("mode")).toBeNull();
   });
 
   it("shows access as its text label, with upstream's access menu", async () => {
@@ -359,14 +320,6 @@ describe("UpComputerComposerFooter", () => {
     expect(options.at(-1)).toContain("Full access");
   });
 
-  it("keeps upstream's context ring, and the ring still compacts", async () => {
-    await render(footerProps());
-    const ring = container.querySelector<HTMLElement>('[aria-label="Context window 42% used"]')!;
-    await click(ring);
-    await click(buttonByText("Compact context")!);
-    expect(spies.onCompact).toHaveBeenCalledTimes(1);
-  });
-
   it("shows upstream's provider setup control instead of the controls when no provider is available", async () => {
     await render(
       footerProps({
@@ -381,31 +334,26 @@ describe("UpComputerComposerFooter", () => {
   it("keeps every control in the row when it fits", async () => {
     stubLayout(600);
     await render(footerProps());
-    for (const id of ["mode", "access"]) {
-      expect(block(id)?.getAttribute("aria-hidden")).toBeNull();
-    }
+    expect(block("access")?.getAttribute("aria-hidden")).toBeNull();
     expect(
       container.querySelector("[data-composer-footer-overflow]")?.getAttribute("aria-hidden"),
     ).toBe("true");
   });
 
   it("folds access to its lock first when the row runs short, as V1 did", async () => {
-    // 220px of fixed controls and two 80px blocks need 380px. Access as a
-    // lock saves 34px.
+    // 220px of fixed controls and the 80px access block need 300px. Access as
+    // a lock saves 34px.
     stubLayout(600);
     await render(footerProps());
-    for (const id of ["mode", "access"]) {
-      expect(block(id)?.getAttribute("data-composer-block-icon-only")).toBe("false");
-    }
+    expect(block("access")?.getAttribute("data-composer-block-icon-only")).toBe("false");
 
     // A fresh row: the stubs change no size a ResizeObserver would see.
     await act(async () => root.unmount());
     root = createRoot(container);
-    stubLayout(360);
+    stubLayout(280);
     await render(footerProps({ runtimeMode: "approval-required" }));
     expect(block("access")?.getAttribute("data-composer-block-icon-only")).toBe("true");
     expect(block("access")?.getAttribute("aria-hidden")).toBeNull();
-    expect(block("mode")?.getAttribute("data-composer-block-icon-only")).toBe("false");
     // The icon-only class swaps the label for the lock; the label stays mounted to be measured.
     expect(block("access")?.className).toContain("[&_[data-composer-control-label]]:invisible");
     expect(block("access")?.className).toContain(
@@ -453,74 +401,52 @@ describe("UpComputerComposerFooter", () => {
     );
   }
 
-  it("puts one separator between shown neighbours, also without the mode control", async () => {
+  it("puts one separator between shown neighbours", async () => {
     await render(footerProps());
     expect(visibleSequence()).toEqual([
       "Attach files",
       "|",
-      "Build",
-      "|",
       "Claude · Opus 5.5",
       "|",
       "Access: Full access",
     ]);
 
-    // A provider without plan mode: still a separator after the paperclip.
-    await render(footerProps({ showInteractionModeToggle: false }));
-    expect(visibleSequence()).toEqual([
-      "Attach files",
-      "|",
-      "Claude · Opus 5.5",
-      "|",
-      "Access: Full access",
-    ]);
-
-    await render(footerProps({ showInteractionModeToggle: false, attach: null }));
+    await render(footerProps({ attach: null }));
     expect(visibleSequence()).toEqual(["Claude · Opus 5.5", "|", "Access: Full access"]);
   });
 
   it("never doubles, leads or trails a separator while controls fold", async () => {
-    for (const showInteractionModeToggle of [true, false]) {
-      for (const attach of [true, false]) {
-        for (const width of [600, 360, 340, 300, 200]) {
-          await act(async () => root.unmount());
-          root = createRoot(container);
-          stubLayout(width);
-          await render(
-            footerProps({
-              showInteractionModeToggle,
-              ...(attach ? {} : { attach: null }),
-            }),
-          );
-          const sequence = visibleSequence();
-          expect(
-            hasOneSeparatorBetweenNeighbours(sequence),
-            `${sequence.join(" ")} (mode ${showInteractionModeToggle}, attach ${attach}, ${width}px)`,
-          ).toBe(true);
-          vi.restoreAllMocks();
-        }
+    for (const attach of [true, false]) {
+      for (const width of [600, 300, 280, 250, 200]) {
+        await act(async () => root.unmount());
+        root = createRoot(container);
+        stubLayout(width);
+        await render(footerProps(attach ? {} : { attach: null }));
+        const sequence = visibleSequence();
+        expect(
+          hasOneSeparatorBetweenNeighbours(sequence),
+          `${sequence.join(" ")} (attach ${attach}, ${width}px)`,
+        ).toBe(true);
+        vi.restoreAllMocks();
       }
     }
   });
 
   it("folds trailing controls into upstream's overflow menu at a narrow width", async () => {
-    // 220px of fixed controls, the mode block and the 30px overflow trigger: 340px keeps the mode.
-    stubLayout(340);
+    // 220px of fixed controls and the 30px overflow trigger leave no room for access as a lock.
+    stubLayout(250);
     await render(footerProps());
-    expect(block("mode")?.getAttribute("aria-hidden")).toBeNull();
     expect(block("access")?.getAttribute("aria-hidden")).toBe("true");
 
     const overflow = container.querySelector<HTMLElement>("[data-composer-footer-overflow]")!;
     expect(overflow.getAttribute("aria-hidden")).toBeNull();
     await click(overflow.querySelector('[aria-label="More composer controls"]')!);
     expect(buttonByText("Full access")).toBeDefined();
-    expect(buttonByText("Plan")).toBeUndefined();
   });
 
   it("draws every control in V1's text style, with no chevron", async () => {
     await render(footerProps());
     const textTriggers = [
-      buttonByText("Build")!,
       container.querySelector<HTMLElement>("[data-chat-provider-model-picker]")!,
       container.querySelector<HTMLElement>("[data-composer-footer-access]")!,
     ];
@@ -561,6 +487,6 @@ describe("UpComputerComposerFooter", () => {
   it("leaves out the paperclip and its separator without attachments", async () => {
     await render(footerProps({ attach: null }));
     expect(container.querySelector('[aria-label="Attach files"]')).toBeNull();
-    expect(leftRow().firstElementChild?.getAttribute("data-composer-footer-block")).toBe("mode");
+    expect(visibleSequence()[0]).toBe("Claude · Opus 5.5");
   });
 });

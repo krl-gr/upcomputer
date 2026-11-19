@@ -86,6 +86,9 @@ vi.mock("../state/terminalSessions", async (importOriginal) => {
         status: "running",
         version: 1,
         output: {
+          // Outside any control sequence, so the leading "~" is text, not a sequence's end.
+          sequenceState: 0,
+          textStartOffset: 0,
           generation: 1,
           chunks: [{ startOffset: 0, data: "~/repo $ ", byteLength: 9 }],
           retainedBytes: 9,

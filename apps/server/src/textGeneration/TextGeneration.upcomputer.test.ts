@@ -15,6 +15,8 @@ import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "./TextGeneration.ts";
+import * as TextGenerators from "./TextGenerators.ts";
+import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as Layer from "effect/Layer";
 
@@ -140,6 +142,8 @@ describe("TextGeneration.make in Up.computer", () => {
               resolveLink: () => Effect.die("No link lookup expected"),
             }),
             ServerSettings.layerTest(),
+            ProviderInstallationGate.layer,
+            Layer.mock(TextGenerators.TextGenerators)({ runner: () => Effect.undefined }),
           ),
         ),
       );

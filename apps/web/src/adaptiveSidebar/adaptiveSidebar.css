@@ -69,6 +69,18 @@
 }
 
 /*
+ * Upstream's folder drop zone wraps the titlebar row, the scroll and the footer.
+ * It takes no box, so they lay out as the sidebar's own children, and the
+ * rules below match them as descendants rather than children.
+ */
+[data-sidebar-compact]
+  [data-app-sidebar]
+  [data-sidebar="sidebar"]
+  > :has(> [data-sidebar-chrome-header]) {
+  display: contents;
+}
+
+/*
  * The sidebar's scroll runs under the titlebar row and the footer (the compact
  * column's footer scrolls along), which stay above it and keep the pointer: the
  * row is the window's drag region, and no click or hover reaches a row under
@@ -82,13 +94,13 @@
 [data-sidebar-compact]
   [data-app-sidebar]
   [data-sidebar="sidebar"]
-  > :has(> [data-slot="scroll-area-viewport"] > [data-slot="sidebar-content"]) {
+  :has(> [data-slot="scroll-area-viewport"] > [data-slot="sidebar-content"]) {
   z-index: -1;
 }
 [data-sidebar-compact]
   [data-app-sidebar]
   [data-sidebar="sidebar"]
-  > [data-sidebar-chrome-header]
+  [data-sidebar-chrome-header]
   > .sidebar-stage-backdrop {
   z-index: -2;
 }
@@ -101,14 +113,11 @@
 [data-sidebar-compact="false"]
   [data-app-sidebar]
   [data-sidebar="sidebar"]
-  > [data-sidebar-chrome-header] {
+  [data-sidebar-chrome-header] {
   position: absolute;
   inset: 0 0 auto;
 }
-[data-sidebar-compact="false"]
-  [data-app-sidebar]
-  [data-sidebar="sidebar"]
-  > [data-sidebar="footer"] {
+[data-sidebar-compact="false"] [data-app-sidebar] [data-sidebar="sidebar"] [data-sidebar="footer"] {
   position: absolute;
   inset: auto 0 0;
 }
@@ -167,7 +176,7 @@
 [data-sidebar-compact="true"]
   [data-app-sidebar]
   [data-sidebar="sidebar"]
-  > [data-sidebar-chrome-header] {
+  [data-sidebar-chrome-header] {
   position: absolute;
   inset: 0 0 auto;
 }
@@ -175,7 +184,7 @@
 [data-sidebar-compact="true"]
   [data-app-sidebar]
   [data-sidebar="sidebar"]
-  > :has(> [data-slot="scroll-area-viewport"] > [data-slot="sidebar-content"]) {
+  :has(> [data-slot="scroll-area-viewport"] > [data-slot="sidebar-content"]) {
   flex: 1 0 auto;
 }
 /*
@@ -269,13 +278,13 @@
   }
   [data-sidebar-switching][data-sidebar-compact="true"]
     [data-app-sidebar]
-    [data-sidebar="sidebar"]
+    :is([data-sidebar="sidebar"], [data-sidebar="sidebar"] > :has(> [data-sidebar-chrome-header]))
     > * {
     animation: sidebar-mode-fade-compact var(--sidebar-switch-duration) ease-in;
   }
   [data-sidebar-switching][data-sidebar-compact="false"]
     [data-app-sidebar]
-    [data-sidebar="sidebar"]
+    :is([data-sidebar="sidebar"], [data-sidebar="sidebar"] > :has(> [data-sidebar-chrome-header]))
     > * {
     animation: sidebar-mode-fade-full var(--sidebar-switch-duration) ease-in;
   }

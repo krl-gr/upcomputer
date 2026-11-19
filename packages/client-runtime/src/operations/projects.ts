@@ -5,6 +5,7 @@ import type {
   ProjectMutation,
   ProjectId,
   ServerConfig,
+  ServerSettings,
   SourceControlDiscoveryResult,
   SourceControlRepositoryInfo,
 } from "@t3tools/contracts";
@@ -19,6 +20,7 @@ import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
   findProjectByPath,
+  getBrowseParentPath,
   inferProjectTitleFromPath,
   isExplicitRelativeProjectPath,
   isUnsupportedWindowsProjectPath,
@@ -137,7 +139,8 @@ export function githubIncompleteOwnerRepositoryMessage(
 
 export function normalizePastedCloneUrl(input: string): string {
   const trimmed = input.trim();
-  return REPOSITORY_SHORTHAND.test(trimmed) ? (defaultHostCloneUrl(trimmed) ?? trimmed) : trimmed;
+  if (REPOSITORY_SHORTHAND.test(trimmed)) return defaultHostCloneUrl(trimmed) ?? trimmed;
+  return sourceControlClients.repositoryUrlFromPage(trimmed) ?? trimmed;
 }
 
 export function getDefaultCloneUrl(
@@ -148,11 +151,24 @@ export function getDefaultCloneUrl(
     : repository.sshUrl;
 }
 
+export type OfferedSourceControlProviders = ServerSettings["offeredSourceControlProviders"];
+
+/** Whether the project pickers offer a host. Only the default host is on until the user turns others on. */
+export function isSourceControlProviderOffered(
+  offered: OfferedSourceControlProviders | undefined,
+  kind: SourceControlProviderKind,
+): boolean {
+  return offered?.[kind] ?? kind === sourceControlClients.get(undefined).kind;
+}
+
 export function sortAddProjectProviderSources(
   readiness: AddProjectRemoteSourceReadiness,
+  offered: OfferedSourceControlProviders | undefined,
 ): ReadonlyArray<SourceControlProviderKind> {
   return Arr.sort(
-    ADD_PROJECT_REMOTE_PROVIDER_SOURCES,
+    ADD_PROJECT_REMOTE_PROVIDER_SOURCES.filter((source) =>
+      isSourceControlProviderOffered(offered, source),
+    ),
     Order.mapInput(
       Order.Struct({
         ready: Order.flip(Order.Boolean),
@@ -260,9 +276,11 @@ export interface NewProjectPublishTarget {
 
 export function getNewProjectPublishTargets(
   discovery: SourceControlDiscoveryResult | null,
+  offered: OfferedSourceControlProviders | undefined,
 ): ReadonlyArray<NewProjectPublishTarget> {
   const readiness = buildAddProjectRemoteSourceReadiness(discovery);
   return sourceControlClients.definitions.flatMap((definition) => {
+    if (!isSourceControlProviderOffered(offered, definition.kind)) return [];
     if (!readiness(definition.kind).ready) return [];
     const provider = discovery?.sourceControlProviders.find(
       (candidate) => candidate.kind === definition.kind,
@@ -305,6 +323,26 @@ export function getCloneDestinationBrowsePath(input: {
   return selectedDirectoryMatches
     ? selectedDirectoryPath
     : getCloneDestinationPath(selectedDirectoryPath, input.cloneDirectoryName);
+}
+
+// The native picker returns a full path, not a name under the browsed directory.
+// Split it and reuse the in-app rules so a folder already named after the
+// repository stays that folder instead of becoming repo/repo.
+export function getCloneDestinationForPickedFolder(input: {
+  readonly pickedPath: string;
+  readonly cloneDirectoryName: string;
+  readonly caseSensitive: boolean;
+}): string {
+  const parentPath = getBrowseParentPath(input.pickedPath);
+  if (parentPath === null) {
+    return getCloneDestinationPath(input.pickedPath, input.cloneDirectoryName);
+  }
+  return getCloneDestinationBrowsePath({
+    browseDirectoryPath: parentPath,
+    selectedDirectoryName: inferProjectTitleFromPath(input.pickedPath),
+    cloneDirectoryName: input.cloneDirectoryName,
+    caseSensitive: input.caseSensitive,
+  });
 }
 
 /** @public Used by apps/mobile, which Up.computer keeps outside the pnpm workspace. */

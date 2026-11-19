@@ -1,8 +1,6 @@
 import {
   defaultInstanceIdForDriver,
   ProviderDriverKind,
-  type EnvironmentId,
-  type ExecutionEnvironmentPlatformOs,
   type ProviderInstallState,
   type ProviderInstanceId,
   type ServerProvider,
@@ -14,164 +12,9 @@ import { productSurface } from "../product/productFlags";
 import type { ProviderInstanceEntry } from "../providerInstances";
 
 /*
- * The `onboarding` surface's decisions. With `upstream` the first run is
- * exactly upstream's WelcomeWizard; with `upcomputer` it is V1's agent table
- * (`UpComputerOnboarding.tsx`) on top of upstream's provider logic.
+ * The `onboarding` surface's decisions. With `upcomputer` a new user lands in
+ * the app while it sets up OpenCode; /welcome is upstream's Welcome page.
  */
-
-export type UpComputerOnboardingDriver =
-  | "codex"
-  | "claudeAgent"
-  | "cursor"
-  | "grok"
-  | "opencode"
-  | "antigravity";
-
-export interface UpComputerOnboardingAgent {
-  readonly driver: UpComputerOnboardingDriver;
-  readonly name: string;
-  readonly description: string;
-  /**
-   * `managed`: Up.computer downloads it (Codex with ChatGPT, Antigravity).
-   * `terminal`: the official installer runs in a terminal. `none`: it ships
-   * with Up.computer (Cursor's SDK).
-   */
-  readonly install: "managed" | "terminal" | "none";
-  /** `in-app`: the provider's own sign-in flow; `terminal`: its CLI login. */
-  readonly signIn: "in-app" | "terminal";
-}
-
-// V1's rows (core-v0.0.32 `providerDriverMeta.ts`), in its order.
-export const UPCOMPUTER_ONBOARDING_AGENTS: ReadonlyArray<UpComputerOnboardingAgent> = [
-  {
-    driver: "codex",
-    name: "Codex",
-    description:
-      "Great for computer-use tasks, with ChatGPT subscription access and strong review workflows.",
-    install: "managed",
-    signIn: "in-app",
-  },
-  {
-    driver: "claudeAgent",
-    name: "Claude",
-    description:
-      "Use your Claude subscription with powerful skills, hooks, MCP, and multi-agent workflows.",
-    install: "terminal",
-    signIn: "terminal",
-  },
-  {
-    driver: "cursor",
-    name: "Cursor",
-    description: "Use your Cursor subscription and its broad selection of frontier coding models.",
-    install: "none",
-    signIn: "in-app",
-  },
-  {
-    driver: "grok",
-    name: "Grok",
-    description: "Use your SuperGrok or X Premium+ subscription with Grok Build.",
-    install: "terminal",
-    signIn: "terminal",
-  },
-  {
-    driver: "opencode",
-    name: "OpenCode",
-    description: "Model-agnostic access to 75+ providers, local models, and free options.",
-    install: "terminal",
-    signIn: "terminal",
-  },
-  {
-    driver: "antigravity",
-    name: "Antigravity",
-    description:
-      "Use your Google AI subscription with Gemini models through Google's official Antigravity agent.",
-    install: "managed",
-    signIn: "in-app",
-  },
-];
-
-/**
- * Our screens set up agents on the server this window is paired with, so
- * they need one. Hosted web without a local server keeps upstream's wizard,
- * whose Connect step is how it gets a computer at all.
- */
-export function showsUpComputerOnboarding(input: {
-  readonly localAvailable: boolean;
-  readonly environmentId: EnvironmentId | undefined;
-}): boolean {
-  return (
-    productSurface("onboarding") === "upcomputer" &&
-    input.localAvailable &&
-    input.environmentId !== undefined
-  );
-}
-
-/**
- * Upstream treats a Codex instance without `setupMode` as "existing CLI" but
- * still offers ChatGPT; only an explicit choice shows the CLI steps.
- */
-export function isCodexExistingCliChosen(config: unknown): boolean {
-  return (
-    config !== null &&
-    typeof config === "object" &&
-    "setupMode" in config &&
-    config.setupMode === "existing"
-  );
-}
-
-/** How an agent installs right now: Codex follows its setup mode. */
-function resolveAgentInstallKind(
-  agent: UpComputerOnboardingAgent,
-  codexExistingCli: boolean,
-): UpComputerOnboardingAgent["install"] {
-  return agent.driver === "codex" && codexExistingCli ? "terminal" : agent.install;
-}
-
-/** How an agent signs in right now: the Codex CLI logs in from a terminal. */
-export function resolveAgentSignInKind(
-  agent: UpComputerOnboardingAgent,
-  codexExistingCli: boolean,
-): UpComputerOnboardingAgent["signIn"] {
-  return agent.driver === "codex" && codexExistingCli ? "terminal" : agent.signIn;
-}
-
-export type AgentInstallCell = "checking" | "installed" | "included" | "built-in" | "install";
-
-export function resolveAgentInstallCell(input: {
-  readonly agent: UpComputerOnboardingAgent;
-  readonly provider: ServerProvider | undefined;
-  readonly codexExistingCli: boolean;
-}): AgentInstallCell {
-  if (input.provider === undefined) return "checking";
-  const kind = resolveAgentInstallKind(input.agent, input.codexExistingCli);
-  if (kind === "none") return "built-in";
-  const state = getOnboardingProviderState(input.provider);
-  if (state === "checking") return "checking";
-  if (input.provider.installed) return "installed";
-  // Managed Codex downloads as part of "Connect", so it needs no step of its own.
-  return input.agent.driver === "codex" && kind === "managed" ? "included" : "install";
-}
-
-export type AgentReadyCell = "ready" | "checking" | "connect" | "sign-in" | "install-first";
-
-/**
- * A disabled agent (all but Codex and Claude start disabled) still offers
- * Connect: choosing to set it up turns it on.
- */
-export function resolveAgentReadyCell(input: {
-  readonly agent: UpComputerOnboardingAgent;
-  readonly provider: ServerProvider | undefined;
-  readonly codexExistingCli: boolean;
-}): AgentReadyCell {
-  if (input.provider === undefined) return "checking";
-  const state = getOnboardingProviderState(input.provider);
-  if (state === "ready") return "ready";
-  if (state === "checking") return "checking";
-  if (state === "disabled") return "connect";
-  if (resolveAgentSignInKind(input.agent, input.codexExistingCli) === "in-app") return "connect";
-  if (state === "install") return "install-first";
-  return "sign-in";
-}
 
 export function countReadyOnboardingProviders(
   providers: ReadonlyArray<ServerProvider> | null | undefined,
@@ -181,57 +24,6 @@ export function countReadyOnboardingProviders(
       (provider) => provider.enabled && getOnboardingProviderState(provider) === "ready",
     ).length ?? 0
   );
-}
-
-/*
- * Official installers for the CLIs upstream's wizard does not install. They
- * write to ~/.opencode/bin and ~/.grok/bin, where the server finds CLIs without
- * a restart, and need no Node.js. On Windows both come from npm.
- */
-const CLI_INSTALL_COMMANDS = {
-  grok: {
-    posix: "curl -fsSL https://x.ai/cli/install.sh | bash",
-    windows: "npm install -g @xai-official/grok",
-  },
-  opencode: {
-    posix: "curl -fsSL https://opencode.ai/install | bash",
-    windows: "npm install -g opencode-ai",
-  },
-} as const;
-
-const CLI_LOGIN_COMMANDS = { grok: "login", opencode: "auth login" } as const;
-const SAFE_BINARY_PATH = /^[A-Za-z0-9_./~-]+$/;
-
-export function resolveCliInstallCommand(
-  driver: keyof typeof CLI_INSTALL_COMMANDS,
-  platform: ExecutionEnvironmentPlatformOs,
-): string {
-  return platform === "windows"
-    ? CLI_INSTALL_COMMANDS[driver].windows
-    : CLI_INSTALL_COMMANDS[driver].posix;
-}
-
-/** What the install step says before it runs: npm needs Node.js, which a new computer lacks. */
-export function resolveCliInstallNote(platform: ExecutionEnvironmentPlatformOs): string {
-  return platform === "windows"
-    ? "Installs with npm in a terminal here. Needs Node.js from nodejs.org."
-    : "Runs the official installer in a terminal here.";
-}
-
-/** The CLI's own login, through a configured binary path when it needs no quoting. */
-export function resolveCliLoginCommand(
-  driver: keyof typeof CLI_LOGIN_COMMANDS,
-  instanceConfig: unknown,
-): string {
-  const configured =
-    instanceConfig !== null &&
-    typeof instanceConfig === "object" &&
-    "binaryPath" in instanceConfig &&
-    typeof instanceConfig.binaryPath === "string"
-      ? instanceConfig.binaryPath.trim()
-      : "";
-  const binary = configured !== "" && SAFE_BINARY_PATH.test(configured) ? configured : driver;
-  return `${binary} ${CLI_LOGIN_COMMANDS[driver]}`;
 }
 
 const SETUP_TARGET_DRIVERS: ReadonlySet<string> = new Set(["codex", "claudeAgent"]);

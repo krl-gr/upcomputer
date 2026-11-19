@@ -148,13 +148,14 @@ Read the latest `provider.status.observed` per provider to tell "no CLI", "CLI b
 signed out" and "ready" apart; it is sent when the state changes, so an install or
 login landing shows up as a change. First-run setup sends `onboarding.*` events per
 step and per agent action, and `flow` says which screens sent them. Without it they
-come from upstream's wizard (builds before the agent table, hosted web, and the `upstream`
-`onboarding` surface): `step` is `connection`, `agents`, then `import`, always in that
-order. `flow: "upcomputer"` is our agent table, which has one step, `agents` (the table and
-each agent's own screen): it completes with `continued` as soon as an agent works and
-with `skipped` from the close button, then `onboarding.completed` follows. It never
-sends `connection` or `import`, so funnels comparing the flows should stop at
-`agents`. `flow: "first_run"` is no screen at all: the desktop app opens a new user's
+come from upstream's wizard (builds before the agent table): `step` is `connection`,
+`agents`, then `import`, always in that order. `flow: "upcomputer"` was our agent table
+(builds up to core-v0.0.39), which had one step, `agents`. `flow: "welcome"` is upstream's
+Welcome page, which replaced both: one step, `agents`, viewed when the page opens and
+completed by **Start** (`continued`) or **Start without an agent** (`skipped`), with
+project import on the same page; `onboarding.completed` follows once setup is saved,
+with what it imported. Funnels comparing the flows should stop at `agents`.
+`flow: "first_run"` is no screen at all: the desktop app opens a new user's
 workspace directly and installs OpenCode, sending `onboarding.first_run_agent` with
 `outcome` `started`, then `ready` (followed by `onboarding.completed`) or `failed`, and
 `retried` or `connect_other` from the composer's buttons. `started` and `failed` are sent

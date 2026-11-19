@@ -1,8 +1,7 @@
 import { describeError, plainErrorSentence } from "@t3tools/client-runtime/errors";
-import { Check, ChevronDown, ChevronUp, Copy } from "lucide";
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon } from "lucide-react";
 import { createElement, useState, type ReactNode } from "react";
 
-import { MorphIcon } from "~/components/MorphIcon";
 import { Button } from "~/components/ui/button";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 
@@ -24,7 +23,11 @@ export function ErrorDetails({ detail }: { readonly detail: string | null | unde
           className="inline-flex cursor-pointer items-center gap-1 rounded-md py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           onClick={() => setOpen((value) => !value)}
         >
-          <MorphIcon className="size-3.5 opacity-80" icon={open ? ChevronUp : ChevronDown} />
+          {open ? (
+            <ChevronUpIcon className="size-3.5 opacity-80" />
+          ) : (
+            <ChevronDownIcon className="size-3.5 opacity-80" />
+          )}
           {open ? "Hide details" : "Details"}
         </button>
         <Button
@@ -33,7 +36,7 @@ export function ErrorDetails({ detail }: { readonly detail: string | null | unde
           aria-label={isCopied ? "Copied details" : "Copy details"}
           onClick={() => copyToClipboard(text, undefined)}
         >
-          <MorphIcon icon={isCopied ? Check : Copy} />
+          {isCopied ? <CheckIcon /> : <CopyIcon />}
         </Button>
       </div>
       {open ? (

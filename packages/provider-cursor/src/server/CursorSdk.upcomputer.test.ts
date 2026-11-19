@@ -1,3 +1,4 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -32,7 +33,7 @@ const rejectWithObservers = (
       for (const listener of others) process.on("unhandledRejection", listener);
     }
     return exit.mock.calls;
-  }).pipe(Effect.scoped);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
 describe("CursorSdk unhandled rejection guard and crash observers", () => {
   it.effect("still exits on unrelated unhandled rejections, telling crash observers first", () =>

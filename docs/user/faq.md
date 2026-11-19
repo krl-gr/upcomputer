@@ -6,7 +6,7 @@ No. A harness is what turns an LLM into an agent: it gives the model tools, a wa
 
 Chef = LLM. Kitchen = harness. Up.computer = the restaurant that lets you bring whatever kitchen you want. Our MCP is a cookbook we hand the kitchen, but the chef won't open it unless you tell them to :) I wrote the long version here: [What is a harness?](https://t3.gg/blog/post/what-is-a-harness)
 
-Bring your own: Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigravity, Pi, or Muse Code. [Provider setup](./install.md#providers)
+Bring your own: Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigravity, Kiro, Pi, Muse Code, or fx. [Provider setup](./install.md#providers)
 
 ## Why use Up.computer instead of Claude Code or the Codex app?
 
@@ -29,7 +29,7 @@ Nothing. There's no way to pay us to use Up.computer. You bring your own sub. It
 
 ## Why is my Claude 5-hour limit draining so fast?
 
-Up.computer drives Claude through Anthropic's Agent SDK. I confirmed it's a real bug on Anthropic's side: all Agent SDK usage will drain your 5h limits faster than using Claude Code directly. To be clear: this does not affect weekly limits. We have reported it to Anthropic and are hoping for a fix soon. [My post on it](https://x.com/theo/status/2114166439813017873)
+It shouldn't anymore. Up.computer drives Claude through Anthropic's Agent SDK, and Anthropic's 5h meter used to charge Agent SDK usage about 1.7x more than using Claude Code directly. Weekly limits were never affected. Since v0.1.7, Claude in Up.computer drains your 5h limit at the same rate as Claude Code. Still seeing it? [Update Up.computer](./updating.md) on the machine that runs your agents. [My post on it](https://x.com/theo/status/2114166439813017873) · [Tracking issue](https://github.com/pingdotgg/t3code/issues/24649)
 
 ## How do I use Up.computer remotely?
 
@@ -81,7 +81,7 @@ Yes, all three. Desktop app, CLI, the works. One catch: there is no `up` binary 
 
 ## Will my computer sleep in the middle of a long run?
 
-Not with the desktop app. While an agent works, it keeps the computer from going to sleep and lets it sleep again once nothing is running. An agent waiting for your approval or answer does not count as working. The screen can still turn off, and closing a laptop lid still sleeps it. Turn this off in **Settings → Maintenance → Keep computer awake**. The `up` background service does not do this; on a host that runs it, set the system never to sleep, or start the server under `caffeinate -i` (macOS) or `systemd-inhibit` (Linux).
+No. While an agent works, Up.computer keeps the computer from going to sleep and lets it sleep again a minute after nothing is running, in the desktop app and the background service alike. The screen can still turn off, and closing a laptop lid still sleeps it. Turn this off in **Settings → Maintenance → Keep awake while agents work**.
 
 ## Why is my provider not showing up?
 

@@ -121,6 +121,16 @@ export const threadLinkAppUrlConfig = makePublicValueConfig(
   UPCOMPUTER_HOSTED_APP_URL,
 ).pipe(Config.mapEffect(validateHostedAppUrl));
 
+/**
+ * Where agent sign-ins on the UpComputer Connect address are approved.
+ * UpComputer: our hosted app serves the approval page on every channel (there is no nightly
+ * hosted app); the site default above serves no approval page.
+ */
+export const agentApprovalAppUrlConfig = makePublicValueConfig(
+  "T3CODE_HOSTED_APP_URL",
+  UPCOMPUTER_HOSTED_APP_URL,
+).pipe(Config.mapEffect(validateHostedAppUrl));
+
 function validateHostedAppUrl(value: string) {
   try {
     const url = new URL(value);

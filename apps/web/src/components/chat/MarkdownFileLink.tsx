@@ -1,3 +1,4 @@
+import { useAssetUrlState } from "../../assets/assetUrls";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import {
@@ -5,9 +6,10 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
-import { memo, type MouseEvent as ReactMouseEvent } from "react";
+import type { ContextMenuSource, EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import { memo, useState, type MouseEvent as ReactMouseEvent } from "react";
 
+import { contextMenuSourceOf } from "../../contextMenuSource";
 import { readLocalApi } from "../../localApi";
 import { cn } from "../../lib/utils";
 import { shouldOpenMarkdownFileLinkInEditor } from "../../markdown-links";
@@ -23,13 +25,14 @@ import {
   shouldUseMarkdownFileBrowserPrimaryAction,
 } from "./MarkdownFileLink.logic";
 import { reportMarkdownActionFailure } from "./markdownActionFailure";
-import { WorkspaceEntryTooltip } from "./WorkspaceEntryIcon";
+import { WorkspaceEntryIcon, WorkspaceEntryTooltip } from "./WorkspaceEntryIcon";
 
 interface MarkdownFileLinkProps {
   environmentId: EnvironmentId | null;
   href: string;
   targetPath: string;
   iconPath: string;
+  isAppBundle?: boolean;
   workspaceRelativePath: string | null;
   panelPath: string | null;
   line?: number | undefined;
@@ -54,6 +57,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
   href,
   targetPath,
   iconPath,
+  isAppBundle = false,
   workspaceRelativePath,
   panelPath,
   line,
@@ -218,31 +222,25 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
             }),
           ])
         : value.then((text) => navigator.clipboard.writeText(text));
-    void Promise.all([write, value]).then(
-      ([, text]) => {
-        toastManager.add({
-          type: "success",
-          title: `${title} copied`,
-          description: text,
-        });
-      },
-      (error) => {
-        reportMarkdownActionFailure(
-          { operation: "copy-file-path", target: targetPath, copyTarget: title },
-          error,
-        );
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: `Failed to copy ${title.toLowerCase()}`,
-            description: errorToastDescription(error),
-          }),
-        );
-      },
-    );
+    void Promise.all([write, value]).catch((error) => {
+      reportMarkdownActionFailure(
+        { operation: "copy-file-path", target: targetPath, copyTarget: title },
+        error,
+      );
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: `Failed to copy ${title.toLowerCase()}`,
+          description: errorToastDescription(error),
+        }),
+      );
+    });
   };
 
-  const showFileContextMenu = async (position: { x: number; y: number }) => {
+  const showFileContextMenu = async (
+    position: { x: number; y: number },
+    source: ContextMenuSource,
+  ) => {
     const api = readLocalApi();
     if (!api) return;
 
@@ -259,6 +257,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
           ...copyItems.map(({ id, label }) => ({ id, label })),
         ] as const,
         position,
+        source,
       );
 
       if (clicked === "preview-media") {
@@ -304,7 +303,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
             return { x: bounds.left, y: bounds.bottom };
           })()
         : { x: event.clientX, y: event.clientY };
-    void showFileContextMenu(position);
+    void showFileContextMenu(position, contextMenuSourceOf(event));
   };
 
   const canOpenInEditor = onOpen !== undefined;
@@ -351,6 +350,11 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
               onContextMenu={handleContextMenu}
             >
               <FileTagChipContent
+                icon={
+                  isAppBundle ? (
+                    <AppBundleIcon environmentId={environmentId} path={iconPath} theme={theme} />
+                  ) : undefined
+                }
                 path={iconPath}
                 environmentId={environmentId}
                 label={label}
@@ -370,6 +374,11 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
               onContextMenu={handleContextMenu}
             >
               <FileTagChipContent
+                icon={
+                  isAppBundle ? (
+                    <AppBundleIcon environmentId={environmentId} path={iconPath} theme={theme} />
+                  ) : undefined
+                }
                 path={iconPath}
                 environmentId={environmentId}
                 label={label}
@@ -380,9 +389,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
         }
       />
       <TooltipPopup side="top" variant="code">
-        <div className="overflow-x-auto whitespace-nowrap scrollbar-thumb-border/78 scrollbar-track-transparent [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border/78 [&::-webkit-scrollbar-track]:bg-transparent">
-          <WorkspaceEntryTooltip path={iconPath} label={targetPath} environmentId={environmentId} />
-        </div>
+        <WorkspaceEntryTooltip path={iconPath} label={targetPath} environmentId={environmentId} />
       </TooltipPopup>
     </Tooltip>
   );
@@ -404,6 +411,7 @@ function areMarkdownFileLinkPropsEqual(
     previous.copyMarkdown === next.copyMarkdown &&
     previous.theme === next.theme &&
     previous.threadRef === next.threadRef &&
+    previous.isAppBundle === next.isAppBundle &&
     previous.onOpen === next.onOpen &&
     previous.onOpenInPanel === next.onOpenInPanel &&
     previous.openInEditorMenuLabel === next.openInEditorMenuLabel &&
@@ -412,5 +420,28 @@ function areMarkdownFileLinkPropsEqual(
     previous.onReveal === next.onReveal &&
     previous.resolveCopyPaths === next.resolveCopyPaths &&
     previous.revealLabel === next.revealLabel
+  );
+}
+
+function AppBundleIcon(props: {
+  environmentId: EnvironmentId | null;
+  path: string;
+  theme: "light" | "dark";
+}) {
+  const asset = useAssetUrlState(props.environmentId, {
+    _tag: "native-app-icon",
+    app: { _tag: "app-path", path: props.path },
+  });
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (asset._tag !== "Success" || asset.url === failedUrl) {
+    return <WorkspaceEntryIcon {...props} />;
+  }
+  return (
+    <img
+      src={asset.url}
+      alt=""
+      className="size-4 shrink-0 object-contain"
+      onError={() => setFailedUrl(asset.url)}
+    />
   );
 }

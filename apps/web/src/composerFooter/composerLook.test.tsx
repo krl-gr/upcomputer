@@ -7,6 +7,14 @@ vi.mock("../product/productFlags", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../product/productFlags")>()),
   productSurface: () => surface.composerFooter,
 }));
+// Static markup has no server snapshot for upstream's modifier-key store; no key is held.
+vi.mock("../shortcutModifierState", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../shortcutModifierState")>();
+  return {
+    ...actual,
+    useShortcutModifierState: () => actual.shortcutModifierStore.getSnapshot(),
+  };
+});
 vi.mock("~/hooks/useSettings", () => ({
   useEnvironmentIdentificationMode: () => "none",
   useClientSettings: (select: (settings: Record<string, unknown>) => unknown) => select({}),
@@ -39,8 +47,6 @@ function primaryActions(overrides: Partial<PrimaryActionsProps> = {}) {
     pendingAction: null,
     isRunning: false,
     canInterrupt: false,
-    showPlanFollowUpPrompt: false,
-    promptHasText: false,
     isSendBusy: false,
     sendDisabledReason: null,
     isEnvironmentUnavailable: false,
@@ -48,7 +54,6 @@ function primaryActions(overrides: Partial<PrimaryActionsProps> = {}) {
     hasSendableContent: false,
     onPreviousPendingQuestion: () => {},
     onInterrupt: () => {},
-    onImplementPlanInNewThread: () => {},
     ...overrides,
   };
   return firstButton(renderToStaticMarkup(createElement(ComposerPrimaryActions, props)));
@@ -70,12 +75,11 @@ function firstButton(markup: string) {
 
 const STATES = {
   empty: {},
-  "has text": { promptHasText: true, hasSendableContent: true },
+  "has text": { hasSendableContent: true },
   queue: {
     isRunning: true,
     canInterrupt: true,
     followUpBehavior: "queue",
-    promptHasText: true,
     hasSendableContent: true,
   },
 } satisfies Record<string, Partial<PrimaryActionsProps>>;

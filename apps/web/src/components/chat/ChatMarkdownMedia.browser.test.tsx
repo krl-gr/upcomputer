@@ -1,9 +1,11 @@
 import type { PreparedConnection } from "@t3tools/client-runtime/connection";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../../test/render";
-import { ChatMarkdownAssetImage, ChatMarkdownImage } from "./ChatMarkdownMedia";
+import { ChatMarkdownAssetImage, ChatMarkdownImage, markdownImageCopy } from "./ChatMarkdownMedia";
 
 const IMAGE_URL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 // Stands in for a signed URL the server no longer accepts.
@@ -153,5 +155,16 @@ describe("ChatMarkdownAssetImage", () => {
       expect(screen.getByRole("status", { name: "Loading image" })).toBeTruthy();
     }
     expect(signal?.aborted).toBe(true);
+  });
+});
+
+describe("markdownImageCopy", () => {
+  it("copies an image whose path has a space as Markdown that is still that image", () => {
+    // Raw HTML <img> and <picture> sources reach the copy with the space unencoded.
+    const copied = markdownImageCopy("Shot", "/work/my shot.png", undefined);
+    const [block] = unified().use(remarkParse).parse(copied).children;
+    const images =
+      block?.type === "paragraph" ? block.children.filter((node) => node.type === "image") : [];
+    expect(images.map((image) => decodeURI(image.url))).toEqual(["/work/my shot.png"]);
   });
 });

@@ -15,12 +15,14 @@ export const T3_PI_MCP_EXTENSION_PATH_ENV = "T3_PI_MCP_EXTENSION_PATH";
 export const T3_PI_USER_INSTRUCTIONS_PATH_ENV = "T3_PI_USER_INSTRUCTIONS_PATH";
 /** Set to "omit" when the session's agent should not get the orchestration block. */
 export const T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV = "T3_PI_ORCHESTRATION_INSTRUCTIONS";
+export const PI_T3_SERVICE_TIER_COMMAND = "t3-service-tier";
 
 // These tools trigger file-change approvals, bypassed by Auto-accept edits.
 export const PI_FILE_CHANGE_TOOLS = ["edit", "write"] as const;
 
 export const PI_T3_MCP_EXTENSION_SOURCE = `\
 import { stripFrontmatter, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import { Type } from "typebox";
@@ -32,6 +34,7 @@ const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
 const USER_INSTRUCTIONS_PATH_ENV = ${JSON.stringify(T3_PI_USER_INSTRUCTIONS_PATH_ENV)};
 const ORCHESTRATION_INSTRUCTIONS_ENV = ${JSON.stringify(T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV)};
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
+const SERVICE_TIER_COMMAND = ${JSON.stringify(PI_T3_SERVICE_TIER_COMMAND)};
 const PROTOCOL = "2025-06-18";
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
 const FILE_CHANGE_TOOLS = new Set(${JSON.stringify(PI_FILE_CHANGE_TOOLS)});
@@ -69,12 +72,19 @@ function runtimeMode(): RuntimeMode {
     : "full-access";
 }
 
+// T3 keys "Always allow this session" on this text, so a cut summary ends with the
+// full input's hash: calls that differ only past the cut get separate grants.
 function toolInputSummary(input: unknown): string {
+  let text: string;
   try {
-    return JSON.stringify(input, null, 2).slice(0, 4_000);
+    text = JSON.stringify(input, null, 2) ?? String(input);
   } catch {
-    return String(input).slice(0, 4_000);
+    text = String(input);
   }
+  if (text.length <= 4_000) return text;
+  const hash = NodeCrypto.createHash("sha256").update(text, "utf16le").digest("hex");
+  return text.slice(0, 4_000) + "\\n... " + (text.length - 4_000) +
+    " more characters not shown (sha256 " + hash + ")";
 }
 
 function parseSseOrJson(body: string, contentType: string): JsonRpcResponse {
@@ -297,23 +307,43 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     };
   });
 
-  // Workaround for an upstream Pi context-budgeting bug: pi-ai reuses the
-  // previous response's usage even when a fork's instructions/tools differ,
-  // then reserves almost all remaining context for output. OpenRouter can
-  // reject even a short conversation. Remove this cap when Pi accounts for
-  // the current request prefix reliably (api/simple-options + utils/estimate).
+  // Pi has no service tier setting, so T3 sets one through this command before each turn.
+  // Only a tier the active model advertises is sent; Standard sends none.
+  let serviceTier: string | undefined;
+  pi.registerCommand(SERVICE_TIER_COMMAND, {
+    description: "Set the service tier Up.computer sends with provider requests",
+    handler: async (args) => {
+      serviceTier = args.trim() || undefined;
+    },
+  });
+
   pi.on("before_provider_request", (event, ctx) => {
-    if (ctx.model?.provider !== "openrouter") return;
     const payload = event.payload;
     if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return;
     const replacement = { ...payload } as Record<string, unknown>;
     let changed = false;
-    for (const key of ["max_tokens", "max_completion_tokens"]) {
-      const limit = replacement[key];
-      if (typeof limit === "number" && Number.isFinite(limit) && limit > 32_768) {
-        replacement[key] = 32_768;
-        changed = true;
+    // Workaround for an upstream Pi context-budgeting bug: pi-ai reuses the
+    // previous response's usage even when a fork's instructions/tools differ,
+    // then reserves almost all remaining context for output. OpenRouter can
+    // reject even a short conversation. Remove this cap when Pi accounts for
+    // the current request prefix reliably (api/simple-options + utils/estimate).
+    if (ctx.model?.provider === "openrouter") {
+      for (const key of ["max_tokens", "max_completion_tokens"]) {
+        const limit = replacement[key];
+        if (typeof limit === "number" && Number.isFinite(limit) && limit > 32_768) {
+          replacement[key] = 32_768;
+          changed = true;
+        }
       }
+    }
+    const tiers = (ctx.model as { serviceTiers?: unknown } | undefined)?.serviceTiers;
+    if (
+      serviceTier !== undefined &&
+      Array.isArray(tiers) &&
+      tiers.some((tier) => tier?.id === serviceTier)
+    ) {
+      replacement.service_tier = serviceTier;
+      changed = true;
     }
     if (changed) return replacement;
   });

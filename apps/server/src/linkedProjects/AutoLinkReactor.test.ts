@@ -30,6 +30,7 @@ const instanceId = ProviderInstanceId.make("codex");
 const row = (projectId: ProjectId, workspaceRoot: string): ProjectStore.ProjectRow => ({
   projectId,
   title: projectId,
+  hasCustomTitle: false,
   workspaceRoot,
   defaultModelSelection: null,
   defaultThreadEnvMode: null,

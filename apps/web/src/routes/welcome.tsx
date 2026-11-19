@@ -6,10 +6,11 @@ import * as Option from "effect/Option";
 
 import { BlankWorkspacePage } from "../components/BlankWorkspacePage";
 import { NoProjectsHero } from "../components/NoProjectsHero";
+import { WelcomePage } from "../components/onboarding/WelcomePage";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { useBoringSidebarEnabled } from "../hooks/useSettings";
+import { useClientSettings } from "../hooks/useSettings";
 import { newThreadStartsWithoutProject } from "../sidebarProjects/SidebarThreadsSection";
-import { FirstRunSetup } from "../onboardingSurface/FirstRunSetup";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 
 const decodeEnvironmentId = Schema.decodeOption(EnvironmentId);
 
@@ -24,39 +25,47 @@ export const Route = createFileRoute("/welcome")({
 });
 
 function WelcomeRouteView() {
-  const { authGateState } = Route.useRouteContext();
   const navigate = useNavigate();
   const hash = useLocation({ select: (location) => location.hash });
+  // A ChatGPT sign-in returns here with the computer it set up.
   const resumeEnvironmentId = hash.startsWith("agents:")
     ? Option.getOrUndefined(decodeEnvironmentId(hash.slice("agents:".length)))
     : undefined;
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { environments, isReady } = useEnvironments();
+  // Trust the id only once the catalog has it; an unknown computer falls back to this one.
+  const waitingForCatalog =
+    !isReady && (resumeEnvironmentId !== undefined || primaryEnvironmentId === null);
+  const resumeKnown =
+    resumeEnvironmentId !== undefined &&
+    environments.some((environment) => environment.environmentId === resumeEnvironmentId);
+  const environmentId = (resumeKnown ? resumeEnvironmentId : undefined) ?? primaryEnvironmentId;
   // The root can remount this pending outlet after navigation; do not reopen setup.
   const isWelcomeRoute = useLocation({ select: (location) => location.pathname === "/welcome" });
   const [dismissed, setDismissed] = useState(false);
   const openNewThread = useNewThreadHandler();
-  const localAvailable = authGateState.status === "authenticated";
   // Home opens a chat without a project here (see the index route), so the
   // hero behind setup would only flash before it.
-  const startsWithoutProject = newThreadStartsWithoutProject(useBoringSidebarEnabled());
+  const startsWithoutProject = newThreadStartsWithoutProject(
+    useClientSettings((settings) => settings.boringSidebarEnabled),
+  );
+  const background = startsWithoutProject ? <BlankWorkspacePage /> : <NoProjectsHero />;
+  if (waitingForCatalog) return null;
+  if (environmentId === null || !isWelcomeRoute || dismissed) return background;
   return (
-    <>
-      {startsWithoutProject ? <BlankWorkspacePage /> : <NoProjectsHero />}
-      {isWelcomeRoute && !dismissed ? (
-        <FirstRunSetup
-          localAvailable={localAvailable}
-          resumeEnvironmentId={resumeEnvironmentId}
-          onDone={async (projectRef) => {
-            setDismissed(true);
-            if (projectRef !== undefined) {
-              await openNewThread(projectRef, { replace: true }).catch(() =>
-                navigate({ to: "/", replace: true }),
-              );
-              return;
-            }
-            await navigate({ to: "/", replace: true });
-          }}
-        />
-      ) : null}
-    </>
+    <WelcomePage
+      key={environmentId}
+      environmentId={environmentId}
+      onDone={async (projectRef) => {
+        setDismissed(true);
+        if (projectRef !== undefined) {
+          await openNewThread(projectRef, { replace: true }).catch(() =>
+            navigate({ to: "/", replace: true }),
+          );
+          return;
+        }
+        await navigate({ to: "/", replace: true });
+      }}
+    />
   );
 }

@@ -27,7 +27,6 @@ vi.mock("../hooks/useSettings", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../hooks/useSettings")>()),
   getClientSettings: () => ({
     boringSidebarEnabled: state.boringSidebar,
-    legacySidebarEnabled: false,
   }),
 }));
 // Several projects, so upstream's chat.new opens the "New thread in..." picker.
