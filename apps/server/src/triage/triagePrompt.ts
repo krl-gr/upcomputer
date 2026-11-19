@@ -55,7 +55,7 @@ context file, one subdirectory per commit hash:
     git clone --depth 1 --filter=blob:none --branch <release-tag> \\
       https://github.com/krl-gr/upcomputer <source-cache-dir>/<hash>
 
-If neither tag exists (development builds), clone \`main\` instead, and treat file
+If neither tag exists, clone \`main\` instead, and treat file
 and line references as approximate: the user's build may not match \`main\`
 exactly. If the target directory already exists from an earlier triage run,
 reuse it instead of cloning again. Before cloning, delete other entries in the

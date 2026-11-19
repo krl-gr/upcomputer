@@ -48,7 +48,7 @@ export function useStartTriage() {
       stackedThreadToast({
         type: "error",
         title: "Could not start triage",
-        description: `${description} Run ${TRIAGE_CLI_COMMAND} in a terminal on that machine instead.`,
+        description: `${description} Run ${TRIAGE_CLI_COMMAND} in a terminal on that machine instead. If the terminal says up is not found, first choose Install next to up command in Settings, About.`,
         timeout: 0,
         actionProps: { children: "Copy command", onClick: () => void copyTriageCliCommand() },
         // "Copy command" is the copy that helps here, not the error text.
