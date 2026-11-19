@@ -1,4 +1,8 @@
-import { ASSISTANT_CITATION_CONTEXT_LENGTH, type AssistantCitation } from "@t3tools/contracts";
+import {
+  ASSISTANT_CITATION_CONTEXT_LENGTH,
+  isTaskOutputCitation,
+  type AssistantCitation,
+} from "@t3tools/contracts";
 
 import { mathWrapperOf } from "../markdown-clipboard";
 
@@ -20,13 +24,17 @@ export function findAssistantCitationSourceAnchor(
   document: Document,
   citation: AssistantCitation,
 ): AssistantCitationSourceAnchor | null {
+  // UpComputer: a task's output marks its source with the task id and no thread.
+  const [sourceId, threadId] = isTaskOutputCitation(citation)
+    ? [citation.taskId, undefined]
+    : [citation.messageId, citation.threadId];
   const source = [
     ...document.querySelectorAll<HTMLElement>("[data-assistant-citation-source]"),
   ].find(
     (element) =>
-      element.dataset.assistantCitationSource === citation.messageId &&
+      element.dataset.assistantCitationSource === sourceId &&
       element.dataset.assistantCitationEnvironment === citation.environmentId &&
-      element.dataset.assistantCitationThread === citation.threadId,
+      element.dataset.assistantCitationThread === threadId,
   );
   const viewport = source?.closest<HTMLElement>("[data-assistant-citation-viewport]");
   if (!source || !viewport) return null;

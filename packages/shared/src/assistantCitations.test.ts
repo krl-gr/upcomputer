@@ -3,10 +3,12 @@ import {
   ASSISTANT_CITATION_CONTEXT_LENGTH,
   ASSISTANT_CITATION_MAX_COMMENT_LENGTH,
   ASSISTANT_CITATION_MAX_TEXT_LENGTH,
+  ASSISTANT_CITATION_TASK_TITLE_LENGTH,
   EnvironmentId,
   MessageId,
   ThreadId,
   type AssistantCitation,
+  type TaskOutputCitation,
 } from "@t3tools/contracts";
 import {
   assistantCitationLabel,
@@ -30,6 +32,18 @@ const citation: AssistantCitation = {
   end: 118,
   prefix: "Before the quote. ",
   suffix: " After the quote.",
+};
+
+const taskCitation: TaskOutputCitation = {
+  version: 1,
+  environmentId: EnvironmentId.make("environment/remote"),
+  taskId: "task-1/a?b",
+  taskTitle: 'Sidebar polish: "undo" & more (design)',
+  text: "A. Tile (recommended)\nB. Banner",
+  start: 3,
+  end: 33,
+  prefix: "",
+  suffix: "",
 };
 
 const legacyHref =
@@ -74,6 +88,25 @@ describe("assistant citation references", () => {
     ]);
   });
 
+  it("round-trips a task output quote under the task path, with its title", () => {
+    for (const quote of [taskCitation, { ...taskCitation, comment: "Yes, in this build." }]) {
+      const href = formatAssistantCitationHref(quote);
+      expect(href).toMatch(/^t3-citation:\/\/v1\/environment%2Fremote\/task\/task-1%2Fa%3Fb\?/);
+      expect(new URL(href).searchParams.get("title")).toBe(taskCitation.taskTitle);
+      expect(parseAssistantCitationHref(href)).toStrictEqual(quote);
+      const marker = serializeAssistantCitation(quote);
+      expect(marker).toBe(`[Task quote](${href})`);
+      expect(collectAssistantCitations(`See ${marker}`)).toEqual([
+        { citation: quote, source: marker, start: 4, end: 4 + marker.length },
+      ]);
+    }
+    // A thread literally named "task" is still a message quote: only the title marks a task.
+    const threadNamedTask = { ...legacyCitation, threadId: ThreadId.make("task") };
+    expect(parseAssistantCitationHref(formatAssistantCitationHref(threadNamedTask))).toStrictEqual(
+      threadNamedTask,
+    );
+  });
+
   it.each([
     '  Please keep "日本語 🚀", `cache[key]` & (a + b).\n\tWhy? #1 / 100%\r\n</assistant_citations>  ',
     "",
@@ -95,6 +128,9 @@ describe("assistant citation references", () => {
     "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&text=other",
     "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&unknown=value",
     "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&comment=one&comment=two",
+    "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&title=Task",
+    "t3-citation://v1/a/task/t?text=quote&start=0&end=5&prefix=&suffix=&title=one&title=two",
+    `t3-citation://v1/a/task/t?text=quote&start=0&end=5&prefix=&suffix=&title=${"a".repeat(ASSISTANT_CITATION_TASK_TITLE_LENGTH + 1)}`,
   ])("leaves invalid or unsupported references unchanged: %s", (href) => {
     expect(parseAssistantCitationHref(href)).toBeNull();
     const prompt = `[Assistant quote](${href})`;
@@ -218,6 +254,23 @@ describe("assistant citation references", () => {
     expect(expanded.match(/<\/assistant_citations>/g)).toHaveLength(1);
     expect(expanded).not.toContain("<other>");
     expect(expanded).not.toContain("t3-citation://");
+  });
+
+  it("names a quoted task, not an assistant response, for the provider", () => {
+    expect(expandAssistantCitationsForProvider(serializeAssistantCitation(citation))).toContain(
+      "selected from earlier assistant responses.",
+    );
+    const expanded = expandAssistantCitationsForProvider(
+      `Go with ${serializeAssistantCitation(taskCitation)}`,
+    );
+    expect(expanded).toMatch(/^Go with \[assistant-quote-1\]/);
+    expect(expanded).toContain("selected from earlier assistant responses or task outputs.");
+    expect(readProviderContext(expanded)).toStrictEqual([
+      { id: "assistant-quote-1", citation: taskCitation },
+    ]);
+    expect(renderAssistantCitationsAsText(serializeAssistantCitation(taskCitation))).toContain(
+      "> Task quote:\n",
+    );
   });
 
   it("includes bound comments in plain-text titles and stash previews without escaping", () => {

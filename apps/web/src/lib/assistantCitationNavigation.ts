@@ -1,5 +1,9 @@
 import { pipe } from "effect/Function";
-import type { AssistantCitation } from "@t3tools/contracts";
+import {
+  isTaskOutputCitation,
+  type AssistantCitation,
+  type AssistantMessageCitation,
+} from "@t3tools/contracts";
 import {
   formatAssistantCitationHref,
   parseAssistantCitationHref,
@@ -22,18 +26,20 @@ export function assistantCitationHash(citation: AssistantCitation) {
   return `${CITATION_HASH_PREFIX}${Base64Url.encode(formatAssistantCitationHref(citation))}`;
 }
 
-export function assistantCitationFromLocation(href: string) {
+export function assistantCitationFromLocation(href: string): AssistantMessageCitation | null {
   const hashIndex = href.indexOf("#");
   if (hashIndex === -1) return null;
   const hash = href.slice(hashIndex + 1);
   if (!hash.startsWith(CITATION_HASH_PREFIX) || hash.length > 140_000) return null;
   try {
-    return pipe(
+    const citation = pipe(
       hash.slice(CITATION_HASH_PREFIX.length),
       Base64Url.decodeString,
       Result.getOrThrow,
       parseAssistantCitationHref,
     );
+    // UpComputer: a task quote's source is a task, which is not revealed in a thread.
+    return citation && !isTaskOutputCitation(citation) ? citation : null;
   } catch {
     return null;
   }
@@ -47,7 +53,7 @@ export function withoutAssistantCitationHash(href: string) {
 }
 
 /** A fresh activation lets the same link reveal its source again after dismissal. */
-export function assistantCitationNavigation(citation: AssistantCitation) {
+export function assistantCitationNavigation(citation: AssistantMessageCitation) {
   return {
     to: "/$environmentId/$threadId" as const,
     params: { environmentId: citation.environmentId, threadId: citation.threadId },
