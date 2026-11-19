@@ -65,6 +65,7 @@ import { isInboxRoot, type PlannerProject } from "../planner/ui/ProjectChip.tsx"
 import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { observeResize } from "../../../../apps/web/src/lib/observeResize.ts";
+import { useMediaQuery } from "../../../../apps/web/src/hooks/useMediaQuery.ts";
 import { TableRunCounts } from "./RunCountNumbers.tsx";
 import { TaskHistory, taskHistoryEntries } from "./TaskHistory.tsx";
 import { TaskTagChips } from "./TaskTagChips.tsx";
@@ -303,6 +304,8 @@ export function TasksView(props: TasksViewProps) {
   const [updatingField, setUpdatingField] = useState<string | null>(null);
   const { projectFilter, filters, onFiltersChange } = props;
   const panel = props.layout === "panel";
+  // A window too narrow for two columns stacks the details under the output, as the panel does.
+  const stackedDetail = useMediaQuery({ max: 900 }) || panel;
   // The list's own width picks table or cards; the first measurement lands before paint.
   const [listElement, setListElement] = useState<HTMLDivElement | null>(null);
   const [listWidth, setListWidth] = useState<number | null>(null);
@@ -839,8 +842,10 @@ export function TasksView(props: TasksViewProps) {
     }
   }, [form, props, selectedProject]);
 
-  const detailOuterClass = panel ? "flex w-full min-w-0 py-3" : "flex min-h-0 w-full flex-1 py-5";
-  const detailInnerClass = panel
+  const detailOuterClass = stackedDetail
+    ? "flex w-full min-w-0 py-3"
+    : "flex min-h-0 w-full flex-1 py-5";
+  const detailInnerClass = stackedDetail
     ? "flex min-w-0 flex-1 flex-col gap-3"
     : "flex min-h-0 min-w-0 flex-1 gap-5";
 
@@ -954,7 +959,7 @@ export function TasksView(props: TasksViewProps) {
       {selectedTask ? (
         <div className={detailOuterClass}>
           <div className={detailInnerClass}>
-            <main className={panel ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto"}>
+            <main className={stackedDetail ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto"}>
               <DetailSidebarSection
                 key={`${taskKey(selectedTask)}:description`}
                 title="Description"
@@ -992,7 +997,7 @@ export function TasksView(props: TasksViewProps) {
                 </DetailSidebarSection>
               ) : null}
             </main>
-            <DetailColumn stacked={panel}>
+            <DetailColumn stacked={stackedDetail}>
               <DetailSidebarSection title="Details">
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow
@@ -1301,7 +1306,7 @@ export function TasksView(props: TasksViewProps) {
                 onChange={(description) => setForm((current) => ({ ...current, description }))}
               />
             </main>
-            <DetailColumn stacked={panel}>
+            <DetailColumn stacked={stackedDetail}>
               <DetailSidebarSection title="Details">
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow label="Title" controlSelector="input">
