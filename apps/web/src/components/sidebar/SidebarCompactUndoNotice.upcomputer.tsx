@@ -78,6 +78,7 @@ export function SidebarCompactUndoNotice(props: CompactUndoNoticeProps) {
         aria-hidden={props.exiting || undefined}
         inert={props.exiting}
         // The sidebar's own colour under the tile, so icons it floats over do not show through.
+        // The translucent desktop sidebar drops it (theme.upcomputer.css).
         className={cn(
           "w-full rounded-xl bg-sidebar",
           MOTION,
