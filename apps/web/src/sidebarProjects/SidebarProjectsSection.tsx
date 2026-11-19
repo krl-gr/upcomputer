@@ -1,4 +1,9 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import {
+  scopedThreadKey,
+  scopeProjectRef,
+  scopeThreadRef,
+} from "@t3tools/client-runtime/environment";
+import { sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
   closestCenter,
   DndContext,
@@ -11,7 +16,7 @@ import {
 import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useRouter } from "@tanstack/react-router";
+import { type AnyRouter, useRouter } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { CopyIcon, EllipsisIcon, PlusIcon, SettingsIcon } from "lucide-react";
 import { useReducer, useRef, type ReactNode } from "react";
@@ -19,6 +24,7 @@ import { useReducer, useRef, type ReactNode } from "react";
 import { ProjectFavicon } from "../components/ProjectFavicon";
 import {
   filterSidebarProjectScopeItems,
+  isSidebarHiddenThread,
   reduceSidebarProjectScopeMenuState,
 } from "../components/Sidebar.logic";
 import { Collapsible, CollapsiblePanel } from "../components/ui/collapsible";
@@ -40,10 +46,16 @@ import {
   useSidebar,
 } from "../components/ui/sidebar";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import { useComposerDraftStore } from "../composerDraftStore";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useClientSettings } from "../hooks/useSettings";
+import { projectLinksByKey, type LinkedProjectScopeThread } from "../linkedProjects/projectScope";
+import { claimedSidebarThreadKeys } from "../product/sidebarThreadClaims";
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
+import { readNavigationThreadShells, readProjects, readThreadShell } from "../state/entities";
+import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
 import { cn } from "../lib/utils";
 import {
   SIDEBAR_MENU_SCOPE,
@@ -60,6 +72,7 @@ import {
   ProjectRowIcon,
   useIsScratchProjectGroup,
 } from "./sidebarProjectIcons";
+import { resolveSidebarProjectPick } from "./sidebarProjects.logic";
 import { useSidebarProjectsList, type SidebarProjectsListRow } from "./useSidebarProjectsList";
 import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
@@ -68,6 +81,28 @@ export const SIDEBAR_PROJECTS_OPEN_STORAGE_KEY = "upcomputer:sidebar-projects-op
 function sidebarProjectsRowLabel(row: SidebarProjectsListRow): string {
   if (row.kind === "all") return "All projects";
   return row.kind === "scratch" ? "No project" : row.project.displayName;
+}
+
+/** The open thread, or the open draft's project, from the route. */
+function readOpenChat(router: AnyRouter): LinkedProjectScopeThread | null {
+  const target = resolveThreadRouteTarget(router.state.matches.at(-1)?.params ?? {});
+  if (target === null) return null;
+  const drafts = useComposerDraftStore.getState();
+  if (target.kind === "server") {
+    return readThreadShell(target.threadRef) ?? drafts.getDraftThread(target.threadRef);
+  }
+  const draft = drafts.getDraftSession(target.draftId);
+  return (draft?.promotedTo ? readThreadShell(draft.promotedTo) : null) ?? draft;
+}
+
+/** The threads the Threads list can show: no side chats, subagents or bot chats. */
+function readListedThreads() {
+  const claimed = claimedSidebarThreadKeys();
+  return readNavigationThreadShells().filter(
+    (thread) =>
+      !isSidebarHiddenThread(thread) &&
+      !claimed.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
+  );
 }
 
 interface ProjectItem {
@@ -93,9 +128,17 @@ export function SidebarProjectsSection(props: {
   const { isMobile, setOpenMobile } = useSidebar();
   const handleNewThread = useNewThreadHandler();
   const isScratchGroup = useIsScratchProjectGroup();
+  const threadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
   const [open, setOpen] = useLocalStorage(SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, true, Schema.Boolean);
-  const { rows, selectedKey, select, holdSurface, sortable, moveRow } =
-    useSidebarProjectsList(projectGroups);
+  const {
+    projectGroups: listedGroups,
+    rows,
+    selectedKey,
+    select,
+    holdSurface,
+    sortable,
+    moveRow,
+  } = useSidebarProjectsList(projectGroups);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   const openProjectSettings = (project: SidebarProjectSnapshot) => {
@@ -123,6 +166,30 @@ export function SidebarProjectsSection(props: {
       );
     },
   });
+  /** Filters to the row's project and moves an open chat of another project there. */
+  const pick = (key: string) => {
+    select(key);
+    const row = [...rows.preview, ...rows.overflow].find((candidate) => candidate.key === key);
+    if (row === undefined || row.kind === "all") return;
+    const { project } = row;
+    const destination = resolveSidebarProjectPick({
+      openChat: readOpenChat(router),
+      projectKeys: new Set(
+        project.memberProjectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`),
+      ),
+      projectLinks: projectLinksByKey(readProjects()),
+      threads: sortThreads(readListedThreads(), threadSortOrder),
+    });
+    if (destination.kind === "thread") {
+      const { thread } = destination;
+      void router.navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
+      });
+    } else if (destination.kind === "new-chat") {
+      void handleNewThread(scopeProjectRef(project.environmentId, project.id));
+    }
+  };
   const handleDragEnd = (event: DragEndEvent) => {
     if (event.over === null) return;
     moveRow(String(event.active.id), String(event.over.id));
@@ -133,7 +200,7 @@ export function SidebarProjectsSection(props: {
     if (row.kind === "all") {
       return (
         <SidebarCompactTooltip label="All projects">
-          <SidebarMenuButton isActive={isActive} onClick={() => select(row.key)}>
+          <SidebarMenuButton isActive={isActive} onClick={() => pick(row.key)}>
             <AllProjectsIcon />
             <span className="flex-1 truncate">All projects</span>
           </SidebarMenuButton>
@@ -147,7 +214,7 @@ export function SidebarProjectsSection(props: {
           label="No project"
           icon={<NoProjectIcon />}
           isActive={isActive}
-          onSelect={() => select(row.key)}
+          onSelect={() => pick(row.key)}
           newChatLabel="New chat without a project"
           onNewChat={() => startNewThread(project)}
         />
@@ -158,7 +225,7 @@ export function SidebarProjectsSection(props: {
         label={project.displayName}
         icon={<ProjectRowIcon project={project} />}
         isActive={isActive}
-        onSelect={() => select(row.key)}
+        onSelect={() => pick(row.key)}
         newChatLabel={`New chat in ${project.displayName}`}
         onNewChat={() => startNewThread(project)}
         menuLabel={`Project actions for ${project.displayName}`}
@@ -229,13 +296,13 @@ export function SidebarProjectsSection(props: {
                 <SidebarMenuItem>
                   <SidebarProjectsMore
                     rows={rows.overflow}
-                    onSelect={select}
+                    onSelect={pick}
                     onOpenProjectSettings={openProjectSettings}
                   />
                 </SidebarMenuItem>
               ) : null}
               {/* "No project" alone is still an empty list of projects. */}
-              {projectGroups.every(isScratchGroup) ? (
+              {listedGroups.every(isScratchGroup) ? (
                 <SidebarEmptyRow label="New project" onClick={onAddProject} />
               ) : null}
             </SidebarMenu>
