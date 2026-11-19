@@ -415,9 +415,19 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   },
   {
     path: "apps/web/src/lib/bootError.ts",
-    requires: ["https://github.com/krl-gr/upcomputer/issues/new"],
-    forbids: ["github.com/pingdotgg/t3code/issues"],
+    requires: [
+      "https://github.com/krl-gr/upcomputer/issues/new",
+      'DOWNLOAD_URL = "https://up.computer/download/"',
+    ],
+    forbids: ["pingdotgg/t3code", "t3.codes"],
   },
+  {
+    path: "docs/user/t3-connect-troubleshooting.md",
+    requires: ["https://github.com/krl-gr/upcomputer/issues"],
+    forbids: ["pingdotgg/t3code"],
+  },
+  { path: "apps/server/src/policy/policyTemplates.ts", forbids: ["app.t3.codes"] },
+  { path: "apps/server/src/triage/TriageService.ts", forbids: ["app.t3.codes"] },
   {
     path: "packages/contracts/src/environmentHttp.ts",
     requires: [
