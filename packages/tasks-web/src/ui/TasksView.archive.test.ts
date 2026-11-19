@@ -193,12 +193,14 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render(props: { filters?: TasksPageFilters; selected?: boolean } = {}) {
+async function render(
+  props: { filters?: TasksPageFilters; selected?: boolean; projects?: readonly unknown[] } = {},
+) {
   const onFiltersChange = vi.fn();
   await act(async () => {
     renderer = create(
       createElement(TasksView, {
-        projects: [],
+        projects: props.projects ?? [],
         tasks: [stored],
         statuses: ["To Do", "done"],
         projectFilter: null,
@@ -280,6 +282,27 @@ it("choosing done only changes the status", async () => {
   await act(async () => selectLabelled("Task status").props.onValueChange("done"));
   expect(calls.update).toHaveBeenCalledWith({ id: "task-1", status: "done" });
   expect(calls.archive).not.toHaveBeenCalled();
+});
+
+it("the detail moves the task to another project of its environment", async () => {
+  const project = (id: string, environmentId = "local") => ({
+    id,
+    environmentId,
+    name: id,
+    favicon: null,
+    workspaceRoot: `/work/${id}`,
+  });
+  await render({
+    selected: true,
+    projects: [project("project-1"), project("project-2"), project("remote-1", "remote")],
+  });
+  const picker = selectLabelled("Task project");
+  expect(picker.props.value).toBe("project-1");
+  expect(text(picker)).toContain("project-2");
+  expect(text(picker)).not.toContain("remote-1");
+
+  await act(async () => picker.props.onValueChange("project-2"));
+  expect(calls.update).toHaveBeenCalledWith({ id: "task-1", projectId: "project-2" });
 });
 
 it("the detail shows the status and archive history as a timeline", async () => {

@@ -1103,13 +1103,66 @@ export function TasksView(props: TasksViewProps) {
                       {selectedTask.id}
                     </button>
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Project">
-                    <span className="flex min-w-0 items-center justify-end gap-2 text-foreground">
-                      {selectedTaskProject ? (
-                        <ProjectFavicon project={selectedTaskProject.favicon} className="size-4" />
-                      ) : null}
-                      <span className="truncate">{selectedTask.projectName ?? "No project"}</span>
-                    </span>
+                  <DetailSidebarRow
+                    label="Project"
+                    controlSelector={
+                      props.canMutateEnvironment(selectedTask.environmentId) ? "button" : undefined
+                    }
+                  >
+                    {props.canMutateEnvironment(selectedTask.environmentId) ? (
+                      <Select
+                        value={selectedTask.projectId ?? ""}
+                        onValueChange={(projectId) => {
+                          if (!projectId || projectId === selectedTask.projectId) return;
+                          void updateTaskInline(selectedTask, "project", {
+                            projectId: projectId as ProjectId,
+                          });
+                        }}
+                      >
+                        <SelectTrigger
+                          className={DETAIL_SELECT_TRIGGER_CLASS}
+                          variant="ghost"
+                          aria-label="Task project"
+                        >
+                          <SelectValue>
+                            <span className="flex min-w-0 items-center justify-end gap-2 text-foreground">
+                              {selectedTaskProject ? (
+                                <ProjectFavicon
+                                  project={selectedTaskProject.favicon}
+                                  className="size-4 shrink-0"
+                                />
+                              ) : null}
+                              <span className="truncate">
+                                {selectedTaskProject?.name ??
+                                  selectedTask.projectName ??
+                                  "No project"}
+                              </span>
+                            </span>
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectPopup>
+                          {props.projects
+                            .filter(
+                              (project) => project.environmentId === selectedTask.environmentId,
+                            )
+                            .map((project) => (
+                              <SelectItem key={project.id} value={project.id}>
+                                {project.name}
+                              </SelectItem>
+                            ))}
+                        </SelectPopup>
+                      </Select>
+                    ) : (
+                      <span className="flex min-w-0 items-center justify-end gap-2 text-foreground">
+                        {selectedTaskProject ? (
+                          <ProjectFavicon
+                            project={selectedTaskProject.favicon}
+                            className="size-4"
+                          />
+                        ) : null}
+                        <span className="truncate">{selectedTask.projectName ?? "No project"}</span>
+                      </span>
+                    )}
                   </DetailSidebarRow>
                   {/* A person task's tags stay hidden; the planner hands it to an agent. */}
                   {selectedTask.audience === "person" ? null : (
