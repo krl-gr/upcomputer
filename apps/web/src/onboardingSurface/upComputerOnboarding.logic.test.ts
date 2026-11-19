@@ -24,6 +24,7 @@ import {
   type FirstRunAgentStartup,
   isFirstRunAgentChecking,
   latchFirstRunAgentStart,
+  resolveFirstRunAgentAutoRetry,
   resolveFirstRunAgentStart,
   resolveFirstRunAgentStartupFailure,
   resolveFirstRunAgentStatus,
@@ -130,6 +131,8 @@ describe("first-run agent status", () => {
     startedAt: 0,
     retriedCheckedAt: null,
     phase: "starting",
+    automatic: false,
+    sawEnabled: false,
     ...overrides,
   });
   const status = (input: Partial<Parameters<typeof resolveFirstRunAgentStatus>[0]>) =>
@@ -140,6 +143,7 @@ describe("first-run agent status", () => {
       provider: undefined,
       startup: null,
       starterRunning: false,
+      autoRetry: { kind: "off" },
       ...input,
     });
   const openCode = (overrides: Partial<ServerProvider> = {}) => provider("opencode", overrides);
@@ -256,6 +260,92 @@ describe("first-run agent status", () => {
 
   it("lets a retry's download replace an earlier start failure", () => {
     expect(status({ startError: "Could not start.", install: install({}) })).toEqual(preparing);
+    expect(
+      status({ startError: "Could not start.", install: install({ phase: "failed" }) }),
+    ).toMatchObject({ message: "Could not start." });
+  });
+
+  it("takes OpenCode turned off during its first start as the user's choice, not a failure", () => {
+    const off = openCode({ enabled: false, status: "disabled" });
+    const sawOn = startup({ sawEnabled: true, phase: "timedOut" });
+    expect(status({ install: done, provider: off, startup: sawOn })).toBeNull();
+    expect(
+      resolveFirstRunAgentStartupFailure({ install: done, provider: off, startup: sawOn }),
+    ).toBeNull();
+    // Before the server first turned it on, off is only the snapshot from before the install.
+    expect(status({ install: done, provider: off, startup: startup() })).toEqual(preparing);
+  });
+
+  describe("automatic retry", () => {
+    const available = { kind: "available" } as const;
+    const failedInstall = install({ phase: "failed", message: "Check your connection." });
+    const timedOut = startup({ phase: "timedOut" });
+    const crashed = openCode({ status: "error", statusReason: "unknown" });
+    const run = (input: Partial<Parameters<typeof resolveFirstRunAgentAutoRetry>[0]>) =>
+      resolveFirstRunAgentAutoRetry({
+        requested: true,
+        startError: null,
+        install: null,
+        provider: undefined,
+        startup: null,
+        starterRunning: true,
+        autoRetry: available,
+        ...input,
+      });
+
+    it("retries a failed download or start once, and shows it as still starting", () => {
+      expect(run({ install: failedInstall })).toBe("install");
+      expect(run({ startError: "Could not start." })).toBe("install");
+      expect(run({ install: done, startup: timedOut })).toBe("start");
+      expect(run({ install: done, provider: crashed, startup: startup() })).toBe("start");
+      expect(status({ install: failedInstall, autoRetry: available })).toEqual(preparing);
+      expect(status({ install: done, startup: timedOut, autoRetry: available })).toEqual({
+        ...preparing,
+        slow: true,
+      });
+      expect(status({ install: done, startup: startup({ automatic: true }) })).toEqual({
+        ...preparing,
+        slow: true,
+      });
+    });
+
+    it("leaves a sign-in or a missing model list to the user", () => {
+      for (const provider of [
+        openCode(signedOut),
+        openCode({ status: "warning", statusReason: "models_missing" }),
+      ]) {
+        expect(run({ install: done, provider, startup: startup() })).toBeNull();
+        expect(
+          status({ install: done, provider, startup: startup(), autoRetry: available }),
+        ).toMatchObject({ kind: "failed" });
+      }
+    });
+
+    it("offers Retry once the automatic attempt fails too", () => {
+      const used = { kind: "used", failedInstallId: "operation" } as const;
+      expect(run({ install: failedInstall, autoRetry: used })).toBeNull();
+      // Until the server replaces the install it retried, that failure is the old one.
+      expect(status({ install: failedInstall, autoRetry: used })).toEqual(preparing);
+      expect(
+        status({ install: { ...failedInstall, operationId: "second" }, autoRetry: used }),
+      ).toMatchObject({ kind: "failed", reason: "install" });
+      expect(
+        status({ install: failedInstall, startError: "Could not start.", autoRetry: used }),
+      ).toMatchObject({ kind: "failed", reason: "install" });
+      expect(
+        status({
+          install: done,
+          startup: timedOut,
+          autoRetry: { kind: "used", failedInstallId: null },
+        }),
+      ).toMatchObject({ kind: "failed", reason: "startup_timeout" });
+    });
+
+    it("waits for the attempt's record, and runs nowhere but the window's own setup", () => {
+      expect(run({ install: done, startup: startup({ operationId: "earlier" }) })).toBeNull();
+      expect(run({ install: failedInstall, autoRetry: { kind: "off" } })).toBeNull();
+      expect(status({ install: failedInstall })).toMatchObject({ kind: "failed" });
+    });
   });
 });
 
@@ -277,6 +367,8 @@ describe("first-run agent startup failure", () => {
     startedAt: 0,
     retriedCheckedAt: null,
     phase,
+    automatic: false,
+    sawEnabled: false,
   });
   const failure = (input: Partial<Parameters<typeof resolveFirstRunAgentStartupFailure>[0]>) =>
     resolveFirstRunAgentStartupFailure({

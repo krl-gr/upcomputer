@@ -177,7 +177,7 @@ export const FIRST_SCREEN_IDLE_THRESHOLD_MS = 3 * 60_000;
 /**
  * The first start of a freshly installed OpenCode: a healthy Mac answers within
  * about 15 s of the install, while the server's own deadlines for a cold start
- * (a 20 s `--version`, a 15 s catalog refresh, a 30 s `serve`, then the model
+ * (a 20 s `--version`, a 15 s catalog refresh, a 30 s `serve`, a 15 s model
  * list) add up to about 80 s, on Windows behind a Defender scan of a new exe.
  */
 export const FIRST_RUN_AGENT_SLOW_START_MS = 15_000;
@@ -195,7 +195,29 @@ export interface FirstRunAgentStartup {
   readonly retriedCheckedAt: string | null;
   /** `ready` once OpenCode worked: what it does later is no first-run failure. */
   readonly phase: "starting" | "slow" | "timedOut" | "ready";
+  /** The app's own second attempt, which goes on from the first one's "still starting". */
+  readonly automatic: boolean;
+  /** OpenCode was on during this install's start, so turning it off is the user's choice. */
+  readonly sawEnabled: boolean;
 }
+
+/**
+ * A first run retries a failure once by itself before it offers Retry:
+ * `available` until then, `used` after, recording the failed install it
+ * replaced, and `off` for a window that is not setting up its own OpenCode.
+ */
+export type FirstRunAgentAutoRetry =
+  | { readonly kind: "available" }
+  | { readonly kind: "used"; readonly failedInstallId: string | null }
+  | { readonly kind: "off" };
+
+/** A sign-in or an empty model list fails the same way again, so those wait for the user. */
+const AUTO_RETRY_REASONS: ReadonlySet<FirstRunAgentFailureReason> = new Set([
+  "install",
+  "startup_timeout",
+  "migration",
+  "unknown",
+]);
 
 export function firstRunAgentStartupPhase(elapsedMs: number): "starting" | "slow" | "timedOut" {
   if (elapsedMs >= FIRST_RUN_AGENT_START_TIMEOUT_MS) return "timedOut";
@@ -222,6 +244,7 @@ function resolveInstalledAgentStatus(
 ): FirstRunAgentStatus | null {
   const state = getOnboardingProviderState(provider);
   if (state === "ready") return null;
+  if (state === "disabled" && startup?.sawEnabled === true) return null;
   const answered =
     startup?.retriedCheckedAt == null || provider?.checkedAt !== startup.retriedCheckedAt;
   if (answered && (state === "attention" || state === "install" || state === "signIn")) {
@@ -234,7 +257,7 @@ function resolveInstalledAgentStatus(
   const checking = state === "checking" && provider?.enabled === true;
   switch (startup?.phase) {
     case "starting":
-      return preparing(null);
+      return preparing(null, startup.automatic);
     case "slow":
       return preparing(null, true);
     case "timedOut":
@@ -249,16 +272,27 @@ function resolveInstalledAgentStatus(
   }
 }
 
-export function resolveFirstRunAgentStatus(input: {
+interface FirstRunAgentStatusInput {
   readonly requested: boolean;
   readonly startError: string | null;
   readonly install: ProviderInstallState | null;
   readonly provider: ServerProvider | undefined;
   readonly startup: FirstRunAgentStartup | null;
   readonly starterRunning: boolean;
-}): FirstRunAgentStatus | null {
+}
+
+function resolveFirstRunAgentOwnStatus(
+  input: FirstRunAgentStatusInput,
+): FirstRunAgentStatus | null {
   const { install } = input;
-  if (input.startError !== null && (install === null || install.phase === "idle")) {
+  // A new start's own error: it clears any earlier one before it asks the server.
+  if (
+    input.startError !== null &&
+    (install === null ||
+      install.phase === "idle" ||
+      install.phase === "failed" ||
+      install.phase === "cancelled")
+  ) {
     return { kind: "failed", message: input.startError, reason: "install" };
   }
   switch (install?.phase) {
@@ -287,6 +321,37 @@ export function resolveFirstRunAgentStatus(input: {
     default:
       return input.requested ? preparing(null) : null;
   }
+}
+
+/** What the automatic retry of a first run runs now, if it is due. */
+export function resolveFirstRunAgentAutoRetry(
+  input: FirstRunAgentStatusInput & { readonly autoRetry: FirstRunAgentAutoRetry },
+): "install" | "start" | null {
+  if (input.autoRetry.kind !== "available") return null;
+  const status = resolveFirstRunAgentOwnStatus(input);
+  if (status?.kind !== "failed" || !AUTO_RETRY_REASONS.has(status.reason)) return null;
+  if (status.reason === "install") return "install";
+  // The starter records the attempt a render after the install; the retry is its next one.
+  return input.startup !== null && input.startup.operationId === input.install?.operationId
+    ? "start"
+    : null;
+}
+
+export function resolveFirstRunAgentStatus(
+  input: FirstRunAgentStatusInput & { readonly autoRetry: FirstRunAgentAutoRetry },
+): FirstRunAgentStatus | null {
+  const status = resolveFirstRunAgentOwnStatus(input);
+  if (status?.kind !== "failed" || !AUTO_RETRY_REASONS.has(status.reason)) return status;
+  const { autoRetry, install } = input;
+  // The retry is due, or still waits for the server to replace the install it retried.
+  const retrying =
+    autoRetry.kind === "available" ||
+    (autoRetry.kind === "used" &&
+      input.startError === null &&
+      (install?.phase === "failed" || install?.phase === "cancelled") &&
+      install.operationId !== null &&
+      install.operationId === autoRetry.failedInstallId);
+  return retrying ? preparing(null, status.reason !== "install") : status;
 }
 
 /**

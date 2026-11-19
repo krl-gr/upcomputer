@@ -1246,6 +1246,8 @@ export const ClientTelemetryEvent = Schema.Union([
     outcome: Schema.Literals(["started", "ready", "failed", "retried", "connect_other"]),
     /** With `failed`: the install, or the first agent's start after it. */
     reason: Schema.optionalKey(FirstRunAgentFailureReason),
+    /** With `retried`: the app's own second attempt after the first failed, not a Retry press. */
+    automatic: Schema.optionalKey(Schema.Literal(true)),
   }),
   Schema.Struct({
     event: Schema.Literal("onboarding.completed"),

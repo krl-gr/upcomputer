@@ -20,8 +20,10 @@ import {
   FIRST_SCREEN_IDLE_THRESHOLD_MS,
   firstRunAgentStartupPhase,
   latchFirstRunAgentStart,
+  resolveFirstRunAgentAutoRetry,
   resolveFirstRunAgentStartupFailure,
   resolveFirstRunAgentStatus,
+  type FirstRunAgentAutoRetry,
   type FirstRunAgentStart,
   type FirstRunAgentStartup,
   type FirstRunAgentStatus,
@@ -42,6 +44,8 @@ const firstRunAgentAtom = Atom.family((_environmentId: EnvironmentId) =>
     readonly start: "wait" | FirstRunAgentStart | null;
     readonly startError: string | null;
     readonly startup: FirstRunAgentStartup | null;
+    /** Set once the automatic retry ran, with the failed install it replaced, if any. */
+    readonly autoRetry: { readonly failedInstallId: string | null } | null;
     /** When this window finished first-run onboarding, if it did. */
     readonly onboardedAt: number | null;
     readonly firstScreenIdleReported: boolean;
@@ -49,6 +53,7 @@ const firstRunAgentAtom = Atom.family((_environmentId: EnvironmentId) =>
     start: null,
     startError: null,
     startup: null,
+    autoRetry: null,
     onboardedAt: null,
     firstScreenIdleReported: false,
   }).pipe(Atom.keepAlive, Atom.withLabel("web-first-run-agent")),
@@ -85,6 +90,45 @@ function useStartFirstRunAgent(environmentId: EnvironmentId) {
     reportedOperations.add(`started:${operationId}`);
     recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "started" });
   };
+}
+
+/** Runs a start attempt again: OpenCode's own check once it is installed, else the install. */
+function useRunFirstRunAgentAttempt(environmentId: EnvironmentId) {
+  const start = useStartFirstRunAgent(environmentId);
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+    reportDefect: false,
+  });
+  return (installed: boolean): Promise<unknown> =>
+    installed
+      ? refreshProviders({ environmentId, input: { instanceId: FIRST_RUN_AGENT_INSTANCE_ID } })
+      : start();
+}
+
+/** The next attempt after `startup`, which a failed result from before it says nothing about. */
+function retriedStartup(
+  startup: FirstRunAgentStartup,
+  failedCheckedAt: string | null,
+  automatic: boolean,
+): FirstRunAgentStartup {
+  return {
+    ...startup,
+    attempt: startup.attempt + 1,
+    startedAt: Date.now(),
+    retriedCheckedAt: failedCheckedAt,
+    phase: "starting",
+    automatic,
+  };
+}
+
+function firstRunAgentAutoRetry(setup: {
+  readonly start: "wait" | FirstRunAgentStart | null;
+  readonly autoRetry: { readonly failedInstallId: string | null } | null;
+}): FirstRunAgentAutoRetry {
+  if (setup.start !== "install") return { kind: "off" };
+  return setup.autoRetry === null
+    ? { kind: "available" }
+    : { kind: "used", failedInstallId: setup.autoRetry.failedInstallId };
 }
 
 /** A user message in any thread means a turn was requested. */
@@ -153,6 +197,8 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
               startedAt: Date.now(),
               retriedCheckedAt: null,
               phase: "starting",
+              automatic: false,
+              sawEnabled: false,
             },
           },
     );
@@ -188,15 +234,19 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
     (provider) => provider.instanceId === FIRST_RUN_AGENT_INSTANCE_ID,
   );
   const openCodeReady = getOnboardingProviderState(openCode) === "ready";
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- latches the attempt as done once the server reports OpenCode ready
+  const openCodeOn = openCode?.enabled === true;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records what the server reports of OpenCode during the attempt: on, then ready
   useEffect(() => {
-    if (!openCodeReady || timedOperationId === null) return;
-    setSetup((current) =>
-      current.startup === null
-        ? current
-        : { ...current, startup: { ...current.startup, phase: "ready" } },
-    );
-  }, [openCodeReady, setSetup, timedOperationId]);
+    if ((!openCodeReady && !openCodeOn) || timedOperationId === null) return;
+    setSetup((current) => {
+      const latest = current.startup;
+      if (latest === null || (latest.sawEnabled && !openCodeReady)) return current;
+      return {
+        ...current,
+        startup: { ...latest, sawEnabled: true, phase: openCodeReady ? "ready" : latest.phase },
+      };
+    });
+  }, [openCodeOn, openCodeReady, setSetup, timedOperationId]);
 
   useEffect(() => {
     if (install?.phase !== "failed" || install.operationId === null) return;
@@ -208,6 +258,51 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
       reason: "install",
     });
   }, [environmentId, install?.operationId, install?.phase, recordClientEvent]);
+
+  const runAttempt = useRunFirstRunAgentAttempt(environmentId);
+  const autoRetryRun = resolveFirstRunAgentAutoRetry({
+    requested: setup.start === "wait" || setup.start === "install",
+    startError: setup.startError,
+    install: install ?? null,
+    provider: openCode,
+    startup,
+    starterRunning: setup.start !== null,
+    autoRetry: firstRunAgentAutoRetry(setup),
+  });
+  const failedInstallId = install?.operationId ?? null;
+  const failedCheckedAt = openCode?.checkedAt ?? null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- runs the first run's one automatic retry when an attempt fails
+  useEffect(() => {
+    if (autoRetryRun === null) return;
+    let claimed = false;
+    setSetup((current) => {
+      if (current.autoRetry !== null) return current;
+      claimed = true;
+      return {
+        ...current,
+        autoRetry: { failedInstallId: autoRetryRun === "install" ? failedInstallId : null },
+        startup:
+          autoRetryRun === "start" && current.startup !== null
+            ? retriedStartup(current.startup, failedCheckedAt, true)
+            : current.startup,
+      };
+    });
+    if (!claimed) return;
+    recordClientEvent(environmentId, {
+      event: "onboarding.first_run_agent",
+      outcome: "retried",
+      automatic: true,
+    });
+    void runAttempt(autoRetryRun === "start");
+  }, [
+    autoRetryRun,
+    environmentId,
+    failedCheckedAt,
+    failedInstallId,
+    recordClientEvent,
+    runAttempt,
+    setSetup,
+  ]);
 
   const startupFailure = resolveFirstRunAgentStartupFailure({
     install: install ?? null,
@@ -316,11 +411,7 @@ export function useFirstRunAgentStatus(
         })
       : null,
   ).data;
-  const start = useStartFirstRunAgent(environmentId);
-  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
-    reportFailure: false,
-    reportDefect: false,
-  });
+  const runAttempt = useRunFirstRunAgentAttempt(environmentId);
   const recordClientEvent = useRecordClientEvent();
   const [retrying, setRetrying] = useState(false);
   const installSucceeded = install?.phase === "succeeded";
@@ -337,23 +428,17 @@ export function useFirstRunAgentStatus(
           ? current
           : {
               ...current,
-              startup: {
-                ...current.startup,
-                attempt: current.startup.attempt + 1,
-                startedAt: Date.now(),
-                retriedCheckedAt: openCode?.checkedAt ?? null,
-                phase: "starting",
-              },
+              startup: retriedStartup(current.startup, openCode?.checkedAt ?? null, false),
             },
       );
     }
     // Once installed, a failure is OpenCode's own check; installing again would not rerun it.
-    const attempt = installSucceeded
-      ? refreshProviders({ environmentId, input: { instanceId: FIRST_RUN_AGENT_INSTANCE_ID } })
-      : start();
+    const attempt = runAttempt(installSucceeded);
+    const after = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+    // The attempt's own timeout offers Retry again, even if its request never returns.
     void Promise.all([
-      attempt,
-      new Promise((resolve) => window.setTimeout(resolve, RETRY_FEEDBACK_MS)),
+      Promise.race([attempt, after(FIRST_RUN_AGENT_START_TIMEOUT_MS)]),
+      after(RETRY_FEEDBACK_MS),
     ]).finally(() => setRetrying(false));
   };
   const status = active
@@ -364,6 +449,7 @@ export function useFirstRunAgentStatus(
         provider: openCode,
         startup: setup.startup,
         starterRunning: setup.start !== null,
+        autoRetry: firstRunAgentAutoRetry(setup),
       })
     : null;
   return { status, retrying, retry };

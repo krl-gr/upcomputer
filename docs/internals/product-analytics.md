@@ -167,7 +167,11 @@ deadlines, `models_missing`, `auth`, `unknown`), or `startup_timeout` when OpenC
 answered nothing within the composer's 90 s start timeout.
 `started` is sent once per install operation and an install `failed` once per operation, so
 a Retry that downloads again sends both again; a start `failed` is sent once per attempt,
-and a Retry after a good install is a new attempt. `started`
+and a Retry after a good install is a new attempt. After the first `failed` other than
+`auth` or `models_missing`, the app tries once more by itself and sends `retried` with
+`automatic: true`; a `ready` after it is that second try working. A `failed` is not final:
+a slow start or a later recheck can still turn the same attempt `ready`, so count an
+attempt as failed only when no `ready` follows. `started`
 means the app began installing its own OpenCode; `ready` without `started` is a new user
 whose own agent, or own OpenCode, already worked, so nothing was downloaded. The download itself is
 `provider.install.*` with `provider: "opencode"`. `onboarding.step.completed` with
