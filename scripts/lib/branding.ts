@@ -126,13 +126,10 @@ const DOC_RULES: ReadonlyArray<CopyRule> = [
 const isDocFile = (path: string): boolean => path.endsWith(".md");
 
 /**
- * Files whose T3 text is not ours to rebrand: upstream's issue triage tool
- * files reports against upstream and its prompt describes upstream's npm `t3`, and the relay contract follows upstream's
- * relay, which Up.computer runs as is.
+ * Files whose T3 text is not ours to rebrand: the relay contract follows
+ * upstream's relay, which Up.computer runs as is.
  */
 const COPY_EXCLUDED = [
-  /^apps\/server\/src\/cli\/triage/,
-  /^apps\/server\/src\/triage\//,
   /^packages\/contracts\/src\/relay\.ts$/,
   /\/fixtures\//,
   /\/node_modules\//,
@@ -418,8 +415,13 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
     requires: [
       "https://github.com/krl-gr/upcomputer/issues/new",
       'DOWNLOAD_URL = "https://up.computer/download/"',
+      'FALLBACK_TRIAGE_COMMAND = "up triage"',
     ],
-    forbids: ["pingdotgg/t3code", "t3.codes"],
+    forbids: ["pingdotgg/t3code", "t3.codes", "npx t3"],
+  },
+  {
+    path: "apps/web/src/hooks/useStartTriage.ts",
+    requires: ['TRIAGE_CLI_COMMAND = "up triage"'],
   },
   {
     path: "docs/user/t3-connect-troubleshooting.md",
@@ -427,7 +429,32 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
     forbids: ["pingdotgg/t3code"],
   },
   { path: "apps/server/src/policy/policyTemplates.ts", forbids: ["app.t3.codes"] },
-  { path: "apps/server/src/triage/TriageService.ts", forbids: ["app.t3.codes"] },
+  // Triage clones, searches and files issues in our repository at our release tags.
+  {
+    path: "apps/server/src/triage/TriageService.ts",
+    requires: ['"https://github.com/krl-gr/upcomputer"', "`core-v${version}`"],
+    forbids: ["app.t3.codes", "pingdotgg/t3code"],
+  },
+  ...["apps/server/src/triage/triagePrompt.ts", ".github/triage/PLAYBOOK.md"].map((path) => ({
+    path,
+    requires: [
+      "https://raw.githubusercontent.com/krl-gr/upcomputer/main/.github/triage/PLAYBOOK.md",
+      "core-v",
+      "--repo krl-gr/upcomputer",
+      "https://github.com/krl-gr/upcomputer/issues/new?template=via-triage.yml",
+    ],
+    forbids: ["pingdotgg/t3code", "app.t3.codes", "npx t3"],
+  })),
+  {
+    path: ".github/ISSUE_TEMPLATE/via-triage.yml",
+    requires: ["up triage"],
+    forbids: ["t3 triage"],
+  },
+  {
+    path: "apps/server/src/cloud/servicePreflight.ts",
+    requires: ["update the Up.computer desktop app", "up service install"],
+    forbids: ["t3.codes/install.sh", "~/.local/bin/t3"],
+  },
   {
     path: "packages/contracts/src/environmentHttp.ts",
     requires: [
