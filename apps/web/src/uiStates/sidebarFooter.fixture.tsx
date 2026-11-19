@@ -19,6 +19,7 @@ import type { UpdateEverythingRun } from "../components/sidebar/updateEverything
 import { setUpdateEverythingRun } from "../components/sidebar/updateEverythingRun";
 import { SidebarProvider } from "../components/ui/sidebar";
 import { showThreadUndoNotice, undoLatestThreadAction } from "../hooks/showThreadUndoNotice";
+import { cn } from "../lib/utils";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import { act } from "../../test/render";
 import { footerSource as source } from "./sidebarFooter.source";
@@ -123,10 +124,11 @@ const RUN: UpdateEverythingRun = {
 };
 
 // A state can switch the sidebar between full and compact while it settles.
-const useFooterMode = create(() => ({ compact: false }));
+const useFooterMode = create(() => ({ compact: false, page: false }));
 
 function Footer() {
   const compact = useFooterMode((mode) => mode.compact);
+  const page = useFooterMode((mode) => mode.page);
   return (
     // The app's atom registry, as AppRoot provides it: the Update everything run lives there.
     <AppAtomRegistryProvider>
@@ -134,11 +136,19 @@ function Footer() {
       <SidebarProvider className="min-h-0" data-sidebar-compact={compact ? "true" : "false"}>
         <div
           data-app-sidebar=""
-          className="-mx-(--sidebar-content-inset) -my-1 flex w-64 flex-col bg-sidebar"
+          // With the page beside it, a column tall enough for a notice floating over it.
+          className={cn(
+            "relative -mx-(--sidebar-content-inset) -my-1 flex w-64 flex-col bg-sidebar",
+            page && "pt-20",
+          )}
           style={compact ? { width: SIDEBAR_COMPACT_WIDTH } : undefined}
         >
           <SidebarChromeFooter />
         </div>
+        {/* The page beside the sidebar, so a sheet shows where the column ends. */}
+        {page ? (
+          <div className="-my-1 -mr-(--sidebar-content-inset) ml-(--sidebar-content-inset) flex-1 border-l bg-background" />
+        ) : null}
       </SidebarProvider>
     </AppAtomRegistryProvider>
   );
@@ -188,12 +198,58 @@ async function waitForNoticeToLeave(cell: HTMLElement) {
     .catch(() => undefined);
 }
 
-type NoticeStep = "showing" | "showing-two" | "fading" | "ended" | "ended-unseen" | "ended-compact";
+type NoticeStep =
+  | "showing"
+  | "showing-two"
+  | "fading"
+  | "fading-half"
+  | "ended"
+  | "ended-unseen"
+  | "ended-compact"
+  | "showing-expanded"
+  | "showing-collapsed";
+
+// How far into the notice's 180ms fade the sheet's "fading" frame is taken. The curve
+// is front-loaded: by half time the notice is already at a tenth of its opacity.
+const FADE_FRAME_MS = 45;
+
+/** The notices on screen: the footer pill, or the compact column's own form of it. */
+function displayedNotices(cell: HTMLElement) {
+  return [
+    ...cell.querySelectorAll<HTMLElement>(
+      "[data-sidebar-footer-notice], [data-sidebar-compact-motion]",
+    ),
+  ].filter((notice) => notice.getClientRects().length > 0);
+}
+
+async function waitForDisplayedNotice(cell: HTMLElement) {
+  await vi.waitFor(() => {
+    const notices = displayedNotices(cell);
+    if (notices.length === 0) throw new Error("undo notice not shown yet");
+    for (const notice of notices) {
+      if (getComputedStyle(notice).opacity !== "1") throw new Error("undo notice still fading in");
+    }
+  });
+}
+
+/** Stops the real exit transition part way and keeps that frame for the frozen sheet. */
+function holdFadeHalfWay(cell: HTMLElement) {
+  for (const notice of displayedNotices(cell)) {
+    for (const animation of notice.getAnimations()) {
+      animation.pause();
+      animation.currentTime = FADE_FRAME_MS;
+    }
+    const { opacity, transform } = getComputedStyle(notice);
+    notice.style.transition = "none";
+    notice.style.opacity = opacity;
+    notice.style.transform = transform;
+  }
+}
 
 /*
  * The undo notice through its real lifecycle: archiving shows it, mod+z ends it.
  * `ended-unseen` ends it before its fade-in starts, so no transition runs at all;
- * `ended-compact` ends it while the compact column hides it, then expands the sidebar.
+ * `ended-compact` ends it in the compact column, then expands the sidebar.
  */
 async function playUndoNotice(cell: HTMLElement, step: NoticeStep) {
   if (step === "ended-unseen") {
@@ -210,11 +266,22 @@ async function playUndoNotice(cell: HTMLElement, step: NoticeStep) {
     await waitForNoticeToLeave(cell);
     return;
   }
+  if (step === "showing-expanded" || step === "showing-collapsed") {
+    // The notice is live while the user drags the sidebar to its other width.
+    const compact = useFooterMode.getState().compact;
+    await act(archiveThread);
+    await waitForDisplayedNotice(cell);
+    await act(() => useFooterMode.setState({ compact: !compact }));
+    await waitForDisplayedNotice(cell);
+    return;
+  }
   await act(archiveThread);
   if (step === "showing-two") await act(archiveThread);
   await waitForShownNotice(cell);
+  await waitForDisplayedNotice(cell);
   if (step === "showing" || step === "showing-two") return;
   await act(undoLatestThreadAction);
+  if (step === "fading-half") holdFadeHalfWay(cell);
   if (step === "ended") await waitForNoticeToLeave(cell);
 }
 
@@ -237,20 +304,22 @@ export interface FooterOptions {
   readonly hover?: string;
   readonly open?: boolean;
   readonly undo?: NoticeStep;
+  /** Draws the page beside the sidebar. */
+  readonly page?: boolean;
 }
 
 export interface FooterState extends UiState {
   readonly options: FooterOptions;
 }
 
-function footer(name: string, options: FooterOptions = {}): FooterState {
+export function footer(name: string, options: FooterOptions = {}): FooterState {
   const { open, undo } = options;
   return {
     name,
     options,
     render: () => <Footer />,
     setup: () => {
-      useFooterMode.setState({ compact: options.compact ?? false });
+      useFooterMode.setState({ compact: options.compact ?? false, page: options.page ?? false });
       source.update = options.update ?? IDLE;
       source.notices = options.notices ?? [];
       source.providers = options.providers ?? [];
@@ -259,7 +328,7 @@ function footer(name: string, options: FooterOptions = {}): FooterState {
       if (options.run) setUpdateEverythingRun(() => options.run!);
       return () => {
         undoLatestThreadAction();
-        useFooterMode.setState({ compact: false });
+        useFooterMode.setState({ compact: false, page: false });
         source.update = null;
         source.notices = [];
         source.providers = [];
@@ -337,4 +406,9 @@ export const COMPACT_FOOTER_STATES: ReadonlyArray<FooterState> = [
   }),
   footer("icon column: update downloading, 40%", { compact: true, update: DOWNLOADING }),
   footer("icon column: utility page", { compact: true, pathname: "/pull-requests" }),
+  footer("icon column, thread archived: the undo tile floats above the buttons", {
+    compact: true,
+    page: true,
+    undo: "showing",
+  }),
 ];

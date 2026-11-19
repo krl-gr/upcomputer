@@ -265,7 +265,7 @@ function registerThreadUndoCommands(
               terminalFocus: isTerminalFocused(),
               previewFocus: isPreviewFocused(),
               ...readRoutePanelsOpen(router),
-              // A collapsed sidebar hides the notice, so text fields keep their own undo.
+              // A hidden sidebar hides the notice, so text fields keep their own undo.
               editableFocus:
                 isEditableFocused(event.target) &&
                 !(readSidebarVisible() && threadUndoClaimsShortcut()),
@@ -298,17 +298,12 @@ function registerThreadUndoCommands(
 }
 
 /** Keyboard and menu commands that live as long as the app shell. */
-function registerAppShellCommands(router: AnyRouter, shellElement: Element): () => void {
+export function registerAppShellCommands(router: AnyRouter, shellElement: Element): () => void {
   // The provider mirrors the visibility it renders onto its wrapper, so the
   // committed state is readable when a key arrives.
-  const readSidebarVisible = () => {
-    const wrapper = shellElement.closest('[data-slot="sidebar-wrapper"]');
-    // UpComputer: the compact sidebar has no room for the notice either.
-    return (
-      wrapper?.getAttribute("data-sidebar-state") === "expanded" &&
-      wrapper.getAttribute("data-sidebar-compact") !== "true"
-    );
-  };
+  const readSidebarVisible = () =>
+    shellElement.closest('[data-slot="sidebar-wrapper"]')?.getAttribute("data-sidebar-state") ===
+    "expanded";
   const disposers = [
     registerThreadUndoCommands(router, readSidebarVisible),
     registerNavigationHistoryCommands(router),

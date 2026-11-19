@@ -231,6 +231,13 @@
   > :not([data-sidebar="menu"]) {
   display: none;
 }
+/* The column's own undo notice; the full sidebar and the phone sheet keep the pill. */
+[data-sidebar-compact-notice] {
+  display: none;
+}
+[data-sidebar-compact="true"] [data-sidebar-compact-notice] {
+  display: flex;
+}
 [data-sidebar-compact="true"] [data-app-sidebar] [data-track="sidebar.back"] {
   justify-content: center;
   padding-inline: 0;
