@@ -26,7 +26,6 @@
 - [Prompt links](./user/prompt-links.md)
 - [Import browser sessions](./user/browser-import.md)
 - [Use Up.computer as your default browser](./user/default-browser.md)
-- [Devices](./user/devices.md)
 - [Usage and limits](./user/usage.md)
 - [Secrets](./user/secrets.md)
 - [Product usage data](./user/telemetry.md)
