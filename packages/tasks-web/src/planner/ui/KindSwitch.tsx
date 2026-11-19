@@ -1,8 +1,11 @@
+import { ListTodoIcon, RepeatIcon } from "lucide-react";
+
 import {
   ToggleGroup,
   ToggleGroupItem,
 } from "../../../../../apps/web/src/components/ui/toggle-group.tsx";
 import type { PlannerKind } from "../data/preferences.ts";
+import { HeaderSwitchLabel } from "./HeaderSwitchLabel.tsx";
 
 const LABELS: Record<PlannerKind, string> = { task: "Tasks", routine: "Routines" };
 
@@ -26,8 +29,12 @@ export function KindSwitch(props: {
         if (next) props.onChange(next);
       }}
     >
-      <ToggleGroupItem value="task">{LABELS.task}</ToggleGroupItem>
-      <ToggleGroupItem value="routine">{LABELS.routine}</ToggleGroupItem>
+      <ToggleGroupItem value="task" aria-label={LABELS.task}>
+        <HeaderSwitchLabel icon={ListTodoIcon} label={LABELS.task} />
+      </ToggleGroupItem>
+      <ToggleGroupItem value="routine" aria-label={LABELS.routine}>
+        <HeaderSwitchLabel icon={RepeatIcon} label={LABELS.routine} />
+      </ToggleGroupItem>
     </ToggleGroup>
   );
 }

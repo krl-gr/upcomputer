@@ -26,7 +26,7 @@ test("pages use upstream's page header and leave the sidebar toggle to the share
     source,
     /import \{ WorkspacePageHeader \} from "\.\.\/\.\.\/\.\.\/\.\.\/apps\/web\/src\/extensionApi\.ts";/,
   );
-  NodeAssert.match(source, /<WorkspacePageHeader electron=\{isElectron\}>/);
+  NodeAssert.match(source, /<WorkspacePageHeader electron=\{isElectron\}[\s>]/);
   NodeAssert.doesNotMatch(source, /<header/);
   for (const file of sourceFiles(new URL("../", import.meta.url))) {
     NodeAssert.doesNotMatch(file, /SidebarTrigger/);

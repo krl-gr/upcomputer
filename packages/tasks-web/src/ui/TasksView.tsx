@@ -914,19 +914,22 @@ export function TasksView(props: TasksViewProps) {
           </>
         ) : createModeOpen ? undefined : (
           <>
-            <span className="min-w-0 flex-1" />
             {cards ? (
-              <TaskFiltersButton
-                filters={filters}
-                onFiltersChange={onFiltersChange}
-                statusOptions={statusOptions}
-                tagOptions={tagOptions}
-                projectSelect={props.projectSelect}
-                projectChosen={projectFilter !== null}
-                onProjectReset={() => props.onProjectFilterReset?.()}
-              />
+              // A margin, not a spacer, pushes it right: a spacer adds a gap the phone header lacks.
+              <div className="ms-auto shrink-0">
+                <TaskFiltersButton
+                  filters={filters}
+                  onFiltersChange={onFiltersChange}
+                  statusOptions={statusOptions}
+                  tagOptions={tagOptions}
+                  projectSelect={props.projectSelect}
+                  projectChosen={projectFilter !== null}
+                  onProjectReset={() => props.onProjectFilterReset?.()}
+                />
+              </div>
             ) : (
               <>
+                <span className="min-w-0 flex-1" />
                 {props.projectSelect}
                 <TaskFilterRow
                   filters={filters}

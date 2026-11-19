@@ -5,6 +5,7 @@ import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { isElectron } from "../../../../apps/web/src/env.ts";
 import { WorkspacePageHeader } from "../../../../apps/web/src/extensionApi.ts";
 import { SidebarInset } from "../../../../apps/web/src/components/ui/sidebar.tsx";
+import { TASKS_HEADER_CONTAINER_CLASS } from "../planner/ui/HeaderSwitchLabel.tsx";
 
 export interface WorkspaceViewAction {
   readonly ariaLabel: string;
@@ -159,7 +160,10 @@ export function WorkspaceViewLayout({
       >
         {header && (leadingAction || title || switches || toolbar || action) ? (
           // The planner list header's frame, so Me and Workers share one header.
-          <WorkspacePageHeader clearCollapsedSidebar={false} className="border-b border-border">
+          <WorkspacePageHeader
+            clearCollapsedSidebar={false}
+            className={`${TASKS_HEADER_CONTAINER_CLASS} border-b border-border`}
+          >
             <div className="flex min-w-0 flex-1 items-center gap-1">{headerContent}</div>
           </WorkspacePageHeader>
         ) : null}
@@ -176,7 +180,9 @@ export function WorkspaceViewLayout({
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none text-foreground isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col text-foreground">
         {header ? (
-          <WorkspacePageHeader electron={isElectron}>{headerContent}</WorkspacePageHeader>
+          <WorkspacePageHeader electron={isElectron} className={TASKS_HEADER_CONTAINER_CLASS}>
+            {headerContent}
+          </WorkspacePageHeader>
         ) : null}
         <div
           className={`min-h-0 flex flex-1 flex-col overflow-auto ${inset ? WORKSPACE_CONTENT_GUTTER_CLASS : ""}`}
