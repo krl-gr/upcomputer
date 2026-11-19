@@ -11,7 +11,6 @@ import {
   SurveyAnswerInput,
   SurveyAutoHeight,
   SurveyError,
-  SurveyFollowUps,
   SurveySendAction,
   SurveyThanksMark,
   surveyThanks,
@@ -19,17 +18,12 @@ import {
 } from "./surveyParts";
 import {
   canSubmitSurvey,
-  isOpenChoice,
-  type SurveyDraft,
   surveyAnswers,
   surveyOpenedFollowUp,
   surveySteps,
 } from "./userSurvey.logic";
 
 export type { SubmitUserSurvey, UserSurveyStatus } from "./surveyParts";
-
-// Long enough to see the chip turn before the next question comes in.
-const AUTO_ADVANCE_MS = 260;
 
 /** Each sentence as a unit, so a two-sentence question breaks between them when it must wrap. */
 function sentences(text: string) {
@@ -85,22 +79,9 @@ export function UserSurveyDialogPopup({
   const last = step === blocks.length - 1;
   const submitting = status.kind === "submitting";
   const answered = new Set(surveyAnswers(survey, draft).map((answer) => answer.questionId));
-  const stepAnswered = [block.question, ...block.followUps].some((question) =>
-    answered.has(question.id),
-  );
-  const canLeave = block.question.optional || answered.has(block.question.id);
+  const stepAnswered = answered.has(block.question.id);
+  const canLeave = block.question.optional || stepAnswered;
   const thanks = surveyThanks(surveyOpenedFollowUp(survey, draft));
-
-  const change = (next: SurveyDraft) => {
-    onDraftChange(next);
-    // A single choice that opens nothing under it is a full answer: move on.
-    const question = block.question;
-    if (last || question.type !== "single_choice") return;
-    if (question.choices.some((_, index) => isOpenChoice(question, index))) return;
-    if (next[question.id]?.picked === draft[question.id]?.picked) return;
-    const opensFollowUp = surveySteps(survey, next)[step]!.followUps.length > 0;
-    if (!opensFollowUp) setTimeout(() => onStepChange(step + 1, next), AUTO_ADVANCE_MS);
-  };
 
   return (
     <DialogPopup
@@ -190,15 +171,9 @@ export function UserSurveyDialogPopup({
                 <SurveyAnswerInput
                   question={block.question}
                   draft={draft}
-                  onDraftChange={change}
-                  size="lg"
-                  autoFocus={block.question.type === "open"}
-                />
-                <SurveyFollowUps
-                  followUps={block.followUps}
-                  draft={draft}
                   onDraftChange={onDraftChange}
                   size="lg"
+                  autoFocus={block.question.type === "open"}
                 />
                 {status.kind === "failed" ? (
                   <div className="flex pt-2.5">

@@ -2,7 +2,7 @@ import type { UserSurvey } from "@t3tools/contracts";
 import { CircleQuestionMarkIcon, XIcon } from "lucide-react";
 
 import { Button } from "../components/ui/button";
-import { SurveyAction, SurveyChip, USER_SURVEY_TITLE } from "./surveyParts";
+import { SurveyChip } from "./surveyParts";
 import {
   EMPTY_DRAFT_ANSWER,
   pickChoice,
@@ -29,7 +29,7 @@ function tightenEmoji(text: string) {
 /**
  * The survey's card in the notifications popover. It asks the first question
  * itself: a click on a chip is the answer, and the form opens for the rest.
- * A survey that does not start with a short single choice gets a Share chip.
+ * The survey starts with a short single choice; without one there is no card.
  */
 export function UserSurveyCard({
   survey,
@@ -39,12 +39,13 @@ export function UserSurveyCard({
 }: {
   readonly survey: UserSurvey;
   readonly draft: SurveyDraft;
-  /** Opens the form with this draft: the card's pick, or the draft as it is. */
+  /** Opens the form with the card's pick in the draft. */
   readonly onStart: (draft: SurveyDraft) => void;
   readonly onDismiss: () => void;
 }) {
   const question = surveyCardQuestion(survey);
-  const answer = (question && draft[question.id]) || EMPTY_DRAFT_ANSWER;
+  if (!question) return null;
+  const answer = draft[question.id] ?? EMPTY_DRAFT_ANSWER;
   return (
     <li className="relative grid grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-x-2.5 rounded-lg bg-foreground/4 p-2.5">
       <span
@@ -55,31 +56,25 @@ export function UserSurveyCard({
       </span>
       <div className="flex min-w-0 flex-col gap-2">
         <p className="pr-5 text-sm leading-4.5 font-medium text-balance">
-          {tightenEmoji(question?.question ?? USER_SURVEY_TITLE)}
+          {tightenEmoji(question.question)}
         </p>
         {/* Above the dismiss button, whose touch target is larger than its glyph. */}
         <div className="relative z-1 flex flex-wrap items-center gap-1">
-          {question ? (
-            <div role="radiogroup" aria-label={question.question} className="contents">
-              {question.choices.map((choice, index) => (
-                <SurveyChip
-                  key={choice.label}
-                  size="sm"
-                  multiple={false}
-                  picked={answer.picked.includes(index)}
-                  onClick={() =>
-                    onStart({ ...draft, [question.id]: pickChoice(question, answer, index, true) })
-                  }
-                >
-                  {choice.label}
-                </SurveyChip>
-              ))}
-            </div>
-          ) : (
-            <SurveyAction size="sm" tone="soft" onClick={() => onStart(draft)}>
-              Share
-            </SurveyAction>
-          )}
+          <div role="radiogroup" aria-label={question.question} className="contents">
+            {question.choices.map((choice, index) => (
+              <SurveyChip
+                key={choice.label}
+                size="sm"
+                multiple={false}
+                picked={answer.picked.includes(index)}
+                onClick={() =>
+                  onStart({ ...draft, [question.id]: pickChoice(question, answer, index, true) })
+                }
+              >
+                {choice.label}
+              </SurveyChip>
+            ))}
+          </div>
         </div>
       </div>
       <span className="absolute top-1.5 right-1.5">

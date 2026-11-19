@@ -48,8 +48,8 @@ export interface SurveyFormProps {
   readonly step: number;
   readonly back: boolean;
   readonly onDraftChange: (draft: SurveyDraft) => void;
-  /** Going forward confirms the step; an auto-advance passes the draft it just set. */
-  readonly onStepChange: (step: number, draft?: SurveyDraft) => void;
+  /** Going forward confirms the step. */
+  readonly onStepChange: (step: number) => void;
   readonly onSubmit: () => void;
   readonly onClose: () => void;
   /** Back from the first step: the card, where the first answer can be changed. */
@@ -108,12 +108,12 @@ export function useSurveyForm(
     /** Where the person is, for the dismissal. */
     leftOn: survey ? surveyLeftOn(survey, state.draft, state.step) : null,
     setDraft: (draft: SurveyDraft) => update(() => ({ draft })),
-    goTo: (step: number, draft?: SurveyDraft) => {
+    goTo: (step: number) => {
       if (step <= state.step) {
         update(() => ({ step, back: step < state.step }));
         return;
       }
-      const confirmed = confirm(draft ?? state.draft, state.step);
+      const confirmed = confirm(state.draft, state.step);
       update(() => ({ step, back: false, confirmed }));
     },
     /** The card's answer: the form opens on its first step with it already given. */
@@ -320,15 +320,12 @@ export function SurveyAnswerInput({
   draft,
   onDraftChange,
   size,
-  followUp = false,
   autoFocus = false,
 }: {
   readonly question: UserSurveyQuestion;
   readonly draft: SurveyDraft;
   readonly onDraftChange: (draft: SurveyDraft) => void;
   readonly size: SurveyChipSize;
-  /** A follow-up's text box carries its question as the placeholder. */
-  readonly followUp?: boolean;
   readonly autoFocus?: boolean;
 }) {
   const answer = draft[question.id] ?? EMPTY_DRAFT_ANSWER;
@@ -354,48 +351,16 @@ export function SurveyAnswerInput({
     return (
       <SurveyTextBox
         size={size}
-        lines={followUp ? 3 : 4}
+        lines={4}
         aria-label={question.question}
-        placeholder={
-          followUp ? question.question : (question.placeholder ?? "Type your answer here")
-        }
-        autoFocus={autoFocus || followUp}
+        placeholder={question.placeholder ?? "Type your answer here"}
+        autoFocus={autoFocus}
         value={answer.text}
         onChange={(event) => onChange({ ...answer, text: event.target.value })}
       />
     );
   }
   return <ChoiceChips question={question} answer={answer} onChange={onChange} size={size} />;
-}
-
-/** The follow-ups a picked choice opens, right under the chips. */
-export function SurveyFollowUps({
-  followUps,
-  draft,
-  onDraftChange,
-  size,
-}: {
-  readonly followUps: ReadonlyArray<UserSurveyQuestion>;
-  readonly draft: SurveyDraft;
-  readonly onDraftChange: (draft: SurveyDraft) => void;
-  readonly size: SurveyChipSize;
-}) {
-  return followUps.map((followUp) => (
-    <FadeIn key={followUp.id}>
-      <div className={cn("flex flex-col gap-1.5", size === "sm" ? "pt-1.5" : "pt-2")}>
-        {followUp.type === "open" ? null : (
-          <span className="text-xs text-muted-foreground">{followUp.question}</span>
-        )}
-        <SurveyAnswerInput
-          question={followUp}
-          draft={draft}
-          onDraftChange={onDraftChange}
-          size={size}
-          followUp
-        />
-      </div>
-    </FadeIn>
-  ));
 }
 
 const actionVariants = cva(
