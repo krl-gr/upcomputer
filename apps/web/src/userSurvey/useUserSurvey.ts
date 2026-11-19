@@ -1,12 +1,19 @@
-import { useAtomValue } from "@effect/atom-react";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { type UserSurvey, type UserSurveyAnswer, UserSurveyError } from "@t3tools/contracts";
+import {
+  type UserSurvey,
+  type UserSurveyAnswer,
+  type UserSurveyReport,
+  USER_SURVEY_RPC_METHODS,
+  UserSurveyError,
+  UserSurveyRpcGroup,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { useEffect, useState } from "react";
 
+import {
+  requestExperimentalFeatureRpc,
+  useExperimentalFeatureRpcPermission,
+} from "../product/FeatureRpc";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
-import { serverEnvironment } from "../state/server";
-import { useAtomCommand } from "../state/use-atom-command";
 import type { SubmitUserSurvey } from "./UserSurveyDialog";
 
 // A computer can qualify while the app stays open; the server answers from memory.
@@ -39,9 +46,10 @@ export function useUserSurvey(): UserSurveyHandle | null {
       (environment) =>
         environment.environmentId === environmentId && environment.connection.phase === "connected",
     );
-  const canAnswer = useAtomValue(serverEnvironment.reportUserSurvey.permissionAtom(environmentId));
-  const getSurvey = useAtomCommand(serverEnvironment.getUserSurvey, { reportFailure: false });
-  const report = useAtomCommand(serverEnvironment.reportUserSurvey, { reportFailure: false });
+  const canAnswer = useExperimentalFeatureRpcPermission(
+    environmentId,
+    USER_SURVEY_RPC_METHODS.report,
+  );
   const [survey, setSurvey] = useState<UserSurvey | null>(null);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks the server again as the computer may come to qualify
@@ -49,35 +57,46 @@ export function useUserSurvey(): UserSurveyHandle | null {
     if (!connected || environmentId === null) return;
     let current = true;
     const load = () =>
-      void getSurvey({ environmentId, input: {} }).then((result) => {
-        if (current && result._tag === "Success") setSurvey(result.value.survey);
-      });
+      void requestExperimentalFeatureRpc(environmentId, UserSurveyRpcGroup, (client) =>
+        client[USER_SURVEY_RPC_METHODS.current]({}),
+      ).then(
+        (state) => {
+          if (current) setSurvey(state.survey);
+        },
+        () => undefined,
+      );
     load();
     const timer = setInterval(load, RECHECK_INTERVAL_MS);
     return () => {
       current = false;
       clearInterval(timer);
     };
-  }, [connected, environmentId, getSurvey]);
+  }, [connected, environmentId]);
 
   if (survey === null || environmentId === null || !canAnswer) return null;
+  const report = (input: UserSurveyReport) =>
+    requestExperimentalFeatureRpc(
+      environmentId,
+      UserSurveyRpcGroup,
+      (client) => client[USER_SURVEY_RPC_METHODS.report](input),
+      { method: USER_SURVEY_RPC_METHODS.report, input },
+    );
+  const reportQuietly = (input: UserSurveyReport) => void report(input).catch(() => undefined);
   return {
     survey,
-    shown: () => void report({ environmentId, input: { _tag: "Shown", surveyId: survey.id } }),
-    partial: (answers) =>
-      void report({ environmentId, input: { _tag: "Partial", surveyId: survey.id, answers } }),
+    shown: () => reportQuietly({ _tag: "Shown", surveyId: survey.id }),
+    partial: (answers) => reportQuietly({ _tag: "Partial", surveyId: survey.id, answers }),
     dismiss: (step) => {
       setSurvey(null);
-      void report({ environmentId, input: { _tag: "Dismissed", surveyId: survey.id, step } });
+      reportQuietly({ _tag: "Dismissed", surveyId: survey.id, step });
     },
     submit: async (answers) => {
-      const result = await report({
-        environmentId,
-        input: { _tag: "Answered", surveyId: survey.id, answers },
-      });
-      if (result._tag === "Success") return null;
-      const failure = squashAtomCommandFailure(result);
-      return isUserSurveyError(failure) ? failure.message : SEND_FAILED;
+      try {
+        await report({ _tag: "Answered", surveyId: survey.id, answers });
+        return null;
+      } catch (failure) {
+        return isUserSurveyError(failure) ? failure.message : SEND_FAILED;
+      }
     },
     finish: () => setSurvey(null),
   };

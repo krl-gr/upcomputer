@@ -52,7 +52,6 @@ import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRe
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
-import * as UserSurveys from "./userSurveys/UserSurveys.ts";
 import * as BackgroundNotices from "./background/BackgroundNotices.ts";
 import * as ErrorTelemetry from "./telemetry/ErrorTelemetry.ts";
 import * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
@@ -781,7 +780,6 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(AgentSessionImporter.AgentSessionImporter)({}),
   Layer.mock(AgentSessionScanner.AgentSessionScanner)({}),
   Layer.mock(AnalyticsService.AnalyticsService)({ enabled: false, sessionId: undefined }),
-  Layer.mock(UserSurveys.UserSurveys)({}),
   BackgroundNotices.layer,
   ErrorTelemetry.ErrorTelemetry.layerTest,
   Layer.mock(AntigravityInstallation.AntigravityInstallation)({ managedDirectory: "/unused" }),

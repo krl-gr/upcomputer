@@ -3,6 +3,7 @@ import { TASKS_SERVER_FEATURE } from "@t3tools/tasks-server/feature";
 import { UPCOMPUTER_PRODUCT_FLAGS } from "@t3tools/shared/productFlags";
 
 import { LINKED_PROJECTS_SERVER_FEATURE } from "../linkedProjects/serverFeature.ts";
+import { USER_SURVEYS_SERVER_FEATURE } from "../userSurveys/serverFeature.ts";
 
 import { composeExperimentalServerFeatures } from "./ServerProduct.ts";
 
@@ -13,6 +14,11 @@ import { composeExperimentalServerFeatures } from "./ServerProduct.ts";
  * extension API, so a module they reach must not import this one.
  */
 export const PUBLIC_SERVER_PRODUCT = composeExperimentalServerFeatures(
-  [COMPUTER_USE_SERVER_FEATURE, LINKED_PROJECTS_SERVER_FEATURE, TASKS_SERVER_FEATURE],
+  [
+    COMPUTER_USE_SERVER_FEATURE,
+    LINKED_PROJECTS_SERVER_FEATURE,
+    TASKS_SERVER_FEATURE,
+    USER_SURVEYS_SERVER_FEATURE,
+  ],
   { flags: UPCOMPUTER_PRODUCT_FLAGS },
 );

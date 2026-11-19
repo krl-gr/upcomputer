@@ -21,7 +21,6 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
   [WS_METHODS.serverCheckOtlpEndpoint]: AuthSettingsWriteScope,
   [WS_METHODS.serverSetTelemetryInternalDevice]: AuthSettingsWriteScope,
-  [WS_METHODS.serverReportUserSurvey]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverRefreshProviders]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRunAction]: AuthSourceControlWriteScope,
   [WS_METHODS.pullRequestsUpdate]: AuthSourceControlWriteScope,
@@ -86,6 +85,7 @@ const CLIENT_GUARDED_FEATURE_RPC_SCOPES = {
   "upcomputer.bots.v1.rejectProposal": AuthOrchestrationOperateScope,
   "upcomputer.bots.v1.assign": AuthOrchestrationOperateScope,
   "upcomputer.bots.v1.extract": AuthOrchestrationOperateScope,
+  "upcomputer.user-surveys.v1.report": AuthOrchestrationOperateScope,
 } as const;
 
 const decodePrepareThread = Schema.decodeUnknownSync(GitPreparePullRequestThreadInput);

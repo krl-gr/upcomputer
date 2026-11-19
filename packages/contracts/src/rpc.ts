@@ -309,7 +309,6 @@ import {
   DeviceSession,
   DeviceShutdownInput,
 } from "./device.ts";
-import { UserSurveyError, UserSurveyReport, UserSurveyState } from "./userSurvey.ts";
 import {
   ServerConfigStreamEvent,
   DesktopUpdateCommitInput,
@@ -540,8 +539,6 @@ export const WS_METHODS = {
   serverCheckOtlpEndpoint: "server.checkOtlpEndpoint",
   serverGetTelemetryInternalDevice: "server.getTelemetryInternalDevice",
   serverSetTelemetryInternalDevice: "server.setTelemetryInternalDevice",
-  serverGetUserSurvey: "server.getUserSurvey",
-  serverReportUserSurvey: "server.reportUserSurvey",
   serverPrepareTriage: "server.prepareTriage",
   serverSignalProcess: "server.signalProcess",
   serverReportClientActivity: "server.reportClientActivity",
@@ -987,18 +984,6 @@ const WsServerSetTelemetryInternalDeviceRpc = Rpc.make(
     error: Schema.Union([EnvironmentAuthorizationError, TelemetryInternalDeviceError]),
   },
 );
-const WsServerGetUserSurveyRpc = Rpc.make(WS_METHODS.serverGetUserSurvey, {
-  payload: Schema.Struct({}),
-  success: UserSurveyState,
-  error: EnvironmentAuthorizationError,
-});
-
-const WsServerReportUserSurveyRpc = Rpc.make(WS_METHODS.serverReportUserSurvey, {
-  payload: UserSurveyReport,
-  success: Schema.Struct({}),
-  error: Schema.Union([EnvironmentAuthorizationError, UserSurveyError]),
-});
-
 const WsServerPrepareTriageRpc = Rpc.make(WS_METHODS.serverPrepareTriage, {
   payload: ServerPrepareTriageInput,
   success: ServerPrepareTriageResult,
@@ -2101,8 +2086,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerCheckOtlpEndpointRpc,
   WsServerGetTelemetryInternalDeviceRpc,
   WsServerSetTelemetryInternalDeviceRpc,
-  WsServerGetUserSurveyRpc,
-  WsServerReportUserSurveyRpc,
   WsServerPrepareTriageRpc,
   WsServerGetUsageSummaryRpc,
   WsServerRefreshUsageRatesRpc,

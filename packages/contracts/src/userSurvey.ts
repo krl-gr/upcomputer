@@ -1,3 +1,5 @@
+import * as Rpc from "effect/rpc/Rpc";
+import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
 
 /**
@@ -87,3 +89,21 @@ export class UserSurveyError extends Schema.TaggedError<UserSurveyError>()("User
       : "Couldn't send. Check your connection and try again.";
   }
 }
+
+export const USER_SURVEY_RPC_NAMESPACE = "upcomputer.user-surveys.v1";
+export const USER_SURVEY_RPC_METHODS = {
+  current: `${USER_SURVEY_RPC_NAMESPACE}.current`,
+  report: `${USER_SURVEY_RPC_NAMESPACE}.report`,
+} as const;
+
+/** The survey RPCs, a product feature on the core WebSocket transport. */
+export const UserSurveyRpcGroup = RpcGroup.make(
+  Rpc.make(USER_SURVEY_RPC_METHODS.current, {
+    payload: Schema.Struct({}),
+    success: UserSurveyState,
+  }),
+  Rpc.make(USER_SURVEY_RPC_METHODS.report, {
+    payload: UserSurveyReport,
+    error: UserSurveyError,
+  }),
+);

@@ -242,7 +242,6 @@ import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
-import * as UserSurveys from "./userSurveys/UserSurveys.ts";
 import { commandFeatureUsage, featureUsage } from "./telemetry/FeatureUsage.ts";
 import type { TelemetryOwner } from "./telemetry/Identify.ts";
 import * as ErrorTelemetry from "./telemetry/ErrorTelemetry.ts";
@@ -1429,7 +1428,6 @@ export const layerWsRpc = (
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
       const analytics = yield* AnalyticsService.AnalyticsService;
-      const userSurveys = yield* UserSurveys.UserSurveys;
       const errorTelemetry = yield* ErrorTelemetry.ErrorTelemetry;
       const originProps = clientAnalyticsProps;
       const recordClientCommandAnalytics = (command: OrchestrationV2Command) => {
@@ -2763,9 +2761,6 @@ export const layerWsRpc = (
             Effect.map((enabled) => ({ enabled })),
             Effect.mapError((cause) => new TelemetryInternalDeviceError({ cause })),
           ),
-        [WS_METHODS.serverGetUserSurvey]: (_input) => userSurveys.current,
-        [WS_METHODS.serverReportUserSurvey]: (input) =>
-          userSurveys.report(input).pipe(Effect.as({})),
         [WS_METHODS.serverPrepareTriage]: (input) => triage.prepare(input),
         [WS_METHODS.serverSignalProcess]: (input) => processDiagnostics.signal(input),
         [WS_METHODS.serverReportClientActivity]: (input, metadata) =>
