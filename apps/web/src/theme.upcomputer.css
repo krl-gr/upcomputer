@@ -143,6 +143,14 @@ html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
   backdrop-filter: none;
 }
 
+/* The compact undo tile floats over the column on the sidebar's opaque colour, which
+ * reads as a patch over the material. Here it keeps only the control tint, like the pill. */
+html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
+  [data-app-sidebar]
+  [data-sidebar-compact-motion] {
+  background-color: transparent;
+}
+
 /* Nothing in the translucent sidebar animates: no status pulses, spinners or
  * hover fades. Drag and drop keeps its motion (dnd-kit sets it inline while a
  * row moves) and the drag label keeps its one-step reveal. */

@@ -25,6 +25,7 @@ import {
 } from "../desktopUpdate.logic";
 import { Kbd } from "../ui/kbd";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SidebarCompactUndoNotice } from "./SidebarCompactUndoNotice.upcomputer";
 import { downloadLocalUpdate } from "./SidebarUpdatePill";
 
 // Matches the pill's `duration-180` class, like the provider update pill above it.
@@ -171,22 +172,31 @@ function SidebarUndoNoticePill() {
   if (!visible) return null;
   const Icon = UNDO_ICONS[visible.action];
   const shortcut = shortcutLabelForCommand(keybindings, "thread.undo");
+  const label = undoNoticeLabel(visible.action, visible.count, gt);
   return (
-    <SidebarFooterPill
-      tone="neutral"
-      exiting={!current}
-      icon={<Icon className="size-3.5 shrink-0" />}
-      label={undoNoticeLabel(visible.action, visible.count, gt)}
-      action={{
-        label: (
-          <>
-            <T>Undo</T>
-            {shortcut ? <Kbd>{shortcut}</Kbd> : null}
-          </>
-        ),
-        onClick: undoLatestThreadAction,
-      }}
-    />
+    <>
+      <SidebarFooterPill
+        tone="neutral"
+        exiting={!current}
+        icon={<Icon className="size-3.5 shrink-0" />}
+        label={label}
+        action={{
+          label: (
+            <>
+              <T>Undo</T>
+              {shortcut ? <Kbd>{shortcut}</Kbd> : null}
+            </>
+          ),
+          onClick: undoLatestThreadAction,
+        }}
+      />
+      <SidebarCompactUndoNotice
+        label={label}
+        shortcut={shortcut}
+        exiting={!current}
+        onUndo={undoLatestThreadAction}
+      />
+    </>
   );
 }
 

@@ -90,7 +90,10 @@ it.each(STATES.map((state) => [state.name, state] as const))(
       expect(row.querySelector("[inert]")).toBeNull();
 
       // A notice that ended is inert while it fades out; only a fading state may have one.
-      const notices = [...footer.children].filter((child) => child !== row);
+      // The icon column's undo tile portals out of the footer and leaves a hidden anchor.
+      const notices = [...footer.children].filter(
+        (child) => child !== row && !(child as HTMLElement).hidden,
+      );
       const leaving = notices.filter((notice) => notice.hasAttribute("inert"));
       expect(leaving.length).toBeLessThanOrEqual(state.options.undo === "fading" ? 1 : 0);
       const shown = notices.filter((notice) => !leaving.includes(notice));
