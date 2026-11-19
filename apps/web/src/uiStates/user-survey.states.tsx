@@ -48,7 +48,6 @@ const SURVEY: UserSurvey = {
         "Voice dictation",
         "Bots in Slack",
         "Bots in video calls",
-        "Document editing",
         "Collaborative work",
         "Write my own",
       ],
@@ -203,7 +202,7 @@ const issues = (details: string): SurveyDraft => ({
 });
 const FILLED: SurveyDraft = {
   ...issues("The sidebar flickers when a thread finishes."),
-  "q-missing": { ...EMPTY_DRAFT_ANSWER, picked: [0, 3, 8], otherText: "Calendar sync" },
+  "q-missing": { ...EMPTY_DRAFT_ANSWER, picked: [0, 3, 7], otherText: "Calendar sync" },
   "q-else": { ...EMPTY_DRAFT_ANSWER, text: "demo@example.com" },
 };
 
@@ -276,7 +275,7 @@ it("user-survey", async () => {
             "Something's off, step 2 of 3: chips and Write my own with its text area",
             {
               ...issues("The sidebar flickers when a thread finishes."),
-              "q-missing": { ...EMPTY_DRAFT_ANSWER, picked: [3, 8], otherText: "Calendar sync" },
+              "q-missing": { ...EMPTY_DRAFT_ANSWER, picked: [3, 7], otherText: "Calendar sync" },
             },
             1,
             EDITING,
