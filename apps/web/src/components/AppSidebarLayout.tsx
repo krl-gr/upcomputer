@@ -42,6 +42,7 @@ import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
 import ThreadSidebar from "./Sidebar";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
+import { PhoneUndoNotice, threadUndoNoticeOnScreen } from "./sidebar/PhoneUndoNotice.upcomputer";
 import type { SidebarRouteReveal } from "./sidebar/routeReveal";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { productSurface } from "../product/productFlags";
@@ -306,7 +307,7 @@ export function registerAppShellCommands(router: AnyRouter, shellElement: Elemen
     shellElement.closest('[data-slot="sidebar-wrapper"]')?.getAttribute("data-sidebar-state") ===
     "expanded";
   const disposers = [
-    registerThreadUndoCommands(router, readSidebarVisible),
+    registerThreadUndoCommands(router, () => threadUndoNoticeOnScreen(readSidebarVisible)),
     registerNavigationHistoryCommands(router),
     registerWorkspaceFocusCommands(router),
     registerPullRequestsEscapeCommand(router),
@@ -515,6 +516,7 @@ export function AppSidebarLayout({
         {children}
         <BackgroundThreadAnnouncer />
         <SidebarControl showSidebar={showSidebar} />
+        <PhoneUndoNotice />
         {isElectron ? <HistorySwipeNavigation /> : null}
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>

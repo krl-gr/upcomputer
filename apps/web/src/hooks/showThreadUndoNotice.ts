@@ -62,7 +62,10 @@ function setNotice(notice: UndoNotice | null) {
   if (summary === announcedSummary) return;
   announcedSummary = summary;
   if (summary) {
-    const label = threadUndoLabel(appAtomRegistry.get(primaryServerKeybindingsAtom));
+    // UpComputer: a touch screen has no key to press, and its notices hide the key hint.
+    const label = globalThis.matchMedia?.("(pointer: coarse)").matches
+      ? "Undo"
+      : threadUndoLabel(appAtomRegistry.get(primaryServerKeybindingsAtom));
     announce(`${summary}, ${label}`, "thread-undo-notice");
   } else {
     cancelAnnouncement("thread-undo-notice");

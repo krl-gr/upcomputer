@@ -912,6 +912,7 @@ export {
   SidebarRail,
   SidebarTrigger,
   useMobileSidebarSheetMounted,
+  isMobileViewport,
   useSidebar,
   useSidebarVisibility,
 };

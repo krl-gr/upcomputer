@@ -1,0 +1,13 @@
+/*
+ * At phone width toasts drop from under the header, where the undo card sits
+ * (PhoneUndoNotice.upcomputer.tsx). While the card shows, toasts stack below it,
+ * so neither covers the other. Unlayered, so it wins over the toast's own offset.
+ */
+body:has([data-phone-undo-notice]) [data-slot="toast-viewport"] {
+  transition: top 180ms var(--ease-drawer);
+}
+body:has([data-phone-undo-notice]:not([inert])) [data-slot="toast-viewport"][data-position*="top"] {
+  --toast-header-offset: calc(
+    env(safe-area-inset-top, 0px) + var(--workspace-topbar-height) + 2.75rem
+  );
+}
