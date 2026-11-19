@@ -4,6 +4,7 @@ import { BotMemoryProposalsMigration } from "./035_BotMemoryProposals.ts";
 import { BotMemoryOwnerMigration } from "./036_BotMemoryOwner.ts";
 import { TaskThreadSeenMigration } from "./037_TaskThreadSeen.ts";
 import { BotOneProjectMigration } from "./038_BotOneProject.ts";
+import { DropOrphanTaskEventsMigration } from "./039_DropOrphanTaskEvents.ts";
 import { TasksNewestFirstMigration } from "./031_TasksNewestFirst.ts";
 import { BotsMigration } from "./033_Bots.ts";
 import { UpdateDefaultFeedOrderPromptsMigration } from "./030_UpdateDefaultFeedOrderPrompts.ts";
@@ -138,5 +139,6 @@ export const TASK_MIGRATION_CONTRIBUTION = {
     { version: 36, name: "BotMemoryOwner", run: BotMemoryOwnerMigration },
     { version: 37, name: "TaskThreadSeen", run: TaskThreadSeenMigration },
     { version: 38, name: "BotOneProject", run: BotOneProjectMigration },
+    { version: 39, name: "DropOrphanTaskEvents", run: DropOrphanTaskEventsMigration },
   ],
 } as const;
