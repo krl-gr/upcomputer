@@ -85,7 +85,36 @@ function retryDelayMs(failures: number, random: number): number {
   return Math.round(ceiling / 2 + (ceiling / 2) * random);
 }
 
+/**
+ * For an answer sent with analytics off. PostHog fills `$ip` from the request unless the
+ * event carries a non-empty one (`sanitizeEvent` in PostHog's ingestion), so this is the
+ * value PostHog writes for its own server-side events; `$geoip_disable` skips the location.
+ */
+const ANONYMOUS_EVENT_PROPERTIES = {
+  $process_person_profile: false,
+  $ip: "127.0.0.1",
+  $geoip_disable: true,
+} as const;
+
 const UPCOMPUTER_POSTHOG_PROJECT_KEY = "phc_uqRUAQavAKuUny7uFxm8tqr6nyVDpdoSARKsWNzs8wBx";
+
+const DesktopBuildKindConfig = Config.Literals(
+  ["dev", "localtest", "rc", "nightly", "stable"],
+  "T3CODE_DESKTOP_BUILD_KIND",
+).pipe(Config.option);
+
+/** The kind of build this server belongs to, as its events report it. */
+export const serverBuildKind = Effect.gen(function* () {
+  const { mode } = yield* ServerConfig.ServerConfig;
+  // The desktop app knows whether it is packaged; other servers classify themselves.
+  const desktopBuildKind = mode === "desktop" ? yield* DesktopBuildKindConfig : Option.none();
+  return Option.getOrElse(desktopBuildKind, (): UpcomputerBuildKind =>
+    resolveUpcomputerBuildKind({
+      packaged: typeof __T3CODE_BUILD_CHANNEL__ !== "undefined",
+      version: packageJson.version,
+    }),
+  );
+});
 
 const TelemetryEnvConfig = Config.all({
   posthogKey: Config.String("T3CODE_POSTHOG_KEY").pipe(
@@ -107,10 +136,6 @@ const TelemetryEnvConfig = Config.all({
   desktopStartup: Config.Literals(["launch", "restart"], "T3CODE_DESKTOP_STARTUP").pipe(
     Config.option,
   ),
-  desktopBuildKind: Config.Literals(
-    ["dev", "localtest", "rc", "nightly", "stable"],
-    "T3CODE_DESKTOP_BUILD_KIND",
-  ).pipe(Config.option),
   desktopSessionId: Config.String("T3CODE_DESKTOP_SESSION_ID").pipe(Config.option),
 });
 
@@ -165,6 +190,16 @@ export class AnalyticsService extends Context.Service<
       owners: ReadonlyArray<TelemetryOwner>,
       observedBy: "server" | "client",
     ) => Effect.Effect<void>;
+    /**
+     * Sends one event now and says whether PostHog took it. Only for answers the user
+     * chose to send, so it also sends when analytics is off: then the event carries
+     * just `properties` under a one-off anonymous id, asks PostHog to keep no IP address
+     * or location, and the install stays unidentified.
+     */
+    readonly sendNow: (
+      event: string,
+      properties: Readonly<Record<string, unknown>>,
+    ) => Effect.Effect<boolean>;
     /** False when the install opted out; nothing is recorded or written then. */
     readonly enabled: boolean;
     readonly sessionId: string | undefined;
@@ -248,13 +283,7 @@ export const make = Effect.gen(function* () {
   const hostPlatform = yield* HostProcess.Platform;
   const hostArchitecture = yield* HostProcess.Architecture;
   const isDesktopBackend = serverConfig.mode === "desktop";
-  // The desktop app knows whether it is packaged; other servers classify themselves.
-  const buildKind: UpcomputerBuildKind =
-    (isDesktopBackend ? Option.getOrUndefined(telemetryConfig.desktopBuildKind) : undefined) ??
-    resolveUpcomputerBuildKind({
-      packaged: typeof __T3CODE_BUILD_CHANNEL__ !== "undefined",
-      version: packageJson.version,
-    });
+  const buildKind = yield* serverBuildKind;
   // Random per app launch (desktop) or per server start; never derived from the install.
   const desktopSessionId = isDesktopBackend
     ? Option.filter(telemetryConfig.desktopSessionId, (id) => UUID_PATTERN.test(id))
@@ -360,6 +389,38 @@ export const make = Effect.gen(function* () {
       Effect.timeout(SEND_TIMEOUT),
     );
   });
+
+  const sendNow: AnalyticsService["Service"]["sendNow"] = Effect.fn("AnalyticsService.sendNow")(
+    function* (event, properties) {
+      const uuid = yield* crypto.uuidV7();
+      const capturedAt = DateTime.formatIso(yield* DateTime.now);
+      if (distinctId !== null && (yield* telemetryEnabled)) {
+        yield* sendBatch([
+          { uuid, event, properties, capturedAt, isInternal: yield* internalDevice },
+        ]);
+        return true;
+      }
+      const entry = {
+        uuid,
+        event,
+        distinct_id: yield* crypto.uuidV4(),
+        properties: { ...properties, ...ANONYMOUS_EVENT_PROPERTIES },
+        timestamp: capturedAt,
+      };
+      yield* HttpClientRequest.post(`${telemetryConfig.posthogHost}/batch/`).pipe(
+        HttpClientRequest.bodyJson({ api_key: telemetryConfig.posthogKey, batch: [entry] }),
+        Effect.flatMap(httpClient.execute),
+        Effect.flatMap(HttpClientResponse.filterStatusOk),
+        Effect.timeout(SEND_TIMEOUT),
+      );
+      return true;
+    },
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Failed to send an event the user chose to send", { cause }).pipe(
+        Effect.as(false),
+      ),
+    ),
+  );
 
   const takeBatch = Ref.modify(bufferRef, (current) => {
     const nextBatch = current.slice(0, telemetryConfig.flushBatchSize);
@@ -571,6 +632,7 @@ export const make = Effect.gen(function* () {
     recordMilestone,
     flush,
     recordOwners,
+    sendNow,
     enabled,
     sessionId,
     internalDevice,

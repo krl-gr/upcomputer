@@ -47,6 +47,19 @@ a [managed policy](./managed-policy.md#other-capabilities).
 The desktop app reads `T3CODE_TELEMETRY_ENABLED` from your shell profile (for example `~/.zshrc`) on macOS and
 Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
 
+## Surveys
+
+After you have used Up.computer for a week, on at least three different days, the notifications
+button may show a short survey from the Up.computer team. It asks at most once a month, and the
+questions come with the app, so nothing is fetched to show it. With product events on, your
+answers are sent as you go: the card's answer when you pick it, your answers so far each time
+you press **Continue** or **Skip**, and the rest when you press **Send**. With product events
+off, nothing is sent until you press **Send**. Then the answers go out alone, under a random
+identifier, with nothing about your installation, and Up.computer asks the analytics service
+not to keep your IP address or work out your location from it. Close the card to dismiss the
+survey; it does not come back. A managed policy that turns usage data off also turns
+surveys off.
+
 ## Mark a team or test device
 
 If you work on Up.computer or test it, open **Settings > General > Diagnostics**, select the

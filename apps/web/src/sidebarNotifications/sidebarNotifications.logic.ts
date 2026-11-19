@@ -69,10 +69,13 @@ export type SidebarNotificationsDot = "error" | "warning" | "neutral";
 export function describeSidebarNotificationsButton(
   {
     severities,
+    survey = false,
     update,
     updateFailed = false,
   }: {
     readonly severities: ReadonlyArray<BackgroundNotice["severity"]>;
+    /** A survey card waits for an answer. */
+    readonly survey?: boolean;
     readonly update: SidebarUpdateSignal;
     /** An update card shows a failure: see `hasFailedUpdate`. */
     readonly updateFailed?: boolean;
@@ -84,7 +87,7 @@ export function describeSidebarNotificationsButton(
       ? "error"
       : severities.includes("warning")
         ? "warning"
-        : severities.length > 0 || update.kind === "available" || update.kind === "ready"
+        : severities.length > 0 || survey || update.kind === "available" || update.kind === "ready"
           ? "neutral"
           : null;
   // Lowercase phrases in a list; the first letter of the list is capitalized.
@@ -104,6 +107,7 @@ export function describeSidebarNotificationsButton(
             ? gt("downloading update")
             : gt("downloading update {percent}%", { percent: Math.floor(update.percent) })
           : null,
+    survey ? gt("survey") : null,
   ].filter((part) => part !== null);
   const label = parts.join(", ");
   return {

@@ -7,6 +7,7 @@ import {
 
 import { LINKED_PROJECTS_WEB_FEATURE } from "../linkedProjects/feature";
 import { THREAD_PROJECT_MOVE_WEB_FEATURE } from "../threadProjectMove/feature";
+import { USER_SURVEYS_WEB_FEATURE } from "../userSurvey/feature";
 import { composeExperimentalWebFeatures } from "./WebProduct";
 
 /**
@@ -21,6 +22,7 @@ export const WEB_PRODUCT = composeExperimentalWebFeatures(
     LINKED_PROJECTS_WEB_FEATURE,
     THREAD_PROJECT_MOVE_WEB_FEATURE,
     TASKS_WEB_FEATURE,
+    USER_SURVEYS_WEB_FEATURE,
   ],
   { flags: UPCOMPUTER_PRODUCT_FLAGS, surfaces: UPCOMPUTER_PRODUCT_SURFACES },
 );

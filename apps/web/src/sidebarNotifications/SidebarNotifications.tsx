@@ -57,6 +57,10 @@ import {
 import { type SidebarUpdates, useSidebarUpdates } from "./useSidebarUpdates";
 import { useSidebarFooterTooltipSide } from "../adaptiveSidebar/adaptiveSidebar";
 import { BadgedIcon } from "../badgedIcon/BadgedIcon";
+import { useSurveyForm } from "../userSurvey/surveyParts";
+import { UserSurveyCard } from "../userSurvey/UserSurveyCard";
+import { UserSurveyDialog } from "../userSurvey/UserSurveyDialog";
+import { useUserSurvey } from "../userSurvey/useUserSurvey";
 
 const DISMISSED_KEY = "upcomputer:background-notices-dismissed:v1";
 const DismissedNotices = Schema.Array(Schema.String);
@@ -98,10 +102,18 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
   const gt = useGT();
   const updates = useSidebarUpdates();
   const { notices, dismiss } = useBackgroundNotices();
+  const userSurvey = useUserSurvey();
   const [open, setOpen] = useState(false);
+  const [surveyOpen, setSurveyOpen] = useState(false);
+  const surveyForm = useSurveyForm(
+    userSurvey?.survey ?? null,
+    userSurvey?.submit ?? null,
+    userSurvey?.partial ?? null,
+  );
   const { dot, label } = describeSidebarNotificationsButton(
     {
       severities: notices.map((notice) => notice.severity),
+      survey: userSurvey !== null,
       update: updates.signal,
       updateFailed: hasFailedUpdate({
         app: updates.state ? describeAppUpdateCard(updates.state, updates.action, gt) : null,
@@ -116,7 +128,13 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
   return (
     <>
       <SidebarMenuItem className="shrink-0">
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next);
+            if (next) userSurvey?.shown();
+          }}
+        >
           <Tooltip>
             <TooltipTrigger
               render={
@@ -151,6 +169,23 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
               updates={updates}
               notices={notices}
               dismiss={dismiss}
+              surveyCard={
+                userSurvey ? (
+                  <UserSurveyCard
+                    key={userSurvey.survey.id}
+                    survey={userSurvey.survey}
+                    draft={surveyForm.draft}
+                    onStart={(draft) => {
+                      surveyForm.start(draft);
+                      setOpen(false);
+                      setSurveyOpen(true);
+                    }}
+                    onDismiss={() => {
+                      if (surveyForm.leftOn) userSurvey.dismiss(surveyForm.leftOn);
+                    }}
+                  />
+                ) : null
+              }
               onClose={() => setOpen(false)}
             />
           </PopoverPopup>
@@ -164,6 +199,26 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
           restarts={updates.everything.restarts}
           onConfirm={updates.runEverything}
         />
+        {userSurvey ? (
+          <UserSurveyDialog
+            key={userSurvey.survey.id}
+            survey={userSurvey.survey}
+            draft={surveyForm.draft}
+            status={surveyForm.status}
+            step={surveyForm.step}
+            back={surveyForm.back}
+            onDraftChange={surveyForm.setDraft}
+            onStepChange={surveyForm.goTo}
+            onSubmit={surveyForm.submit}
+            open={surveyOpen}
+            onOpenChange={setSurveyOpen}
+            onBackToCard={() => {
+              setSurveyOpen(false);
+              setOpen(true);
+            }}
+            onSent={userSurvey.finish}
+          />
+        ) : null}
       </SidebarMenuItem>
     </>
   );
@@ -230,11 +285,14 @@ function NotificationsPanel({
   updates,
   notices,
   dismiss,
+  surveyCard,
   onClose,
 }: {
   readonly updates: SidebarUpdates;
   readonly notices: ReturnType<typeof useBackgroundNotices>["notices"];
   readonly dismiss: (keys: ReadonlyArray<string>) => void;
+  /** The survey the server offers, as its card; it ranks with the notices. */
+  readonly surveyCard: ReactNode;
   readonly onClose: () => void;
 }) {
   const gt = useGT();
@@ -442,6 +500,10 @@ function NotificationsPanel({
         ),
       });
     }
+  }
+
+  if (surveyCard) {
+    cards.push({ key: "survey", rank: "info", occurredAt: null, node: surveyCard });
   }
 
   const showsUpdateAll = run === null && updates.runsEverything && pendingUpdates >= 2;
