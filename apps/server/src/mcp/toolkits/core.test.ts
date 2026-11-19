@@ -72,6 +72,7 @@ const declaredFailure = (result: McpSchema.CallToolResult) => {
   return result.isError === true && text?.type === "text" ? JSON.parse(text.text) : undefined;
 };
 import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
+import { htmlRenderMarkdown } from "@t3tools/shared/htmlRender";
 
 const decodeMcpAttachmentInput = Schema.decodeUnknownEffect(McpAttachmentInput);
 const decodeThreadReadResult = Schema.decodeUnknownEffect(OrchestratorMcpThreadReadResult);
@@ -272,6 +273,8 @@ it.effect("returns an HTML render reference that Codex and Claude tool rows both
     expect(
       htmlRenderFromToolItem({ toolName: "mcp__t3-code__html_render", output: result.content }),
     ).toEqual(reference);
+    // A task's output shows the page from this markdown, so it must name the same page.
+    expect(result.structuredContent).toMatchObject({ markdown: htmlRenderMarkdown(reference!) });
   }).pipe(
     Effect.provide(
       McpHttpServer.layerHtmlToolkit.pipe(
