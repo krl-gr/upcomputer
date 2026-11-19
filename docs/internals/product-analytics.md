@@ -146,7 +146,8 @@ Measure a new install with ordered steps for one identity, not period-wide count
 
 Read the latest `provider.status.observed` per provider to tell "no CLI", "CLI but
 signed out" and "ready" apart; it is sent when the state changes, so an install or
-login landing shows up as a change. First-run setup sends `onboarding.*` events per
+login landing shows up as a change. OpenCode adds `statusReason`, the same categories, when its
+check does not reach `ready`. First-run setup sends `onboarding.*` events per
 step and per agent action, and `flow` says which screens sent them. Without it they
 come from upstream's wizard (builds before the agent table): `step` is `connection`,
 `agents`, then `import`, always in that order. `flow: "upcomputer"` was our agent table
@@ -158,8 +159,15 @@ with what it imported. Funnels comparing the flows should stop at `agents`.
 `flow: "first_run"` is no screen at all: the desktop app opens a new user's
 workspace directly and installs OpenCode, sending `onboarding.first_run_agent` with
 `outcome` `started`, then `ready` (followed by `onboarding.completed`) or `failed`, and
-`retried` or `connect_other` from the composer's buttons. `started` and `failed` are sent
-once per install operation, so a Retry that downloads again sends both again. `started`
+`retried` or `connect_other` from the composer's buttons. `failed` carries a `reason`
+(older builds send none, and `failed` only for install failures): `install` for a
+download or install that failed, otherwise the installed OpenCode's start failed. It is
+OpenCode's own status category (`migration`, `startup_timeout` for its own start
+deadlines, `models_missing`, `auth`, `unknown`), or `startup_timeout` when OpenCode
+answered nothing within the composer's 90 s start timeout.
+`started` is sent once per install operation and an install `failed` once per operation, so
+a Retry that downloads again sends both again; a start `failed` is sent once per attempt,
+and a Retry after a good install is a new attempt. `started`
 means the app began installing its own OpenCode; `ready` without `started` is a new user
 whose own agent, or own OpenCode, already worked, so nothing was downloaded. The download itself is
 `provider.install.*` with `provider: "opencode"`. `onboarding.step.completed` with

@@ -70,7 +70,8 @@ import {
   useFirstRunAgentStatus,
 } from "./FirstRunAgent";
 import {
-  FIRST_RUN_AGENT_ACTIVATION_WAIT_MS,
+  FIRST_RUN_AGENT_SLOW_START_MS,
+  FIRST_RUN_AGENT_START_TIMEOUT_MS,
   FIRST_SCREEN_IDLE_THRESHOLD_MS,
 } from "./upComputerOnboarding.logic";
 
@@ -113,12 +114,14 @@ function installState(operationId: string, overrides: Partial<ProviderInstallSta
 /** Every status a committed render showed, as the composer's effects would see it. */
 let committed: Array<ReturnType<typeof useFirstRunAgentStatus>["status"]>;
 let otherCommitted: Array<ReturnType<typeof useFirstRunAgentStatus>["status"]>;
+let retry: () => void;
 
 function Composer() {
-  const { status } = useFirstRunAgentStatus(environmentId, true);
+  const firstRunAgent = useFirstRunAgentStatus(environmentId, true);
   useAtomValue(testAtoms.providers);
   useEffect(() => {
-    committed.push(status);
+    committed.push(firstRunAgent.status);
+    retry = firstRunAgent.retry;
   });
   return null;
 }
@@ -176,10 +179,12 @@ async function update(change: () => void) {
   await act(async () => change());
 }
 
+const preparing = { kind: "preparing", progress: null, slow: false };
+
 it("never offers provider settings between a first run's install succeeding and OpenCode answering", async () => {
   await render();
   expect(mocks.startInstall).toHaveBeenCalled();
-  expect(committed.at(-1)).toEqual({ kind: "preparing", progress: null });
+  expect(committed.at(-1)).toEqual(preparing);
   committed = [];
   await update(() => registry.set(testAtoms.install, installState("first-run", {})));
   await update(() =>
@@ -193,20 +198,70 @@ it("never offers provider settings between a first run's install succeeding and 
   expect(new Set(committed.slice(beforeReady))).toEqual(new Set([null]));
 });
 
-it("falls back to provider settings once OpenCode stays off past the activation wait", async () => {
+const failedEvents = () =>
+  mocks.events.filter(
+    (event) => event.event === "onboarding.first_run_agent" && event.outcome === "failed",
+  );
+
+it("shows a slow start, then a timeout to retry, and reports each failed attempt once", async () => {
   await render();
   await update(() =>
-    registry.set(testAtoms.install, installState("turned-off", { phase: "succeeded" })),
+    registry.set(testAtoms.install, installState("slow-start", { phase: "succeeded" })),
   );
-  expect(committed.at(-1)).toEqual({ kind: "preparing", progress: null });
+  // The server has not turned OpenCode on yet, then checks it for longer than it should.
+  expect(committed.at(-1)).toEqual(preparing);
+  await update(() => vi.advanceTimersByTime(FIRST_RUN_AGENT_SLOW_START_MS - 1));
+  await update(() => registry.set(testAtoms.providers, [openCode({ statusPending: true })]));
+  expect(committed.at(-1)).toEqual(preparing);
+  await update(() => vi.advanceTimersByTime(1));
+  expect(committed.at(-1)).toEqual({ ...preparing, slow: true });
+  expect(failedEvents()).toEqual([]);
 
-  await update(() => vi.advanceTimersByTime(FIRST_RUN_AGENT_ACTIVATION_WAIT_MS));
+  await update(() =>
+    vi.advanceTimersByTime(FIRST_RUN_AGENT_START_TIMEOUT_MS - FIRST_RUN_AGENT_SLOW_START_MS),
+  );
+  expect(committed.at(-1)).toMatchObject({ kind: "failed", reason: "startup_timeout" });
+  const timedOut = {
+    event: "onboarding.first_run_agent",
+    outcome: "failed",
+    reason: "startup_timeout",
+  };
+  expect(failedEvents()).toEqual([timedOut]);
+
+  const failing = openCode({
+    status: "error",
+    statusReason: "migration",
+    checkedAt: "2026-10-25T00:01:30.000Z",
+  });
+  await update(() => registry.set(testAtoms.providers, [failing]));
+  expect(committed.at(-1)).toMatchObject({ kind: "failed", reason: "migration" });
+  expect(failedEvents()).toEqual([timedOut]);
+
+  await update(() => retry());
+  expect(committed.at(-1)).toEqual(preparing);
+  await update(() =>
+    registry.set(testAtoms.providers, [{ ...failing, checkedAt: "2026-10-25T00:01:40.000Z" }]),
+  );
+  await update(() =>
+    registry.set(testAtoms.providers, [{ ...failing, checkedAt: "2026-10-25T00:01:50.000Z" }]),
+  );
+  expect(committed.at(-1)).toMatchObject({ kind: "failed", reason: "migration" });
+  expect(failedEvents()).toEqual([
+    timedOut,
+    { event: "onboarding.first_run_agent", outcome: "failed", reason: "migration" },
+  ]);
+
+  await update(() => registry.set(testAtoms.providers, [openCode()]));
   expect(committed.at(-1)).toBeNull();
+  await update(() => vi.advanceTimersByTime(FIRST_RUN_AGENT_START_TIMEOUT_MS));
+  await update(() => registry.set(testAtoms.providers, [openCode({ enabled: false })]));
+  expect(committed.at(-1)).toBeNull();
+  expect(failedEvents()).toHaveLength(2);
 });
 
 it("sets up only its own computer, so another one without an agent offers provider settings", async () => {
   await render();
-  expect(committed.at(-1)).toEqual({ kind: "preparing", progress: null });
+  expect(committed.at(-1)).toEqual(preparing);
   expect(new Set(otherCommitted)).toEqual(new Set([null]));
 
   await update(() =>

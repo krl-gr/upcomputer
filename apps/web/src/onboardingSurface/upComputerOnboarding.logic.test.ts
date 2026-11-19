@@ -18,10 +18,14 @@ import {
   composerProviderSetupInstanceId,
   countReadyOnboardingProviders,
   firstRunWorkspaceProjects,
-  isFirstRunAgentActivating,
+  FIRST_RUN_AGENT_SLOW_START_MS,
+  FIRST_RUN_AGENT_START_TIMEOUT_MS,
+  firstRunAgentStartupPhase,
+  type FirstRunAgentStartup,
   isFirstRunAgentChecking,
   latchFirstRunAgentStart,
   resolveFirstRunAgentStart,
+  resolveFirstRunAgentStartupFailure,
   resolveFirstRunAgentStatus,
 } from "./upComputerOnboarding.logic";
 
@@ -120,23 +124,31 @@ describe("first-run agent status", () => {
     message: null,
     ...overrides,
   });
+  const startup = (overrides: Partial<FirstRunAgentStartup> = {}): FirstRunAgentStartup => ({
+    operationId: "operation",
+    attempt: 0,
+    startedAt: 0,
+    retriedCheckedAt: null,
+    phase: "starting",
+    ...overrides,
+  });
   const status = (input: Partial<Parameters<typeof resolveFirstRunAgentStatus>[0]>) =>
     resolveFirstRunAgentStatus({
       requested: true,
       startError: null,
       install: null,
       provider: undefined,
-      activating: false,
+      startup: null,
+      starterRunning: false,
       ...input,
     });
   const openCode = (overrides: Partial<ServerProvider> = {}) => provider("opencode", overrides);
+  const done = install({ phase: "succeeded" });
+  const preparing = { kind: "preparing", progress: null, slow: false };
 
   it("prepares from the first frame of a requested setup, before the server answers", () => {
-    expect(status({})).toEqual({ kind: "preparing", progress: null });
-    expect(status({ install: install({ phase: "idle" }) })).toEqual({
-      kind: "preparing",
-      progress: null,
-    });
+    expect(status({})).toEqual(preparing);
+    expect(status({ install: install({ phase: "idle" }) })).toEqual(preparing);
     expect(status({ requested: false, install: install({ phase: "idle" }) })).toBeNull();
   });
 
@@ -144,98 +156,153 @@ describe("first-run agent status", () => {
     expect(status({ install: install({ downloadedBytes: 25, totalBytes: 100 }) })).toEqual({
       kind: "preparing",
       progress: 0.25,
+      slow: false,
     });
     expect(status({ install: install({ phase: "verifying" }) })).toEqual({
       kind: "preparing",
       progress: 1,
+      slow: false,
     });
-    const done = install({ phase: "succeeded" });
     expect(
-      status({ install: done, provider: openCode({ enabled: false }), activating: true }),
-    ).toEqual({ kind: "preparing", progress: null });
-    expect(status({ install: done, provider: openCode({ statusPending: true }) })).toEqual({
-      kind: "preparing",
-      progress: null,
-    });
-    expect(status({ install: done, provider: openCode() })).toBeNull();
+      status({ install: done, provider: openCode({ enabled: false }), startup: startup() }),
+    ).toEqual(preparing);
+    expect(status({ install: done, provider: openCode({ statusPending: true }) })).toEqual(
+      preparing,
+    );
+    expect(status({ install: done, provider: openCode(), startup: startup() })).toBeNull();
   });
 
-  it("falls back to the normal composer once OpenCode is off past the activation wait", () => {
-    const done = install({ phase: "succeeded" });
-    expect(status({ install: done, provider: openCode({ enabled: false }) })).toBeNull();
-    expect(status({ install: done, provider: openCode({ status: "disabled" }) })).toBeNull();
+  it("always shows a status while the installed agent starts: starting, slow, then timed out", () => {
+    const pending = openCode({ statusPending: true });
+    for (const provider of [pending, openCode({ enabled: false }), undefined]) {
+      expect(status({ install: done, provider, startup: startup() })).toEqual(preparing);
+      expect(status({ install: done, provider, startup: startup({ phase: "slow" }) })).toEqual({
+        ...preparing,
+        slow: true,
+      });
+      expect(status({ install: done, provider, startup: startup({ phase: "timedOut" }) })).toEqual({
+        kind: "failed",
+        message: "Your agent is taking too long to start.",
+        reason: "startup_timeout",
+      });
+    }
+    expect(
+      status({ install: done, provider: openCode(), startup: startup({ phase: "timedOut" }) }),
+    ).toBeNull();
+    expect(firstRunAgentStartupPhase(FIRST_RUN_AGENT_SLOW_START_MS - 1)).toBe("starting");
+    expect(firstRunAgentStartupPhase(FIRST_RUN_AGENT_SLOW_START_MS)).toBe("slow");
+    expect(firstRunAgentStartupPhase(FIRST_RUN_AGENT_START_TIMEOUT_MS)).toBe("timedOut");
+  });
+
+  it("keeps setup on from the first render that sees the install succeed", () => {
+    const disabled = openCode({ enabled: false });
+    expect(status({ install: done, provider: disabled, starterRunning: true })).toEqual(preparing);
+    expect(
+      status({ install: done, provider: disabled, startup: startup({ operationId: "earlier" }) }),
+    ).toBeNull();
     expect(status({ install: done, provider: undefined })).toBeNull();
-    expect(status({ install: done, provider: undefined, activating: true })).toEqual({
-      kind: "preparing",
-      progress: null,
-    });
   });
 
-  it("fails with the install's own message, or the agent's when it will not start", () => {
+  it("falls back to the normal composer once OpenCode, which worked, is off", () => {
+    const worked = startup({ phase: "ready" });
+    expect(
+      status({ install: done, provider: openCode({ enabled: false }), startup: worked }),
+    ).toBeNull();
+    expect(
+      status({ install: done, provider: openCode({ status: "disabled" }), startup: worked }),
+    ).toBeNull();
+    expect(
+      status({ install: done, provider: openCode({ statusPending: true }), startup: worked }),
+    ).toEqual(preparing);
+  });
+
+  it("fails with a reason: the install's, or the agent's own when it will not start", () => {
     expect(
       status({ install: install({ phase: "failed", message: "Check your connection." }) }),
-    ).toEqual({ kind: "failed", message: "Check your connection." });
+    ).toEqual({ kind: "failed", message: "Check your connection.", reason: "install" });
     expect(status({ startError: "Could not start." })).toEqual({
       kind: "failed",
       message: "Could not start.",
+      reason: "install",
     });
+    const failed = (overrides: Partial<ServerProvider>) =>
+      status({ install: done, provider: openCode(overrides), startup: startup() });
     expect(
-      status({
-        install: install({ phase: "succeeded" }),
-        provider: openCode({ status: "error", message: "OpenCode crashed." }),
-      }),
-    ).toEqual({ kind: "failed", message: "OpenCode crashed." });
+      failed({ status: "error", message: "OpenCode crashed.", statusReason: "migration" }),
+    ).toEqual({
+      kind: "failed",
+      message: "OpenCode crashed.",
+      reason: "migration",
+    });
+    expect(failed({ status: "warning", statusReason: "models_missing" })).toMatchObject({
+      reason: "models_missing",
+    });
+    expect(failed(signedOut)).toMatchObject({ reason: "auth" });
+    expect(failed(missing)).toMatchObject({ reason: "unknown" });
   });
 
-  it("keeps setup on from the first render that sees the install succeed until OpenCode answers", () => {
-    const disabled = openCode({ enabled: false });
-    const done = install({ phase: "succeeded" });
-    const frame = (activation: { operationId: string; active: boolean } | null) =>
+  it("shows a Retry as starting again until OpenCode answers it", () => {
+    const failing = openCode({ status: "error", checkedAt: "2026-10-17T00:00:01.000Z" });
+    const retried = startup({ attempt: 1, retriedCheckedAt: failing.checkedAt });
+    expect(status({ install: done, provider: failing, startup: retried })).toEqual(preparing);
+    expect(
       status({
         install: done,
-        provider: disabled,
-        activating: isFirstRunAgentActivating({
-          succeededOperationId: "operation",
-          starterRunning: true,
-          activation,
-        }),
-      });
-    const preparing = { kind: "preparing", progress: null };
-    expect(frame(null)).toEqual(preparing);
-    expect(frame({ operationId: "operation", active: true })).toEqual(preparing);
-    expect(status({ install: done, provider: openCode() })).toBeNull();
+        provider: { ...failing, checkedAt: "2026-10-17T00:00:09.000Z" },
+        startup: retried,
+      }),
+    ).toMatchObject({ kind: "failed", reason: "unknown" });
   });
 
   it("lets a retry's download replace an earlier start failure", () => {
-    expect(status({ startError: "Could not start.", install: install({}) })).toEqual({
-      kind: "preparing",
-      progress: null,
-    });
+    expect(status({ startError: "Could not start.", install: install({}) })).toEqual(preparing);
   });
 });
 
-describe("first-run agent activation wait", () => {
-  const activating = (input: Partial<Parameters<typeof isFirstRunAgentActivating>[0]>) =>
-    isFirstRunAgentActivating({
-      succeededOperationId: "operation",
-      starterRunning: true,
-      activation: null,
+describe("first-run agent startup failure", () => {
+  const done: ProviderInstallState = {
+    driver: ProviderDriverKind.make("opencode"),
+    operationId: "operation",
+    phase: "succeeded",
+    downloadedBytes: 0,
+    totalBytes: null,
+    version: "1.19.3",
+    installedVersion: "1.19.3",
+    canRemove: false,
+    message: null,
+  };
+  const attempt = (phase: FirstRunAgentStartup["phase"]): FirstRunAgentStartup => ({
+    operationId: "operation",
+    attempt: 0,
+    startedAt: 0,
+    retriedCheckedAt: null,
+    phase,
+  });
+  const failure = (input: Partial<Parameters<typeof resolveFirstRunAgentStartupFailure>[0]>) =>
+    resolveFirstRunAgentStartupFailure({
+      install: done,
+      provider: provider("opencode", { status: "error", statusReason: "migration" }),
+      startup: attempt("starting"),
       ...input,
     });
 
-  it("counts as begun while the starter has not recorded this install yet", () => {
-    expect(activating({})).toBe(true);
-    expect(activating({ activation: { operationId: "earlier", active: false } })).toBe(true);
+  it("reports an error OpenCode sends after a good install, with its category", () => {
+    expect(failure({})).toBe("migration");
+    expect(failure({ provider: provider("opencode", signedOut) })).toBe("auth");
   });
 
-  it("follows the recorded wait once the starter has one for this install", () => {
-    expect(activating({ activation: { operationId: "operation", active: true } })).toBe(true);
-    expect(activating({ activation: { operationId: "operation", active: false } })).toBe(false);
+  it("reports no answer by the timeout as startup_timeout", () => {
+    const pending = provider("opencode", { statusPending: true });
+    expect(failure({ provider: pending, startup: attempt("slow") })).toBeNull();
+    expect(failure({ provider: pending, startup: attempt("timedOut") })).toBe("startup_timeout");
   });
 
-  it("never holds setup without a succeeded install or a starter to end the wait", () => {
-    expect(activating({ succeededOperationId: null })).toBe(false);
-    expect(activating({ starterRunning: false })).toBe(false);
+  it("reports nothing for a working agent, an install failure, or one that worked before", () => {
+    expect(failure({ provider: provider("opencode") })).toBeNull();
+    expect(failure({ install: { ...done, phase: "failed" } })).toBeNull();
+    expect(failure({ startup: null })).toBeNull();
+    expect(failure({ startup: { ...attempt("starting"), operationId: "earlier" } })).toBeNull();
+    expect(failure({ startup: attempt("ready") })).toBeNull();
   });
 });
 

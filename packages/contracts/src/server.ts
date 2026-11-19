@@ -1203,6 +1203,12 @@ export const UI_TRACK_TARGET_PATTERN = /^[a-z0-9_.-]{1,64}$/;
 /** A click on an element without a valid `data-track` name. */
 export const UI_UNTRACKED_TARGET = "untracked";
 
+export const FirstRunAgentFailureReason = Schema.Literals([
+  "install",
+  ...ServerProviderStatusReason.literals,
+]);
+export type FirstRunAgentFailureReason = typeof FirstRunAgentFailureReason.Type;
+
 /**
  * UI events the server records as product telemetry, so they share the
  * install's identity with its server events. Bounded values only.
@@ -1236,6 +1242,8 @@ export const ClientTelemetryEvent = Schema.Union([
   Schema.Struct({
     event: Schema.Literal("onboarding.first_run_agent"),
     outcome: Schema.Literals(["started", "ready", "failed", "retried", "connect_other"]),
+    /** With `failed`: the install, or the first agent's start after it. */
+    reason: Schema.optionalKey(FirstRunAgentFailureReason),
   }),
   Schema.Struct({
     event: Schema.Literal("onboarding.completed"),
