@@ -30,10 +30,10 @@ export function KindSwitch(props: {
       }}
     >
       <ToggleGroupItem value="task" aria-label={LABELS.task}>
-        <HeaderSwitchLabel icon={ListTodoIcon} label={LABELS.task} />
+        <HeaderSwitchLabel icon={ListTodoIcon} label={LABELS.task} compactBelow="listHeader" />
       </ToggleGroupItem>
       <ToggleGroupItem value="routine" aria-label={LABELS.routine}>
-        <HeaderSwitchLabel icon={RepeatIcon} label={LABELS.routine} />
+        <HeaderSwitchLabel icon={RepeatIcon} label={LABELS.routine} compactBelow="listHeader" />
       </ToggleGroupItem>
     </ToggleGroup>
   );

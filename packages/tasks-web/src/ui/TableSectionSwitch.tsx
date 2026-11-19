@@ -27,14 +27,18 @@ export function TableSectionSwitch(props: {
       }}
     >
       <ToggleGroupItem value="tasks" aria-label="Tasks" data-track="tasks.section.tasks">
-        <HeaderSwitchLabel icon={ListTodoIcon} label="Tasks" />
+        <HeaderSwitchLabel icon={ListTodoIcon} label="Tasks" compactBelow="workersHeader" />
       </ToggleGroupItem>
       <ToggleGroupItem
         value="automations"
         aria-label="Automations"
         data-track="tasks.section.automations"
       >
-        <HeaderSwitchLabel icon={CalendarClockIcon} label="Automations" />
+        <HeaderSwitchLabel
+          icon={CalendarClockIcon}
+          label="Automations"
+          compactBelow="workersHeader"
+        />
       </ToggleGroupItem>
     </ToggleGroup>
   );
