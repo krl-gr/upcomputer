@@ -55,6 +55,7 @@ export const TASK_STATUSES = [
   "Backlog",
   "To Do",
   "In Progress",
+  "In Review",
   "Needs Input",
   "Needs Review",
   "Blocked",

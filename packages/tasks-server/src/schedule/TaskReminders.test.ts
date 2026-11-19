@@ -226,6 +226,14 @@ it.effect("no reminder for handled entries, finished tasks or entries that alrea
       id: TaskId.make("done"),
       status: "Done",
     });
+    // An agent may spell Done in lowercase; a person task is only To Do or Done.
+    yield* plan("agent done", "09:30");
+    yield* repository.update({
+      actor: { type: "person" },
+      id: TaskId.make("agent done"),
+      audience: "agent",
+      status: "done",
+    });
     yield* plan("archived", "09:30");
     yield* repository.setArchived({
       ids: [TaskId.make("archived")],

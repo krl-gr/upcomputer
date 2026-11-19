@@ -34,6 +34,7 @@ import {
   TaskThreadRunCountsResult,
   DEFAULT_TASK_REMINDER_LEAD_MINUTES,
   PERSON_DONE_STATUS,
+  sameTaskStatus,
   personTaskStatusError,
   statusForPersonAudience,
   taskKindAudienceError,
@@ -2717,7 +2718,7 @@ const makeTaskRepository = Effect.gen(function* () {
   const lastDoneAt = (taskId: TaskId) =>
     sql<{ createdAt: string }>`SELECT created_at AS "createdAt" FROM task_events
       WHERE task_id = ${taskId} AND kind = ${TASK_STATUS_CHANGED_EVENT}
-        AND json_extract(payload_json, '$.to') = ${PERSON_DONE_STATUS}
+        AND TRIM(json_extract(payload_json, '$.to')) = ${PERSON_DONE_STATUS} COLLATE NOCASE
       ORDER BY created_at DESC, rowid DESC LIMIT 1`.pipe(
       Effect.map((rows) => rows[0]?.createdAt ?? null),
     );
@@ -2892,7 +2893,9 @@ const makeTaskRepository = Effect.gen(function* () {
           }> = [];
           const reminders = due.flatMap((row): TaskReminder[] => {
             if (row.status !== "open" || row.startTime === null || row.title === null) return [];
-            if (row.taskStatus === PERSON_DONE_STATUS || row.archivedAt !== null) return [];
+            if (row.archivedAt !== null) return [];
+            if (row.taskStatus !== null && sameTaskStatus(row.taskStatus, PERSON_DONE_STATUS))
+              return [];
             const startsAt = scheduledInstant(row.date, row.startTime, settings.timeZone);
             if (startsAt === null) return [];
             if (startsAt <= DateTime.toEpochMillis(now)) {
