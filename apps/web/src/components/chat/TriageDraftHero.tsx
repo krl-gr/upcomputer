@@ -51,7 +51,9 @@ export function TriageDraftHero(props: {
             {isCopied ? "Copied" : "or run"}
             {isCopied ? null : <code className="ml-1 font-mono text-xs">{TRIAGE_CLI_COMMAND}</code>}
           </TooltipTrigger>
-          <TooltipPopup side="bottom">Copy command, for a terminal</TooltipPopup>
+          <TooltipPopup side="bottom">
+            Copy command, for a terminal. If up is not found, install it in Settings, About.
+          </TooltipPopup>
         </Tooltip>
       </p>
     </div>

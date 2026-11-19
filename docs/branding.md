@@ -75,7 +75,15 @@ literals against it and against the electron-builder config.
   troubleshooting link (`packages/contracts/src/environmentHttp.ts`) and that guide's "Report a
   problem" link point at krl-gr/upcomputer or up.computer and are pinned by check-branding, as are
   the hosted-app name in the policy and triage client text (app.up.computer). Upstream's copies point at pingdotgg/t3code, so a sync that takes their side
-  would have our users star and file issues on T3 Code.
+  would have our users star and file issues on T3 Code. Triage (`up triage` and Triage an
+  issue) clones krl-gr/upcomputer at our release tag
+  (`core-v<version>`, or `v<version>` for nightlies and older releases, in
+  `apps/server/src/triage/TriageService.ts`), and the playbook (`triagePrompt.ts`, kept
+  byte-identical to `.github/triage/PLAYBOOK.md`) searches and files issues there with our
+  `.github/ISSUE_TEMPLATE/via-triage.yml`. The suggested command is `up triage` (`bootError.ts`,
+  `useStartTriage.ts`), and the stale service launcher hint (`apps/server/src/cloud/servicePreflight.ts`)
+  says to update the desktop app instead of running T3 Code's installer. check-branding pins all of
+  these; upstream's versions use pingdotgg/t3code, `v<version>` tags and `npx t3`.
 - **Artwork from V1:** `assets/prod/upcomputer-*` and `assets/dev/upcomputer-blueprint-*` (nightly
   uses the blueprint too), wired in `scripts/lib/brand-assets.ts`, `DesktopAssets.ts` and the dev
   launcher; `apps/web/public` favicons; the app icon replaces the T3 wordmark in `T3Wordmark.tsx`;
