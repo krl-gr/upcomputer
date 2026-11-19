@@ -88,4 +88,16 @@ describe("thread undo notice", () => {
     await notice().undo();
     expect(cancelAnnouncement).toHaveBeenCalledWith("thread-undo-notice");
   });
+
+  it("announces a plain Undo on a touch screen, which has no key to press", () => {
+    const { options } = setup();
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(pointer: coarse)" }));
+    using _touch = { [Symbol.dispose]: () => vi.unstubAllGlobals() };
+    vi.mocked(announce).mockClear();
+    showThreadUndoNotice(options);
+    expect(announce).toHaveBeenCalledExactlyOnceWith(
+      "Unpinned 1 thread, Undo",
+      "thread-undo-notice",
+    );
+  });
 });
