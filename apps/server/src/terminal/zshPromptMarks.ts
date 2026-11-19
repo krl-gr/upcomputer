@@ -5,71 +5,144 @@ import * as Path from "effect/Path";
 /** Holds the user's own ZDOTDIR while ours is in place; the startup file restores it. */
 const ZSH_USER_ZDOTDIR_ENV_KEY = "T3CODE_ZSH_ZDOTDIR";
 
-/**
- * zsh reads `$ZDOTDIR/.zshenv` first. This one hands ZDOTDIR back before loading the
- * user's own startup files, then wraps PS1 in OSC 133 prompt marks so the web terminal
- * knows where the prompt starts when a resize makes zsh redraw it.
- */
-const ZSH_PROMPT_MARKS_ZSHENV = String.raw`# Written by Up.computer for its terminals. Changes are overwritten.
-if (( $+T3CODE_ZSH_ZDOTDIR )); then
-  'builtin' 'export' ZDOTDIR=$T3CODE_ZSH_ZDOTDIR
-  'builtin' 'unset' 'T3CODE_ZSH_ZDOTDIR'
+/** zsh reads `$ZDOTDIR/.zshenv` first; this one marks the prompt and hands startup back. */
+const ZSH_PROMPT_MARKS_ZSHENV = String.raw`# Up.computer starts zsh terminals here. It marks the prompt with OSC 133, so the
+# terminal knows where the prompt begins when a resize makes zsh redraw it, then lets
+# the user's own startup files run. The app rewrites this file.
+
+# The server set ZDOTDIR to this directory and kept the user's own value aside.
+if [[ -v T3CODE_ZSH_ZDOTDIR ]]; then
+  ZDOTDIR=$T3CODE_ZSH_ZDOTDIR
 else
-  'builtin' 'unset' 'ZDOTDIR'
+  unset ZDOTDIR
+fi
+unset T3CODE_ZSH_ZDOTDIR
+
+if [[ -o interactive ]]; then
+  typeset -g _t3code_ps1 _t3code_ps1_marked _t3code_ps2 _t3code_ps2_marked
+  typeset -gi _t3code_shown
+
+  # Sets REPLY to the prompt $1 between prompt-start and prompt-end marks.
+  _t3code_mark() {
+    emulate -L zsh
+    local rest=$1
+    integer percents=0
+    while [[ $rest == *% ]]; do rest=$rest[1,-2]; percents+=1; done
+    REPLY=$1
+    # An odd run of trailing % would escape the % of the closing mark.
+    if (( percents % 2 )); then REPLY+=%; fi
+    REPLY=$'%{\e]133;A\a%}'$REPLY$'%{\e]133;B\a%}'
+  }
+
+  # PS2 is marked too: a resize at a continuation prompt redraws only that line.
+  _t3code_mark_prompts() {
+    local percent=0 REPLY
+    [[ -o prompt_percent ]] && percent=1
+    emulate -L zsh
+    (( percent )) || return 0
+    if [[ $PS1 != *$'\e]133;A'* ]]; then
+      _t3code_ps1=$PS1
+      _t3code_mark "$PS1"
+      PS1=$REPLY _t3code_ps1_marked=$REPLY
+    fi
+    if [[ $PS2 != *$'\e]133;A'* ]]; then
+      _t3code_ps2=$PS2
+      _t3code_mark "$PS2"
+      PS2=$REPLY _t3code_ps2_marked=$REPLY
+    fi
+  }
+
+  _t3code_precmd() {
+    emulate -L zsh
+    # Stay the last hook, so a theme that rebuilds PS1 in its own precmd keeps the marks.
+    integer index=$precmd_functions[(I)_t3code_precmd]
+    if (( index && index < $#precmd_functions )); then
+      precmd_functions[index]=()
+      precmd_functions+=(_t3code_precmd)
+    fi
+    if (( ! _t3code_shown )); then
+      _t3code_shown=1
+      # Hooks after ours still run before this first prompt, so check it again once zle shows it.
+      autoload -Uz add-zle-hook-widget
+      add-zle-hook-widget line-init _t3code_first_line 2>/dev/null
+    fi
+    _t3code_mark_prompts
+  }
+
+  _t3code_first_line() {
+    emulate -L zsh
+    add-zle-hook-widget -d line-init _t3code_first_line
+    local ps1=$PS1 ps2=$PS2
+    _t3code_mark_prompts
+    [[ $PS1 == "$ps1" && $PS2 == "$ps2" ]] || zle reset-prompt
+  }
+
+  _t3code_preexec() {
+    emulate -L zsh
+    [[ $PS1 != "$_t3code_ps1_marked" ]] || PS1=$_t3code_ps1
+    [[ $PS2 != "$_t3code_ps2_marked" ]] || PS2=$_t3code_ps2
+    print -n $'\e]133;C\a'
+  }
+
+  precmd_functions+=(_t3code_precmd)
+  preexec_functions+=(_t3code_preexec)
 fi
 
-{
-  if (( $+ZDOTDIR )); then 'builtin' 'typeset' _t3code_file=$ZDOTDIR/.zshenv
-  else 'builtin' 'typeset' _t3code_file=$HOME/.zshenv; fi
-  [[ ! -r $_t3code_file ]] || 'builtin' 'source' '--' "$_t3code_file"
-} always {
-  'builtin' 'unset' '_t3code_file'
-  if [[ -o 'interactive' ]] && (( ! $+functions[_t3code_prompt_marks] )); then
-    'builtin' 'typeset' -g _t3code_ps1 _t3code_marked_ps1
-    _t3code_prompt_marks() {
-      'builtin' 'emulate' -L zsh -o no_aliases
-      # Stay last, so a theme that rebuilds PS1 in its own precmd keeps the marks.
-      'builtin' 'local' -i index=$precmd_functions[(I)_t3code_prompt_marks]
-      if (( index && index != $#precmd_functions )); then
-        precmd_functions[index]=()
-        precmd_functions+=(_t3code_prompt_marks)
-      fi
-      [[ -o prompt_percent && $PS1 != *$'\e]133;A'* ]] || 'builtin' 'return' 0
-      _t3code_ps1=$PS1
-      # A trailing bare % would swallow the brace of the closing mark.
-      [[ $PS1 == *[^%]% || $PS1 == % ]] && PS1+=%
-      PS1=$'%{\e]133;A\a%}'$PS1$'%{\e]133;B\a%}'
-      _t3code_marked_ps1=$PS1
-    }
-    _t3code_command_mark() {
-      'builtin' 'emulate' -L zsh -o no_aliases
-      [[ $PS1 != "$_t3code_marked_ps1" ]] || PS1=$_t3code_ps1
-      'builtin' 'print' -n $'\e]133;C\a'
-    }
-    'builtin' 'typeset' -ag precmd_functions preexec_functions
-    precmd_functions+=(_t3code_prompt_marks)
-    preexec_functions+=(_t3code_command_mark)
-  fi
-}
+# Last, the user's own .zshenv, from where zsh itself would have read it.
+if [[ -v ZDOTDIR ]]; then
+  if [[ -r $ZDOTDIR/.zshenv ]]; then . "$ZDOTDIR/.zshenv"; fi
+elif [[ -r $HOME/.zshenv ]]; then
+  . "$HOME/.zshenv"
+fi
 `;
 
-/** Writes the startup file; terminals keep the user's plain zsh startup when this fails. */
-export const writeZshPromptMarks = Effect.fn("terminal.writeZshPromptMarks")(function* (
-  directory: string,
+/**
+ * Builds the spawn environment for a terminal shell. zsh starts from the prompt-marks
+ * file in `directory` and gets the user's ZDOTDIR back from it. Other shells, Windows,
+ * and a failed write keep `env`, so zsh never starts without the user's own files.
+ */
+export const makeZshPromptMarks = Effect.fn("terminal.makeZshPromptMarks")(function* (
+  directory: string | undefined,
+  platform: NodeJS.Platform,
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const file = path.join(directory, ".zshenv");
-  const current = yield* fileSystem.readFileString(file).pipe(Effect.orElseSucceed(() => null));
-  if (current === ZSH_PROMPT_MARKS_ZSHENV) return;
-  yield* fileSystem.makeDirectory(directory, { recursive: true });
-  yield* fileSystem.writeFileString(file, ZSH_PROMPT_MARKS_ZSHENV);
-});
 
-/** Spawn environment that makes zsh start from `directory` and then restore the user's ZDOTDIR. */
-export function zshPromptMarksEnv(env: NodeJS.ProcessEnv, directory: string): NodeJS.ProcessEnv {
-  const next: NodeJS.ProcessEnv = { ...env, ZDOTDIR: directory };
-  delete next[ZSH_USER_ZDOTDIR_ENV_KEY];
-  if (env.ZDOTDIR !== undefined) next[ZSH_USER_ZDOTDIR_ENV_KEY] = env.ZDOTDIR;
-  return next;
-}
+  // Checked on every spawn and replaced atomically, so a deleted or half-written file never
+  // leaves ZDOTDIR pointing at nothing.
+  const ensureStartupFile = Effect.fn("terminal.ensureZshPromptMarks")(function* (
+    directory: string,
+  ) {
+    const file = path.join(directory, ".zshenv");
+    const current = yield* fileSystem.readFileString(file).pipe(Effect.orElseSucceed(() => null));
+    if (current === ZSH_PROMPT_MARKS_ZSHENV) return;
+    yield* fileSystem.makeDirectory(directory, { recursive: true });
+    const staging = yield* fileSystem.makeTempDirectory({ directory });
+    const staged = path.join(staging, ".zshenv");
+    yield* fileSystem
+      .writeFileString(staged, ZSH_PROMPT_MARKS_ZSHENV)
+      .pipe(
+        Effect.andThen(fileSystem.rename(staged, file)),
+        Effect.ensuring(fileSystem.remove(staging, { recursive: true }).pipe(Effect.ignore)),
+      );
+  });
+
+  return Effect.fn("terminal.withZshPromptMarks")(function* (
+    shell: string,
+    env: NodeJS.ProcessEnv,
+  ) {
+    if (directory === undefined || platform === "win32") return env;
+    if (path.basename(shell).toLowerCase() !== "zsh") return env;
+    const written = yield* ensureStartupFile(directory).pipe(
+      Effect.as(true),
+      Effect.catch((error) =>
+        Effect.logWarning("failed to write zsh prompt marks", { error }).pipe(Effect.as(false)),
+      ),
+    );
+    if (!written) return env;
+    const next: NodeJS.ProcessEnv = { ...env, ZDOTDIR: directory };
+    delete next[ZSH_USER_ZDOTDIR_ENV_KEY];
+    if (env.ZDOTDIR !== undefined) next[ZSH_USER_ZDOTDIR_ENV_KEY] = env.ZDOTDIR;
+    return next;
+  });
+});

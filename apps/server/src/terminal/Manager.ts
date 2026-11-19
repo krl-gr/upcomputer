@@ -74,7 +74,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as NativeTelemetryClient from "../resourceTelemetry/NativeTelemetryClient.ts";
 import { terminalOutputStream } from "./OutputProtocol.ts";
-import { writeZshPromptMarks, zshPromptMarksEnv } from "./zshPromptMarks.ts";
+import { makeZshPromptMarks } from "./zshPromptMarks.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 
 export {
@@ -1529,18 +1529,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   // Inherit the full environment minus createTerminalSpawnEnv's blocklist; allowlists silently drop user tooling variables.
   const baseEnv = options.env ?? process.env;
   const shellResolver = options.shellResolver ?? (() => defaultShellResolver(platform, baseEnv));
-  // Without the file, zsh starts as usual and only loses its prompt marks.
-  const zshPromptMarksDir =
-    options.zshPromptMarksDir === undefined || platform === "win32"
-      ? undefined
-      : yield* writeZshPromptMarks(options.zshPromptMarksDir).pipe(
-          Effect.as(options.zshPromptMarksDir),
-          Effect.catch((error) =>
-            Effect.logWarning("failed to write zsh prompt marks", { error }).pipe(
-              Effect.as(undefined),
-            ),
-          ),
-        );
+  const withZshPromptMarks = yield* makeZshPromptMarks(options.zshPromptMarksDir, platform);
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const resolveLaunchInputEnvironment = Effect.fn("terminal.resolveLaunchInputEnvironment")(
     function* <Input extends TerminalOpenInput | TerminalAttachInput>(
@@ -2383,11 +2372,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       );
     }
 
-    const candidateEnv =
-      zshPromptMarksDir !== undefined &&
-      basenameForPlatform(candidate.shell, platform).toLowerCase() === "zsh"
-        ? zshPromptMarksEnv(spawnEnv, zshPromptMarksDir)
-        : spawnEnv;
+    const candidateEnv = yield* withZshPromptMarks(candidate.shell, spawnEnv);
     const launch = yield* agentScope.wrap({
       command: candidate.shell,
       args: candidate.args ?? [],
