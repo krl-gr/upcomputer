@@ -16,8 +16,9 @@ export const EMPTY_DRAFT_ANSWER: SurveyDraftAnswer = { picked: [], otherText: ""
 
 export type ChoiceQuestion = Extract<UserSurveyQuestion, { readonly choices: unknown }>;
 
+/** The choice that takes the person's own words. */
 export function isOpenChoice(question: ChoiceQuestion, index: number): boolean {
-  return question.hasOpenChoice && index === question.choices.length - 1;
+  return question.choices[index]?.kind === "own-answer";
 }
 
 function draftAnswer(draft: SurveyDraft, questionId: string): SurveyDraftAnswer {
@@ -63,7 +64,7 @@ function answerValue(
   if (question.type === "open") return answer.text.trim() || null;
   const values = question.choices.flatMap((choice, index) => {
     if (!answer.picked.includes(index)) return [];
-    return [isOpenChoice(question, index) ? answer.otherText.trim() || choice : choice];
+    return [isOpenChoice(question, index) ? answer.otherText.trim() || choice.label : choice.label];
   });
   if (values.length === 0) return null;
   return question.type === "single_choice" ? values[0]! : values;
@@ -112,7 +113,9 @@ export function pickChoice(
  */
 export function surveyCardQuestion(survey: UserSurvey): ChoiceQuestion | null {
   const first = surveyBlocks(survey, {})[0]?.question;
-  return first?.type === "single_choice" && !first.hasOpenChoice && first.choices.length <= 3
+  return first?.type === "single_choice" &&
+    first.choices.length <= 3 &&
+    first.choices.every((choice) => choice.kind === undefined)
     ? first
     : null;
 }
@@ -145,5 +148,52 @@ export function surveyOpenedFollowUp(survey: UserSurvey, draft: SurveyDraft): bo
 
 /** An open question that asks how to reach the person: one line, not a text box. */
 export function isContactQuestion(question: UserSurveyQuestion): boolean {
-  return question.type === "open" && /e-?mail/i.test(question.question);
+  return question.type === "open" && question.kind === "contact";
+}
+
+/** The card is not a step of the form: confirming it confirms the card's question. */
+export type SurveyConfirmedStep = number | "card";
+
+/**
+ * The questions confirmed once the card's question is answered or a step is
+ * left with Continue or Skip: that step's question and its follow-ups.
+ */
+export function confirmSurveyStep(
+  survey: UserSurvey,
+  draft: SurveyDraft,
+  confirmed: ReadonlySet<string>,
+  step: SurveyConfirmedStep,
+): ReadonlySet<string> {
+  const questions =
+    step === "card"
+      ? [surveyCardQuestion(survey)].filter((question) => question !== null)
+      : [surveySteps(survey, draft)[step]].flatMap((block) =>
+          block ? [block.question, ...block.followUps] : [],
+        );
+  return new Set([...confirmed, ...questions.map((question) => question.id)]);
+}
+
+/** Answers to confirmed questions: text typed on a step the person did not leave forward stays out. */
+export function confirmedSurveyAnswers(
+  survey: UserSurvey,
+  draft: SurveyDraft,
+  confirmed: ReadonlySet<string>,
+): ReadonlyArray<UserSurveyAnswer> {
+  return surveyAnswers(survey, draft).filter((answer) => confirmed.has(answer.questionId));
+}
+
+/**
+ * The step the person left on, for a drop-off funnel: the card's question
+ * (index 0) until it is answered, then the form's step, counted after the card.
+ */
+export function surveyLeftOn(
+  survey: UserSurvey,
+  draft: SurveyDraft,
+  step: number,
+): { readonly questionId: string; readonly index: number } {
+  const card = surveyCardQuestion(survey);
+  if (card && !draft[card.id]?.picked.length) return { questionId: card.id, index: 0 };
+  const steps = surveySteps(survey, draft);
+  const at = Math.max(0, Math.min(step, steps.length - 1));
+  return { questionId: steps[at]!.question.id, index: at + (card ? 1 : 0) };
 }

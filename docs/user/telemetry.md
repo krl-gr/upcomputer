@@ -49,12 +49,14 @@ Linux, so export it there and restart the app. On Windows, set it as a user envi
 
 ## Surveys
 
-Now and then the notifications button shows a short survey from the Up.computer team. **Share**
-opens it. Your answers are sent only when you press **Submit**, and they are sent even when
-product events are off: then the answers go out alone, under a random identifier, with nothing
-else about you or your installation. Close the card to dismiss a survey; it does not come back.
-To find surveys, the server asks PostHog for active ones at most once an hour while the app is
-connected. A managed policy that turns usage data off also turns surveys off.
+After you have used Up.computer for a week, on at least three different days, the notifications
+button may show a short survey from the Up.computer team. It asks at most once a month, and the
+questions come with the app, so nothing is fetched to show it. Your answer to the card's
+question is sent when you pick it, and the rest when you press **Send**. With product events
+off, nothing is sent until you press **Send**, and then the answers go out alone, under a
+random identifier, with nothing else about you or your installation. Close the card to dismiss
+the survey; it does not come back. A managed policy that turns usage data off also turns
+surveys off.
 
 ## Mark a team or test device
 

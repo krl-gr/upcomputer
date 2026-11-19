@@ -19,6 +19,7 @@ import {
 } from "./surveyParts";
 import {
   canSubmitSurvey,
+  isOpenChoice,
   type SurveyDraft,
   surveyAnswers,
   surveyOpenedFollowUp,
@@ -94,10 +95,11 @@ export function UserSurveyDialogPopup({
     onDraftChange(next);
     // A single choice that opens nothing under it is a full answer: move on.
     const question = block.question;
-    if (last || question.type !== "single_choice" || question.hasOpenChoice) return;
+    if (last || question.type !== "single_choice") return;
+    if (question.choices.some((_, index) => isOpenChoice(question, index))) return;
     if (next[question.id]?.picked === draft[question.id]?.picked) return;
     const opensFollowUp = surveySteps(survey, next)[step]!.followUps.length > 0;
-    if (!opensFollowUp) setTimeout(() => onStepChange(step + 1), AUTO_ADVANCE_MS);
+    if (!opensFollowUp) setTimeout(() => onStepChange(step + 1, next), AUTO_ADVANCE_MS);
   };
 
   return (

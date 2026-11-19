@@ -7,10 +7,15 @@ carry the same identity and opt-out as server events. Client-use events require 
 authenticated connection, so visiting the hosted app without connecting does not
 count as product use.
 
-Survey answers are the one exception to opt-out: a person who presses Submit chose to
+Survey answers are the one exception to opt-out: a person who presses Send chose to
 send them. [UserSurveys](../../apps/server/src/userSurveys/UserSurveys.ts) sends them with
 `AnalyticsService.sendNow`, which with analytics off sends only the answers under a one-off
-random `distinct_id` and creates no install identity. Shown and dismissed events follow opt-out.
+random `distinct_id` and creates no install identity. Shown, dismissed and the partial answer
+from the card follow opt-out. The survey is defined in the app, not in PostHog, so its events
+carry an id PostHog's survey list does not know: read them as events. Who is asked is decided
+from the local thread history (see
+[UserSurveyEligibility](../../apps/server/src/userSurveys/UserSurveyEligibility.ts)), so
+installs that predate the survey qualify without new tracking.
 
 ## Installs and owners
 

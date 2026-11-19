@@ -9,13 +9,17 @@ import { observeResize } from "../lib/observeResize";
 import { cn } from "../lib/utils";
 import {
   type ChoiceQuestion,
+  confirmedSurveyAnswers,
+  confirmSurveyStep,
   EMPTY_DRAFT_ANSWER,
   isContactQuestion,
   isOpenChoice,
   pickChoice,
   type SurveyDraft,
+  type SurveyConfirmedStep,
   type SurveyDraftAnswer,
   surveyAnswers,
+  surveyLeftOn,
 } from "./userSurvey.logic";
 
 export const USER_SURVEY_TITLE = `How can we improve ${APP_BASE_NAME} for you?`;
@@ -44,7 +48,8 @@ export interface SurveyFormProps {
   readonly step: number;
   readonly back: boolean;
   readonly onDraftChange: (draft: SurveyDraft) => void;
-  readonly onStepChange: (step: number) => void;
+  /** Going forward confirms the step; an auto-advance passes the draft it just set. */
+  readonly onStepChange: (step: number, draft?: SurveyDraft) => void;
   readonly onSubmit: () => void;
   readonly onClose: () => void;
   /** Back from the first step: the card, where the first answer can be changed. */
@@ -54,6 +59,8 @@ export interface SurveyFormProps {
 interface SurveyFormState {
   readonly surveyId: string | null;
   readonly draft: SurveyDraft;
+  /** Questions the card or Continue and Skip confirmed: only these go out before Send. */
+  readonly confirmed: ReadonlySet<string>;
   readonly status: UserSurveyStatus;
   readonly step: number;
   readonly back: boolean;
@@ -62,13 +69,19 @@ interface SurveyFormState {
 /**
  * The draft, the step and the send status, kept by whoever outlives the form,
  * so the card can answer the first question and closing keeps what was typed.
- * A new survey starts empty.
+ * The card's answer and each step left forward go to `onPartial` with every
+ * answer confirmed so far. A new survey starts empty.
  */
-export function useSurveyForm(survey: UserSurvey | null, onSubmit: SubmitUserSurvey | null) {
+export function useSurveyForm(
+  survey: UserSurvey | null,
+  onSubmit: SubmitUserSurvey | null,
+  onPartial: ((answers: ReadonlyArray<UserSurveyAnswer>) => void) | null,
+) {
   const surveyId = survey?.id ?? null;
   const fresh: SurveyFormState = {
     surveyId,
     draft: {},
+    confirmed: new Set(),
     status: { kind: "editing" },
     step: 0,
     back: false,
@@ -80,15 +93,34 @@ export function useSurveyForm(survey: UserSurvey | null, onSubmit: SubmitUserSur
       const base = current.surveyId === surveyId ? current : fresh;
       return { ...base, ...change(base) };
     });
+  const confirm = (draft: SurveyDraft, step: SurveyConfirmedStep) => {
+    if (!survey) return state.confirmed;
+    const confirmed = confirmSurveyStep(survey, draft, state.confirmed, step);
+    const answers = confirmedSurveyAnswers(survey, draft, confirmed);
+    if (answers.length > 0) onPartial?.(answers);
+    return confirmed;
+  };
   return {
     draft: state.draft,
     status: state.status,
     step: state.step,
     back: state.back,
+    /** Where the person is, for the dismissal. */
+    leftOn: survey ? surveyLeftOn(survey, state.draft, state.step) : null,
     setDraft: (draft: SurveyDraft) => update(() => ({ draft })),
-    goTo: (step: number) => update((current) => ({ step, back: step < current.step })),
+    goTo: (step: number, draft?: SurveyDraft) => {
+      if (step <= state.step) {
+        update(() => ({ step, back: step < state.step }));
+        return;
+      }
+      const confirmed = confirm(draft ?? state.draft, state.step);
+      update(() => ({ step, back: false, confirmed }));
+    },
     /** The card's answer: the form opens on its first step with it already given. */
-    start: (draft: SurveyDraft) => update(() => ({ draft, step: 0, back: false })),
+    start: (draft: SurveyDraft) => {
+      const confirmed = confirm(draft, "card");
+      update(() => ({ draft, step: 0, back: false, confirmed }));
+    },
     submit: () => {
       if (!survey || !onSubmit) return;
       update(() => ({ status: { kind: "submitting" } }));
@@ -251,14 +283,14 @@ function ChoiceChips({
           const picked = answer.picked.includes(index);
           return (
             <SurveyChip
-              key={choice}
+              key={choice.label}
               size={size}
               multiple={multiple}
               picked={picked}
               open={isOpenChoice(question, index)}
               onClick={() => onChange(pickChoice(question, answer, index, !picked))}
             >
-              {choice}
+              {choice.label}
             </SurveyChip>
           );
         })}
@@ -268,7 +300,7 @@ function ChoiceChips({
           <div className={size === "sm" ? "pt-1.5" : "pt-2"}>
             <SurveyTextBox
               size={size}
-              aria-label={question.choices.at(-1)}
+              aria-label={question.choices.find((choice) => choice.kind === "own-answer")?.label}
               lines={3}
               placeholder="Tell us in a few words"
               autoFocus
@@ -311,7 +343,7 @@ export function SurveyAnswerInput({
         spellCheck={false}
         className={fieldVariants({ size })}
         aria-label={question.question}
-        placeholder={question.description ?? "you@example.com or @handle"}
+        placeholder={question.placeholder ?? "you@example.com or @handle"}
         autoFocus={autoFocus}
         value={answer.text}
         onChange={(event) => onChange({ ...answer, text: event.target.value })}
@@ -324,9 +356,8 @@ export function SurveyAnswerInput({
         size={size}
         lines={followUp ? 3 : 4}
         aria-label={question.question}
-        // PostHog's description, when set, is the hint inside the box.
         placeholder={
-          followUp ? question.question : (question.description ?? "Type your answer here")
+          followUp ? question.question : (question.placeholder ?? "Type your answer here")
         }
         autoFocus={autoFocus || followUp}
         value={answer.text}

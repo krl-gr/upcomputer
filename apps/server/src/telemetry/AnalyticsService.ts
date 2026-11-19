@@ -85,8 +85,25 @@ function retryDelayMs(failures: number, random: number): number {
 
 const UPCOMPUTER_POSTHOG_PROJECT_KEY = "phc_uqRUAQavAKuUny7uFxm8tqr6nyVDpdoSARKsWNzs8wBx";
 
-/** The PostHog project events go to; surveys are read from the same one. */
-export const PostHogProjectConfig = Config.all({
+const DesktopBuildKindConfig = Config.Literals(
+  ["dev", "localtest", "rc", "nightly", "stable"],
+  "T3CODE_DESKTOP_BUILD_KIND",
+).pipe(Config.option);
+
+/** The kind of build this server belongs to, as its events report it. */
+export const serverBuildKind = Effect.gen(function* () {
+  const { mode } = yield* ServerConfig.ServerConfig;
+  // The desktop app knows whether it is packaged; other servers classify themselves.
+  const desktopBuildKind = mode === "desktop" ? yield* DesktopBuildKindConfig : Option.none();
+  return Option.getOrElse(desktopBuildKind, (): UpcomputerBuildKind =>
+    resolveUpcomputerBuildKind({
+      packaged: typeof __T3CODE_BUILD_CHANNEL__ !== "undefined",
+      version: packageJson.version,
+    }),
+  );
+});
+
+const TelemetryEnvConfig = Config.all({
   posthogKey: Config.String("T3CODE_POSTHOG_KEY").pipe(
     // The Up.computer PostHog project, the same one V1 reported to.
     Config.withDefault(UPCOMPUTER_POSTHOG_PROJECT_KEY),
@@ -94,11 +111,6 @@ export const PostHogProjectConfig = Config.all({
   posthogHost: Config.String("T3CODE_POSTHOG_HOST").pipe(
     Config.withDefault("https://us.i.posthog.com"),
   ),
-});
-
-const TelemetryEnvConfig = Config.all({
-  posthogKey: PostHogProjectConfig.pipe(Config.map((project) => project.posthogKey)),
-  posthogHost: PostHogProjectConfig.pipe(Config.map((project) => project.posthogHost)),
   enabled: Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.withDefault(true)),
   flushBatchSize: Config.Number("T3CODE_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
   maxBufferedEvents: Config.Number("T3CODE_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
@@ -111,10 +123,6 @@ const TelemetryEnvConfig = Config.all({
   desktopStartup: Config.Literals(["launch", "restart"], "T3CODE_DESKTOP_STARTUP").pipe(
     Config.option,
   ),
-  desktopBuildKind: Config.Literals(
-    ["dev", "localtest", "rc", "nightly", "stable"],
-    "T3CODE_DESKTOP_BUILD_KIND",
-  ).pipe(Config.option),
   desktopSessionId: Config.String("T3CODE_DESKTOP_SESSION_ID").pipe(Config.option),
 });
 
@@ -281,13 +289,7 @@ export const make = Effect.gen(function* () {
   const hostPlatform = yield* HostProcess.Platform;
   const hostArchitecture = yield* HostProcess.Architecture;
   const isDesktopBackend = serverConfig.mode === "desktop";
-  // The desktop app knows whether it is packaged; other servers classify themselves.
-  const buildKind: UpcomputerBuildKind =
-    (isDesktopBackend ? Option.getOrUndefined(telemetryConfig.desktopBuildKind) : undefined) ??
-    resolveUpcomputerBuildKind({
-      packaged: typeof __T3CODE_BUILD_CHANNEL__ !== "undefined",
-      version: packageJson.version,
-    });
+  const buildKind = yield* serverBuildKind;
   // Random per app launch (desktop) or per server start; never derived from the install.
   const desktopSessionId = isDesktopBackend
     ? Option.filter(telemetryConfig.desktopSessionId, (id) => UUID_PATTERN.test(id))

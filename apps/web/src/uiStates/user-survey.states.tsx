@@ -15,47 +15,46 @@ import { captureUiStateSheet, type UiState } from "./uiStateSheet";
  * Popups portal to the body, so each state copies the open popup into its cell.
  */
 
-// The survey as the server hands it over, parsed from PostHog's definition.
+// The survey as the server hands it over: its built-in definition.
 const SURVEY: UserSurvey = {
-  id: "0199a1b2-0000-7000-8000-000000000001",
-  name: "How can we improve Up.computer",
+  id: "feedback-2026-11",
+  name: "Feedback, November 2026",
   questions: [
     {
-      id: "q-working",
+      id: "working",
       type: "single_choice",
       question: "Hi 👋 Is Up.computer working well for you?",
       optional: false,
-      choices: ["All good", "Something's off"],
-      hasOpenChoice: false,
+      choices: [{ label: "All good" }, { label: "Something's off" }],
     },
     {
-      id: "q-details",
+      id: "problem",
       type: "open",
       question: "What went wrong? We'll fix it as soon as we can.",
-      description: "What happened, and where in the app?",
+      placeholder: "What happened, and where in the app?",
       optional: true,
-      showWhen: { questionId: "q-working", choices: [1] },
+      showWhen: { questionId: "working", choices: [1] },
     },
     {
-      id: "q-missing",
+      id: "next",
       type: "multiple_choice",
       question: "What should we build next?",
       optional: true,
       choices: [
-        "iOS app",
-        "Android app",
-        "Cloud agents",
-        "Voice dictation",
-        "Bots in Slack",
-        "Bots in video calls",
-        "Collaborative work",
-        "Write my own",
+        { label: "iOS app" },
+        { label: "Android app" },
+        { label: "Cloud agents" },
+        { label: "Voice dictation" },
+        { label: "Bots in Slack" },
+        { label: "Bots in video calls" },
+        { label: "Collaborative work" },
+        { label: "Write my own", kind: "own-answer" },
       ],
-      hasOpenChoice: true,
     },
     {
-      id: "q-else",
+      id: "contact",
       type: "open",
+      kind: "contact",
       question: "Can we follow up with you? Leave your email or X handle.",
       optional: true,
     },
@@ -106,6 +105,7 @@ vi.mock("../userSurvey/useUserSurvey", () => ({
       ? {
           survey: SURVEY,
           shown: () => undefined,
+          partial: () => undefined,
           dismiss: () => undefined,
           submit: async () => null,
           finish: () => undefined,
@@ -195,15 +195,15 @@ function bell(name: string, update: DesktopUpdateState | null, hover?: string): 
   };
 }
 
-const YES: SurveyDraft = { "q-working": { ...EMPTY_DRAFT_ANSWER, picked: [0] } };
+const YES: SurveyDraft = { working: { ...EMPTY_DRAFT_ANSWER, picked: [0] } };
 const issues = (details: string): SurveyDraft => ({
-  "q-working": { ...EMPTY_DRAFT_ANSWER, picked: [1] },
-  "q-details": { ...EMPTY_DRAFT_ANSWER, text: details },
+  working: { ...EMPTY_DRAFT_ANSWER, picked: [1] },
+  problem: { ...EMPTY_DRAFT_ANSWER, text: details },
 });
 const FILLED: SurveyDraft = {
   ...issues("The sidebar flickers when a thread finishes."),
-  "q-missing": { ...EMPTY_DRAFT_ANSWER, picked: [0, 3, 7], otherText: "Calendar sync" },
-  "q-else": { ...EMPTY_DRAFT_ANSWER, text: "demo@example.com" },
+  next: { ...EMPTY_DRAFT_ANSWER, picked: [0, 3, 7], otherText: "Calendar sync" },
+  contact: { ...EMPTY_DRAFT_ANSWER, text: "demo@example.com" },
 };
 
 function form(name: string, draft: SurveyDraft, step: number, status: UserSurveyStatus): UiState {
@@ -270,12 +270,24 @@ it("user-survey", async () => {
         title: "Survey form: the steps follow the card's answer",
         states: [
           form("Something's off, step 1 of 3: the details", issues(""), 0, EDITING),
+          form(
+            "Something's off, step 1 of 3: Continue once the details are typed",
+            issues("The sidebar flickers when a thread finishes."),
+            0,
+            EDITING,
+          ),
           form("Something's off, step 2 of 3: Skip until a chip is picked", issues(""), 1, EDITING),
+          form(
+            "Something's off, step 2 of 3: Write my own opens an empty text area",
+            { ...issues(""), next: { ...EMPTY_DRAFT_ANSWER, picked: [7] } },
+            1,
+            EDITING,
+          ),
           form(
             "Something's off, step 2 of 3: chips and Write my own with its text area",
             {
               ...issues("The sidebar flickers when a thread finishes."),
-              "q-missing": { ...EMPTY_DRAFT_ANSWER, picked: [3, 7], otherText: "Calendar sync" },
+              next: { ...EMPTY_DRAFT_ANSWER, picked: [3, 7], otherText: "Calendar sync" },
             },
             1,
             EDITING,

@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { type UserSurvey, UserSurveyError } from "@t3tools/contracts";
+import { type UserSurvey, type UserSurveyAnswer, UserSurveyError } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { useEffect, useState } from "react";
 
@@ -9,23 +9,26 @@ import { serverEnvironment } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
 import type { SubmitUserSurvey } from "./UserSurveyDialog";
 
-// The server reads PostHog at most hourly; this only picks up what it already holds.
-const POLL_INTERVAL_MS = 15 * 60_000;
+// A computer can qualify while the app stays open; the server answers from memory.
+const RECHECK_INTERVAL_MS = 60 * 60_000;
 const isUserSurveyError = Schema.is(UserSurveyError);
 const SEND_FAILED = "Couldn't send. Check your connection and try again.";
 
 export interface UserSurveyHandle {
   readonly survey: UserSurvey;
   readonly shown: () => void;
-  readonly dismiss: () => void;
+  /** Every answer confirmed so far; the server sends them as a partial response. */
+  readonly partial: (answers: ReadonlyArray<UserSurveyAnswer>) => void;
+  /** Dismisses the survey for good, from the step the person left on. */
+  readonly dismiss: (step: { readonly questionId: string; readonly index: number }) => void;
   readonly submit: SubmitUserSurvey;
   /** Drops the card once the thank-you is closed. */
   readonly finish: () => void;
 }
 
 /**
- * The survey this computer's server offers, from the primary environment only:
- * other environments are the same person's other servers.
+ * The survey this computer's server offers once it qualifies, from the primary
+ * environment only: other environments are the same person's other servers.
  */
 export function useUserSurvey(): UserSurveyHandle | null {
   const environmentId = usePrimaryEnvironmentId();
@@ -41,7 +44,7 @@ export function useUserSurvey(): UserSurveyHandle | null {
   const report = useAtomCommand(serverEnvironment.reportUserSurvey, { reportFailure: false });
   const [survey, setSurvey] = useState<UserSurvey | null>(null);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- polls the server for a newly launched survey
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks the server again as the computer may come to qualify
   useEffect(() => {
     if (!connected || environmentId === null) return;
     let current = true;
@@ -50,7 +53,7 @@ export function useUserSurvey(): UserSurveyHandle | null {
         if (current && result._tag === "Success") setSurvey(result.value.survey);
       });
     load();
-    const timer = setInterval(load, POLL_INTERVAL_MS);
+    const timer = setInterval(load, RECHECK_INTERVAL_MS);
     return () => {
       current = false;
       clearInterval(timer);
@@ -61,9 +64,11 @@ export function useUserSurvey(): UserSurveyHandle | null {
   return {
     survey,
     shown: () => void report({ environmentId, input: { _tag: "Shown", surveyId: survey.id } }),
-    dismiss: () => {
+    partial: (answers) =>
+      void report({ environmentId, input: { _tag: "Partial", surveyId: survey.id, answers } }),
+    dismiss: (step) => {
       setSurvey(null);
-      void report({ environmentId, input: { _tag: "Dismissed", surveyId: survey.id } });
+      void report({ environmentId, input: { _tag: "Dismissed", surveyId: survey.id, step } });
     },
     submit: async (answers) => {
       const result = await report({

@@ -63,7 +63,7 @@ export function UserSurveyCard({
             <div role="radiogroup" aria-label={question.question} className="contents">
               {question.choices.map((choice, index) => (
                 <SurveyChip
-                  key={choice}
+                  key={choice.label}
                   size="sm"
                   multiple={false}
                   picked={answer.picked.includes(index)}
@@ -71,7 +71,7 @@ export function UserSurveyCard({
                     onStart({ ...draft, [question.id]: pickChoice(question, answer, index, true) })
                   }
                 >
-                  {choice}
+                  {choice.label}
                 </SurveyChip>
               ))}
             </div>

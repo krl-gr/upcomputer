@@ -10,28 +10,38 @@ export const UserSurveyShowWhen = Schema.Struct({
 });
 export type UserSurveyShowWhen = typeof UserSurveyShowWhen.Type;
 
+export const UserSurveyChoice = Schema.Struct({
+  label: Schema.String,
+  /** Picking it opens a text box, and the person's own words are the answer. */
+  kind: Schema.optionalKey(Schema.Literal("own-answer")),
+});
+export type UserSurveyChoice = typeof UserSurveyChoice.Type;
+
 const UserSurveyQuestionBase = {
   id: Schema.String,
   question: Schema.String,
-  description: Schema.optionalKey(Schema.String),
+  /** The hint inside an empty text box. */
+  placeholder: Schema.optionalKey(Schema.String),
   optional: Schema.Boolean,
   showWhen: Schema.optionalKey(UserSurveyShowWhen),
 };
 
-/** A PostHog survey question this app can draw; other types are left out of the survey. */
 export const UserSurveyQuestion = Schema.Union([
-  Schema.Struct({ ...UserSurveyQuestionBase, type: Schema.Literal("open") }),
+  Schema.Struct({
+    ...UserSurveyQuestionBase,
+    type: Schema.Literal("open"),
+    /** Asks how to reach the person: one line, not a text box. */
+    kind: Schema.optionalKey(Schema.Literal("contact")),
+  }),
   Schema.Struct({
     ...UserSurveyQuestionBase,
     type: Schema.Literals(["single_choice", "multiple_choice"]),
-    choices: Schema.Array(Schema.String),
-    /** The last choice takes the user's own words, as PostHog's "Other" does. */
-    hasOpenChoice: Schema.Boolean,
+    choices: Schema.Array(UserSurveyChoice),
   }),
 ]);
 export type UserSurveyQuestion = typeof UserSurveyQuestion.Type;
 
-/** An active PostHog survey for this install, with its questions as written there. */
+/** A survey built into the app; a new survey ships with a release under a new id. */
 export const UserSurvey = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -51,7 +61,16 @@ export type UserSurveyAnswer = typeof UserSurveyAnswer.Type;
 
 export const UserSurveyReport = Schema.Union([
   Schema.TaggedStruct("Shown", { surveyId: Schema.String }),
-  Schema.TaggedStruct("Dismissed", { surveyId: Schema.String }),
+  Schema.TaggedStruct("Dismissed", {
+    surveyId: Schema.String,
+    /** The step the person left on: the card's question is 0, the form's steps follow. */
+    step: Schema.Struct({ questionId: Schema.String, index: Schema.Number }),
+  }),
+  /** The answers confirmed so far: the card's, and each step left with Continue or Skip. */
+  Schema.TaggedStruct("Partial", {
+    surveyId: Schema.String,
+    answers: Schema.Array(UserSurveyAnswer),
+  }),
   Schema.TaggedStruct("Answered", {
     surveyId: Schema.String,
     answers: Schema.Array(UserSurveyAnswer),

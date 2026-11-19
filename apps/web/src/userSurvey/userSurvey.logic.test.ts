@@ -9,6 +9,11 @@ import {
   type SurveyDraft,
   surveyAnswers,
   surveyBlocks,
+  confirmedSurveyAnswers,
+  confirmSurveyStep,
+  surveyLeftOn,
+  surveyOpenedFollowUp,
+  surveySteps,
 } from "./userSurvey.logic";
 
 const SURVEY: UserSurvey = {
@@ -20,8 +25,7 @@ const SURVEY: UserSurvey = {
       type: "single_choice",
       question: "Is everything working as expected?",
       optional: false,
-      choices: ["Yes", "There are issues"],
-      hasOpenChoice: false,
+      choices: [{ label: "Yes" }, { label: "There are issues" }],
     },
     {
       id: "details",
@@ -35,10 +39,13 @@ const SURVEY: UserSurvey = {
       type: "multiple_choice",
       question: "What are you missing?",
       optional: true,
-      choices: ["Mobile app", "Voice", "Other"],
-      hasOpenChoice: true,
+      choices: [
+        { label: "Mobile app" },
+        { label: "Voice" },
+        { label: "Other", kind: "own-answer" },
+      ],
     },
-    { id: "else", type: "open", question: "Anything else?", optional: true },
+    { id: "else", type: "open", kind: "contact", question: "Your email?", optional: true },
   ],
 };
 const MISSING = SURVEY.questions[2] as ChoiceQuestion;
@@ -63,6 +70,57 @@ describe("surveyBlocks", () => {
     ]);
     expect(blockIds({ working: answer({ picked: [1] }) })[0]).toEqual(["working", ["details"]]);
     expect(blockIds({ working: answer({ picked: [0] }) })[0]).toEqual(["working", []]);
+  });
+});
+
+describe("surveySteps", () => {
+  const stepIds = (draft: SurveyDraft) =>
+    surveySteps(SURVEY, draft).map(({ question }) => question.id);
+
+  it("leaves the card's question out, and Yes skips the details step", () => {
+    expect(stepIds({ working: answer({ picked: [0] }) })).toEqual(["missing", "else"]);
+    expect(surveyOpenedFollowUp(SURVEY, { working: answer({ picked: [0] }) })).toBe(false);
+    expect(stepIds({ working: answer({ picked: [1] }) })).toEqual(["details", "missing", "else"]);
+    expect(surveyOpenedFollowUp(SURVEY, { working: answer({ picked: [1] }) })).toBe(true);
+  });
+});
+
+describe("confirmedSurveyAnswers", () => {
+  it("sends every answer confirmed so far, never text typed on the step left open", () => {
+    const draft: SurveyDraft = {
+      working: answer({ picked: [1] }),
+      details: answer({ text: "Sidebar flickers" }),
+      missing: answer({ picked: [1] }),
+    };
+    const card = confirmSurveyStep(SURVEY, draft, new Set(), "card");
+    expect(confirmedSurveyAnswers(SURVEY, draft, card)).toEqual([
+      { questionId: "working", value: "There are issues" },
+    ]);
+    // Continue on the details step; the choices typed on the next step stay out.
+    const details = confirmSurveyStep(SURVEY, draft, card, 0);
+    expect(confirmedSurveyAnswers(SURVEY, draft, details)).toEqual([
+      { questionId: "working", value: "There are issues" },
+      { questionId: "details", value: "Sidebar flickers" },
+    ]);
+    // Skip passes the step too; switching the card to Yes drops the hidden details.
+    const missing = confirmSurveyStep(SURVEY, draft, details, 1);
+    const yes = { ...draft, working: answer({ picked: [0] }) };
+    expect(confirmedSurveyAnswers(SURVEY, yes, missing)).toEqual([
+      { questionId: "working", value: "Yes" },
+      { questionId: "missing", value: ["Voice"] },
+    ]);
+  });
+});
+
+describe("surveyLeftOn", () => {
+  it("is the card's question until it is answered, then the form's step after the card", () => {
+    expect(surveyLeftOn(SURVEY, {}, 0)).toEqual({ questionId: "working", index: 0 });
+    const issues = { working: answer({ picked: [1] }) };
+    expect(surveyLeftOn(SURVEY, issues, 0)).toEqual({ questionId: "details", index: 1 });
+    expect(surveyLeftOn(SURVEY, issues, 2)).toEqual({ questionId: "else", index: 3 });
+    // Yes skips the details step.
+    const yes = { working: answer({ picked: [0] }) };
+    expect(surveyLeftOn(SURVEY, yes, 0)).toEqual({ questionId: "missing", index: 1 });
   });
 });
 

@@ -1,5 +1,11 @@
-import { type UserSurveyReport, UserSurveyError, type UserSurveyState } from "@t3tools/contracts";
+import {
+  type UserSurveyAnswer,
+  type UserSurveyReport,
+  UserSurveyError,
+  type UserSurveyState,
+} from "@t3tools/contracts";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
+import type { UpcomputerBuildKind } from "@t3tools/shared/upcomputerIdentity";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -12,25 +18,27 @@ import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import * as HttpClient from "effect/http/HttpClient";
-import * as HttpClientRequest from "effect/http/HttpClientRequest";
-import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import {
-  type ActiveUserSurvey,
-  parseUserSurveys,
-  selectUserSurvey,
+  FEEDBACK_SURVEY,
   surveyEventProperties,
-  surveySentProperties,
+  surveyResponseProperties,
 } from "./UserSurveyDefinition.ts";
+import {
+  activityQualifies,
+  MIN_ACTIVE_DAYS,
+  readUserMessageActivity,
+  surveyBuildAllowed,
+  surveyNotHandled,
+  type UserMessageActivity,
+} from "./UserSurveyEligibility.ts";
 
-const REFRESH_INTERVAL_MS = 60 * 60_000;
-// Offline at launch should not hide a survey for the whole hour.
-const RETRY_INTERVAL_MS = 10 * 60_000;
-const FETCH_TIMEOUT = "5 seconds";
+// Clients ask about hourly; a reconnect storm still reads the history once.
+const ACTIVITY_RECHECK_MS = 60 * 60_000;
 const HANDLED_FILE = "user-surveys.json";
 
 const HandledSurveys = Schema.Record(
@@ -42,66 +50,47 @@ const decodeHandled = Schema.decodeUnknownOption(Schema.fromJsonString(HandledSu
 const encodeHandled = Schema.encodeSync(Schema.fromJsonString(HandledSurveys));
 
 /**
- * Surveys launched in the Up.computer PostHog project. Read when a client
- * asks, at most hourly, so a headless server never calls PostHog. Which
- * surveys this install answered or dismissed is kept in its state directory.
+ * The survey built into this release, offered once the person has used the
+ * app for a while. Which surveys this computer answered or dismissed, and
+ * when, is kept in its state directory.
  */
 export class UserSurveys extends Context.Service<
   UserSurveys,
   {
-    /** The survey to offer now; empty when PostHog cannot be reached. */
+    /** The survey to offer now, if this computer qualifies. */
     readonly current: Effect.Effect<UserSurveyState>;
     readonly report: (report: UserSurveyReport) => Effect.Effect<void, UserSurveyError>;
   }
 >()("t3/userSurveys/UserSurveys") {}
 
-const make = Effect.gen(function* () {
+const make = Effect.fn("UserSurveys.make")(function* (buildKind: UpcomputerBuildKind | undefined) {
   const analytics = yield* AnalyticsService.AnalyticsService;
-  const project = yield* AnalyticsService.PostHogProjectConfig;
-  const httpClient = yield* HttpClient.HttpClient;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const crypto = yield* SecureRandom.SecureRandom;
   const { stateDir } = yield* ServerConfig.ServerConfig;
+  const sqlContext = yield* Effect.context<SqlClient.SqlClient>();
   // An administrator who turned analytics off for the organization gets no surveys either.
-  const allowed =
-    ManagedPolicy.deniedBy(yield* ManagedPolicy.ManagedPolicy, "telemetry") === undefined;
+  const available =
+    ManagedPolicy.deniedBy(yield* ManagedPolicy.ManagedPolicy, "telemetry") === undefined &&
+    surveyBuildAllowed(buildKind ?? (yield* AnalyticsService.serverBuildKind));
+  const survey = FEEDBACK_SURVEY;
   const handledPath = path.join(stateDir, HANDLED_FILE);
   const writeContext = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
 
-  const surveysRef = yield* Ref.make<{
-    readonly surveys: ReadonlyArray<ActiveUserSurvey>;
-    readonly refreshAt: number;
-  }>({ surveys: [], refreshAt: 0 });
-  const refreshLock = yield* Semaphore.make(1);
   const handledRef = yield* Ref.make<HandledSurveys | null>(null);
   const handledLock = yield* Semaphore.make(1);
-  const shownRef = yield* Ref.make<ReadonlySet<string>>(new Set());
-
-  const fetchSurveys = HttpClientRequest.get(`${project.posthogHost}/api/surveys/`).pipe(
-    HttpClientRequest.setUrlParam("token", project.posthogKey),
-    httpClient.execute,
-    Effect.flatMap(HttpClientResponse.filterStatusOk),
-    Effect.flatMap((response) => response.json),
-    Effect.map(parseUserSurveys),
-    Effect.timeout(FETCH_TIMEOUT),
-  );
-
-  const refreshIfDue = Effect.gen(function* () {
-    const now = yield* Clock.currentTimeMillis;
-    if (now < (yield* Ref.get(surveysRef)).refreshAt) return;
-    const fetched = yield* Effect.option(
-      fetchSurveys.pipe(
-        Effect.tapCause((cause) => Effect.logDebug("Could not load surveys", { cause })),
-      ),
-    );
-    yield* Ref.update(surveysRef, (current) =>
-      Option.match(fetched, {
-        onNone: () => ({ surveys: current.surveys, refreshAt: now + RETRY_INTERVAL_MS }),
-        onSome: (surveys) => ({ surveys, refreshAt: now + REFRESH_INTERVAL_MS }),
-      }),
-    );
-  }).pipe(refreshLock.withPermit);
+  const activityRef = yield* Ref.make<{
+    readonly activity: UserMessageActivity;
+    readonly checkedAt: number;
+  } | null>(null);
+  const activityLock = yield* Semaphore.make(1);
+  const shownRef = yield* Ref.make(false);
+  // The card's answer and its submission id, which Send and a dismissal reuse.
+  const partialRef = yield* Ref.make<{
+    readonly submissionId: string;
+    readonly answers: ReadonlyArray<UserSurveyAnswer>;
+  } | null>(null);
 
   const handled = Effect.gen(function* () {
     const loaded = yield* Ref.get(handledRef);
@@ -114,14 +103,41 @@ const make = Effect.gen(function* () {
     return read;
   }).pipe(handledLock.withPermit);
 
+  // Active days only grow, so once there are enough the history is not read again.
+  const activity = Effect.fn("UserSurveys.activity")(function* (now: number) {
+    const cached = yield* Ref.get(activityRef);
+    if (
+      cached !== null &&
+      (cached.activity.activeDays >= MIN_ACTIVE_DAYS ||
+        now - cached.checkedAt < ACTIVITY_RECHECK_MS)
+    ) {
+      return cached.activity;
+    }
+    const local = DateTime.makeZonedUnsafe(now, { timeZone: DateTime.zoneMakeLocal() });
+    const utcOffsetMinutes = DateTime.zonedOffset(local) / 60_000;
+    const read = yield* readUserMessageActivity(utcOffsetMinutes).pipe(
+      Effect.provideContext(sqlContext),
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Could not read the thread history for surveys", { cause }).pipe(
+          Effect.as({ firstMessageAt: null, activeDays: 0 }),
+        ),
+      ),
+    );
+    yield* Ref.set(activityRef, { activity: read, checkedAt: now });
+    return read;
+  }, activityLock.withPermit);
+
   const remember = Effect.fn("UserSurveys.remember")(function* (
-    key: string,
+    surveyId: string,
     status: "answered" | "dismissed",
   ) {
     const at = DateTime.formatIso(yield* DateTime.now);
-    const next = { ...(yield* handled), [key]: { status, at } };
+    const next = { ...(yield* handled), [surveyId]: { status, at } };
     yield* Ref.set(handledRef, next);
-    yield* writeFileStringAtomically({ filePath: handledPath, contents: encodeHandled(next) }).pipe(
+    yield* writeFileStringAtomically({
+      filePath: handledPath,
+      contents: encodeHandled(next),
+    }).pipe(
       Effect.provideContext(writeContext),
       Effect.catchCause((cause) =>
         Effect.logWarning("Could not save which surveys were answered", { cause }),
@@ -130,19 +146,22 @@ const make = Effect.gen(function* () {
   });
 
   const current: UserSurveys["Service"]["current"] = Effect.gen(function* () {
-    if (!allowed) return { survey: null };
-    yield* refreshIfDue;
-    const { surveys } = yield* Ref.get(surveysRef);
-    const active = selectUserSurvey(surveys, new Set(Object.keys(yield* handled)));
-    return { survey: active?.survey ?? null };
+    if (!available) return { survey: null };
+    const now = yield* Clock.currentTimeMillis;
+    if (!surveyNotHandled(yield* handled, survey.id, now)) return { survey: null };
+    if (!activityQualifies(yield* activity(now), now)) return { survey: null };
+    return { survey };
   }).pipe(Effect.withSpan("UserSurveys.current"));
 
+  const submissionId = Effect.gen(function* () {
+    const partial = yield* Ref.get(partialRef);
+    return partial?.submissionId ?? (yield* crypto.uuidV4().pipe(Effect.orDie));
+  });
+
+  // `record` sends nothing when analytics is off; only an answer sent with Send goes out then.
   const report: UserSurveys["Service"]["report"] = Effect.fn("UserSurveys.report")(
     function* (input) {
-      const active = (yield* Ref.get(surveysRef)).surveys.find(
-        (candidate) => candidate.survey.id === input.surveyId,
-      );
-      if (!allowed || active === undefined) {
+      if (!available || input.surveyId !== survey.id) {
         if (input._tag === "Answered") {
           return yield* new UserSurveyError({ reason: "unavailable" });
         }
@@ -150,29 +169,47 @@ const make = Effect.gen(function* () {
       }
       switch (input._tag) {
         case "Shown": {
-          const firstShow = yield* Ref.modify(shownRef, (shown) =>
-            shown.has(active.key) ? [false, shown] : [true, new Set(shown).add(active.key)],
+          const alreadyShown = yield* Ref.getAndSet(shownRef, true);
+          if (!alreadyShown) yield* analytics.record("survey shown", surveyEventProperties(survey));
+          return;
+        }
+        case "Partial": {
+          const id = yield* submissionId;
+          yield* Ref.set(partialRef, { submissionId: id, answers: input.answers });
+          yield* analytics.record(
+            "survey sent",
+            surveyResponseProperties(survey, input.answers, id, { completed: false }),
           );
-          // `record` sends nothing when analytics is off.
-          if (firstShow) yield* analytics.record("survey shown", surveyEventProperties(active));
           return;
         }
         case "Dismissed": {
-          yield* remember(active.key, "dismissed");
+          const partial = yield* Ref.getAndSet(partialRef, null);
+          yield* remember(survey.id, "dismissed");
           yield* analytics.record("survey dismissed", {
-            ...surveyEventProperties(active),
-            $survey_partially_completed: false,
+            ...(partial === null
+              ? { ...surveyEventProperties(survey), $survey_partially_completed: false }
+              : surveyResponseProperties(
+                  survey,
+                  partial.answers,
+                  partial.submissionId,
+                  "dismissed",
+                )),
+            // Not posthog-js properties: where each person stopped, for a drop-off funnel.
+            dismissedAtQuestionId: input.step.questionId,
+            dismissedAtStep: input.step.index,
           });
           return;
         }
         case "Answered": {
-          const submissionId = yield* crypto.uuidV4().pipe(Effect.orDie);
           const sent = yield* analytics.sendNow(
             "survey sent",
-            surveySentProperties(active, input.answers, submissionId),
+            surveyResponseProperties(survey, input.answers, yield* submissionId, {
+              completed: true,
+            }),
           );
           if (!sent) return yield* new UserSurveyError({ reason: "send-failed" });
-          yield* remember(active.key, "answered");
+          yield* Ref.set(partialRef, null);
+          yield* remember(survey.id, "answered");
         }
       }
     },
@@ -181,4 +218,8 @@ const make = Effect.gen(function* () {
   return UserSurveys.of({ current, report });
 });
 
-export const layer = Layer.effect(UserSurveys, make);
+export const layer = Layer.effect(UserSurveys, make(undefined));
+
+/** A server of the given build kind, for tests; dev builds never ask. */
+export const layerForBuild = (buildKind: UpcomputerBuildKind) =>
+  Layer.effect(UserSurveys, make(buildKind));

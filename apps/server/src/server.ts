@@ -775,7 +775,9 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(TraceDiagnostics.layer),
   Layer.provideMerge(ErrorTelemetry.layer),
   Layer.provideMerge(TriageService.layer.pipe(Layer.provide(GitVcsDriver.layer))),
-  Layer.provideMerge(UserSurveys.layer.pipe(Layer.provide(ManagedPolicy.layer))),
+  Layer.provideMerge(
+    UserSurveys.layer.pipe(Layer.provide(ManagedPolicy.layer), Layer.provide(layerPersistence)),
+  ),
   // Layers memoize by reference, so this is the same policy the settings layer reads.
   Layer.provideMerge(AnalyticsService.layer.pipe(Layer.provide(ManagedPolicy.layer))),
   Layer.provideMerge(ExternalLauncher.layer),

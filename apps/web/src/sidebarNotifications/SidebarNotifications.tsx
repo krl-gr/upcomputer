@@ -103,7 +103,11 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
   const userSurvey = useUserSurvey();
   const [open, setOpen] = useState(false);
   const [surveyOpen, setSurveyOpen] = useState(false);
-  const surveyForm = useSurveyForm(userSurvey?.survey ?? null, userSurvey?.submit ?? null);
+  const surveyForm = useSurveyForm(
+    userSurvey?.survey ?? null,
+    userSurvey?.submit ?? null,
+    userSurvey?.partial ?? null,
+  );
   const { dot, label } = describeSidebarNotificationsButton({
     severities: notices.map((notice) => notice.severity),
     survey: userSurvey !== null,
@@ -171,7 +175,9 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
                       setOpen(false);
                       setSurveyOpen(true);
                     }}
-                    onDismiss={userSurvey.dismiss}
+                    onDismiss={() => {
+                      if (surveyForm.leftOn) userSurvey.dismiss(surveyForm.leftOn);
+                    }}
                   />
                 ) : null
               }
