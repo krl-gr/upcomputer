@@ -255,7 +255,9 @@ describe("providerStatusProperties", () => {
       installed: true,
       version: "2.1.302 (Claude Code)",
       status: "warning",
+      statusReason: "models_missing",
       auth: { status: "authenticated", email: "someone@example.com", label: "Max" },
+      message: "OpenCode is installed but didn't report its models.",
     });
 
     assert.deepEqual(properties, {
@@ -264,6 +266,7 @@ describe("providerStatusProperties", () => {
       installed: true,
       version: "unparsed",
       status: "warning",
+      statusReason: "models_missing",
       authStatus: "authenticated",
     });
   });

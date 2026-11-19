@@ -4,6 +4,7 @@ import {
   type ServerProviderModel,
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
+  type ServerProviderStatusReason,
   settingsSecretLiteral,
 } from "@t3tools/contracts";
 import type { OpenCodeSettings } from "../settings.ts";
@@ -152,6 +153,26 @@ function formatOpenCodeProbeError(input: {
         ? "OpenCode is installed but didn't report its models. Refresh to try again."
         : "OpenCode is installed but couldn't be started. Reinstall or update it, then refresh.",
   };
+}
+
+/**
+ * UpComputer: the category a failed check reports, read from error tags and
+ * structured reasons only. A failure after the version probe is about models.
+ */
+function openCodeStatusReason(
+  cause: unknown,
+  phase: "version" | "inventory" | "models",
+): ServerProviderStatusReason {
+  let current = cause;
+  for (let depth = 0; depth < 8 && typeof current === "object" && current !== null; depth++) {
+    if (Cause.isTimeoutError(current)) return "startup_timeout";
+    if (OpenCodeRuntime.isOpenCodeRuntimeError(current)) {
+      if (current.reason === "databaseLocked") return "migration";
+      if (current.reason === "timeout") return "startup_timeout";
+    }
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return phase === "version" ? "unknown" : "models_missing";
 }
 
 // The status check owns the span; keep handled failures visible without adding another span.
@@ -792,18 +813,21 @@ const checkOpenCode2 = Effect.fn("checkOpenCode2")(function* (
       version,
       cause: result.cause,
     });
-    return buildServerProvider({
-      presentation: OPENCODE_2_PRESENTATION,
-      enabled: true,
-      checkedAt,
-      models: providerModelsFromSettings(
-        [],
-        settings.customModels,
-        DEFAULT_OPENCODE_MODEL_CAPABILITIES,
-      ),
-      slashCommands: [COMPACT_SLASH_COMMAND],
-      probe: probe("error", "OpenCode could not load its model list."),
-    });
+    return {
+      ...buildServerProvider({
+        presentation: OPENCODE_2_PRESENTATION,
+        enabled: true,
+        checkedAt,
+        models: providerModelsFromSettings(
+          [],
+          settings.customModels,
+          DEFAULT_OPENCODE_MODEL_CAPABILITIES,
+        ),
+        slashCommands: [COMPACT_SLASH_COMMAND],
+        probe: probe("error", "OpenCode could not load its model list."),
+      }),
+      statusReason: openCodeStatusReason(Cause.squash(result.cause), "models"),
+    };
   }
   if (result.value.length === 0) {
     yield* logDiscoveryFailure({
@@ -812,20 +836,23 @@ const checkOpenCode2 = Effect.fn("checkOpenCode2")(function* (
       version,
     });
   }
-  return buildServerProvider({
-    presentation: OPENCODE_2_PRESENTATION,
-    enabled: true,
-    checkedAt,
-    models: openCode2ProviderModels(settings, result.value),
-    slashCommands: [COMPACT_SLASH_COMMAND],
-    probe:
-      result.value.length > 0
-        ? probe(
-            "ready",
-            `OpenCode ${version} lists ${result.value.length} model${result.value.length === 1 ? "" : "s"}.`,
-          )
-        : probe("warning", "OpenCode 2 is running, but it did not list any models yet."),
-  });
+  return {
+    ...buildServerProvider({
+      presentation: OPENCODE_2_PRESENTATION,
+      enabled: true,
+      checkedAt,
+      models: openCode2ProviderModels(settings, result.value),
+      slashCommands: [COMPACT_SLASH_COMMAND],
+      probe:
+        result.value.length > 0
+          ? probe(
+              "ready",
+              `OpenCode ${version} lists ${result.value.length} model${result.value.length === 1 ? "" : "s"}.`,
+            )
+          : probe("warning", "OpenCode 2 is running, but it did not list any models yet."),
+    }),
+    ...(result.value.length > 0 ? {} : { statusReason: "models_missing" as const }),
+  };
 });
 
 // Read the way OpenCode reads its boolean flags. The user turned catalog downloads off.
@@ -865,19 +892,23 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
       phase,
       serverUrl: openCodeSettings.serverUrl,
     });
-    return buildServerProvider({
-      presentation: OPENCODE_PRESENTATION,
-      enabled: openCodeSettings.enabled,
-      checkedAt,
-      models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
-      probe: {
-        installed: failure.installed,
-        version,
-        status: "error",
-        auth: { status: failure.authStatus ?? "unknown" },
-        message: failure.message,
-      },
-    });
+    return {
+      ...buildServerProvider({
+        presentation: OPENCODE_PRESENTATION,
+        enabled: openCodeSettings.enabled,
+        checkedAt,
+        models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
+        probe: {
+          installed: failure.installed,
+          version,
+          status: "error",
+          auth: { status: failure.authStatus ?? "unknown" },
+          message: failure.message,
+        },
+      }),
+      statusReason:
+        failure.authStatus === "unauthenticated" ? "auth" : openCodeStatusReason(cause, phase),
+    };
   };
 
   if (!openCodeSettings.enabled) {
@@ -918,19 +949,22 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     return yield* checkOpenCode2(openCodeSettings, probed.version, checkedAt, loadOpenCode2Models);
   }
   if (compareSemverVersions(probed.version, OpenCodeRuntime.MINIMUM_OPENCODE_VERSION) < 0) {
-    return buildServerProvider({
-      presentation: OPENCODE_PRESENTATION,
-      enabled: openCodeSettings.enabled,
-      checkedAt,
-      models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
-      probe: {
-        installed: true,
-        version: probed.version,
-        status: "error",
-        auth: { status: "unknown" },
-        message: `OpenCode v${probed.version} is too old. Upgrade to v${OpenCodeRuntime.MINIMUM_OPENCODE_VERSION} or newer.`,
-      },
-    });
+    return {
+      ...buildServerProvider({
+        presentation: OPENCODE_PRESENTATION,
+        enabled: openCodeSettings.enabled,
+        checkedAt,
+        models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
+        probe: {
+          installed: true,
+          version: probed.version,
+          status: "error",
+          auth: { status: "unknown" },
+          message: `OpenCode v${probed.version} is too old. Upgrade to v${OpenCodeRuntime.MINIMUM_OPENCODE_VERSION} or newer.`,
+        },
+      }),
+      statusReason: "unknown",
+    };
   }
 
   const installedVersion = isExternalServer ? {} : { installedVersion: probed.version };
@@ -1038,6 +1072,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
                 : "OpenCode is available, but it did not report any connected upstream providers.",
       },
     }),
+    ...(catalogReady ? {} : { statusReason: "models_missing" as const }),
     ...installedVersion,
   };
 });

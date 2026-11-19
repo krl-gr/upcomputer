@@ -274,6 +274,7 @@ export function providerStatusProperties(provider: ServerProvider) {
       ? {}
       : { version: VERSION_PATTERN.test(version) ? version : "unparsed" }),
     status: provider.status,
+    ...(provider.statusReason === undefined ? {} : { statusReason: provider.statusReason }),
     authStatus: provider.auth.status,
     ...(provider.compatibilityAdvisory === undefined
       ? {}

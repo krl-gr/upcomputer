@@ -54,6 +54,16 @@ const ServerConfigIssues = ForwardCompatibleArray(ServerConfigIssue);
 export const ServerProviderState = Schema.Literals(["ready", "warning", "error", "disabled"]);
 export type ServerProviderState = typeof ServerProviderState.Type;
 
+/** UpComputer: why a status check did not reach `ready`, in categories only, never its text. */
+export const ServerProviderStatusReason = Schema.Literals([
+  "migration",
+  "startup_timeout",
+  "models_missing",
+  "auth",
+  "unknown",
+]);
+export type ServerProviderStatusReason = typeof ServerProviderStatusReason.Type;
+
 export const ServerProviderAuthStatus = Schema.Literals([
   "authenticated",
   "unauthenticated",
@@ -270,6 +280,7 @@ export const ServerProvider = Schema.Struct({
   // UpComputer: set on the placeholder a driver publishes until its first
   // status check finishes, so clients do not present it as a real result.
   statusPending: Schema.optionalKey(Schema.Boolean),
+  statusReason: Schema.optionalKey(ServerProviderStatusReason),
   availability: Schema.optional(ServerProviderAvailability),
   unavailableReason: Schema.optional(TrimmedNonEmptyString),
   models: Schema.Array(ServerProviderModel),

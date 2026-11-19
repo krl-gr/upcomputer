@@ -83,6 +83,7 @@ export const probeOpenCodeBinary = Effect.fn("probeOpenCodeBinary")(function* (
           Effect.fail(
             new OpenCodeRuntime.OpenCodeRuntimeError({
               operation: "probeOpenCodeBinary",
+              reason: "timeout",
               detail: `OpenCode CLI version probe timed out after ${timeoutMs / 1_000} seconds.`,
             }),
           ),
