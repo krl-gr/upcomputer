@@ -388,7 +388,8 @@ const finalizeAbsoluteMediaFileAsset = Effect.fn("AssetAccess.finalizeAbsoluteMe
       });
     }
     const download =
-      input.resource._tag === "media-file" && input.resource.disposition === "attachment";
+      (input.resource._tag === "media-file" || input.resource._tag === "draft-workspace-file") &&
+      input.resource.disposition === "attachment";
     if (!download && hostPreviewMimeTypeFromExtension(path.extname(canonicalFile)) === null) {
       return yield* new AssetPreviewTypeValidationError({ resource: input.resource });
     }
@@ -606,9 +607,13 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       const hostPath = input.resource.path.startsWith("~/")
         ? expandHomePath(input.resource.path, yield* HostProcess.HomeDirectory)
         : input.resource.path;
-      if (path.isAbsolute(hostPath)) {
+      // A download is any file at its exact path, as for `media-file`; previews keep the
+      // workspace checks below.
+      if (path.isAbsolute(hostPath) || input.resource.disposition === "attachment") {
         const finalized = yield* finalizeAbsoluteMediaFileAsset({
-          requestedPath: hostPath,
+          requestedPath: path.isAbsolute(hostPath)
+            ? hostPath
+            : path.resolve(draftWorkspaceRoot, hostPath),
           workspaceRoot: draftWorkspaceRoot,
           resource: input.resource,
           expiresAt,

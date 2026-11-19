@@ -280,15 +280,25 @@ describe("AssetAccess", () => {
         "archive.zip",
         "no-extension",
       ]) {
-        for (const directory of [root, outside]) {
+        for (const [directory, kind] of [
+          [root, "media-file"],
+          [outside, "media-file"],
+          [root, "draft-workspace-file"],
+          [outside, "draft-workspace-file"],
+        ] as const) {
           const filePath = path.join(directory, name);
           yield* fs.writeFileString(filePath, "shared file bytes");
-          const resource = {
-            _tag: "media-file" as const,
-            threadId: ThreadId.make("thread-1"),
-            path: directory === root ? name : filePath,
-            disposition: "attachment" as const,
-          };
+          const requestedPath = directory === root ? name : filePath;
+          // A file window outside a thread downloads through its project folder.
+          const resource =
+            kind === "media-file"
+              ? {
+                  _tag: kind,
+                  threadId: ThreadId.make("thread-1"),
+                  path: requestedPath,
+                  disposition: "attachment" as const,
+                }
+              : { _tag: kind, cwd: root, path: requestedPath, disposition: "attachment" as const };
           const result = yield* issueAssetUrl({ resource, workspaceRoot: root });
           const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
           const separator = suffix.indexOf("/");
@@ -322,6 +332,11 @@ describe("AssetAccess", () => {
         },
       }).pipe(Effect.flip);
       expect(directoryError._tag).toBe("AssetWorkspaceAssetNotFoundError");
+      yield* fs.writeFileString(path.join(root, "archive.bin"), "shared file bytes");
+      const previewError = yield* issueAssetUrl({
+        resource: { _tag: "draft-workspace-file", cwd: root, path: "archive.bin" },
+      }).pipe(Effect.flip);
+      expect(previewError._tag).toBe("AssetPreviewTypeValidationError");
     }).pipe(Effect.provide(layerTest)),
   );
 
@@ -673,6 +688,13 @@ describe("AssetAccess", () => {
         },
         { _tag: "media-file", threadId, path: config.dbPath },
         { _tag: "draft-workspace-file", cwd: config.stateDir, path: "statev2.sqlite" },
+        { _tag: "draft-workspace-file", cwd: root, path: alias, disposition: "attachment" },
+        {
+          _tag: "draft-workspace-file",
+          cwd: config.stateDir,
+          path: "statev2.sqlite",
+          disposition: "attachment",
+        },
       ] as const) {
         const error = yield* issueAssetUrl({ resource }).pipe(Effect.flip);
         expect(error._tag).toBe("AssetWorkspaceAssetNotFoundError");
