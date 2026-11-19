@@ -305,6 +305,8 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
             Effect.gen(function* () {
               const repository = yield* TaskRepository;
               const crypto = yield* SecureRandom.SecureRandom;
+              if (Option.isNone(yield* repository.getById({ id: input.taskId })))
+                return yield* taskError(`Task '${input.taskId}' was not found.`);
               return yield* repository.appendEvent({
                 id: input.id ?? TaskEventId.make(`task-event-${yield* crypto.uuidV4()}`),
                 taskId: input.taskId,

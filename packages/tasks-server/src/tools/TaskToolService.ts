@@ -883,20 +883,20 @@ const make = Effect.gen(function* () {
               : { isError: true, text: `Task '${input.id}' was not found.` };
           }
           const before = yield* repository.getById({ id: input.id });
-          if (Option.isSome(before)) {
-            // A status set with the update must suit the audience it ends with;
-            // a task handed to a person without one reopens (see upsert).
-            const invalid =
-              taskKindAudienceError(
-                input.kind ?? before.value.kind,
-                input.audience ?? before.value.audience,
-              ) ??
-              (input.status !== undefined
-                ? personTaskStatusError(input.audience ?? before.value.audience, input.status)
-                : null);
-            if (invalid !== null)
-              return { isError: true, text: `${invalid} The task was not changed.` };
-          }
+          if (Option.isNone(before))
+            return { isError: true, text: `Task '${input.id}' was not found.` };
+          // A status set with the update must suit the audience it ends with;
+          // a task handed to a person without one reopens (see upsert).
+          const invalid =
+            taskKindAudienceError(
+              input.kind ?? before.value.kind,
+              input.audience ?? before.value.audience,
+            ) ??
+            (input.status !== undefined
+              ? personTaskStatusError(input.audience ?? before.value.audience, input.status)
+              : null);
+          if (invalid !== null)
+            return { isError: true, text: `${invalid} The task was not changed.` };
           const callerRun = context.threadId
             ? Option.getOrNull(
                 yield* repository.findActiveAgentRunByThreadId({ threadId: context.threadId }),
@@ -925,28 +925,25 @@ const make = Effect.gen(function* () {
           yield* taskAgents.scheduleTaskChanged({
             task,
             reason: "updated",
-            releasedRunId: Option.isSome(before)
-              ? releasedRunId({
-                  before: before.value,
-                  after: task,
-                  requestedAssignee: update.assigneeAgentRunId,
-                  callerRun,
-                })
-              : null,
+            releasedRunId: releasedRunId({
+              before: before.value,
+              after: task,
+              requestedAssignee: update.assigneeAgentRunId,
+              callerRun,
+            }),
           });
           return { isError: false, text: json({ task }) };
         }
         case "task_reorder": {
           const input = yield* decoders.task_reorder(args);
-          if (isDryRun) {
-            const existing = yield* repository.getById({ id: input.id });
-            return Option.isSome(existing)
-              ? {
-                  isError: false,
-                  text: json({ dryRun: true, task: existing.value, reorder: input }),
-                }
-              : { isError: true, text: `Task '${input.id}' was not found.` };
-          }
+          const existing = yield* repository.getById({ id: input.id });
+          if (Option.isNone(existing))
+            return { isError: true, text: `Task '${input.id}' was not found.` };
+          if (isDryRun)
+            return {
+              isError: false,
+              text: json({ dryRun: true, task: existing.value, reorder: input }),
+            };
           return { isError: false, text: json({ task: yield* repository.reorder(input) }) };
         }
         case "task_delete": {
@@ -965,6 +962,8 @@ const make = Effect.gen(function* () {
         }
         case "task_event_append": {
           const input = yield* decoders.task_event_append(args);
+          if (Option.isNone(yield* repository.getById({ id: input.taskId })))
+            return { isError: true, text: `Task '${input.taskId}' was not found.` };
           const event = {
             id: input.id ?? TaskEventId.make(yield* randomId("task-event")),
             taskId: input.taskId,
@@ -1037,6 +1036,8 @@ const make = Effect.gen(function* () {
           if (input.taskId !== undefined) {
             if (input.from !== undefined || input.to !== undefined)
               return { isError: true, text: "Pass either taskId or from and to, not both." };
+            if (Option.isNone(yield* repository.getById({ id: input.taskId })))
+              return { isError: true, text: `Task '${input.taskId}' was not found.` };
             return {
               isError: false,
               text: json(
