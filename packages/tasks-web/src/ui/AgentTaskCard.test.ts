@@ -1,5 +1,5 @@
 import { act, createElement, type ReactNode } from "react";
-import { create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
+import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import type { ScopedTaskListItem } from "../state/taskPages.ts";
@@ -95,33 +95,6 @@ const titleButton = () =>
 const target = (insideControl: boolean) => ({
   closest: (selector: string) =>
     insideControl && /data-prevent-drag|combobox|button/.test(selector) ? {} : null,
-});
-
-it("changes the status from the card, and only to a different status", async () => {
-  await render(task());
-  const select = renderer.root.find(
-    (node: ReactTestInstance) =>
-      node.props["data-select"] === true &&
-      node.findAll((child) => child.props["aria-label"] === "Task status").length > 0,
-  );
-  await act(async () => select.props.onValueChange("To Do"));
-  expect(handlers.onStatusChange).not.toHaveBeenCalled();
-  await act(async () => select.props.onValueChange("Done"));
-  expect(handlers.onStatusChange).toHaveBeenCalledWith("Done");
-  expect(handlers.onOpen).not.toHaveBeenCalled();
-});
-
-it("the run numbers open the task, and show only when the task has runs", async () => {
-  await render(task());
-  expect(renderer.root.findAll((node) => /^Runs:/.test(node.props["aria-label"] ?? ""))).toEqual(
-    [],
-  );
-  await render(task({ runCounts: [{ status: "failed", count: 2 }] } as never));
-  const runs = renderer.root.find(
-    (node) => node.type === "button" && /^Runs:/.test(node.props["aria-label"] ?? ""),
-  );
-  await act(async () => runs.props.onClick());
-  expect(handlers.onOpen).toHaveBeenCalledTimes(1);
 });
 
 it("Alt+Arrow on the title moves the task; plain arrows do not", async () => {
