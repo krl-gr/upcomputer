@@ -42,7 +42,8 @@ const SURVEY: UserSurvey = {
       question: "What should we build next?",
       optional: true,
       choices: [
-        "Mobile app",
+        "iOS app",
+        "Android app",
         "Cloud agents",
         "Voice dictation",
         "Bots in Slack",
