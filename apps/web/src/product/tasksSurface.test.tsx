@@ -124,21 +124,34 @@ const tasksServer = vi.hoisted(() => {
     row("Health task", "health", "task"),
     row("Life OS task", "life-os", "task"),
   ];
-  const pageInputs: Array<{ readonly projectId?: string; readonly kind?: string }> = [];
+  interface ListInput {
+    readonly projectId?: string;
+    readonly kind?: string;
+    readonly status?: string;
+  }
+  const pageInputs: ListInput[] = [];
+  const matching = (input: ListInput) =>
+    rows.filter(
+      (task) =>
+        (input.projectId === undefined || task.projectId === input.projectId) &&
+        (input.kind === undefined || task.kind === input.kind) &&
+        (input.status === undefined || task.status === input.status),
+    );
   const tasks = new Proxy(
     {
-      page: async (input: { readonly projectId?: string; readonly kind?: string }) => {
+      page: async (input: ListInput) => {
         pageInputs.push(input);
-        return {
-          tasks: rows.filter(
-            (task) =>
-              (input.projectId === undefined || task.projectId === input.projectId) &&
-              (input.kind === undefined || task.kind === input.kind),
-          ),
-          nextCursor: null,
-          statuses: ["To Do"],
-        };
+        return { tasks: matching(input), nextCursor: null, statuses: ["To Do"] };
       },
+      statusCounts: async (input: ListInput) => {
+        const count = matching({ ...input, status: "To Do" }).length;
+        return { counts: count > 0 ? [{ status: "To Do", count }] : [] };
+      },
+      getListSettings: async () => ({
+        groupByStatus: true,
+        statusGroupOrder: [],
+        statusGroupOpen: {},
+      }),
       scheduleRange: async () => ({ entries: [], tasks: [] }),
       scheduleProgress: async () => ({ progress: [] }),
       // Like the server, a subscription starts with a sync.

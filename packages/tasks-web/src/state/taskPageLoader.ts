@@ -68,7 +68,13 @@ export class TaskPageLoader {
   }
 
   change(event: TaskChange) {
-    if (event.kind === "sync" || event.listChanged) this.refreshPending = true;
+    // A run can move a task in or out of a Last run filter's list.
+    if (
+      event.kind === "sync" ||
+      event.listChanged ||
+      (event.runsChanged && this.query.lastRun !== undefined)
+    )
+      this.refreshPending = true;
     else for (const id of event.taskIds) this.changedIds.add(id);
     this.schedule(event.kind === "sync" && !this.state.page ? 0 : this.batchMs);
   }

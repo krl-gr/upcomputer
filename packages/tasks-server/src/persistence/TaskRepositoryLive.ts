@@ -24,7 +24,11 @@ import {
   type TaskActor,
   type TaskSearchInput,
   type TaskPageInput,
+  type TaskListSettings as TaskListSettingsValue,
   type TaskThreadTasksInput,
+  TASK_LAST_RUN_NONE,
+  TaskListSettings,
+  DEFAULT_TASK_LIST_SETTINGS,
   TaskRank,
   TaskRunCount,
   type TaskChange,
@@ -295,6 +299,22 @@ function filterTasksByTags(tasks: ReadonlyArray<Task>, tags: ReadonlyArray<TaskT
   });
 }
 
+const ListConditionFields = Schema.Struct({
+  projectId: Schema.NullOr(Task.fields.projectId),
+  status: Schema.NullOr(Task.fields.status),
+  tagsJson: Schema.String,
+  tagCount: Schema.Number,
+  archive: TaskArchiveFilter,
+  audience: TaskAudienceFilter,
+  kind: TaskKindFilter,
+  excludeStatusesJson: Schema.NullOr(Schema.String),
+  createdBy: Schema.NullOr(Schema.String),
+  excludeAutomationTasks: Schema.Number,
+  lastRun: Schema.NullOr(Schema.String),
+});
+
+const decodeListSettings = Schema.decodeUnknownOption(Schema.fromJsonString(TaskListSettings));
+
 /** The audience, kind and excluded statuses of a list, with their defaults. */
 function listFilters(input: TaskSearchInput) {
   const excluded = [...new Set(input.excludeStatuses ?? [])];
@@ -542,6 +562,38 @@ const makeTaskRepository = Effect.gen(function* () {
       audience === "all" ? sql.literal("1 = 1") : sql`audience = ${audience}`;
     return kind === "all" ? audienceCondition : sql`${audienceCondition} AND kind = ${kind}`;
   };
+
+  /** The latest run (latest start) has this raw status; `none`: the task never ran. */
+  const lastRunCondition = (lastRun: string | null) =>
+    lastRun === null
+      ? sql.literal("1 = 1")
+      : lastRun === TASK_LAST_RUN_NONE
+        ? sql.literal("NOT EXISTS (SELECT 1 FROM task_agent_runs r WHERE r.task_id = tasks.id)")
+        : sql`(SELECT r.status FROM task_agent_runs r WHERE r.task_id = tasks.id
+            ORDER BY r.started_at DESC, r.id ASC LIMIT 1) = ${lastRun}`;
+
+  /** A list's filters as a WHERE condition on `tasks`, shared by its pages and its counts. */
+  const listCondition = (filter: typeof ListConditionFields.Encoded) => sql`
+    (${filter.projectId} IS NULL OR project_id = ${filter.projectId})
+    AND (${filter.status} IS NULL OR status = ${filter.status})
+    AND ${archiveCondition(filter.archive)}
+    AND ${membershipCondition(filter.audience, filter.kind)}
+    AND (${filter.excludeStatusesJson} IS NULL
+      OR status NOT IN (SELECT value FROM json_each(${filter.excludeStatusesJson})))
+    AND (${filter.createdBy} IS NULL OR created_by = ${filter.createdBy})
+    AND (${filter.excludeAutomationTasks} = 0
+      OR created_by NOT GLOB ${`${AUTOMATION_TASK_CREATOR_PREFIX}*`})
+    AND (
+      ${filter.tagCount} = 0
+      OR id IN (
+        SELECT task_id
+        FROM task_tags
+        WHERE tag IN (SELECT value FROM json_each(${filter.tagsJson}))
+        GROUP BY task_id
+        HAVING COUNT(DISTINCT tag) = ${filter.tagCount}
+      )
+    )
+    AND ${lastRunCondition(filter.lastRun)}`;
 
   /**
    * History events the server records itself. A caller-supplied id makes the
@@ -886,66 +938,33 @@ const makeTaskRepository = Effect.gen(function* () {
 
   const searchTaskRows = SqlSchema.findAll({
     Request: Schema.Struct({
-      projectId: Schema.NullOr(Task.fields.projectId),
-      status: Schema.NullOr(Task.fields.status),
-      tagsJson: Schema.String,
-      tagCount: Schema.Number,
-      archive: TaskArchiveFilter,
-      audience: TaskAudienceFilter,
-      kind: TaskKindFilter,
-      excludeStatusesJson: Schema.NullOr(Schema.String),
-      createdBy: Schema.NullOr(Schema.String),
-      excludeAutomationTasks: Schema.Number,
+      ...ListConditionFields.fields,
       afterRank: Schema.NullOr(Task.fields.rank),
       afterId: Schema.NullOr(TaskId),
       fromBottom: Schema.Boolean,
       limit: Schema.Number,
     }),
     Result: TaskDbRow,
-    execute: ({
-      projectId,
-      status,
-      tagsJson,
-      tagCount,
-      archive,
-      audience,
-      kind,
-      excludeStatusesJson,
-      createdBy,
-      excludeAutomationTasks,
-      afterRank,
-      afterId,
-      fromBottom,
-      limit,
-    }) =>
+    execute: ({ afterRank, afterId, fromBottom, limit, ...filter }) =>
       sql`
         SELECT
           ${TASK_COLUMNS}
         FROM tasks
-        WHERE (${projectId} IS NULL OR project_id = ${projectId})
-          AND (${status} IS NULL OR status = ${status})
-          AND ${archiveCondition(archive)}
-          AND ${membershipCondition(audience, kind)}
-          AND (${excludeStatusesJson} IS NULL
-            OR status NOT IN (SELECT value FROM json_each(${excludeStatusesJson})))
-          AND (${createdBy} IS NULL OR created_by = ${createdBy})
-          AND (${excludeAutomationTasks} = 0
-            OR created_by NOT GLOB ${`${AUTOMATION_TASK_CREATOR_PREFIX}*`})
-          AND (
-            ${tagCount} = 0
-            OR id IN (
-              SELECT task_id
-              FROM task_tags
-              WHERE tag IN (SELECT value FROM json_each(${tagsJson}))
-              GROUP BY task_id
-              HAVING COUNT(DISTINCT tag) = ${tagCount}
-            )
-          )
+        WHERE ${listCondition(filter)}
           AND (${afterRank} IS NULL OR rank > ${afterRank}
             OR (rank = ${afterRank} AND id > ${afterId}))
         ORDER BY ${fromBottom ? sql`rank DESC, id DESC` : sql`rank ASC, id ASC`}
         LIMIT ${limit}
       `,
+  });
+
+  const statusCountRows = SqlSchema.findAll({
+    Request: ListConditionFields,
+    Result: Schema.Struct({ status: Schema.String, count: Schema.Number }),
+    execute: (filter) =>
+      sql`SELECT status, COUNT(*) AS count FROM tasks
+        WHERE ${listCondition(filter)}
+        GROUP BY status ORDER BY status`,
   });
 
   const listAllTaskRows = SqlSchema.findAll({
@@ -2074,6 +2093,7 @@ const makeTaskRepository = Effect.gen(function* () {
         tagCount: tags.length,
         archive: input.archive ?? "active",
         ...listFilters(input),
+        lastRun: null,
         afterRank: null,
         afterId: null,
         fromBottom: input.from === "bottom",
@@ -2170,6 +2190,7 @@ const makeTaskRepository = Effect.gen(function* () {
             tagCount: tags.length,
             archive: input.archive ?? "active",
             ...listFilters(input),
+            lastRun: input.lastRun ?? null,
             afterRank: input.cursor?.rank ?? null,
             afterId: input.cursor?.id ?? null,
             fromBottom: false,
@@ -2197,6 +2218,69 @@ const makeTaskRepository = Effect.gen(function* () {
         Effect.mapError(
           toSqlOrDecodeError("TaskRepository.page:query", "TaskRepository.page:decode"),
         ),
+      );
+
+  const statusCounts: TaskRepositoryShape["statusCounts"] = (input) => {
+    const tags = uniqueTags(input.tags ?? []);
+    return statusCountRows({
+      projectId: input.projectId ?? null,
+      status: null,
+      tagsJson: JSON.stringify(tags),
+      tagCount: tags.length,
+      archive: input.archive ?? "active",
+      ...listFilters(input),
+      lastRun: input.lastRun ?? null,
+    }).pipe(
+      Effect.map((rows) => ({ counts: rows })),
+      Effect.mapError(
+        toSqlOrDecodeError(
+          "TaskRepository.statusCounts:query",
+          "TaskRepository.statusCounts:decode",
+        ),
+      ),
+    );
+  };
+
+  // A row a newer build wrote, or none yet, reads as the defaults.
+  const readListSettings = sql<{
+    json: string | null;
+  }>`SELECT list_settings_json AS json FROM task_settings WHERE id = 1`.pipe(
+    Effect.map(([row]) =>
+      Option.getOrElse(decodeListSettings(row?.json ?? null), () => DEFAULT_TASK_LIST_SETTINGS),
+    ),
+  );
+
+  const listSettings: TaskRepositoryShape["listSettings"] = () =>
+    readListSettings.pipe(
+      Effect.mapError(toTaskPersistenceSqlError("TaskRepository.listSettings:query")),
+    );
+
+  const updateListSettings: TaskRepositoryShape["updateListSettings"] = (input) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const current = yield* readListSettings;
+          const next: TaskListSettingsValue = {
+            groupByStatus: input.groupByStatus ?? current.groupByStatus,
+            statusGroupOrder: input.statusGroupOrder ?? current.statusGroupOrder,
+            statusGroupOpen: { ...current.statusGroupOpen, ...input.statusGroupOpen },
+          };
+          yield* sql`UPDATE task_settings SET list_settings_json = ${JSON.stringify(next)}
+            WHERE id = 1`;
+          return next;
+        }),
+      )
+      .pipe(
+        Effect.tap(() =>
+          publishChange({
+            taskIds: [],
+            rootThreadIds: [],
+            listChanged: false,
+            runsChanged: false,
+            listSettingsChanged: true,
+          }),
+        ),
+        Effect.mapError(toTaskPersistenceSqlError("TaskRepository.updateListSettings:query")),
       );
 
   const listAllTasks: TaskRepositoryShape["listAllTasks"] = () =>
@@ -3702,6 +3786,9 @@ const makeTaskRepository = Effect.gen(function* () {
     getById,
     search,
     page,
+    statusCounts,
+    listSettings,
+    updateListSettings,
     items,
     changes,
     runCounts,

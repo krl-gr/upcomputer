@@ -104,6 +104,8 @@ function ProjectTile(props: {
 export function AgentTaskCard(props: {
   readonly task: ScopedTaskListItem;
   readonly project: TasksWebProject | null;
+  /** Off when the list shows one project: the card then starts with its title. */
+  readonly showProject?: boolean;
   readonly statuses: readonly string[];
   readonly canMutate: boolean;
   readonly dragged: boolean;
@@ -127,7 +129,10 @@ export function AgentTaskCard(props: {
     <div
       className={cn(
         ROW_CLASS,
-        "grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2.5",
+        "grid cursor-pointer items-start gap-x-2.5",
+        props.showProject === false
+          ? "grid-cols-[minmax(0,1fr)_auto]"
+          : "grid-cols-[auto_minmax(0,1fr)_auto]",
         props.dragged ? ROW_DRAGGING_CLASS : ROW_HOVER_CLASS,
       )}
       data-task-card=""
@@ -157,7 +162,9 @@ export function AgentTaskCard(props: {
         props.onOpen();
       }}
     >
-      <ProjectTile project={props.project} name={task.projectName} />
+      {props.showProject === false ? null : (
+        <ProjectTile project={props.project} name={task.projectName} />
+      )}
       <div className="min-w-0 self-center">
         <button
           type="button"

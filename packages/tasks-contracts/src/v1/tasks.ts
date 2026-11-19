@@ -316,11 +316,59 @@ export const TaskPageCursor = Schema.Struct({
   id: TaskId,
 });
 export type TaskPageCursor = typeof TaskPageCursor.Type;
+/** The `lastRun` value for tasks that never ran. */
+export const TASK_LAST_RUN_NONE = "none";
+/** Only tasks whose latest run (latest start) has this raw status, or `none`: never ran. */
+const TaskLastRunFilter = Schema.optional(TrimmedNonEmptyString);
 export const TaskPageInput = Schema.Struct({
   ...TaskListFilterFields,
+  lastRun: TaskLastRunFilter,
   cursor: Schema.optional(TaskPageCursor),
 });
 export type TaskPageInput = typeof TaskPageInput.Type;
+
+/** A list's filters without its status: the counts per status a status filter chooses from. */
+export const TaskStatusCountsInput = Schema.Struct({
+  projectId: TaskListFilterFields.projectId,
+  tags: TaskListFilterFields.tags,
+  archive: TaskListFilterFields.archive,
+  audience: TaskListFilterFields.audience,
+  kind: TaskListFilterFields.kind,
+  lastRun: TaskLastRunFilter,
+});
+export type TaskStatusCountsInput = typeof TaskStatusCountsInput.Type;
+export const TaskStatusCount = Schema.Struct({ status: Schema.String, count: PositiveInt });
+export type TaskStatusCount = typeof TaskStatusCount.Type;
+/** Statuses with at least one task, by name. */
+export const TaskStatusCountsResult = Schema.Struct({ counts: Schema.Array(TaskStatusCount) });
+export type TaskStatusCountsResult = typeof TaskStatusCountsResult.Type;
+
+/**
+ * How the agents' task list shows, kept with the tasks so it follows the user
+ * across devices. Status keys are lower-cased status names.
+ */
+export const TaskListSettings = Schema.Struct({
+  groupByStatus: Schema.Boolean,
+  /** Status keys in the user's group order; a status missing here keeps its default place. */
+  statusGroupOrder: Schema.Array(Schema.String).check(Schema.isMaxLength(200)),
+  /** Status key to open; a status missing here takes its default. */
+  statusGroupOpen: Schema.Record(Schema.String, Schema.Boolean),
+});
+export type TaskListSettings = typeof TaskListSettings.Type;
+export const DEFAULT_TASK_LIST_SETTINGS: TaskListSettings = {
+  groupByStatus: true,
+  statusGroupOrder: [],
+  statusGroupOpen: {},
+};
+export const TaskListSettingsGetInput = Schema.Struct({});
+export type TaskListSettingsGetInput = typeof TaskListSettingsGetInput.Type;
+/** Changes the given settings. `statusGroupOpen` merges into the stored keys, so two devices can open different groups. */
+export const TaskListSettingsUpdateInput = Schema.Struct({
+  groupByStatus: Schema.optional(TaskListSettings.fields.groupByStatus),
+  statusGroupOrder: Schema.optional(TaskListSettings.fields.statusGroupOrder),
+  statusGroupOpen: Schema.optional(TaskListSettings.fields.statusGroupOpen),
+});
+export type TaskListSettingsUpdateInput = typeof TaskListSettingsUpdateInput.Type;
 export const TaskRunCount = Schema.Struct({ status: Schema.String, count: PositiveInt });
 export type TaskRunCount = typeof TaskRunCount.Type;
 export const TaskListItem = withClosedAtAlias(
@@ -375,6 +423,8 @@ export const TaskChange = Schema.Struct({
   reminders: Schema.optional(Schema.Array(TaskReminder)),
   /** An agent was saved or deleted, so bot lists are stale; absent when none was. */
   agentsChanged: Schema.optional(Schema.Boolean),
+  /** The list settings changed; absent when they did not. */
+  listSettingsChanged: Schema.optional(Schema.Boolean),
 });
 export type TaskChange = typeof TaskChange.Type;
 

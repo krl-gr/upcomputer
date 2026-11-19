@@ -18,7 +18,7 @@ import { TasksViewSwitch } from "../planner/ui/TasksViewSwitch.tsx";
 import { windowStoreFor } from "../planner/windows/windowStore.ts";
 import { taskKey } from "./shared.ts";
 import { TableSectionSwitch } from "./TableSectionSwitch.tsx";
-import { useTaskPages } from "./useTaskPages.ts";
+import { useTaskList } from "./useTaskList.ts";
 import { TasksView } from "./TasksView.tsx";
 import { useTasksWorkspaceData } from "./useWorkspaceData.ts";
 import { useTasksPageFilters } from "./pageFilters.ts";
@@ -136,13 +136,7 @@ function TablePanel(props: {
   const providersByEnvironment = useEnvironmentProviders();
   const { projectFilter, projectGroups, setProjectKey } = usePagesProjectFilter();
   const [filters, setFilters] = useTasksPageFilters();
-  const pages = useTaskPages(
-    data.taskTargets,
-    projectFilter,
-    filters.status,
-    filters.tags,
-    filters.archive ?? "active",
-  );
+  const { pages, grouping } = useTaskList(data.taskTargets, projectFilter, filters);
   const providerEntriesByEnvironment = useMemo(
     () =>
       new Map(
@@ -176,6 +170,7 @@ function TablePanel(props: {
       hasMore={pages.hasMore}
       loadingMore={pages.loadingMore}
       onLoadMore={pages.loadMore}
+      grouping={grouping}
       agents={data.agents.agents}
       runs={data.agents.runs}
       providerEntriesByEnvironment={providerEntriesByEnvironment}

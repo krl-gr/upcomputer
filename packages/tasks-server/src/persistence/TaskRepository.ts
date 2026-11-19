@@ -38,6 +38,10 @@ import {
   TaskSearchInput,
   TaskPageInput,
   TaskPageResult,
+  TaskListSettings,
+  TaskListSettingsUpdateInput,
+  TaskStatusCountsInput,
+  TaskStatusCountsResult,
   TaskListItemsInput,
   TaskListItemsResult,
   TaskChange,
@@ -227,6 +231,15 @@ export interface TaskRepositoryShape {
     input: TaskSearchInput,
   ) => Effect.Effect<ReadonlyArray<Task>, TaskRepositoryError>;
   readonly page: (input: TaskPageInput) => Effect.Effect<TaskPageResult, TaskRepositoryError>;
+  /** Tasks per status for a list's filters, without its status. */
+  readonly statusCounts: (
+    input: TaskStatusCountsInput,
+  ) => Effect.Effect<TaskStatusCountsResult, TaskRepositoryError>;
+  readonly listSettings: () => Effect.Effect<TaskListSettings, TaskRepositoryError>;
+  /** Saves the given list settings and announces them on the change stream. */
+  readonly updateListSettings: (
+    input: TaskListSettingsUpdateInput,
+  ) => Effect.Effect<TaskListSettings, TaskRepositoryError>;
   readonly items: (
     input: TaskListItemsInput,
   ) => Effect.Effect<TaskListItemsResult, TaskRepositoryError>;

@@ -70,6 +70,7 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [TASKS_RPC_METHODS.create]: operate,
     [TASKS_RPC_METHODS.search]: read,
     [TASKS_RPC_METHODS.page]: read,
+    [TASKS_RPC_METHODS.statusCounts]: read,
     [TASKS_RPC_METHODS.items]: read,
     [TASKS_RPC_METHODS.runCounts]: read,
     [TASKS_RPC_METHODS.threadRunCounts]: read,
@@ -101,6 +102,8 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [TASKS_RPC_METHODS.scheduleMoveOpen]: operate,
     [TASKS_RPC_METHODS.getScheduleSettings]: read,
     [TASKS_RPC_METHODS.updateScheduleSettings]: operate,
+    [TASKS_RPC_METHODS.getListSettings]: read,
+    [TASKS_RPC_METHODS.updateListSettings]: operate,
   },
   handlers: () =>
     TasksRpcGroup.toLayer(
@@ -178,6 +181,8 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               return yield* (yield* TaskRepository).page(input);
             }),
           ),
+        [TASKS_RPC_METHODS.statusCounts]: (input) =>
+          asTaskRpc(Effect.flatMap(TaskRepository, (repository) => repository.statusCounts(input))),
         [TASKS_RPC_METHODS.runCounts]: () =>
           asTaskRpc(
             Effect.gen(function* () {
@@ -380,6 +385,12 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
         [TASKS_RPC_METHODS.updateScheduleSettings]: (input) =>
           asTaskRpc(
             Effect.flatMap(TaskScheduleService, (schedule) => schedule.updateSettings(input)),
+          ),
+        [TASKS_RPC_METHODS.getListSettings]: () =>
+          asTaskRpc(Effect.flatMap(TaskRepository, (repository) => repository.listSettings())),
+        [TASKS_RPC_METHODS.updateListSettings]: (input) =>
+          asTaskRpc(
+            Effect.flatMap(TaskRepository, (repository) => repository.updateListSettings(input)),
           ),
       }),
     ),
