@@ -116,6 +116,7 @@ import {
   isMarkdownPreviewFile,
   resolveFilePreviewPath,
   shouldShowFileExplorer,
+  hostFileDownloadResource,
   workspaceAssetResource,
 } from "./filePreviewMode";
 import { setMarkdownTaskChecked } from "@t3tools/shared/markdownTaskList";
@@ -1443,8 +1444,7 @@ export default function FilePreviewPanel({
             absolutePath &&
             file.data?.truncated &&
             !isDocument &&
-            threadRef &&
-            !draft &&
+            (threadRef === undefined || !draft) &&
             !isMarkdown &&
             !isMermaid &&
             !isHtml ? (
@@ -1452,6 +1452,7 @@ export default function FilePreviewPanel({
               key={`${absolutePath}:${renderTable}:${fileRefreshRevision}`}
               environmentId={environmentId}
               threadRef={threadRef}
+              workspaceRoot={cwd}
               absolutePath={absolutePath}
               name={relativePath}
               delimiter={renderTable ? tableDelimiter : null}
@@ -1460,17 +1461,6 @@ export default function FilePreviewPanel({
               revealRequestId={revealRequestId}
               wordWrap={wordWrap}
             />
-          ) : relativePath &&
-            !threadRef &&
-            !isDocument &&
-            file.readError?.failure === "binary_file" ? (
-            // The server signs a host file for download only through a thread.
-            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 px-6 text-center">
-              <p className="text-sm text-foreground">This is a binary file.</p>
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                It cannot be shown as text. Open it in another app, or copy its path.
-              </p>
-            </div>
           ) : relativePath &&
             absolutePath &&
             (isDocument || file.readError?.failure === "binary_file") ? (
@@ -1481,15 +1471,11 @@ export default function FilePreviewPanel({
               sizeBytes={0}
               asset={{
                 environmentId,
-                resource:
-                  threadRef === undefined || (draft && isDocument)
+                resource: !isDocument
+                  ? hostFileDownloadResource({ threadRef, workspaceRoot: cwd, absolutePath })
+                  : draft || threadRef === undefined
                     ? { _tag: "draft-workspace-file", cwd, path: absolutePath }
-                    : {
-                        _tag: "media-file",
-                        threadId: threadRef.threadId,
-                        path: absolutePath,
-                        ...(isDocument ? {} : { disposition: "attachment" as const }),
-                      },
+                    : { _tag: "media-file", threadId: threadRef.threadId, path: absolutePath },
               }}
               origin="File"
             />
@@ -1621,7 +1607,8 @@ export default function FilePreviewPanel({
 const LargeTextViewer = lazy(() => import("./LargeTextViewer"));
 export function WorkspaceLargeTextPreview(props: {
   environmentId: EnvironmentId;
-  threadRef: ScopedThreadRef;
+  threadRef: ScopedThreadRef | undefined;
+  workspaceRoot: string;
   absolutePath: string;
   name: string;
   delimiter: "," | "\t" | null;
@@ -1630,12 +1617,11 @@ export function WorkspaceLargeTextPreview(props: {
   revealRequestId: number;
   wordWrap: boolean;
 }) {
-  const resource = {
-    _tag: "media-file",
-    threadId: props.threadRef.threadId,
-    path: props.absolutePath,
-    disposition: "attachment",
-  } as const;
+  const resource = hostFileDownloadResource({
+    threadRef: props.threadRef,
+    workspaceRoot: props.workspaceRoot,
+    absolutePath: props.absolutePath,
+  });
   const copyContents = useRef<(() => Promise<string>) | null>(null);
   const { copyToClipboard, isCopied } = useCopyToClipboard({ target: props.name });
   const [saving, setSaving] = useState(false);

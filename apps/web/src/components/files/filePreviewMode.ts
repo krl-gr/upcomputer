@@ -63,3 +63,24 @@ export function workspaceAssetResource(input: {
     path: input.absolutePath,
   };
 }
+
+/** Any host file as a download: through the thread when there is one, else the project folder. */
+export function hostFileDownloadResource(input: {
+  readonly threadRef: ScopedThreadRef | undefined;
+  readonly workspaceRoot: string;
+  readonly absolutePath: string;
+}): Extract<AssetResource, { _tag: "media-file" | "draft-workspace-file" }> {
+  return input.threadRef
+    ? {
+        _tag: "media-file",
+        threadId: input.threadRef.threadId,
+        path: input.absolutePath,
+        disposition: "attachment",
+      }
+    : {
+        _tag: "draft-workspace-file",
+        cwd: input.workspaceRoot,
+        path: input.absolutePath,
+        disposition: "attachment",
+      };
+}
