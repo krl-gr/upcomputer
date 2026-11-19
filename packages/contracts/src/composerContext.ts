@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { AssistantCitation } from "./assistantCitations.ts";
+import { AssistantMessageCitation } from "./assistantCitations.ts";
 import {
   EnvironmentId,
   ForwardCompatibleArray,
@@ -236,7 +236,7 @@ export const ResponseContextRecord = Schema.Struct({
   ...recordBase,
   kind: Schema.Literal("response"),
   /** Where the response is and how it starts, as the reader saw it. */
-  citation: AssistantCitation,
+  citation: AssistantMessageCitation,
   itemId: TurnItemId,
   /** The subagents whose results that response reported on. */
   subagents: Schema.optional(

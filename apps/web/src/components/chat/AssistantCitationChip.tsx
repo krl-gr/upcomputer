@@ -1,5 +1,9 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { AssistantCitation, ResponseContextRecord } from "@t3tools/contracts";
+import {
+  isTaskOutputCitation,
+  type AssistantCitation,
+  type ResponseContextRecord,
+} from "@t3tools/contracts";
 import {
   assistantCitationLabel,
   serializeAssistantCitation,
@@ -35,8 +39,18 @@ import { textDirection } from "~/textDirection";
 function useCitationSourceLinkProps(citation: AssistantCitation) {
   const navigate = useNavigate();
   const sourceThread = useQuietThreadShell(
-    scopeThreadRef(citation.environmentId, citation.threadId),
+    isTaskOutputCitation(citation)
+      ? null
+      : scopeThreadRef(citation.environmentId, citation.threadId),
   );
+  // UpComputer: a quote from a task's output opens that task.
+  if (isTaskOutputCitation(citation)) {
+    return {
+      to: "/tasks" as string,
+      search: { task: `${citation.environmentId}:${citation.taskId}` } as never,
+      "data-markdown-copy": serializeAssistantCitation(citation),
+    };
+  }
   return {
     ...assistantCitationRoute(citation, sourceThread),
     "data-markdown-copy": serializeAssistantCitation(citation),
@@ -129,7 +143,12 @@ export function AssistantCitationEmbed({
       citation={citation}
       copyMarkdown={serializeAssistantCitation(citation)}
       cardCopyMarkdown={serializeAssistantCitation(quoted)}
-      label={`Go to quoted response: ${assistantCitationLabel(quoted)}`}
+      label={
+        isTaskOutputCitation(citation)
+          ? `Go to quoted task output: ${assistantCitationLabel(quoted)}`
+          : `Go to quoted response: ${assistantCitationLabel(quoted)}`
+      }
+      title={isTaskOutputCitation(citation) ? `Task: ${citation.taskTitle}` : undefined}
       comment={comment}
       leading={leading}
       trailing={trailing}
@@ -252,11 +271,12 @@ export function AssistantCitationChip({
       }
     : undefined;
   const label = assistantCitationLabel(citation);
+  const sourceName = isTaskOutputCitation(citation) ? "task output" : "assistant text";
   const composerSourceLink = (
     <Link
       {...sourceLinkProps}
       className="inline-flex min-w-0 items-center gap-[0.2em] self-baseline text-inherit no-underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-current rounded-sm"
-      aria-label={`View cited assistant text: ${label}`}
+      aria-label={`View cited ${sourceName}: ${label}`}
     >
       <QuoteIcon aria-hidden="true" />
       <ContextChipLabel className="max-w-[16em]" dir={textDirection(label)}>

@@ -1,5 +1,10 @@
 import type { LegendListRef } from "@legendapp/list/react";
-import type { AssistantCitation, MessageId, ScopedThreadRef } from "@t3tools/contracts";
+import type {
+  AssistantCitation,
+  AssistantMessageCitation,
+  MessageId,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
   resolveAssistantCitationRange,
@@ -84,7 +89,7 @@ export function observeAssistantCitationCommentSource({
 }
 
 export interface AssistantCitationRequest {
-  citation: AssistantCitation;
+  citation: AssistantMessageCitation;
   key: string;
 }
 

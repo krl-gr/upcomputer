@@ -3,6 +3,7 @@ import {
   MessageId,
   type AssistantCitation,
   type ScopedThreadRef,
+  type TaskOutputCitation,
 } from "@t3tools/contracts";
 import { QuoteIcon } from "lucide-react";
 import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -23,10 +24,13 @@ import { BackgroundThreadContext } from "./backgroundThread";
 export function AssistantSelectionToolbar({
   viewport,
   threadRef,
+  taskSource,
   onCite,
 }: {
   viewport: HTMLElement | null;
-  threadRef: ScopedThreadRef;
+  threadRef?: ScopedThreadRef;
+  /** UpComputer: the selection is in a task's output, so the citation names the task. */
+  taskSource?: Pick<TaskOutputCitation, "environmentId" | "taskId" | "taskTitle">;
   onCite: (citation: AssistantCitation, sourceAnchor: AssistantCitationSourceAnchor) => boolean;
 }) {
   const [selection, setSelection] = useState<{
@@ -55,7 +59,7 @@ export function AssistantSelectionToolbar({
       const nativeSelection = window.getSelection();
       const captured = captureAssistantTextSelection(viewport, nativeSelection);
       const messageId = captured?.source.dataset.assistantCitationSource;
-      if (!captured || !messageId) {
+      if (!captured || !messageId || (!threadRef && !taskSource)) {
         clear();
         return;
       }
@@ -125,8 +129,7 @@ export function AssistantSelectionToolbar({
         sourceAnchor: { source: captured.source, range: captured.range, viewport },
         citation: {
           version: 1,
-          ...threadRef,
-          messageId: MessageId.make(messageId),
+          ...(taskSource ?? { ...threadRef!, messageId: MessageId.make(messageId) }),
           ...captured.selector,
         },
         position: resolveSelectionActionPosition({
@@ -174,7 +177,7 @@ export function AssistantSelectionToolbar({
       actions.dispose();
       actionsRef.current = null;
     };
-  }, [backgroundThread, threadRef, viewport]);
+  }, [backgroundThread, taskSource, threadRef, viewport]);
 
   if (!selection) return null;
   const tooLong = selection.citation.text.length > ASSISTANT_CITATION_MAX_TEXT_LENGTH;

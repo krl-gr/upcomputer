@@ -1049,6 +1049,13 @@ export function TasksView(props: TasksViewProps) {
                           }
                         : undefined,
                     }}
+                    quoteSource={{
+                      id: selectedTask.id,
+                      title: selectedTask.title,
+                      projectId: selectedTask.projectId,
+                      rootThreadId: selectedTask.rootThreadId,
+                    }}
+                    onOpenThread={props.onOpenThread}
                   />
                 </DetailSidebarSection>
               ) : null}
