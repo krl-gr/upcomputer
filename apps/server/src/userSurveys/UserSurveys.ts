@@ -86,11 +86,9 @@ const make = Effect.fn("UserSurveys.make")(function* (buildKind: UpcomputerBuild
   } | null>(null);
   const activityLock = yield* Semaphore.make(1);
   const shownRef = yield* Ref.make(false);
-  // The card's answer and its submission id, which Send and a dismissal reuse.
-  const partialRef = yield* Ref.make<{
-    readonly submissionId: string;
-    readonly answers: ReadonlyArray<UserSurveyAnswer>;
-  } | null>(null);
+  // The answers confirmed so far and their submission id, which Send and a dismissal reuse.
+  const partialRef = yield* Ref.make<ReadonlyArray<UserSurveyAnswer> | null>(null);
+  const submissionIdRef = yield* Ref.make<string | null>(null);
 
   const handled = Effect.gen(function* () {
     const loaded = yield* Ref.get(handledRef);
@@ -154,14 +152,22 @@ const make = Effect.fn("UserSurveys.make")(function* (buildKind: UpcomputerBuild
   }).pipe(Effect.withSpan("UserSurveys.current"));
 
   const submissionId = Effect.gen(function* () {
-    const partial = yield* Ref.get(partialRef);
-    return partial?.submissionId ?? (yield* crypto.uuidV4().pipe(Effect.orDie));
+    const fresh = yield* crypto.uuidV4().pipe(Effect.orDie);
+    return yield* Ref.modify(submissionIdRef, (current) => {
+      const id = current ?? fresh;
+      return [id, id] as const;
+    });
   });
 
   // `record` sends nothing when analytics is off; only an answer sent with Send goes out then.
   const report: UserSurveys["Service"]["report"] = Effect.fn("UserSurveys.report")(
     function* (input) {
-      if (!available || input.surveyId !== survey.id) {
+      // Another client may have answered or dismissed it already; one person sends one of those.
+      const open =
+        available &&
+        input.surveyId === survey.id &&
+        surveyNotHandled(yield* handled, survey.id, yield* Clock.currentTimeMillis);
+      if (!open) {
         if (input._tag === "Answered") {
           return yield* new UserSurveyError({ reason: "unavailable" });
         }
@@ -175,7 +181,7 @@ const make = Effect.fn("UserSurveys.make")(function* (buildKind: UpcomputerBuild
         }
         case "Partial": {
           const id = yield* submissionId;
-          yield* Ref.set(partialRef, { submissionId: id, answers: input.answers });
+          yield* Ref.set(partialRef, input.answers);
           yield* analytics.record(
             "survey sent",
             surveyResponseProperties(survey, input.answers, id, { completed: false }),
@@ -183,17 +189,13 @@ const make = Effect.fn("UserSurveys.make")(function* (buildKind: UpcomputerBuild
           return;
         }
         case "Dismissed": {
-          const partial = yield* Ref.getAndSet(partialRef, null);
+          const answers = yield* Ref.getAndSet(partialRef, null);
+          const id = yield* Ref.getAndSet(submissionIdRef, null);
           yield* remember(survey.id, "dismissed");
           yield* analytics.record("survey dismissed", {
-            ...(partial === null
+            ...(answers === null || id === null
               ? { ...surveyEventProperties(survey), $survey_partially_completed: false }
-              : surveyResponseProperties(
-                  survey,
-                  partial.answers,
-                  partial.submissionId,
-                  "dismissed",
-                )),
+              : surveyResponseProperties(survey, answers, id, "dismissed")),
             // Not posthog-js properties: where each person stopped, for a drop-off funnel.
             dismissedAtQuestionId: input.step.questionId,
             dismissedAtStep: input.step.index,
@@ -209,6 +211,7 @@ const make = Effect.fn("UserSurveys.make")(function* (buildKind: UpcomputerBuild
           );
           if (!sent) return yield* new UserSurveyError({ reason: "send-failed" });
           yield* Ref.set(partialRef, null);
+          yield* Ref.set(submissionIdRef, null);
           yield* remember(survey.id, "answered");
         }
       }

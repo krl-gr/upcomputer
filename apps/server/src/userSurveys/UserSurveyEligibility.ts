@@ -17,8 +17,9 @@ export interface UserMessageActivity {
 
 /**
  * Reads the activity from the thread history, so existing installs qualify at
- * once. Counts messages a person sent, not prompts from task agents or
- * automations. `utcOffsetMinutes` places each message on a local day.
+ * once. Counts only messages a person typed in a client: imported Claude, Codex
+ * and V1 history, task-agent prompts and limit resumes come from the server.
+ * `utcOffsetMinutes` places each message on a local day.
  */
 export const readUserMessageActivity = Effect.fn("UserSurveys.readUserMessageActivity")(function* (
   utcOffsetMinutes: number,
@@ -33,7 +34,9 @@ export const readUserMessageActivity = Effect.fn("UserSurveys.readUserMessageAct
       MIN(created_at) AS "firstAt",
       COUNT(DISTINCT date(created_at, ${offset})) AS "activeDays"
     FROM orchestration_v2_projection_messages
-    WHERE role = 'user' AND json_extract(payload_json, '$.createdBy') = 'user'
+    WHERE role = 'user'
+      AND json_extract(payload_json, '$.createdBy') = 'user'
+      AND json_extract(payload_json, '$.creationSource') IN ('web', 'mobile')
   `;
   const row = rows[0];
   const firstMessageAt = row?.firstAt ? Date.parse(row.firstAt) : Number.NaN;

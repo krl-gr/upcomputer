@@ -64,7 +64,7 @@ const layerHistory = (daysAgo: ReadonlyArray<number>) =>
           INSERT INTO orchestration_v2_projection_messages
             (message_id, thread_id, run_id, node_id, role, streaming, created_at, updated_at, payload_json)
           VALUES (${`message-${days}`}, 'thread-1', NULL, NULL, 'user', 0, ${at}, ${at},
-            '{"createdBy":"user"}')
+            '{"createdBy":"user","creationSource":"web"}')
         `;
       }
     }),
@@ -275,6 +275,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("UserSurveys", (i
           assert.isNull((yield* surveys.current).survey);
           const failure = yield* Effect.flip(surveys.report({ ...ANSWERED, surveyId: "gone" }));
           assert.strictEqual(failure.reason, "unavailable");
+          // Another client still showing it cannot send an answer or a step after the dismissal.
+          const late = yield* Effect.flip(surveys.report(ANSWERED));
+          assert.strictEqual(late.reason, "unavailable");
+          yield* surveys.report(PROBLEM_STEP);
         }),
       );
       yield* TestClock.adjust(400 * DAY);
@@ -282,7 +286,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("UserSurveys", (i
         Effect.map(surveys.current, (state) => assert.isNull(state.survey)),
       );
 
-      const [, partial, dismissed] = surveyEvents(posthog.sent);
+      const events = surveyEvents(posthog.sent);
+      assert.deepEqual(
+        events.map((event) => event.event),
+        ["survey sent", "survey sent", "survey dismissed"],
+      );
+      const [, partial, dismissed] = events;
       assert.strictEqual(dismissed!.event, "survey dismissed");
       assert.strictEqual(dismissed!.properties.$survey_partially_completed, true);
       assert.strictEqual(dismissed!.properties.dismissedAtQuestionId, "next");

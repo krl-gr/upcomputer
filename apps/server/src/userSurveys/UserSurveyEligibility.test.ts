@@ -20,12 +20,16 @@ const insertMessages = (
     readonly at: string;
     readonly role?: "user" | "assistant";
     readonly createdBy?: "user" | "agent" | "system";
+    readonly creationSource?: "web" | "mobile" | "mcp" | "provider" | "server";
   }>,
 ) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     for (const [index, message] of messages.entries()) {
-      const payload = JSON.stringify({ createdBy: message.createdBy ?? "user" });
+      const payload = JSON.stringify({
+        createdBy: message.createdBy ?? "user",
+        creationSource: message.creationSource ?? "web",
+      });
       yield* sql`
         INSERT INTO orchestration_v2_projection_messages
           (message_id, thread_id, run_id, node_id, role, streaming, created_at, updated_at, payload_json)
@@ -41,11 +45,14 @@ describe("readUserMessageActivity", () => {
       yield* insertMessages([
         { at: "2026-11-01T22:30:00.000Z" },
         { at: "2026-11-02T01:30:00.000Z" },
-        { at: "2026-11-05T10:00:00.000Z" },
+        { at: "2026-11-05T10:00:00.000Z", creationSource: "mobile" },
         // Task agents, automations and replies do not count.
         { at: "2026-10-01T10:00:00.000Z", createdBy: "agent" },
         { at: "2026-10-02T10:00:00.000Z", createdBy: "system" },
         { at: "2026-10-03T10:00:00.000Z", role: "assistant" },
+        // Nor do sessions imported from Claude or Codex, or V1 task-agent prompts: the server wrote them.
+        { at: "2026-09-01T10:00:00.000Z", creationSource: "server" },
+        { at: "2026-09-02T10:00:00.000Z", creationSource: "server" },
       ]);
       // UTC: Nov 1, Nov 2 and Nov 5.
       assert.deepEqual(yield* readUserMessageActivity(0), {
