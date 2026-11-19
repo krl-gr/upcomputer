@@ -7,11 +7,11 @@ import { filterSidebarV2VisibleThreads } from "../Sidebar.logic";
 // Leaving Settings commits the router's location before its matches, briefly hiding thread params.
 // Ignore null keys so the same thread does not look new during that gap.
 export interface SidebarRouteReveal {
+  // The route's scope was judged once its projects loaded. A scope picked after that stands,
+  // though the thread has no row to complete the reveal (a bot's chat).
+  scopeJudged?: boolean;
   observedKey: string | null;
   pendingKey: string | null;
-  // The route's thread was found and its scope judged. A scope picked after that stands,
-  // even while the thread has no row to complete the reveal (a bot's chat).
-  scopeJudged?: boolean;
 }
 
 export function pendingSidebarRouteReveal(
@@ -20,9 +20,9 @@ export function pendingSidebarRouteReveal(
 ): string | null {
   if (routeKey === null) return null;
   if (reveal.observedKey !== routeKey) {
+    reveal.scopeJudged = false;
     reveal.observedKey = routeKey;
     reveal.pendingKey = routeKey;
-    reveal.scopeJudged = false;
   }
   return reveal.pendingKey;
 }
@@ -61,21 +61,23 @@ export function resolveSidebarRouteReveal<T extends RevealableThread>(input: {
   readonly scopedProjectKeys: ReadonlySet<string> | null;
   readonly delegatedUnderParent: ReadonlySet<string>;
   readonly findThread: (key: string) => T | undefined;
+  /** False while project snapshots load, when a stored scope may not resolve yet. */
+  readonly projectsReady?: boolean;
 }): { readonly pendingKey: string | null; readonly widensScope: boolean } {
   const { reveal, routeKey, isSearching, scopedProjectKeys, delegatedUnderParent, findThread } =
     input;
   const pendingKey = pendingSidebarRouteReveal(reveal, routeKey);
   // Search results replace the thread list; the reveal waits for it to return.
-  const thread =
-    pendingKey === null || isSearching || reveal.scopeJudged === true
-      ? undefined
-      : findThread(pendingKey);
+  const thread = pendingKey === null || isSearching ? undefined : findThread(pendingKey);
   const widensScope =
     thread !== undefined &&
+    reveal.scopeJudged !== true &&
     scopedProjectKeys !== null &&
     filterSidebarV2VisibleThreads([thread], scopedProjectKeys, delegatedUnderParent).length === 0 &&
     filterSidebarV2VisibleThreads([thread], null, delegatedUnderParent).length === 1;
   // A widening is judged on the render after it, once the scope it wrote back is read.
-  if (thread !== undefined && !widensScope) reveal.scopeJudged = true;
+  if (thread !== undefined && !widensScope && input.projectsReady !== false) {
+    reveal.scopeJudged = true;
+  }
   return { pendingKey, widensScope };
 }
