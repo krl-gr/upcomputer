@@ -139,8 +139,16 @@ interface FilePreviewPanelProps {
   projectId?: ProjectId | undefined;
   relativePath: string | null;
   attachment?: ChatFileAttachment;
-  threadRef: ScopedThreadRef;
-  composerDraftTarget: ScopedThreadRef | DraftId;
+  /** Absent outside a thread (the Tasks page's file window): files load through `cwd`. */
+  threadRef?: ScopedThreadRef | undefined;
+  /** Absent outside a thread: nothing can take a review comment, so files are read-only. */
+  composerDraftTarget?: ScopedThreadRef | DraftId | undefined;
+  /** Outside a thread, a link inside rendered markdown opens through here. */
+  onOpenFileLink?: ((path: string, line?: number) => void) | undefined;
+  /** Off where the surface shows one file at a time: no project tree beside a file. */
+  fileExplorer?: boolean | undefined;
+  /** A surface for reading, not editing, opens markdown rendered and remembers that apart from chat. */
+  markdownRenderedByDefault?: boolean | undefined;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
   openInShortcutEnabled: boolean;
@@ -171,7 +179,7 @@ type FilePostRender = <LAnnotation>(
 
 function WorkspaceImagePreview(props: {
   readonly environmentId: EnvironmentId;
-  readonly threadRef: ScopedThreadRef;
+  readonly threadRef: ScopedThreadRef | undefined;
   readonly draft: boolean;
   readonly absolutePath: string;
   readonly workspaceRoot: string;
@@ -227,7 +235,7 @@ function WorkspaceImagePreview(props: {
 
 export function WorkspaceBrowserPreview(props: {
   readonly environmentId: EnvironmentId;
-  readonly threadRef: ScopedThreadRef;
+  readonly threadRef: ScopedThreadRef | undefined;
   readonly draft: boolean;
   readonly absolutePath: string;
   readonly workspaceRoot: string;
@@ -274,8 +282,8 @@ export function WorkspaceBrowserPreview(props: {
   return (
     <BrowserDocumentFrame
       src={`${assetUrl.url}${revisionSuffix}`}
-      documentKey={`${props.environmentId}:${resource._tag}:${props.threadRef.threadId}:${props.absolutePath}:${revision}`}
-      documentId={`${props.environmentId}:${resource._tag}:${props.threadRef.threadId}:${props.absolutePath}`}
+      documentKey={`${props.environmentId}:${resource._tag}:${props.threadRef?.threadId}:${props.absolutePath}:${revision}`}
+      documentId={`${props.environmentId}:${resource._tag}:${props.threadRef?.threadId}:${props.absolutePath}`}
       title={props.title}
       pdf={pdf}
     />
@@ -284,7 +292,7 @@ export function WorkspaceBrowserPreview(props: {
 
 function WorkspaceVideoPreview(props: {
   readonly environmentId: EnvironmentId;
-  readonly threadRef: ScopedThreadRef;
+  readonly threadRef: ScopedThreadRef | undefined;
   readonly draft: boolean;
   readonly absolutePath: string;
   readonly workspaceRoot: string;
@@ -341,7 +349,7 @@ function WorkspaceVideoPreview(props: {
 
 function WorkspaceAudioPreview(props: {
   readonly environmentId: EnvironmentId;
-  readonly threadRef: ScopedThreadRef;
+  readonly threadRef: ScopedThreadRef | undefined;
   readonly draft: boolean;
   readonly absolutePath: string;
   readonly workspaceRoot: string;
@@ -937,6 +945,7 @@ function RenderedMarkdownSurface({
   workspaceMutationId,
   readOnly,
   onPendingChange,
+  onOpenFileLink,
 }: Omit<
   EditableFileSurfaceProps,
   | "resolvedTheme"
@@ -946,9 +955,10 @@ function RenderedMarkdownSurface({
   | "wordWrap"
   | "onPostRender"
 > & {
-  threadRef: ScopedThreadRef;
+  threadRef: ScopedThreadRef | undefined;
   readOnly: boolean;
   workspaceMutationId: string | null;
+  onOpenFileLink: ((path: string, line?: number) => void) | undefined;
 }) {
   const saveTarget = { environmentId, cwd, relativePath };
   useFileSaveSession(saveTarget, onPendingChange);
@@ -960,6 +970,8 @@ function RenderedMarkdownSurface({
         cwd={cwd}
         relativePath={relativePath}
         threadRef={threadRef}
+        environmentId={environmentId}
+        onOpenFile={onOpenFileLink}
         workspaceMutationId={workspaceMutationId}
         onTaskListChange={
           readOnly
@@ -1007,6 +1019,9 @@ export default function FilePreviewPanel({
   attachment,
   threadRef,
   composerDraftTarget,
+  onOpenFileLink,
+  fileExplorer = true,
+  markdownRenderedByDefault = false,
   keybindings,
   availableEditors,
   openInShortcutEnabled,
@@ -1021,7 +1036,7 @@ export default function FilePreviewPanel({
 }: FilePreviewPanelProps) {
   const relativePath =
     attachment === undefined ? resolveFilePreviewPath(requestedPath, cwd) : requestedPath;
-  const draft = typeof composerDraftTarget === "string";
+  const draft = threadRef === undefined || typeof composerDraftTarget === "string";
   const { resolvedTheme } = useTheme();
   const defaultWordWrap = useClientSettings((settings) => settings.wordWrap);
   const [wordWrapOverride, setWordWrapOverride] = useState<boolean | null>(null);
@@ -1085,12 +1100,14 @@ export default function FilePreviewPanel({
   const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
   const showExplorer = shouldShowFileExplorer({
     relativePath: previewPath,
-    explorerOpen,
+    explorerOpen: explorerOpen && fileExplorer,
     attachmentOpen: attachment !== undefined,
   });
   const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(
-    RENDER_MARKDOWN_STORAGE_KEY,
-    false,
+    markdownRenderedByDefault
+      ? `${RENDER_MARKDOWN_STORAGE_KEY}.reader`
+      : RENDER_MARKDOWN_STORAGE_KEY,
+    markdownRenderedByDefault,
     Schema.Boolean,
   );
   const [renderBrowserFilePreferred, setRenderBrowserFilePreferred] = useLocalStorage(
@@ -1158,6 +1175,7 @@ export default function FilePreviewPanel({
         ? setRenderTablePreferred
         : setRenderBrowserFilePreferred;
   const canOpenInBrowser =
+    threadRef !== undefined &&
     canOperatePreview &&
     previewPath !== null &&
     attachment === undefined &&
@@ -1218,7 +1236,14 @@ export default function FilePreviewPanel({
   };
 
   const handleOpenInBrowser = () => {
-    if (!canReadFiles || !canOperatePreview || !absolutePath || !environmentHttpBaseUrl) return;
+    if (
+      !threadRef ||
+      !canReadFiles ||
+      !canOperatePreview ||
+      !absolutePath ||
+      !environmentHttpBaseUrl
+    )
+      return;
     void (async () => {
       const result = await openFileInPreview({
         threadRef,
@@ -1330,7 +1355,7 @@ export default function FilePreviewPanel({
               <Globe2 className="size-3.5" />
             </FileSurfaceAction>
           ) : null}
-          {!isHostFile && previewPath !== null ? (
+          {fileExplorer && !isHostFile && previewPath !== null ? (
             <FileSurfaceAction
               label={explorerOpen ? "Hide file explorer" : "Show file explorer"}
               pressed={explorerOpen}
@@ -1368,11 +1393,11 @@ export default function FilePreviewPanel({
               sizeBytes={attachment.sizeBytes}
               asset={{ environmentId, attachmentId: attachment.id }}
               htmlRender={attachment.htmlRender === true}
-              threadRef={threadRef}
+              {...(threadRef ? { threadRef } : {})}
             />
           ) : relativePath && isVideo && absolutePath ? (
             <WorkspaceVideoPreview
-              key={`${environmentId}:${threadRef.threadId}:${absolutePath}`}
+              key={`${environmentId}:${threadRef?.threadId}:${absolutePath}`}
               environmentId={environmentId}
               threadRef={threadRef}
               draft={draft}
@@ -1383,7 +1408,7 @@ export default function FilePreviewPanel({
             />
           ) : relativePath && isAudio && absolutePath ? (
             <WorkspaceAudioPreview
-              key={`${environmentId}:${threadRef.threadId}:${absolutePath}`}
+              key={`${environmentId}:${threadRef?.threadId}:${absolutePath}`}
               environmentId={environmentId}
               threadRef={threadRef}
               draft={draft}
@@ -1418,6 +1443,7 @@ export default function FilePreviewPanel({
             absolutePath &&
             file.data?.truncated &&
             !isDocument &&
+            threadRef &&
             !draft &&
             !isMarkdown &&
             !isMermaid &&
@@ -1435,6 +1461,17 @@ export default function FilePreviewPanel({
               wordWrap={wordWrap}
             />
           ) : relativePath &&
+            !threadRef &&
+            !isDocument &&
+            file.readError?.failure === "binary_file" ? (
+            // The server signs a host file for download only through a thread.
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 px-6 text-center">
+              <p className="text-sm text-foreground">This is a binary file.</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                It cannot be shown as text. Open it in another app, or copy its path.
+              </p>
+            </div>
+          ) : relativePath &&
             absolutePath &&
             (isDocument || file.readError?.failure === "binary_file") ? (
             <AttachmentFilePreview
@@ -1445,7 +1482,7 @@ export default function FilePreviewPanel({
               asset={{
                 environmentId,
                 resource:
-                  draft && isDocument
+                  threadRef === undefined || (draft && isDocument)
                     ? { _tag: "draft-workspace-file", cwd, path: absolutePath }
                     : {
                         _tag: "media-file",
@@ -1502,8 +1539,14 @@ export default function FilePreviewPanel({
                 threadRef={threadRef}
                 contents={file.data.contents}
                 workspaceMutationId={workspaceMutationId}
-                readOnly={file.data.truncated || isHostFile || !canWriteFiles}
+                readOnly={
+                  file.data.truncated ||
+                  isHostFile ||
+                  !canWriteFiles ||
+                  composerDraftTarget === undefined
+                }
                 onPendingChange={onPendingChange}
+                onOpenFileLink={onOpenFileLink}
               />
             ) : tableDelimiter && renderTable ? (
               <DelimitedTablePreview
@@ -1512,7 +1555,10 @@ export default function FilePreviewPanel({
                 text={file.data.contents}
                 delimiter={tableDelimiter}
               />
-            ) : file.data.truncated || isHostFile || !canWriteFiles ? (
+            ) : file.data.truncated ||
+              isHostFile ||
+              !canWriteFiles ||
+              composerDraftTarget === undefined ? (
               <SourceFilePreview
                 name={relativePath}
                 text={file.data.contents}

@@ -32,6 +32,9 @@ import {
 } from "../../../../apps/web/src/components/ui/select.tsx";
 import { ProjectFavicon } from "../../../../apps/web/src/components/ProjectFavicon.tsx";
 import { TaskOutput } from "./TaskOutput.tsx";
+import { designDemoThreadAction, TaskFileWindow } from "./TaskFileWindow.tsx";
+import type { StandaloneFileTarget } from "../../../../apps/web/src/components/files/StandaloneFileViewer.tsx";
+import { useRightPanelStore } from "../../../../apps/web/src/rightPanelStore.ts";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
 import { TaskThreadLink } from "./TaskThreadLink.tsx";
 import { getTaskRunAgentPresentation } from "./agentModelOptions.ts";
@@ -286,6 +289,11 @@ export function TaskReorderHandle(props: {
 export function TasksView(props: TasksViewProps) {
   const [createModeOpen, setCreateModeOpen] = useState(false);
   const [detailRuns, setDetailRuns] = useState<readonly ScopedTaskAgentRun[]>([]);
+  // The file an output link opened, with the task it belongs to: another task closes it.
+  const [openFile, setOpenFile] = useState<{
+    readonly taskKey: string;
+    readonly target: StandaloneFileTarget;
+  } | null>(null);
   const [detailRunsStatus, setDetailRunsStatus] = useState<"idle" | "loading" | "ready" | "error">(
     "idle",
   );
@@ -993,7 +1001,58 @@ export function TasksView(props: TasksViewProps) {
                     environmentId={selectedTask.environmentId}
                     cwd={selectedTaskProject?.workspaceRoot}
                     filePanelRef={props.filePanelRef}
+                    onOpenFile={
+                      props.filePanelRef || !selectedTaskProject?.workspaceRoot
+                        ? undefined
+                        : (path, line) =>
+                            setOpenFile((current) => ({
+                              taskKey: taskKey(selectedTask),
+                              target: {
+                                path,
+                                line,
+                                requestId: (current?.target.requestId ?? 0) + 1,
+                              },
+                            }))
+                    }
                   />
+                  {openFile?.taskKey === taskKey(selectedTask) &&
+                  selectedTaskProject?.workspaceRoot ? (
+                    <TaskFileWindow
+                      environmentId={selectedTask.environmentId}
+                      cwd={selectedTaskProject.workspaceRoot}
+                      projectName={selectedTask.projectName ?? "Project"}
+                      projectId={selectedTask.projectId as ProjectId}
+                      target={openFile.target}
+                      onNavigate={(target) =>
+                        setOpenFile((current) =>
+                          current
+                            ? {
+                                ...current,
+                                target: { ...target, requestId: current.target.requestId + 1 },
+                              }
+                            : current,
+                        )
+                      }
+                      onClose={() => setOpenFile(null)}
+                      onOpenInThread={
+                        detailRuns[0]
+                          ? () => {
+                              const run = detailRuns[0]!;
+                              useRightPanelStore
+                                .getState()
+                                .openFile(
+                                  { environmentId: run.environmentId, threadId: run.threadId },
+                                  openFile.target.path,
+                                  openFile.target.line,
+                                );
+                              props.onOpenThread(run.environmentId, run.threadId);
+                            }
+                          : designDemoThreadAction()
+                            ? () => {}
+                            : undefined
+                      }
+                    />
+                  ) : null}
                 </DetailSidebarSection>
               ) : null}
             </main>

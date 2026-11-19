@@ -47,12 +47,12 @@ export function shouldShowFileExplorer(input: {
  */
 export function workspaceAssetResource(input: {
   readonly kind: "workspace-file" | "media-file";
-  readonly threadRef: ScopedThreadRef;
+  readonly threadRef: ScopedThreadRef | undefined;
   readonly draft: boolean;
   readonly workspaceRoot: string;
   readonly absolutePath: string;
 }): AssetResource {
-  if (input.draft) {
+  if (input.draft || input.threadRef === undefined) {
     return { _tag: "draft-workspace-file", cwd: input.workspaceRoot, path: input.absolutePath };
   }
   const insideWorkspace =

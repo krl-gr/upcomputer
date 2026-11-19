@@ -11,6 +11,8 @@ export function TaskOutput(props: {
   readonly environmentId: EnvironmentId;
   readonly cwd: string | undefined;
   readonly filePanelRef?: ScopedThreadRef | undefined;
+  /** Without a panel beside it (the Tasks page), a file link opens through here. */
+  readonly onOpenFile?: ((path: string, line?: number) => void) | undefined;
 }) {
   return (
     <AssistantMessageMarkdown
@@ -20,6 +22,7 @@ export function TaskOutput(props: {
       filePanelRef={
         props.filePanelRef?.environmentId === props.environmentId ? props.filePanelRef : undefined
       }
+      onOpenFile={props.onOpenFile}
       className="px-3 py-2 text-lg leading-8 text-foreground"
     />
   );
