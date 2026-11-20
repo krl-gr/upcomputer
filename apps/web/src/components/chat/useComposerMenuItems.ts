@@ -33,6 +33,7 @@ import {
   getProviderSlashCommandsForSlashMenu,
 } from "@t3tools/client-runtime/providerSkills";
 import { searchProviderSkills } from "../../providerSkillSearch";
+import { matchComposerRecipientItems } from "../../composerRecipients/composerRecipients";
 import { useVisibleThreadShells } from "~/state/entities";
 import { useEnvironmentIdentities, useEnvironmentMachines } from "~/state/environments";
 import { offersLinkedEnvironmentsAtom } from "~/state/peerLinks";
@@ -201,6 +202,9 @@ export function useComposerMenuItems({
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
       return [
+        ...(questionAttachmentTarget === null
+          ? matchComposerRecipientItems(environmentId, activeThreadId, composerTrigger.query)
+          : []),
         ...matchComposerThreadItems({
           shells: environmentThreadShells,
           environmentId,

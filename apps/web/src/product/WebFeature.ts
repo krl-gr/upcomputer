@@ -84,6 +84,26 @@ export interface ExperimentalWebThreadAction {
   readonly run: (context: ExperimentalWebThreadActionContext, choiceId?: string) => void;
 }
 
+/** The chat whose composer asks; `threadId` is null to name every recipient, as a chip does. */
+export interface ExperimentalWebComposerRecipientContext {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId | null;
+}
+
+/** Who a composer message can go to instead of the open chat, such as a bot. */
+export interface ExperimentalWebComposerRecipient {
+  /** Unique within the feature. */
+  readonly id: string;
+  /** A message that starts with `@` and this name goes to the recipient, without the name. */
+  readonly name: string;
+  readonly description: string;
+  readonly icon?: ComponentType<{ readonly className?: string }>;
+  /** Sends the text as the person's own message; rejects with the reason it was not sent. */
+  readonly send: (text: string) => Promise<void>;
+  /** Opens where the message went. */
+  readonly open: (context: ExperimentalWebThreadActionContext) => void;
+}
+
 export interface ExperimentalWebThreadRowAccessoryProps extends ExperimentalWebThreadAccessoryProps {
   /** The row's timestamp. Render it when there is nothing to show instead. */
   readonly fallback: ReactNode;
@@ -134,6 +154,13 @@ export interface ExperimentalWebFeatureContribution {
   readonly threadActions?: (
     thread: ExperimentalWebThreadAccessoryProps,
   ) => ReadonlyArray<ExperimentalWebThreadAction>;
+  /**
+   * Recipients the open thread's composer offers after `@`, asked as the person types and
+   * sends, so answer from state the feature already holds.
+   */
+  readonly composerRecipients?: (
+    context: ExperimentalWebComposerRecipientContext,
+  ) => ReadonlyArray<ExperimentalWebComposerRecipient>;
   readonly sidebarSection?: ComponentType;
   /**
    * Mounted once in the app shell while the primary environment is signed in,

@@ -24,7 +24,7 @@ import {
   UserRoundIcon,
   type LucideIcon,
 } from "lucide-react";
-import { memo, useLayoutEffect, useRef, useState } from "react";
+import { memo, useLayoutEffect, useRef, useState, type ComponentType } from "react";
 
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
 import { cn } from "~/lib/utils";
@@ -101,6 +101,14 @@ export type ComposerCommandItem =
       providerDisplayName: string;
       acpRegistryAgentId: string | undefined;
       acpRegistryIconUrl: string | undefined;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "recipient";
+      name: string;
+      icon: ComponentType<{ readonly className?: string }> | undefined;
       label: string;
       description: string;
     };
@@ -254,6 +262,9 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           className="size-4 shrink-0"
           iconClassName="size-4"
         />
+      ) : null}
+      {props.item.type === "recipient" && props.item.icon ? (
+        <props.item.icon className="size-4 shrink-0 text-secondary-label" />
       ) : null}
       {pullRequestPresentation ? (
         <pullRequestPresentation.Icon

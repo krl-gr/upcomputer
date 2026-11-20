@@ -27,6 +27,10 @@ bot: keep talking in the same one.
 The agent's working memory of the conversation stays bounded, but the full history is kept. The
 bot can search its older messages when it needs them.
 
+To write to a bot from any other chat, start the message with `@` and the bot's name, such as
+`@Release helper prepare version 2.1`. The message goes to the bot's chat, the bot answers there,
+and the chat you wrote in does not start a turn. Pick the bot from the `@` menu or type its name.
+
 A bot's chat uses a compact one-line composer. To get the full composer with its model controls,
 turn on **Settings → Chat → Full composer in bot chats**.
 

@@ -32,12 +32,18 @@ const LazyThreadSeen = lazy(() =>
     default: module.TaskThreadSeen,
   })),
 );
-// The thread menu asks synchronously, so its bot module loads with the Bots section, which
-// every sidebar shows. Until then the menu simply has no bot entry.
+// The thread menu and the composer's `@` ask synchronously, so their bot modules load with the
+// Bots section, which every sidebar shows. Until then neither offers bots.
 let botMenu: typeof import("./bots/botMenu.ts") | undefined;
+let botRecipients: typeof import("./bots/botRecipients.ts") | undefined;
 const LazySidebarBots = lazy(() =>
-  Promise.all([import("./bots/Bots.tsx"), import("./bots/botMenu.ts")]).then(([bots, menu]) => {
+  Promise.all([
+    import("./bots/Bots.tsx"),
+    import("./bots/botMenu.ts"),
+    import("./bots/botRecipients.ts"),
+  ]).then(([bots, menu, recipients]) => {
     botMenu = menu;
+    botRecipients = recipients;
     return { default: bots.SidebarBots };
   }),
 );
@@ -109,6 +115,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   threadRowAccessory: ThreadRowRunCounts,
   chatHeaderAccessory: ChatHeaderRunCounts,
   threadActions: (thread) => botMenu?.botThreadActions(thread) ?? [],
+  composerRecipients: (context) => botRecipients?.botComposerRecipients(context) ?? [],
   sidebarSection: SidebarBots,
   coordinator: TaskReminders,
   settings: [

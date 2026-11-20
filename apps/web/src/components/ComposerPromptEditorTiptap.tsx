@@ -124,6 +124,7 @@ import { FileTagChipContent } from "./chat/FileTagChip";
 import { SkillChipPopover, skillPopoverDescription } from "./chat/SkillInlineText";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { ModelMentionChip, modelMentionKey, modelMentionKeysAtom } from "./chat/ModelMentionChip";
+import { composerRecipientChip } from "../composerRecipients/ComposerRecipientChip";
 import { getTimelinePageScrollKey } from "./chat/pageScrollController";
 import { ContextChip } from "./ContextChip";
 import {
@@ -281,6 +282,14 @@ const ComposerMentionExtension = Node.create({
 function ComposerMentionNodeView({ node }: NodeViewProps) {
   const actions = use(ComposerContextActionsContext);
   const path = (node.attrs.path as string) ?? "";
+  const recipientChip = composerRecipientChip(actions.environmentId, path);
+  if (recipientChip) {
+    return (
+      <NodeViewWrapper as="span" className={CHIP_NODE_SELECTION_CLASS_NAME}>
+        {recipientChip}
+      </NodeViewWrapper>
+    );
+  }
   const chip = (
     <ContextChip
       kind={documentChipKindForFileName(path) ?? "mention"}

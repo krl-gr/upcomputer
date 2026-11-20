@@ -68,6 +68,10 @@ import { newMessageId, newThreadId } from "~/lib/utils";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import {
+  parseProductComposerRecipientMessage,
+  sendComposerRecipientMessage,
+} from "../../composerRecipients/composerRecipients";
+import {
   beginBackgroundDraftSubmissionByRef,
   clearBackgroundDraftSubmissionByRef,
   finalizePromotedDraftThreadByRef,
@@ -525,6 +529,28 @@ export function useComposerSend(input: ComposerSendInput) {
       // Clear only what was sent; the user may have edited the draft or left meanwhile.
       if (
         started &&
+        currentRouteThreadKeyRef.current === routeThreadKey &&
+        promptRef.current === promptAtSend
+      ) {
+        promptRef.current = "";
+        setComposerDraftPrompt(composerDraftTarget, "");
+        composerRef.current?.resetCursorState();
+      }
+      return;
+    }
+    const recipientMessage =
+      sendCtx && !answeringQuestion && !directAnnotation && !queuedRunEdit.isEditing
+        ? parseProductComposerRecipientMessage(promptAtSend, environmentId, activeThread.id)
+        : null;
+    if (sendCtx && recipientMessage) {
+      const sent = await sendComposerRecipientMessage({
+        message: recipientMessage,
+        sendContext: sendCtx,
+        draftTarget: composerDraftTarget,
+        navigate: (options) => navigate(options),
+      });
+      if (
+        sent &&
         currentRouteThreadKeyRef.current === routeThreadKey &&
         promptRef.current === promptAtSend
       ) {
