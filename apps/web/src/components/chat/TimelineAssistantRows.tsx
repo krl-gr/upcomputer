@@ -54,6 +54,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
   return (
     <>
       <div className="relative min-w-0 px-1 py-0.5">
+        {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product name as the author */}
         <MessageAuthorHeading>Up.computer</MessageAuthorHeading>
         <div data-thread-find-text="true">
           <AssistantCitationSource
@@ -118,6 +119,7 @@ export function SentMessageTimelineRow({
 
   return (
     <div className="min-w-0 px-1 py-0.5">
+      {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product name as the author */}
       <MessageAuthorHeading>Up.computer</MessageAuthorHeading>
       {/* Sent messages have no message id; citations name their turn item instead. */}
       <AssistantCitationSource

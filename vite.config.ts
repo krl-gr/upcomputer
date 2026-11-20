@@ -790,6 +790,8 @@ export default defineConfig({
           "**/{test-fixtures,*TestFixtures}.ts",
           "apps/mobile/src/features/development/**",
           "packages/client-runtime/src/rpc/**",
+          // UpComputer: fixture states for UI captures and browser tests.
+          "apps/web/src/uiStates/**",
         ],
         rules: { "t3code/no-untranslated-copy": "error" },
       },

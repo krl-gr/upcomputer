@@ -1,4 +1,5 @@
 import type { UserSurvey } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import { CircleQuestionMarkIcon, XIcon } from "lucide-react";
 
 import { Button } from "../components/ui/button";
@@ -43,6 +44,7 @@ export function UserSurveyCard({
   readonly onStart: (draft: SurveyDraft) => void;
   readonly onDismiss: () => void;
 }) {
+  const gt = useGT();
   const question = surveyCardQuestion(survey);
   if (!question) return null;
   const answer = draft[question.id] ?? EMPTY_DRAFT_ANSWER;
@@ -78,7 +80,12 @@ export function UserSurveyCard({
         </div>
       </div>
       <span className="absolute top-1.5 right-1.5">
-        <Button size="icon-micro" variant="ghost-muted" aria-label="Dismiss" onClick={onDismiss}>
+        <Button
+          size="icon-micro"
+          variant="ghost-muted"
+          aria-label={gt("Dismiss")}
+          onClick={onDismiss}
+        >
           <XIcon />
         </Button>
       </span>

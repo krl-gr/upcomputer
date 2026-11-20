@@ -1285,9 +1285,9 @@ export type LocalThreadErrorEntry = {
   readonly at: number;
 };
 
-/** UpComputer: a plain sentence; `resolve` stays for upstream's call sites. */
-export function chatActionErrorMessage(error: unknown, _resolve: MessageResolver = m): string {
-  return plainErrorSentence(error);
+/** UpComputer: a plain sentence in the active language. */
+export function chatActionErrorMessage(error: unknown, resolve: MessageResolver = m): string {
+  return plainErrorSentence(error, undefined, resolve);
 }
 
 export const SEND_FAILURE_TAIL = "Your text is still in the composer, so try again.";
@@ -1296,7 +1296,9 @@ export const SEND_FAILURE_TAIL = "Your text is still in the composer, so try aga
 export function threadActionErrorText(error: unknown, action: string, tail: string): string {
   const { reason, detail } = describeError(error);
   if (detail !== undefined) console.warn(`Couldn't ${action}:`, detail);
-  return `Up.computer couldn't ${action}${reason === undefined ? "" : `: ${reason}`}. ${tail}`;
+  return reason === undefined
+    ? m(msg("Up.computer couldn't {action}. {tail}", { action, tail }))
+    : m(msg("Up.computer couldn't {action}: {reason}. {tail}", { action, reason, tail }));
 }
 
 /** A local copy of the runtime's error shares the runtime's key, so one dismissal covers both. */

@@ -83,12 +83,12 @@ export function getProviderSummary(
       headline: resolve(msg("Disabled", { $context: "provider status" })),
       detail:
         provider.message ??
-        resolve(msg("This provider is installed but disabled for new sessions in T3 Code.")),
+        resolve(msg("This provider is installed but disabled for new sessions in Up.computer.")),
     };
   }
   // UpComputer: the placeholder before the first check says nothing about the provider yet.
   if (provider.statusPending === true) {
-    return { headline: "Checking…", detail: null };
+    return { headline: resolve(msg("Checking…")), detail: null };
   }
   if (!provider.installed) {
     return {

@@ -3901,35 +3901,43 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 </>
               ) : projects.length === 0 && productSurface("sidebarProjects") === "upstream" ? (
                 <>
-                  <span>No projects yet</span>
+                  <span>
+                    <T>No projects yet</T>
+                  </span>
                   <button
                     type="button"
                     onClick={openAddProjectCommandPalette}
                     className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                   >
                     <PlusIcon className="-mx-0.5 size-3" />
-                    Add project
+                    <T>Add project</T>
                   </button>
                 </>
               ) : scopedProjectGroups.length > 0 ? (
                 <>
                   <span>
-                    {`No ${settledCount > 0 ? "active threads" : "threads"} in ${
-                      scopedProjectGroups.length > 1
-                        ? "these projects"
-                        : scopedProjectGroups[0]!.displayName
-                    }${settledCount > 0 ? "" : " yet"}`}
+                    {settledCount > 0
+                      ? scopedProjectGroups.length > 1
+                        ? gt("No active threads in these projects")
+                        : gt("No active threads in {project}", {
+                            project: scopedProjectGroups[0]!.displayName,
+                          })
+                      : scopedProjectGroups.length > 1
+                        ? gt("No threads in these projects yet")
+                        : gt("No threads in {project} yet", {
+                            project: scopedProjectGroups[0]!.displayName,
+                          })}
                   </span>
                   <button
                     type="button"
                     onClick={() => setProjectScopeKeys([])}
                     className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                   >
-                    Show all projects
+                    <T>Show all projects</T>
                   </button>
                 </>
               ) : (
-                "No threads yet"
+                <T>No threads yet</T>
               )}
             </SidebarThreadListEmpty>
           ) : null}

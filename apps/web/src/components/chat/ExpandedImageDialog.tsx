@@ -266,7 +266,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             ) : imageSrc === null ? (
               <div
                 role="status"
-                aria-label="Loading image"
+                aria-label={gt("Loading image")}
                 className={EXPANDED_MEDIA_STATE_CLASS_NAME}
               />
             ) : (

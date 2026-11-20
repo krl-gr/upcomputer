@@ -1,10 +1,12 @@
 import type { UserSurvey, UserSurveyAnswer, UserSurveyQuestion } from "@t3tools/contracts";
 import { cva, type VariantProps } from "class-variance-authority";
+import { msg, useGT } from "gt-react";
 import { CheckIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { type ComponentProps, type ReactNode, useState } from "react";
 
 import { APP_BASE_NAME } from "../branding";
 import { Spinner } from "../components/ui/spinner";
+import { m, type MessageResolver } from "../i18n/messages";
 import { observeResize } from "../lib/observeResize";
 import { cn } from "../lib/utils";
 import {
@@ -24,10 +26,16 @@ import {
 
 export const USER_SURVEY_TITLE = `How can we improve ${APP_BASE_NAME} for you?`;
 /** The thank-you: a promise to look into a reported problem, or plain thanks. */
-export function surveyThanks(reported: boolean): { readonly title: string; readonly text: string } {
+export function surveyThanks(
+  reported: boolean,
+  resolve: MessageResolver = m,
+): { readonly title: string; readonly text: string } {
   return reported
-    ? { title: "Thanks!", text: "We'll look into it." }
-    : { title: "Thank you!", text: "This helps us decide what to build next." };
+    ? { title: resolve(msg("Thanks!")), text: resolve(msg("We'll look into it.")) }
+    : {
+        title: resolve(msg("Thank you!")),
+        text: resolve(msg("This helps us decide what to build next.")),
+      };
 }
 
 export type UserSurveyStatus =
@@ -268,6 +276,7 @@ function ChoiceChips({
   readonly onChange: (answer: SurveyDraftAnswer) => void;
   readonly size: SurveyChipSize;
 }) {
+  const gt = useGT();
   const multiple = question.type === "multiple_choice";
   const openPicked = question.choices.some(
     (_, index) => isOpenChoice(question, index) && answer.picked.includes(index),
@@ -302,7 +311,7 @@ function ChoiceChips({
               size={size}
               aria-label={question.choices.find((choice) => choice.kind === "own-answer")?.label}
               lines={3}
-              placeholder="Tell us in a few words"
+              placeholder={gt("Tell us in a few words")}
               autoFocus
               value={answer.otherText}
               onChange={(event) => onChange({ ...answer, otherText: event.target.value })}
@@ -328,6 +337,7 @@ export function SurveyAnswerInput({
   readonly size: SurveyChipSize;
   readonly autoFocus?: boolean;
 }) {
+  const gt = useGT();
   const answer = draft[question.id] ?? EMPTY_DRAFT_ANSWER;
   const onChange = (next: SurveyDraftAnswer) => onDraftChange({ ...draft, [question.id]: next });
   if (isContactQuestion(question)) {
@@ -340,7 +350,7 @@ export function SurveyAnswerInput({
         spellCheck={false}
         className={fieldVariants({ size })}
         aria-label={question.question}
-        placeholder={question.placeholder ?? "you@example.com or @handle"}
+        placeholder={question.placeholder ?? gt("you@example.com or @handle")}
         autoFocus={autoFocus}
         value={answer.text}
         onChange={(event) => onChange({ ...answer, text: event.target.value })}
@@ -353,7 +363,7 @@ export function SurveyAnswerInput({
         size={size}
         lines={4}
         aria-label={question.question}
-        placeholder={question.placeholder ?? "Type your answer here"}
+        placeholder={question.placeholder ?? gt("Type your answer here")}
         autoFocus={autoFocus}
         value={answer.text}
         onChange={(event) => onChange({ ...answer, text: event.target.value })}
@@ -407,6 +417,7 @@ export function SurveySendAction({
   readonly skip: boolean;
   readonly disabled: boolean;
 }) {
+  const gt = useGT();
   const submitting = status.kind === "submitting";
   const idle = status.kind === "editing";
   return (
@@ -417,7 +428,13 @@ export function SurveySendAction({
       disabled={disabled || submitting}
     >
       {submitting ? <Spinner /> : null}
-      {submitting ? "Sending…" : status.kind === "failed" ? "Try again" : skip ? "Skip" : "Send"}
+      {submitting
+        ? gt("Sending…")
+        : status.kind === "failed"
+          ? gt("Try again")
+          : skip
+            ? gt("Skip", { $context: "button, skips an optional survey question" })
+            : gt("Send", { $context: "button, sends the survey answers" })}
     </SurveyAction>
   );
 }

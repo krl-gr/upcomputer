@@ -145,7 +145,7 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
       replace: true,
     }).catch(() => null);
     if (opened === null) {
-      setState({ status: "failed", message: gt("T3 Code could not open a new thread.") });
+      setState({ status: "failed", message: gt("Up.computer could not open a new thread.") });
       return;
     }
     setState({ status: "opened" });
@@ -218,7 +218,7 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
       setState({
         status: "failed",
         message: gt(
-          "This machine cannot clone from a link. Update T3 Code on it, or clone the repository from the command palette.",
+          "This machine cannot clone from a link. Update Up.computer on it, or clone the repository from the command palette.",
         ),
       });
       return;
@@ -315,7 +315,7 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
     const project =
       repository === null ? undefined : findPromptLinkProjects(recentProjects(), repository)[0];
     if (link.kind === "pull-request" && !isProductFeatureShown("pullRequests")) {
-      setState({ status: "failed", message: "Up.computer does not open pull request links." });
+      setState({ status: "failed", message: gt("Up.computer does not open pull request links.") });
       setLaunch({ kind: "settled" });
     } else if (pullRequestThread !== undefined) {
       setState({ status: "opened" });

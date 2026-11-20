@@ -1,4 +1,5 @@
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
+import { T, useGT, useMessages, Var } from "gt-react";
 import { ArrowLeftIcon, XIcon } from "lucide-react";
 import { useRef } from "react";
 
@@ -30,7 +31,9 @@ function sentences(text: string) {
   return text.split(/(?<=[.?!])\s+/).map((sentence, index) => (
     // oxlint-disable-next-line react/no-array-index-key -- the parts of one fixed string
     <span key={index} className="inline-block">
-      {sentence}&nbsp;
+      {sentence}
+      {/* oxlint-disable-next-line t3code/no-untranslated-copy -- a space joining server-authored survey sentences */}
+      &nbsp;
     </span>
   ));
 }
@@ -71,6 +74,8 @@ export function UserSurveyDialogPopup({
   onClose,
   onBackToCard,
 }: SurveyFormProps) {
+  const gt = useGT();
+  const messages = useMessages();
   const formRef = useRef<HTMLFormElement>(null);
   const blocks = surveySteps(survey, draft);
   const sent = status.kind === "sent";
@@ -81,7 +86,7 @@ export function UserSurveyDialogPopup({
   const answered = new Set(surveyAnswers(survey, draft).map((answer) => answer.questionId));
   const stepAnswered = answered.has(block.question.id);
   const canLeave = block.question.optional || stepAnswered;
-  const thanks = surveyThanks(surveyOpenedFollowUp(survey, draft));
+  const thanks = surveyThanks(surveyOpenedFollowUp(survey, draft), messages);
 
   return (
     <DialogPopup
@@ -125,10 +130,12 @@ export function UserSurveyDialogPopup({
             <>
               <div className="mt-4 flex h-8 items-center justify-between pr-4 pl-6">
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {step + 1} of {blocks.length}
+                  <T>
+                    <Var>{step + 1}</Var> of <Var>{blocks.length}</Var>
+                  </T>
                 </span>
                 <DialogPrimitive.Close
-                  aria-label="Close"
+                  aria-label={gt("Close", { $context: "button, closes the dialog" })}
                   render={<Button size="icon" variant="ghost" />}
                 >
                   <XIcon />
@@ -163,7 +170,7 @@ export function UserSurveyDialogPopup({
                   </span>
                   {block.question.type === "multiple_choice" ? (
                     <span className="mt-1 text-sm text-muted-foreground">
-                      Pick as many as you like
+                      <T>Pick as many as you like</T>
                     </span>
                   ) : null}
                   <span aria-hidden className="h-4" />
@@ -188,7 +195,7 @@ export function UserSurveyDialogPopup({
           {sent ? (
             <div className="flex flex-1 justify-center">
               <SurveyAction size="lg" tone="soft" onClick={onClose}>
-                Done
+                <T>Done</T>
               </SurveyAction>
             </div>
           ) : (
@@ -201,7 +208,7 @@ export function UserSurveyDialogPopup({
                   onClick={() => (step > 0 ? onStepChange(step - 1) : onBackToCard())}
                 >
                   <ArrowLeftIcon aria-hidden />
-                  Back
+                  <T>Back</T>
                 </SurveyAction>
               </span>
               <span className="flex-1" />
@@ -219,7 +226,9 @@ export function UserSurveyDialogPopup({
                   tone={stepAnswered || !block.question.optional ? "primary" : "soft"}
                   disabled={!canLeave}
                 >
-                  {stepAnswered || !block.question.optional ? "Continue" : "Skip"}
+                  {stepAnswered || !block.question.optional
+                    ? gt("Continue")
+                    : gt("Skip", { $context: "button, skips an optional survey question" })}
                 </SurveyAction>
               )}
             </>

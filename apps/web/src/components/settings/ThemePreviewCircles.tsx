@@ -60,6 +60,7 @@ export const STANDARD_THEME_CARDS: ReadonlyArray<ThemeCardDefinition> = [
   {
     id: "default",
     // Upstream's standard theme. "Up.computer" names our own default theme.
+    // oxlint-disable-next-line t3code/no-untranslated-copy -- theme name, like the built-in Grove and Ocean
     label: "Classic",
     previews: (["light", "dark"] as const).map((mode) => ({
       mode,

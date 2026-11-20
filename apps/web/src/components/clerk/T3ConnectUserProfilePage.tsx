@@ -100,8 +100,9 @@ function T3ConnectEnvironmentRow(props: {
               </p>
               <p className="mt-4 max-w-xl text-xs leading-4.5 text-muted-foreground">
                 <T>
-                  T3 Connect access will be revoked, any managed tunnel will be removed, and a host
-                  space will become available. Local connections on your devices are not changed.
+                  UpComputer Connect access will be revoked, any managed tunnel will be removed, and
+                  a host space will become available. Local connections on your devices are not
+                  changed.
                 </T>
               </p>
               <div className="mt-4 flex justify-end gap-2">
@@ -224,7 +225,7 @@ export function T3ConnectUserProfilePage() {
       toastManager.add({
         type: "success",
         title: gt("Server deregistered"),
-        description: gt("T3 Connect access was revoked and a host space is now available."),
+        description: gt("UpComputer Connect access was revoked and a host space is now available."),
       });
       return;
     }
@@ -275,7 +276,8 @@ export function T3ConnectUserProfilePage() {
 
   return (
     <ClerkUserProfilePage
-      title="T3 Connect"
+      // oxlint-disable-next-line t3code/no-untranslated-copy -- product name
+      title="UpComputer Connect"
       description={gt(
         "Environments registered to your account. Connections on this device are managed in Settings.",
       )}
@@ -292,7 +294,7 @@ export function T3ConnectUserProfilePage() {
         {environmentsState.error ? (
           <div className="mb-4 border-t border-destructive/35 py-3 text-xs" role="alert">
             <p className="font-medium text-destructive-foreground">
-              <T>Could not load T3 Connect environments</T>
+              <T>Could not load UpComputer Connect environments</T>
             </p>
             <p className="mt-1 text-xs text-muted-foreground">{environmentsState.error}</p>
           </div>
@@ -325,7 +327,7 @@ export function T3ConnectUserProfilePage() {
               </EmptyMedia>
               <EmptyHeader>
                 <EmptyTitle>
-                  <T>No T3 Connect environments</T>
+                  <T>No UpComputer Connect environments</T>
                 </EmptyTitle>
                 <EmptyDescription>
                   <T>
