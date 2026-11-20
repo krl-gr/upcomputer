@@ -152,8 +152,9 @@ function laneOfStatus(lane: TaskQueryLane, status: string, group?: string): Task
 /**
  * A grouped list's page lanes: for each lane without a status, one lane per
  * status it has tasks in (its server counts) whose group is open and passes
- * the status filter. A collapsed group costs nothing but its count. A lane
- * whose counts are unknown (an older server) stays one lane for every status.
+ * the status filter. Spellings that differ only in ASCII letter case share one
+ * lane. A collapsed group costs nothing but its count. A lane whose counts are
+ * unknown (an older server) stays one lane for every status.
  */
 export function planStatusGroupLanes(input: {
   readonly lanes: ReadonlyArray<TaskQueryLane>;
@@ -168,11 +169,22 @@ export function planStatusGroupLanes(input: {
     if (counts === undefined) return [];
     if (counts === null)
       return [input.statusFilter === ALL_FILTER ? lane : laneOfStatus(lane, input.statusFilter)];
-    return counts
-      .filter(({ status }) => {
-        const key = statusGroupKey(status);
-        return (filterKey === null || key === filterKey) && input.open(key);
-      })
-      .map(({ status }) => laneOfStatus(lane, status, statusGroupKey(status)));
+    // The server matches a status filter case-insensitively, so one lane already
+    // returns every spelling that differs only in letter case: a second lane for
+    // "done" next to "Done" would list the same tasks twice.
+    const seen = new Set<string>();
+    return counts.flatMap(({ status }) => {
+      const key = statusGroupKey(status);
+      if ((filterKey !== null && key !== filterKey) || !input.open(key)) return [];
+      const match = sqliteNoCase(status);
+      if (seen.has(match)) return [];
+      seen.add(match);
+      return [laneOfStatus(lane, status, key)];
+    });
   });
+}
+
+/** A status as the server's `COLLATE NOCASE` compares it: only ASCII letters fold. */
+function sqliteNoCase(status: string): string {
+  return status.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
 }

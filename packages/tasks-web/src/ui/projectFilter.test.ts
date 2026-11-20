@@ -180,12 +180,17 @@ test("a grouped list pages each open group with tasks by itself, and a collapsed
         { status: "Done", count: 300 },
         { status: "To Do", count: 4 },
         { status: "to do", count: 1 },
+        // SQLite's NOCASE folds only ASCII, so these need a lane each.
+        { status: "Готово", count: 2 },
+        { status: "готово", count: 1 },
       ],
       // The remote's counts are still loading: no lanes yet.
     }),
     [
+      // The server's status filter ignores case: one lane returns both spellings.
       ["laptop", "To Do", "to do"],
-      ["laptop", "to do", "to do"],
+      ["laptop", "Готово", "готово"],
+      ["laptop", "готово", "готово"],
     ],
   );
   NodeAssert.deepEqual(
