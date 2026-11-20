@@ -32,7 +32,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import { HttpClient, HttpClientResponse, HttpServer, HttpServerRequest } from "effect/http";
+import { HttpClient, HttpClientResponse, HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
@@ -254,21 +254,16 @@ describe("relay proofs on a computer with a skewed clock", () => {
       });
       const link = yield* CloudLink.CloudLink;
       const proof = yield* link
-        .linkProof(
-          {
-            challenge,
-            relayIssuer: RELAY_ISSUER,
-            endpoint: {
-              httpBaseUrl: "http://127.0.0.1:3773",
-              wsBaseUrl: "ws://127.0.0.1:3773",
-              providerKind: "manual",
-            },
-            origin: { localHttpHost: "127.0.0.1", localHttpPort: 3773 },
+        .linkProof({
+          challenge,
+          relayIssuer: RELAY_ISSUER,
+          endpoint: {
+            httpBaseUrl: "http://127.0.0.1:3773",
+            wsBaseUrl: "ws://127.0.0.1:3773",
+            providerKind: "manual",
           },
-          HttpServerRequest.fromWeb(
-            new Request("http://127.0.0.1:3773/api/connect/link-proof", { method: "POST" }),
-          ),
-        )
+          origin: { localHttpHost: "127.0.0.1", localHttpPort: 3773 },
+        })
         .pipe(
           Effect.provideService(EnvironmentAuthenticatedPrincipal, {
             sessionId: AuthSessionId.make("skewed-clock-session"),

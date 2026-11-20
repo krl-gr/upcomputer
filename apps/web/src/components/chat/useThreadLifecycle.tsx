@@ -1,3 +1,6 @@
+import { msg, useGT, useMessages } from "gt-react";
+import { errorDisplayMessage, thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { m } from "~/i18n/messages";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 import { errorToastDescription } from "~/components/errors/ErrorDetails";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
@@ -78,9 +81,13 @@ import { useAtomValue } from "@effect/atom-react";
 import type { RunStopPresentation } from "@t3tools/client-runtime/state/thread-execution";
 import { Atom } from "effect/reactivity";
 import { environmentThreadDetails } from "../../state/threads";
-import { openSideChatTab } from "../../lib/sideChatPane";
+import { resolveThreadOpenRoute } from "../../lib/sideChatPane";
 import type { useLocalDispatchState } from "./useLocalDispatchState";
 const RELATED_THREAD_SHELL_WAIT_MS = 1_000;
+
+function actionErrorMessage(error: unknown): string {
+  return errorDisplayMessage(error, m) ?? chatActionErrorMessage(error, m);
+}
 const NO_RUN_STOP_ATOM = Atom.make<RunStopPresentation | null>(null).pipe(
   Atom.withLabel("web-thread-run-stop:empty"),
 );
@@ -181,6 +188,8 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     scrollToEnd,
     persistThreadSettingsForNextTurn,
   } = input;
+  const gt = useGT();
+  const messages = useMessages();
   const navigate = useNavigate();
   const router = useRouter();
   const { settleThread, pinThread, confirmAndUnpinThread } = useThreadActions();
@@ -258,7 +267,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to un-settle thread",
+          title: m(msg("Failed to un-settle thread")),
           description: errorToastDescription(error),
         }),
       );
@@ -303,7 +312,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to wake thread",
+          title: m(msg("Failed to wake thread")),
           description: errorToastDescription(error),
         }),
       );
@@ -371,8 +380,8 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Failed to switch checkout",
-            description: chatActionErrorMessage(squashAtomCommandFailure(checkoutResult)),
+            title: m(msg("Failed to switch checkout")),
+            description: actionErrorMessage(squashAtomCommandFailure(checkoutResult)),
           }),
         );
       }
@@ -395,8 +404,8 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Checkout switched, but the thread could not be updated",
-              description: chatActionErrorMessage(squashAtomCommandFailure(updateResult)),
+              title: m(msg("Checkout switched, but the thread could not be updated")),
+              description: actionErrorMessage(squashAtomCommandFailure(updateResult)),
             }),
           );
         }
@@ -459,7 +468,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         const error = squashAtomCommandFailure(result);
         setThreadError(
           activeThread.id,
-          error instanceof Error ? error.message : "Failed to stop background work.",
+          thrownErrorMessage(error, m) ?? m(msg("Failed to stop background work.")),
         );
       }
     }
@@ -494,24 +503,28 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     }
     const shell = readThreadShell(threadRef);
     if (shell === null ? !shellOmitsChildren && isEnvironmentLive() : shell.deletedAt != null) {
-      toastManager.add({ type: "info", title: "This thread is no longer available" });
+      toastManager.add({ type: "info", title: m(msg("This thread is no longer available")) });
       return;
     }
-    if (activeThreadRef && openSideChatTab(activeThreadRef, shell)) return;
+    const routeRef = resolveThreadOpenRoute(threadRef, shell);
+    if (scopedThreadKey(routeRef) === routeThreadKey) return;
     void navigate({
       to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(threadRef),
+      params: buildThreadRouteParams(routeRef),
     });
   };
   const onOpenRelatedThreadStable = useStableCallback(onOpenRelatedThread);
   const childThreadInputs = useChildThreadInputs(activeThreadRef);
-  const childInputNow = childInputNowItem({
-    childThreadInputs,
-    parentAwaitingUser: Boolean(
-      activePendingApproval || activePendingUserInput || activeThreadShell?.hasPendingUserInput,
-    ),
-    onOpenThread: onOpenRelatedThreadStable,
-  });
+  const childInputNow = childInputNowItem(
+    {
+      childThreadInputs,
+      parentAwaitingUser: Boolean(
+        activePendingApproval || activePendingUserInput || activeThreadShell?.hasPendingUserInput,
+      ),
+      onOpenThread: onOpenRelatedThreadStable,
+    },
+    messages,
+  );
 
   const sendStandaloneCommand = async (
     text: string,
@@ -590,12 +603,15 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   const activeGoal = activeThreadShell?.goal ?? null;
   const goalNow =
     activeThread && activeGoal !== null
-      ? goalNowItem({
-          threadId: activeThread.id,
-          goal: activeGoal,
-          isWorking,
-          onSendCommand: sendStandaloneCommandStable,
-        })
+      ? goalNowItem(
+          {
+            threadId: activeThread.id,
+            goal: activeGoal,
+            isWorking,
+            onSendCommand: sendStandaloneCommandStable,
+          },
+          messages,
+        )
       : null;
 
   const forceStop = useForceStopThread(environmentId);
@@ -615,32 +631,41 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         })
       : null;
   const backgroundWorkNow = activeThread
-    ? backgroundWorkNowItem({
-        environmentId,
-        threadId: activeThread.id,
-        tasks: activeBackgroundTasks,
-        turnItems,
-        // Interrupt stops the active run first, not this work; the composer owns that Stop.
-        stopDisabled: runIsLive || !canOperateThread || isStoppingBackgroundWork,
-        stopping: isStoppingBackgroundWork,
-        onStop: handleStopBackgroundWorkStable,
-        onOpenThread: onOpenRelatedThreadStable,
-      })
+    ? backgroundWorkNowItem(
+        {
+          environmentId,
+          threadId: activeThread.id,
+          tasks: activeBackgroundTasks,
+          turnItems,
+          // Interrupt stops the active run first, not this work; the composer owns that Stop.
+          stopDisabled: runIsLive || !canOperateThread || isStoppingBackgroundWork,
+          stopping: isStoppingBackgroundWork,
+          onStop: handleStopBackgroundWorkStable,
+          onOpenThread: onOpenRelatedThreadStable,
+        },
+        messages,
+      )
     : null;
   // The relative times read the clock; nowMinute re-renders them on the minute.
   const snoozedUntil = activeThreadShell?.snoozedUntil ?? null;
   const settledAt = activeThreadShell?.settledAt ?? null;
   // Same rounding as the sidebar's snoozed shelf, so both read the same hour.
-  const snoozeWake = snoozedUntil
-    ? snoozeWakeLabel(snoozedUntil, { now: `${nowMinute}:00.000Z` })
-    : null;
+  const snoozeNow = `${nowMinute}:00.000Z`;
+  const snoozeWake =
+    snoozedUntil && Date.parse(snoozedUntil) > Date.parse(snoozeNow)
+      ? snoozeWakeLabel(snoozedUntil, { now: snoozeNow }, messages)
+      : null;
   const threadStatusLine = activeThreadSnoozed ? (
     limitRecoveryHoldsSnooze ? null : (
       <ThreadStatusLine
         icon={<AlarmClockIcon />}
-        label={snoozeWake && snoozeWake !== "now" ? `Snoozed, ${snoozeWake} left` : "Snoozed"}
+        label={
+          snoozeWake
+            ? gt("Snoozed, {remaining} left", { remaining: snoozeWake })
+            : gt("Snoozed", { $context: "thread status" })
+        }
         clockMinute={nowMinute}
-        actionLabel={isUnsnoozing ? "Waking..." : "Wake now"}
+        actionLabel={isUnsnoozing ? gt("Waking...") : gt("Wake now")}
         actionDisabled={!canOperateThread || isUnsnoozing}
         onAction={() => void handleUnsnoozeActiveThreadStable()}
       />
@@ -648,17 +673,21 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   ) : activeThreadSettled ? (
     <ThreadStatusLine
       icon={<CheckCircle2Icon />}
-      label={settledAt ? `Settled ${formatRelativeTimeLabel(settledAt)}` : "Settled"}
+      label={
+        settledAt
+          ? gt("Settled {time}", { time: formatRelativeTimeLabel(settledAt, undefined, messages) })
+          : gt("Settled", { $context: "thread status" })
+      }
       clockMinute={nowMinute}
-      actionLabel={isUnsettling ? "Un-settling..." : "Un-settle"}
+      actionLabel={isUnsettling ? gt("Un-settling...") : gt("Un-settle")}
       actionDisabled={!canOperateThread || isUnsettling}
       onAction={() => void handleUnsettleActiveThreadStable()}
     />
   ) : activeThreadWokeVisible ? (
     <ThreadStatusLine
       icon={<AlarmClockIcon />}
-      label="Woke from snooze"
-      actionLabel="Dismiss"
+      label={gt("Woke from snooze")}
+      actionLabel={gt("Dismiss")}
       onAction={acknowledgeActiveThreadWokeStable}
     />
   ) : null;
@@ -683,7 +712,9 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         return;
       }
       if (settleAndAdvance(activeThreadRef)) return;
-      void settleThread(activeThreadRef).then(toastThreadActionFailure("Failed to settle thread"));
+      void settleThread(activeThreadRef).then(
+        toastThreadActionFailure(m(msg("Failed to settle thread"))),
+      );
     },
     "thread.pin": ({ event }) => {
       // An open project list pins its highlighted project with this key instead.
@@ -699,7 +730,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         activeThreadPinned ? confirmAndUnpinThread(activeThreadRef) : pinThread(activeThreadRef)
       ).then(
         toastThreadActionFailure(
-          activeThreadPinned ? "Failed to unpin thread" : "Failed to pin thread",
+          activeThreadPinned ? m(msg("Failed to unpin thread")) : m(msg("Failed to pin thread")),
         ),
       );
     },

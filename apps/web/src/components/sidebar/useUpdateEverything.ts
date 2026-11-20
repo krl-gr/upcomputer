@@ -1,3 +1,4 @@
+import { msg, useGT, useMessages } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
 
@@ -12,7 +13,6 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { getProviderUpdateRunOutcome } from "../ProviderUpdateLaunchNotification.logic";
 import { useProviderUpdates } from "../ProviderUpdatesAction";
 import { SERVER_UP_TO_DATE_NOTE, useIsServerStillUpToDate } from "~/serverUpToDate/serverUpToDate";
-import { useGT, useMessages } from "gt-react";
 import {
   canUpdateServer,
   type ServerUpdateOutcome,
@@ -62,9 +62,9 @@ export function useUpdateEverything(
   channelSwitch?: ChannelSwitchRelease,
 ) {
   const gt = useGT();
-  const m = useMessages();
   const targetVersion = localUpdateVersion ?? APP_VERSION;
   const { environments } = useEnvironments();
+  const resolve = useMessages();
   const environmentIds = environmentIdsKey(environments.map(({ environmentId }) => environmentId));
   const sessionStates = useAtomValue(environmentSessionStatesAtom(environmentIds));
   const updateStates = useAtomValue(environmentUpdateStatesAtom(environmentIds));
@@ -78,8 +78,8 @@ export function useUpdateEverything(
     updateState: updateStates[index]!,
   }));
   const { targets: candidateServers, skipped: unreachable } = channelSwitch
-    ? collectChannelSwitchTargets(machines, channelSwitch)
-    : collectServerUpdateTargets(machines, targetVersion);
+    ? collectChannelSwitchTargets(machines, channelSwitch, resolve)
+    : collectServerUpdateTargets(machines, targetVersion, resolve);
   // Up.computer: a server updates here only through its desktop app's update feed. Upstream's
   // other servers install `t3` from npm, which Up.computer does not publish.
   const isStillUpToDate = useIsServerStillUpToDate();
@@ -95,7 +95,9 @@ export function useUpdateEverything(
       .map((server) => ({
         environmentId: server.environmentId,
         label: server.serverLabel,
-        reason: stillUpToDate(server) ? m(SERVER_UP_TO_DATE_NOTE) : gt("Update it on that machine"),
+        reason: stillUpToDate(server)
+          ? resolve(SERVER_UP_TO_DATE_NOTE)
+          : gt("Update it on that machine"),
       })),
   ];
   // Track-only hosts save a setting and restart nothing, so they are neither listed nor counted.
@@ -109,19 +111,22 @@ export function useUpdateEverything(
     reportFailure: false,
   });
 
-  const view = describeUpdateEverything({
-    localVersion: localUpdateVersion,
-    localMachines: machines.filter((machine) => machine.hostedByThisApp),
-    servers: moving,
-    skipped,
-    providerMachines: providers.machines.map((machine) => ({
-      environmentId: machine.environmentId,
-      label: machine.label,
-      providers: machine.candidates.map(
-        (candidate) => PROVIDER_DISPLAY_NAMES[candidate.driver] ?? candidate.driver,
-      ),
-    })),
-  });
+  const view = describeUpdateEverything(
+    {
+      localVersion: localUpdateVersion,
+      localMachines: machines.filter((machine) => machine.hostedByThisApp),
+      servers: moving,
+      skipped,
+      providerMachines: providers.machines.map((machine) => ({
+        environmentId: machine.environmentId,
+        label: machine.label,
+        providers: machine.candidates.map(
+          (candidate) => PROVIDER_DISPLAY_NAMES[candidate.driver] ?? candidate.driver,
+        ),
+      })),
+    },
+    resolve,
+  );
 
   return {
     hasUpdates: servers.length > 0 || providers.machines.length > 0,
@@ -187,7 +192,9 @@ export function useUpdateEverything(
               if (runOutcome.status !== "updated") {
                 providerFailures.set(
                   run.environmentId,
-                  runOutcome.status === "failed" ? runOutcome.line : "Provider update interrupted",
+                  runOutcome.status === "failed"
+                    ? runOutcome.line
+                    : resolve(msg("Provider update interrupted")),
                 );
               }
               return runOutcome;

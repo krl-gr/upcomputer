@@ -2,7 +2,7 @@ import { DEFAULT_CLIENT_SETTINGS, type SidebarThreadList } from "@t3tools/contra
 import { msg, T, useGT, useMessages } from "gt-react";
 
 import { SettingResetButton, SettingsRow } from "../components/settings/settingsLayout";
-import { searchableSetting } from "../components/settings/settingsSearch";
+import { useSearchableSetting } from "../components/settings/settingsSearch";
 import {
   Select,
   SelectItem,
@@ -25,6 +25,7 @@ const THREAD_LIST_LABELS: Record<SidebarThreadList, string> = {
 export function ThreadListSettingsRow() {
   const gt = useGT();
   const m = useMessages();
+  const searchableSetting = useSearchableSetting();
   const threadList = useClientSettings((settings) => settings.sidebarThreadList);
   if (!isThreadListSettingShown()) return null;
   const setThreadList = (value: SidebarThreadList) =>
@@ -33,14 +34,13 @@ export function ThreadListSettingsRow() {
   return (
     <SettingsRow
       {...setting}
-      title={m(setting.title)}
       description={
         <T>Show threads in the sidebar as compact one-line rows, or as detailed cards.</T>
       }
       resetAction={
         threadList !== DEFAULT_CLIENT_SETTINGS.sidebarThreadList ? (
           <SettingResetButton
-            label="thread list"
+            ariaLabel={gt("Reset thread list to default")}
             onClick={() => setThreadList(DEFAULT_CLIENT_SETTINGS.sidebarThreadList)}
           />
         ) : null

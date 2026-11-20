@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 import { McpSchema, Tool, Toolkit } from "effect/ai";
 
 import {
+  hiddenFromOutsideClients,
   McpInvocationContext,
   McpToolAccess,
   resultToolkitRegistration,
@@ -129,6 +130,7 @@ const computerUseTool = (tool: ComputerUseToolDefinition) =>
   })
     .annotate(Tool.Title, tool.label)
     .annotate(Tool.Readonly, tool.mode === "observe")
+    .annotate(McpSchema.EnabledWhen, hiddenFromOutsideClients)
     .addDependency(McpInvocationContext)
     .addDependency(ThreadManagementService);
 

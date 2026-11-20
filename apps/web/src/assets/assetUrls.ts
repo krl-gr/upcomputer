@@ -1,3 +1,4 @@
+import { useMessages } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   type AssetUrlState as RuntimeAssetUrlState,
@@ -31,7 +32,10 @@ export function useAssetUrlState(
   resource: AssetResource | null,
   revision?: string | null,
 ): AssetUrlState {
-  const blocked = blockedAssetUrlState(resource, useFilesystemReadAccess(environmentId));
+  const blocked = blockedAssetUrlState(
+    resource,
+    useFilesystemReadAccess(environmentId, useMessages()),
+  );
   const preparedConnection = usePreparedConnection(environmentId);
   const result = useAtomValue(
     blocked !== null || environmentId === null || resource === null
@@ -62,7 +66,7 @@ export function useAssetUrlRefresh(
   });
   return async (signal) => {
     if (environmentId === null || resource === null || httpBaseUrl === null) return null;
-    const result = await refresh({ environmentId, input: { resource } }, signal);
+    const result = await refresh({ environmentId, input: { resource } }, { signal });
     if (result._tag === "Failure") throw squashAtomCommandFailure(result);
     return resolveAssetUrl(httpBaseUrl, result.value.relativeUrl);
   };

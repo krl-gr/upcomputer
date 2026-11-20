@@ -3,8 +3,8 @@ import { toastManager } from "~/components/ui/toast";
 import { useAtomValue } from "@effect/atom-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { Atom } from "effect/reactivity";
-import { useEffect, useEffectEvent, useState } from "react";
 import { useGT } from "gt-react";
+import { useEffect, useEffectEvent, useState } from "react";
 
 import {
   ensureClientSettingsHydrated,

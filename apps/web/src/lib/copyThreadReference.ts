@@ -4,6 +4,7 @@ import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   encodeComposerContextFragment,
 } from "@t3tools/shared/composerContextClipboard";
+import { msg } from "gt-react";
 
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
@@ -13,7 +14,19 @@ export async function copyThreadReference(target: ThreadReferenceCopyTarget): Pr
   try {
     await writeTextToClipboard(
       target.value,
-      target.clipboardTarget,
+      target.kind === "pull-request"
+        ? {
+            target: target.clipboardTarget,
+            unavailableMessage: msg(
+              "Clipboard API is unavailable while copying pull request link.",
+            ),
+            failureMessage: msg("Failed to copy pull request link to the clipboard."),
+          }
+        : {
+            target: target.clipboardTarget,
+            unavailableMessage: msg("Clipboard API is unavailable while copying thread."),
+            failureMessage: msg("Failed to copy thread to the clipboard."),
+          },
       fragment ? { [COMPOSER_CONTEXT_CLIPBOARD_MIME]: fragment } : undefined,
     );
   } catch (error) {
