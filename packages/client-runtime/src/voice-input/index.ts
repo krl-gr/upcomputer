@@ -28,6 +28,7 @@ export {
   getEnvironmentSpeechStatus,
   getEnvironmentSpeechStreamUrl,
   getSpeechModelDownloadOutcome,
+  /** @public */
   installEnvironmentSpeechModel,
   linkEnvironmentSpeechModels,
   postProcessEnvironmentTranscript,

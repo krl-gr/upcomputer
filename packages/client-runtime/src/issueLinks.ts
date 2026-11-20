@@ -57,7 +57,10 @@ function parseStandaloneIssueLink(url: string) {
   }
 }
 
-/** Whether `url` is a standalone tracker's issue link, which only bindings can resolve. */
+/**
+ * Whether `url` is a standalone tracker's issue link, which only bindings can resolve.
+ * @public
+ */
 export function isStandaloneIssueLink(url: string): boolean {
   return parseStandaloneIssueLink(url) !== null;
 }

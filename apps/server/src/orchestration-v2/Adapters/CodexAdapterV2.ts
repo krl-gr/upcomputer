@@ -5447,10 +5447,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 failure: codexTurnFailure({
                   text: payload.error.additionalDetails?.trim() || payload.error.message,
                   code: notificationCode,
-                  class: codexTerminalFailureClass(
-                    payload.error.codexErrorInfo,
-                    notificationCode,
-                  ),
+                  class: codexTerminalFailureClass(payload.error.codexErrorInfo, notificationCode),
                 }),
               };
               return;

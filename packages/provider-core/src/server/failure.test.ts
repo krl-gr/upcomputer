@@ -71,7 +71,7 @@ it("reports an oversized provider request as not retryable instead of the gatewa
     assert.equal(failure.retryable, false);
     assert.equal(
       failure.message,
-      "This thread's request is too large for the provider (HTTP 413), so retrying fails the same way. Start a fresh session with /clear, or continue in a new thread.",
+      "This thread's request is too large for the agent (HTTP 413), so sending it again fails the same way. Start a fresh session with /clear, or continue in a new thread.",
     );
   }
   for (const message of [
@@ -178,7 +178,7 @@ it("names how the provider process exited and the stage it failed in, without it
       stderr: "Error: Operation not permitted (os error 1) at /Users/private/Desktop",
     },
   }).message;
-  assert.include(denied, "The provider process exited with code 1. It was denied access");
+  assert.include(denied, "The agent stopped. It was denied access");
   assert.include(denied, "Files and Folders");
   assert.notInclude(denied, "/Users/private");
 });
@@ -196,9 +196,12 @@ it("tells the user to sign in only when an ACP agent answers auth_required", () 
 
   assert.equal(
     makeProviderFailure({ cause: Cause.fail(sessionOpenFailure(-32000)) }).message,
-    "The provider needs you to sign in. Sign in from its provider settings or with its own CLI or app, then retry the turn.",
+    "The agent needs you to sign in. Sign in from Settings or with the agent's own app or CLI, then send the message again.",
   );
-  assert.isUndefined(knownProviderFailureMessage(sessionOpenFailure(-32603)));
+  assert.notInclude(
+    makeProviderFailure({ cause: Cause.fail(sessionOpenFailure(-32603)) }).message,
+    "sign in",
+  );
 });
 
 it("keeps unrecognized reasons and provider text out of category messages", () => {

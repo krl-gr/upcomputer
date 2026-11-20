@@ -14,6 +14,7 @@ describe("resolveSidebarRouteReveal: a scope judged once per route", () => {
       resolveSidebarRouteReveal({
         reveal,
         routeKey: hiddenKey,
+        routeKeyInPlace: false,
         isSearching: false,
         scopedProjectKeys: keys,
         delegatedUnderParent: new Set(),

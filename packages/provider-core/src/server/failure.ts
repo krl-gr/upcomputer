@@ -124,11 +124,12 @@ const PROPER_NOUNS = new Set([
 
 // Gateways answer an oversized body with a 413 page; resending the same history fails identically.
 const REQUEST_TOO_LARGE_STATUS = /^\s*(?:(?:API Error|Error|HTTP|status)(?:\s*:)?\s*)?413\b/iu;
-const REQUEST_TOO_LARGE_REASON = /\b(?:Request Entity|Payload|Content) Too Large\b/iu;
+const REQUEST_TOO_LARGE_REASON = /\b(?:Request Entity|Payload|Content) Too Large\b/u;
 
 function isRequestTooLarge(text: string | undefined): boolean {
   return (
-    text !== undefined && (REQUEST_TOO_LARGE_STATUS.test(text) || REQUEST_TOO_LARGE_REASON.test(text))
+    text !== undefined &&
+    (REQUEST_TOO_LARGE_STATUS.test(text) || REQUEST_TOO_LARGE_REASON.test(text))
   );
 }
 
@@ -141,7 +142,7 @@ const PERMISSION_DENIED_OUTPUT = /\bEPERM\b|Operation not permitted/u;
  */
 export function providerProcessExitGuidance(output: unknown): string {
   return typeof output === "string" && PERMISSION_DENIED_OUTPUT.test(output)
-    ? "It was denied access to a file or folder (EPERM). On macOS, allow T3 Code under System Settings > Privacy & Security > Files and Folders, or move the project out of Desktop, Documents, or Downloads, then retry the turn."
+    ? "It was denied access to a file or folder (EPERM). On macOS, allow Up.computer under System Settings > Privacy & Security > Files and Folders, or move the project out of Desktop, Documents, or Downloads, then retry the turn."
     : "Check the server logs for the provider's output, then retry the turn.";
 }
 

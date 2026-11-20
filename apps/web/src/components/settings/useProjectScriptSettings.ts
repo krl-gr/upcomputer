@@ -1,4 +1,3 @@
-import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { AuthSettingsWriteScope, EnvironmentAuthorizationError } from "@t3tools/contracts";
 import { readEnvironmentScope } from "../../state/session";
 import {
@@ -46,9 +45,6 @@ function reportScriptFailure(result: AtomCommandResult<unknown, unknown>) {
       type: "error",
       title: m(msg("Failed to save project actions")),
       description: errorToastDescription(error),
-        error instanceof Error
-          ? (thrownErrorMessage(error, m) ?? error.message)
-          : m(msg("An error occurred.")),
     });
   }
   return mapAtomCommandResult(result, () => undefined);

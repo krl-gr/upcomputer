@@ -374,7 +374,10 @@ export function resolveChangeRequestMediaUrl(url: string, changeRequestUrl: stri
 let githubEmojiByAlias: ReadonlyMap<string, string> | undefined;
 const githubEmojiAlias = /:([a-z\d_+-]+)(?=:)/gu;
 
-/** GitHub's `:alias:` emoji in `text`; a colon closes one alias only, so `:tada:tada:` has one. */
+/**
+ * GitHub's `:alias:` emoji in `text`; a colon closes one alias only, so `:tada:tada:` has one.
+ * @public
+ */
 export function githubEmojiAliases(
   text: string,
 ): ReadonlyArray<{ readonly index: number; readonly text: string; readonly emoji: string }> {

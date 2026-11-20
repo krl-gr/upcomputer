@@ -1375,7 +1375,7 @@ it.layer(layerTest)("checkOpenCodeProviderStatus with configured server URL", (i
 
       NodeAssert.equal(snapshot.status, "error");
       NodeAssert.equal(snapshot.models.length, 0);
-      NodeAssert.match(snapshot.message ?? "", /refused the connection/);
+      NodeAssert.match(snapshot.message ?? "", /couldn't reach the OpenCode server/);
       NodeAssert.equal(runtimeMock.state.sdkClientInputs.length, 0);
     }),
   );

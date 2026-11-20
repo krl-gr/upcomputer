@@ -1,7 +1,7 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { CheckIcon, CopyIcon, XIcon } from "lucide-react";
 import { type ComponentProps, type ReactNode, useState } from "react";
-import { useGT } from "gt-react";
+import { msg, useGT } from "gt-react";
 
 import { Button, InlineButton } from "../components/ui/button";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
@@ -70,7 +70,13 @@ export function NotificationCard({
 }) {
   const gt = useGT();
   const [open, setOpen] = useState(false);
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "error details" });
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    target: {
+      target: "error details",
+      unavailableMessage: msg("Clipboard API is unavailable while copying error details."),
+      failureMessage: msg("Failed to copy error details to the clipboard."),
+    },
+  });
   const detailText = details?.trim() || null;
   return (
     <li className="relative grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-start gap-x-2.5 gap-y-0.5 rounded-lg bg-foreground/4 p-2.5">

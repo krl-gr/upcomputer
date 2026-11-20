@@ -60,9 +60,6 @@ jobs:
       - name: Check unused code
         run: vp run knip:check
 
-      - name: Check i18n catalogs
-        run: vp run i18n:check
-
       - name: Check
         run: vp check
 

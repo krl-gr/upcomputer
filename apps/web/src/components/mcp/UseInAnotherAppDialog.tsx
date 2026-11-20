@@ -86,7 +86,7 @@ export function UseInAnotherAppDialogHost() {
 function UseInAnotherAppDialog({ requested }: { readonly requested: EnvironmentId | null }) {
   const { environment, label } = useAccessEnvironment(requested);
   const gt = useGT();
-  const title = `${gt("Use T3 Code in another app (MCP)")} · ${label ?? "T3 Code"}`;
+  const title = `${gt("Use Up.computer in another app (MCP)")} · ${label ?? "Up.computer"}`;
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : close())}>
       <WizardPopup>
@@ -100,7 +100,7 @@ function UseInAnotherAppDialog({ requested }: { readonly requested: EnvironmentI
                 title={
                   environment === null
                     ? gt("Connect to an environment first.")
-                    : gt("T3 Connect is not available in this build.")
+                    : gt("UpComputer Connect is not available in this build.")
                 }
               />
             </WizardPanel>
@@ -401,29 +401,34 @@ function GateScreen({
       <T>Check again</T>
     </Button>
   );
-  const offlineTitle = gt("{environment}''s T3 Connect is offline", { environment: name });
-  const cannotCheckTitle = gt("Can't check T3 Connect on {environment}", { environment: name });
+  const offlineTitle = gt("{environment}''s UpComputer Connect is offline", { environment: name });
+  const cannotCheckTitle = gt("Can't check UpComputer Connect on {environment}", {
+    environment: name,
+  });
   const checkAgain = retry(() => void check());
   switch (gate.kind) {
     case "checking":
       return (
         <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
           <Spinner size="sm" tone="muted" />
-          <T>Checking T3 Connect…</T>
+          <T>Checking UpComputer Connect…</T>
         </p>
       );
     case "sign-in":
       return (
         <GateMessage
-          title={gt("Sign in to T3 Connect")}
+          title={gt("Sign in to UpComputer Connect")}
           lines={[
             gt(
               "Apps like Poke and Claude run in the cloud. They need a public address to reach {environment}.",
               { environment: name },
             ),
-            gt("T3 Connect gives {environment} that address. Each app still needs your approval.", {
-              environment: name,
-            }),
+            gt(
+              "UpComputer Connect gives {environment} that address. Each app still needs your approval.",
+              {
+                environment: name,
+              },
+            ),
           ]}
         >
           {/* Clerk's sign-in is its own modal, so this dialog closes first. */}
@@ -433,7 +438,7 @@ function GateScreen({
               openAuthPrompt();
             }}
           >
-            <T>Sign in to T3 Connect</T>
+            <T>Sign in to UpComputer Connect</T>
           </Button>
         </GateMessage>
       );
@@ -446,7 +451,9 @@ function GateScreen({
         </GateMessage>
       );
     case "update":
-      return <GateMessage title={gt("Update T3 Code on {environment}", { environment: name })} />;
+      return (
+        <GateMessage title={gt("Update Up.computer on {environment}", { environment: name })} />
+      );
     case "no-relay-read":
       return (
         <GateMessage
@@ -481,7 +488,7 @@ function GateScreen({
       }
       return (
         <GateMessage
-          title={gt("Turn on T3 Connect for {environment}", { environment: name })}
+          title={gt("Turn on UpComputer Connect for {environment}", { environment: name })}
           lines={[
             gt("{environment} gets a public https address, with no router setup.", {
               environment: name,
@@ -500,7 +507,7 @@ function GateScreen({
               {tunnelLimit !== null ? (
                 <>
                   <p className="text-sm text-destructive-foreground">
-                    <T>Your T3 Connect account is out of tunnels.</T>
+                    <T>Your UpComputer Connect account is out of tunnels.</T>
                   </p>
                   <ManageAccessButton environment={environment} label={gt("Manage tunnels")} />
                 </>
@@ -510,10 +517,10 @@ function GateScreen({
             <p className="text-sm text-muted-foreground">{turnOnHere.reason}</p>
           ) : (
             <div className="space-y-2 text-sm">
-              <CommandBlock command="t3 connect link" />
+              <CommandBlock command="up connect link" />
               <p>
                 <T>
-                  Restart T3 Code on <Var>{name}</Var>.
+                  Restart Up.computer on <Var>{name}</Var>.
                 </T>
               </p>
               {checkAgain}
@@ -616,10 +623,10 @@ function ConnectStep({
       <p className="text-sm text-muted-foreground">
         {app === null
           ? gt(
-              "When the app opens the sign-in page, choose what it may do and approve with your T3 Connect account.",
+              "When the app opens the sign-in page, choose what it may do and approve with your UpComputer Connect account.",
             )
           : gt(
-              "When {app} opens the sign-in page, choose what it may do and approve with your T3 Connect account.",
+              "When {app} opens the sign-in page, choose what it may do and approve with your UpComputer Connect account.",
               { app: app.name },
             )}
       </p>

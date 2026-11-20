@@ -17,6 +17,7 @@ export const ZIP_ERROR_MESSAGES: Record<ZipErrorCode, string> = {
   "zip-directory-damaged": msg("This ZIP directory is damaged."),
 };
 
+/** @public */
 export function zipErrorText(code: ZipErrorCode, resolve: MFunctionType = mFallback): string {
   return resolve(ZIP_ERROR_MESSAGES[code]);
 }

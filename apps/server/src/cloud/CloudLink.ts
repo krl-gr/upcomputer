@@ -255,8 +255,9 @@ const INTERNAL_OPERATION_MESSAGES = {
   "persist-recovered-tunnel": "Could not persist the recovered managed tunnel configuration.",
   "read-relay-config": "Could not read environment relay configuration.",
   "remove-relay-config": "Could not remove environment relay configuration.",
-  "update-live-activity-preference": "Could not update T3 Connect Live Activity preferences.",
-  "update-webhook-settings": "Could not update T3 Connect webhook settings.",
+  "update-live-activity-preference":
+    "Could not update UpComputer Connect Live Activity preferences.",
+  "update-webhook-settings": "Could not update UpComputer Connect webhook settings.",
   "read-preferences": "Could not read environment cloud preferences.",
   "persist-preferences": "Could not persist environment cloud preferences.",
   "answer-health": "Could not answer cloud health request.",

@@ -66,7 +66,7 @@ export function useAssetUrlRefresh(
   });
   return async (signal) => {
     if (environmentId === null || resource === null || httpBaseUrl === null) return null;
-    const result = await refresh({ environmentId, input: { resource } }, signal);
+    const result = await refresh({ environmentId, input: { resource } }, { signal });
     if (result._tag === "Failure") throw squashAtomCommandFailure(result);
     return resolveAssetUrl(httpBaseUrl, result.value.relativeUrl);
   };

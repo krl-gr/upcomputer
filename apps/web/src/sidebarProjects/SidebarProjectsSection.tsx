@@ -17,6 +17,7 @@ import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifi
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { type AnyRouter, useRouter } from "@tanstack/react-router";
+import { isListedThreadLineage } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { T, useGT } from "gt-react";
 import { CopyIcon, EllipsisIcon, PlusIcon, SettingsIcon } from "lucide-react";
@@ -25,7 +26,6 @@ import { useReducer, useRef, type ReactNode } from "react";
 import { ProjectFavicon } from "../components/ProjectFavicon";
 import {
   filterSidebarProjectScopeItems,
-  isSidebarHiddenThread,
   reduceSidebarProjectScopeMenuState,
 } from "../components/Sidebar.logic";
 import { Collapsible, CollapsiblePanel } from "../components/ui/collapsible";
@@ -104,7 +104,7 @@ function readListedThreads() {
   const claimed = claimedSidebarThreadKeys();
   return readNavigationThreadShells().filter(
     (thread) =>
-      !isSidebarHiddenThread(thread) &&
+      isListedThreadLineage(thread.lineage) &&
       !claimed.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
   );
 }

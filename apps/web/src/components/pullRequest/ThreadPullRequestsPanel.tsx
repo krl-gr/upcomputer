@@ -21,7 +21,6 @@ import {
 import { LegendList } from "@legendapp/list/react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 import { memo, useState } from "react";
-import { useGT } from "gt-react";
 
 import {
   COMPOSER_PULL_REQUEST_DRAG_TYPE,
@@ -440,7 +439,6 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
   const speedMode =
     modifiers.shiftKey && !modifiers.metaKey && !modifiers.ctrlKey && !modifiers.altKey;
   const openLinkDialog = () => openLinkPullRequestDialog(threadRef);
-  const gt = useGT();
   const unlink = useAtomCommand(threadEnvironment.unlinkPullRequest, {
     failureToast: gt("Couldn't unlink the pull request"),
   });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckIcon, CopyIcon, MessagesSquareIcon, XIcon } from "lucide-react";
+import { msg } from "gt-react";
 import type { EnvironmentId, ProjectId, ScopedThreadRef } from "@t3tools/contracts";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 
@@ -59,7 +60,13 @@ export interface TaskFileWindowProps {
 
 function FileWindowTitle(props: TaskFileWindowProps & { readonly compact: boolean }) {
   const { resolvedTheme } = useTheme();
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "path" });
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    target: {
+      target: "path",
+      unavailableMessage: msg("Clipboard API is unavailable while copying path."),
+      failureMessage: msg("Failed to copy path to the clipboard."),
+    },
+  });
   const absolutePath =
     props.target.path === "" ? props.cwd : resolvePathLinkTarget(props.target.path, props.cwd);
   const onOpenInThread = props.onOpenInThread;

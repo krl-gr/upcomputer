@@ -400,10 +400,13 @@ export function startDesktopUpdateLaunchNotice(): () => void {
           type: "error",
           title: m(msg("Update did not apply")),
           description: m(
-            msg("T3 Code is still on {current}. Install {version} again from the update button.", {
-              current: APP_VERSION,
-              version: notAppliedVersion,
-            }),
+            msg(
+              "Up.computer is still on {current}. Install {version} again from the update button.",
+              {
+                current: APP_VERSION,
+                version: notAppliedVersion,
+              },
+            ),
           ),
         }),
       );

@@ -533,7 +533,8 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
         version: null,
         status: "error",
         auth: { status: "unknown" },
-        message: "T3 Code could not determine the Pi version. Update Pi, then refresh its status.",
+        message:
+          "Up.computer could not determine the Pi version. Update Pi, then refresh its status.",
       },
     });
   }

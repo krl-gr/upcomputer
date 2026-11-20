@@ -128,7 +128,9 @@ export function ApproveAgentSurface() {
     return (
       <Message
         title={gt("Could not load sign-in")}
-        description={gt("T3 Connect sign-in did not load. Check your connection, then try again.")}
+        description={gt(
+          "UpComputer Connect sign-in did not load. Check your connection, then try again.",
+        )}
       >
         <div className="mt-6">
           <Button type="button" onClick={retryClerkLoad}>
@@ -144,7 +146,7 @@ export function ApproveAgentSurface() {
       <StandalonePage>
         <StandalonePageHeader
           context={gt("Agent sign-in")}
-          title={gt("Connecting to T3 Connect")}
+          title={gt("Connecting to UpComputer Connect")}
           description={gt("One moment while your account loads.")}
         />
         <Spinner className="mt-6" size="lg" tone="muted" />
@@ -156,7 +158,9 @@ export function ApproveAgentSurface() {
     return (
       <Message
         title={gt("Sign in to approve")}
-        description={gt("Sign in to T3 Connect with the account this environment is linked to.")}
+        description={gt(
+          "Sign in to UpComputer Connect with the account this environment is linked to.",
+        )}
       >
         <div className="mt-6">
           <Button type="button" onClick={openSignIn}>

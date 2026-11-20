@@ -39,7 +39,10 @@ export function resolveLocale(
   return resolveLocaleSelection(language, systemLocales, supported, fallback).catalogLocale;
 }
 
-/** Keep the matching system tag for regional formats while loading a supported catalog. */
+/**
+ * Keep the matching system tag for regional formats while loading a supported catalog.
+ * @public
+ */
 export function resolveLocaleSelection(
   language: string,
   systemLocales: ReadonlyArray<string>,

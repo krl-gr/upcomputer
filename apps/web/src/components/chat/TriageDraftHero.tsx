@@ -40,8 +40,8 @@ export function TriageDraftHero(props: {
           </TooltipTrigger>
           <TooltipPopup side="bottom">
             <T>
-              The agent reads T3 Code's logs and source here, and asks before it applies a fix or
-              posts anything.
+              The agent reads Up.computer's logs and source here, and asks before it applies a fix
+              or posts anything.
             </T>
           </TooltipPopup>
         </Tooltip>

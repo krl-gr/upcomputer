@@ -24,7 +24,6 @@ import {
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
-import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -226,7 +225,7 @@ export const isProviderTurnStartRunStateMissingError = Schema.is(
 const RESUME_PROMPT = "Continue where you left off.";
 
 const START_GAVE_UP_MESSAGE =
-  "T3 Code could not start this turn. Send the message again; if it keeps failing, check the server logs.";
+  "Up.computer could not start this turn. Send the message again; if it keeps failing, check the server logs.";
 
 const startFailureMessage = (error: Error): string => {
   const nestedCause = "cause" in error ? error.cause : undefined;
@@ -884,6 +883,10 @@ export const layer: Layer.Layer<
         if (refusal === undefined && input.willRetry === true)
           return yield* turnContextResult.failure;
         yield* settleRunBeforeStart({
+          run,
+          rootNode,
+          attempt,
+          turnItems: projection.turnItems,
           signal: "turn-context-failure",
           status: "failed",
           now: yield* DateTime.now,
