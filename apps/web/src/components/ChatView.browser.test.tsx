@@ -32,6 +32,7 @@ import stylesheet from "~/index.css?inline";
 import { environmentContextRecord } from "~/lib/composerContextRecords";
 import { startWorkspaceFocus } from "~/lib/workspaceFocus";
 import { usePromptStashStore } from "~/promptStashStore";
+import { isProductFeatureShown } from "~/product/productFlags";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { getRouter } from "~/router";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -201,6 +202,8 @@ it("opens a linked Linear issue from an inactive thread's sidebar badge", async 
   });
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    // UpComputer: issue badges are on upstream's detailed rows, not our compact ones.
+    sidebarThreadList: "detailed",
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   await page.viewport(1400, 900);
@@ -241,6 +244,8 @@ it("opens a linked Linear issue from an inactive thread's sidebar badge", async 
   expect(router.history.location.pathname).toBe(`/${ENVIRONMENT_ID}/${linked.id}`);
   await expect.element(page.getByRole("heading", { name: liveTitle })).toBeVisible();
   await act(() => useRightPanelStore.getState().close(scopeThreadRef(ENVIRONMENT_ID, linked.id)));
+  // UpComputer: Thread details shows linked items with the pull request screens, which we hide.
+  if (!isProductFeatureShown("pullRequests")) return;
   await expect
     .element(
       page.getByRole("region", { name: "Thread details" }).getByRole("link", {
@@ -443,6 +448,8 @@ it("opens the thread actions menu for an older settled thread the shell leaves o
   using _environment = installFakeEnvironment([thread]);
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    // UpComputer: our compact rows name their menu button like the header's; upstream's rows do not.
+    sidebarThreadList: "detailed",
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
 

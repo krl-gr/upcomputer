@@ -247,7 +247,7 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
       "review-guide-instructions",
       "pull-request-links-open-in-app",
     ],
-    rightPanelSurfaces: ["Pull request", "Linked pull requests"],
+    rightPanelSurfaces: ["Pull request", "Linked items"],
   },
   pullRequestAgentTools: {
     capabilities: [],

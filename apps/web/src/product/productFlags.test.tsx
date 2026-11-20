@@ -97,7 +97,7 @@ function renderLauncher() {
   );
 }
 
-const HIDDEN_SURFACES = [">Pull request<", ">Linked pull requests<"];
+const HIDDEN_SURFACES = [">Pull request<", ">Linked items<"];
 const KEPT_SURFACES = [">Browser<", ">Terminal<", ">Files<", ">Diff<", ">Device<"];
 
 describe("hidden upstream features in the web app", () => {

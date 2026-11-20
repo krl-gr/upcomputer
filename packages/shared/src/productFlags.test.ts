@@ -88,7 +88,7 @@ describe("product flags", () => {
     expect(
       isProductSettingsSearchItemShown(UPCOMPUTER_PRODUCT_FLAGS, "keybinding-rightPanel.toggle"),
     ).toBe(true);
-    for (const label of ["Pull request", "Linked pull requests"]) {
+    for (const label of ["Pull request", "Linked items"]) {
       expect(isProductRightPanelSurfaceShown(UPCOMPUTER_PRODUCT_FLAGS, label)).toBe(false);
     }
     for (const label of ["Browser", "Terminal", "Files", "Diff", "Device"]) {
