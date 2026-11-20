@@ -567,6 +567,13 @@ describe("SidebarSectionHeader", () => {
     expect(header.toggle.getAttribute("aria-expanded")).toBe("false");
     expect(header.chevronOpen()).toBe(false);
     expect(header.action("Add project")).not.toBeNull();
+    expect(header.title()).toBe("Projects");
+
+    // Collapsed, it names the selected project, also one listed under More.
+    await act(async () => useUiStateStore.setState({ sidebarProjectScopeKeys: ["key-design"] }));
+    expect(header.title()).toBe("Projects · Design");
+    await click(header.toggle);
+    expect(header.title()).toBe("Projects");
   });
 
   it("offers New project as its only row with no projects, once loaded", async () => {

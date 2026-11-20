@@ -258,11 +258,19 @@ export function SidebarProjectsSection(props: {
     );
   };
 
+  const selected = [...rows.preview, ...rows.overflow].find(
+    (row) => row.key === selectedKey && row.kind !== "all",
+  );
+
   return (
     <Collapsible open={open}>
       <div className={SIDEBAR_SECTION_GAP} ref={holdSurface}>
         <SidebarSectionHeader
-          title={gt("Projects")}
+          title={
+            open || selected === undefined
+              ? gt("Projects")
+              : gt("Projects · {name}", { name: sidebarProjectsRowLabel(selected, gt) })
+          }
           open={open}
           onToggle={() => setOpen(!open)}
           testId="sidebar-projects-toggle"
