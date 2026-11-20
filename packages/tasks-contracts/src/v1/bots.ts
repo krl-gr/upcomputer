@@ -1,4 +1,12 @@
-import { IsoDateTime, ProjectId, ThreadId, TrimmedNonEmptyString } from "@t3tools/contracts";
+import {
+  IsoDateTime,
+  ModelSelection,
+  ProjectId,
+  ProviderInteractionMode,
+  RuntimeMode,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -162,6 +170,37 @@ export const BotWriteInput = Schema.Struct({
   appearance: Schema.optional(Schema.NullOr(BotAppearance)),
 });
 export type BotWriteInput = typeof BotWriteInput.Type;
+
+/** The bot_create and bot_update tools' settings; the model fields work as agent_create's. */
+const BotToolFields = {
+  projectId: Schema.optional(ProjectId),
+  workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  modelSelection: Schema.optional(ModelSelection),
+  modelAlias: Schema.optional(TrimmedNonEmptyString),
+  role: Schema.optional(TrimmedNonEmptyString),
+  runtimeMode: Schema.optional(RuntimeMode),
+  interactionMode: Schema.optional(ProviderInteractionMode),
+  appearance: Schema.optional(Schema.NullOr(BotAppearance)),
+};
+
+export const BotCreateInput = Schema.Struct({
+  id: Schema.optional(TaskAgentId),
+  name: TrimmedNonEmptyString,
+  instructions: TrimmedNonEmptyString,
+  ...BotToolFields,
+});
+export type BotCreateInput = typeof BotCreateInput.Type;
+
+export const BotUpdateInput = Schema.Struct({
+  id: TaskAgentId,
+  name: Schema.optional(TrimmedNonEmptyString),
+  instructions: Schema.optional(TrimmedNonEmptyString),
+  ...BotToolFields,
+});
+export type BotUpdateInput = typeof BotUpdateInput.Type;
+
+export const BotDeleteInput = Schema.Struct({ id: TaskAgentId });
+export type BotDeleteInput = typeof BotDeleteInput.Type;
 
 export const BotMemory = Schema.Struct({
   id: TrimmedNonEmptyString,

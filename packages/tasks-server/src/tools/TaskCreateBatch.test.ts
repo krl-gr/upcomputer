@@ -61,12 +61,22 @@ function harness(
     scheduleTaskChanged: (input: TaskChangedInput) => Effect.sync(() => void scheduled.push(input)),
     scheduleAgentChanged: () => Effect.void,
   } as unknown as TaskAgentServiceShape;
-  // Every chat is titled "Old title"; thread commands are only recorded.
-  const dispatched: Array<{ readonly type: string; readonly threadId?: string; title?: string }> =
-    [];
+  // Every chat is titled "Old title" and idle in the project; thread commands are only recorded.
+  const dispatched: Array<{
+    readonly type: string;
+    readonly commandId?: string;
+    readonly threadId?: string;
+    title?: string;
+  }> = [];
   const threads = {
     getThreadRecords: (threadId: ThreadId) =>
-      Effect.succeed({ thread: { id: threadId, title: "Old title", deletedAt: null } }),
+      Effect.succeed({
+        thread: { id: threadId, title: "Old title", projectId: project, deletedAt: null },
+        runs: [],
+        runtimeRequests: [],
+      }),
+    hasReceipt: (commandId: string) =>
+      Effect.succeed(dispatched.some((command) => command.commandId === commandId)),
     dispatch: (command: (typeof dispatched)[number]) =>
       Effect.sync(() => void dispatched.push(command)),
   };
@@ -109,7 +119,9 @@ function harness(
             Layer.succeed(TaskToolContextResolver, resolver),
             Layer.succeed(TaskAgentService, agents),
             Layer.succeed(ThreadManagementService, threads as never),
-            Layer.succeed(ProjectStoreV2, {} as never),
+            Layer.succeed(ProjectStoreV2, {
+              getShell: () => Effect.succeedSome({}),
+            } as never),
             Layer.succeed(InboxProject, { ensure: Effect.succeed(inbox) }),
             Layer.succeed(TaskScheduleService, {} as never),
           ),
@@ -655,7 +667,7 @@ it.effect("agent_delete leaves a bot to the user and says what deleting it would
     assert.isTrue(refused.isError);
     assert.equal(
       refused.text,
-      "Old title is a bot. Deleting it also deletes its 1 memory, and its chat becomes a normal chat. Ask the user to remove it in the bot's settings if they want that.",
+      "Old title is a bot. Deleting it also deletes its 1 memory, and its chat becomes a normal chat. Use bot_delete only if the user asked to delete this bot.",
     );
     assert.isTrue(
       Option.isSome(
@@ -665,3 +677,113 @@ it.effect("agent_delete leaves a bot to the user and says what deleting it would
     assert.isFalse((yield* remove("agent-dev")).isError);
   }).pipe(Effect.provide(layer));
 });
+
+it.effect(
+  "bot_create makes a bot with its chat and tag; bot_update and bot_delete change it",
+  () => {
+    const { layer, dispatched } = harness();
+    const supervised: TaskToolInvocationContext = {
+      ...chat,
+      live: true,
+      runtimeMode: "approval-required",
+    };
+    const fullAccess: TaskToolInvocationContext = { ...supervised, runtimeMode: "full-access" };
+    const call = (name: string, args: Record<string, unknown>, context = fullAccess) =>
+      Effect.flatMap(TaskToolService, (tools) => tools.call({ name, args, context }));
+    const modelSelection = { instanceId: "codex", model: "gpt-5.4" };
+    return Effect.gen(function* () {
+      const repository = yield* TaskRepository;
+      const sql = yield* SqlClient.SqlClient;
+      const botRows = sql<{ readonly agentId: string; readonly threadId: string }>`
+      SELECT agent_id AS "agentId", thread_id AS "threadId" FROM bots`;
+
+      // The bot's chat would get full access, more than this chat has.
+      const refused = yield* call(
+        "bot_create",
+        { name: "Release helper", instructions: "Ship releases.", modelSelection },
+        supervised,
+      );
+      assert.isTrue(refused.isError);
+      assert.include(refused.text, "Creating a bot would need more permissions (full-access)");
+      assert.deepStrictEqual(yield* botRows, []);
+
+      const created = yield* call("bot_create", {
+        name: "Release helper",
+        instructions: "Ship releases.",
+        modelSelection,
+      });
+      assert.isFalse(created.isError, created.text);
+      const { bot } = JSON.parse(created.text);
+      assert.match(bot.agent.id, /^bot:/);
+      assert.equal(bot.projectId, project);
+      assert.equal(bot.threadId, `bot-chat:${bot.agent.id}`);
+      assert.deepStrictEqual(yield* botRows, [{ agentId: bot.agent.id, threadId: bot.threadId }]);
+      const agent = yield* repository.getAgentById({ id: bot.agent.id });
+      assert.isTrue(Option.isSome(agent));
+      if (Option.isSome(agent)) {
+        assert.deepStrictEqual(agent.value.startTags, [`bot:${bot.agent.id}`]);
+        assert.equal(agent.value.config.instructions, "Ship releases.");
+      }
+      assert.deepStrictEqual(
+        dispatched
+          .filter(({ type }) => type === "thread.create")
+          .map(({ threadId, title }) => ({ threadId, title })),
+        [{ threadId: bot.threadId, title: "Release helper" }],
+      );
+
+      const worker = yield* repository.upsertAgent({
+        id: TaskAgentId.make("worker-dev"),
+        projectId: null,
+        name: "Worker",
+        enabled: false,
+        startStatuses: [],
+        startTags: [],
+        startRunStatuses: [],
+        config: { role: "Dev", modelSelection: modelSelection as never, instructions: "Code." },
+        createdAt: "2026-10-27T00:00:00.000Z",
+        updatedAt: "2026-10-27T00:00:00.000Z",
+      });
+      // A worker does not become a bot.
+      const duplicate = yield* call("bot_create", {
+        id: worker.id,
+        name: "Developer",
+        instructions: "Code.",
+        modelSelection,
+      });
+      assert.isTrue(duplicate.isError);
+      assert.include(duplicate.text, "This agent already exists. Create a new bot identity.");
+
+      const updated = yield* call("bot_update", {
+        id: bot.agent.id,
+        name: "Release captain",
+        modelSelection: { instanceId: "claudeAgent", model: "claude-haiku-4-5" },
+      });
+      assert.isFalse(updated.isError, updated.text);
+      const saved = yield* repository.getAgentById({ id: bot.agent.id });
+      assert.isTrue(Option.isSome(saved));
+      if (Option.isSome(saved)) {
+        assert.equal(saved.value.name, "Release captain");
+        assert.equal(saved.value.config.modelSelection.model, "claude-haiku-4-5");
+        assert.equal(saved.value.config.instructions, "Ship releases.");
+      }
+
+      const notBot = yield* call("bot_delete", { id: worker.id });
+      assert.isTrue(notBot.isError);
+      assert.equal(
+        notBot.text,
+        "Worker is a worker, not a bot. Use agent_update or agent_delete for it.",
+      );
+
+      const deleted = yield* call("bot_delete", { id: bot.agent.id });
+      assert.isFalse(deleted.isError, deleted.text);
+      assert.deepStrictEqual(JSON.parse(deleted.text), {
+        deleted: true,
+        id: bot.agent.id,
+        name: "Release captain",
+        memories: 0,
+      });
+      assert.deepStrictEqual(yield* botRows, []);
+      assert.isTrue(Option.isNone(yield* repository.getAgentById({ id: bot.agent.id })));
+    }).pipe(Effect.provide(layer));
+  },
+);

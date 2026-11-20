@@ -28,7 +28,7 @@ it.effect("task and bot tools advertise only enums Gemini accepts", () =>
   Effect.gen(function* () {
     const { tools } = yield* McpServer.McpServer;
     expect(tools.map(({ tool }) => tool.name)).toEqual(
-      expect.arrayContaining(["task_update", "bot_memory"]),
+      expect.arrayContaining(["task_update", "bot_memory", "bot_create"]),
     );
     expect(tools.flatMap(({ tool }) => enumsGeminiRejects(tool.name, tool.inputSchema))).toEqual(
       [],

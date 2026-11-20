@@ -9,6 +9,9 @@ import {
   AgentRunTranscriptInput,
   AgentSearchInput,
   AgentUpdateInput,
+  BotCreateInput,
+  BotDeleteInput,
+  BotUpdateInput,
   AUTOMATION_DRAFT_LIMIT_PER_PROJECT,
   AutomationCreateInput,
   AutomationDeleteInput,
@@ -47,6 +50,7 @@ import {
   TaskUpdateInput,
   type Task,
   type TaskActor,
+  type BotWriteInput,
   type TaskAgent,
   type TaskAgentRun,
   type TaskAudience,
@@ -137,6 +141,9 @@ const decoders = {
   agent_create: Schema.decodeUnknownEffect(AgentCreateInput),
   agent_update: Schema.decodeUnknownEffect(AgentUpdateInput),
   agent_delete: Schema.decodeUnknownEffect(AgentDeleteInput),
+  bot_create: Schema.decodeUnknownEffect(BotCreateInput),
+  bot_update: Schema.decodeUnknownEffect(BotUpdateInput),
+  bot_delete: Schema.decodeUnknownEffect(BotDeleteInput),
   agent_run_get: Schema.decodeUnknownEffect(AgentRunGetInput),
   agent_run_search: Schema.decodeUnknownEffect(AgentRunSearchInput),
   agent_run_transcript: Schema.decodeUnknownEffect(AgentRunTranscriptInput),
@@ -540,6 +547,16 @@ const make = Effect.gen(function* () {
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const randomId = (prefix: string) =>
     crypto.uuidV4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
+  const notABot = (id: TaskAgentId) =>
+    repository
+      .getAgentById({ id })
+      .pipe(
+        Effect.map((agent) =>
+          Option.isSome(agent)
+            ? `${agent.value.name} is a worker, not a bot. Use agent_update or agent_delete for it.`
+            : `Bot '${id}' was not found.`,
+        ),
+      );
   /**
    * Task-agent runs read untrusted content, so an injected "add to the
    * instructions" must not rewrite every agent's rules. A thread that any run
@@ -1296,7 +1313,7 @@ const make = Effect.gen(function* () {
           if (bot !== null)
             return {
               isError: true,
-              text: `${bot.name} is a bot. Deleting it also deletes its ${bot.memories} ${bot.memories === 1 ? "memory" : "memories"}, and its chat becomes a normal chat. Ask the user to remove it in the bot's settings if they want that.`,
+              text: `${bot.name} is a bot. Deleting it also deletes its ${bot.memories} ${bot.memories === 1 ? "memory" : "memories"}, and its chat becomes a normal chat. Use bot_delete only if the user asked to delete this bot.`,
             };
           if (isDryRun)
             return {
@@ -1306,6 +1323,134 @@ const make = Effect.gen(function* () {
           yield* repository.deleteAgent(input);
           yield* taskAgents.scheduleAgentChanged({ agent: existing.value, reason: "deleted" });
           return { isError: false, text: json({ deleted: true, id: input.id }) };
+        }
+        case "bot_create": {
+          const input = yield* decoders.bot_create(args);
+          const resolution = yield* resolver.resolve({
+            args: {
+              ...(input.projectId ? { projectId: input.projectId } : {}),
+              ...(input.workspaceRoot ? { workspaceRoot: input.workspaceRoot } : {}),
+              ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
+              ...(input.modelAlias ? { modelAlias: input.modelAlias } : {}),
+            },
+            invocationContext: context,
+          });
+          const modelDecision = resolveAgentCreateModelDecision(
+            input,
+            resolution.resolvedModel?.modelSelection,
+          );
+          if (!modelDecision.ok)
+            return {
+              isError: true,
+              text: json({
+                error:
+                  modelDecision.reason === "missing-explicit-selection"
+                    ? "Bot creation requires an explicit model decision. Pass modelSelection or modelAlias (use modelAlias: 'project' to intentionally select the project default)."
+                    : "Unable to resolve the explicit bot model selection or alias.",
+                resolution,
+              }),
+            };
+          const projectId = input.projectId ?? resolution.resolvedProject?.project.id;
+          if (projectId === undefined)
+            return {
+              isError: true,
+              text: json({
+                error:
+                  "Couldn't tell which project this bot works in. Name the project, or start from a chat inside it.",
+                resolution,
+              }),
+            };
+          const bot: BotWriteInput = {
+            id: input.id ?? TaskAgentId.make(`bot:${yield* crypto.uuidV4()}`),
+            projectId,
+            allowedProjectIds: [projectId],
+            name: input.name,
+            config: buildAgentConfig({
+              name: input.name,
+              modelSelection: modelDecision.modelSelection,
+              patch: input,
+            }),
+            ...(input.appearance !== undefined ? { appearance: input.appearance } : {}),
+          };
+          if (isDryRun) return { isError: false, text: json({ dryRun: true, bot }) };
+          // The bot's own tag starts it on tasks right away, as an enabled agent's would.
+          const refusal = runStartRefusal(context, agentRunModes(bot.config), "Creating a bot");
+          if (refusal !== null) return { isError: true, text: refusal };
+          return { isError: false, text: json({ bot: yield* bots.save(bot) }) };
+        }
+        case "bot_update": {
+          const input = yield* decoders.bot_update(args);
+          const existing = (yield* bots.list).find((item) => item.agent.id === input.id);
+          if (existing === undefined) return { isError: true, text: yield* notABot(input.id) };
+          const resolution =
+            input.workspaceRoot !== undefined ||
+            input.modelSelection !== undefined ||
+            input.modelAlias !== undefined
+              ? yield* resolver.resolve({
+                  args: {
+                    ...(input.projectId ? { projectId: input.projectId } : {}),
+                    ...(input.workspaceRoot ? { workspaceRoot: input.workspaceRoot } : {}),
+                    ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
+                    ...(input.modelAlias ? { modelAlias: input.modelAlias } : {}),
+                  },
+                  invocationContext: context,
+                })
+              : null;
+          const projectId =
+            input.projectId ??
+            (input.workspaceRoot ? resolution?.resolvedProject?.project.id : existing.projectId);
+          if (projectId === undefined)
+            return {
+              isError: true,
+              text: json({
+                error:
+                  "Couldn't tell which project this bot works in. Name the project, or start from a chat inside it.",
+                resolution,
+              }),
+            };
+          const model = resolveAgentUpdateModelSelection(
+            input,
+            existing.agent.config.modelSelection,
+            resolution?.resolvedModel?.modelSelection,
+          );
+          if (model === undefined)
+            return {
+              isError: true,
+              text: json({
+                error: "Unable to resolve the explicit bot model selection or alias.",
+                resolution,
+              }),
+            };
+          const name = input.name ?? existing.agent.name;
+          const bot: BotWriteInput = {
+            id: existing.agent.id,
+            projectId,
+            allowedProjectIds: [projectId],
+            name,
+            config: hasAgentConfigPatch(input)
+              ? buildAgentConfig({
+                  name,
+                  existing: existing.agent.config,
+                  modelSelection: model,
+                  patch: input,
+                })
+              : existing.agent.config,
+            ...(input.appearance !== undefined ? { appearance: input.appearance } : {}),
+          };
+          if (isDryRun) return { isError: false, text: json({ dryRun: true, bot }) };
+          // An edited agent runs again on its matching tasks, so the caller's modes apply.
+          const refusal = runStartRefusal(context, agentRunModes(bot.config), "Changing a bot");
+          if (refusal !== null) return { isError: true, text: refusal };
+          return { isError: false, text: json({ bot: yield* bots.save(bot) }) };
+        }
+        case "bot_delete": {
+          const input = yield* decoders.bot_delete(args);
+          const removal = yield* bots.removal(input.id);
+          if (removal === null) return { isError: true, text: yield* notABot(input.id) };
+          const deleted = { deleted: true, id: input.id, ...removal };
+          if (isDryRun) return { isError: false, text: json({ dryRun: true, ...deleted }) };
+          yield* bots.remove(input.id);
+          return { isError: false, text: json(deleted) };
         }
         case "agent_run_get": {
           const input = yield* decoders.agent_run_get(args);
