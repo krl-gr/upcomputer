@@ -86,7 +86,7 @@ vi.mock("@tanstack/react-router", () => ({
     options.select({ pathname: "/tasks" }),
   useNavigate: () => () => undefined,
   useParams: (options: { select: (params: object) => unknown }) => options.select({}),
-  useRouter: () => ({ navigate: () => undefined }),
+  useRouter: () => ({ navigate: () => undefined, subscribe: () => () => undefined }),
   useRouterState: (options: {
     select: (state: { matches: ReadonlyArray<{ pathname: string }> }) => unknown;
   }) => options.select({ matches: [{ pathname: "/tasks" }] }),

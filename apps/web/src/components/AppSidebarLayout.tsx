@@ -45,6 +45,7 @@ import ThreadSidebar from "./Sidebar";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
 import { PhoneUndoNotice, threadUndoNoticeOnScreen } from "./sidebar/PhoneUndoNotice.upcomputer";
+import { useCloseMobileSidebarOnNavigate } from "./sidebar/closeMobileSidebarOnNavigate.upcomputer";
 import type { SidebarRouteReveal } from "./sidebar/routeReveal";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { productSurface } from "../product/productFlags";
@@ -329,6 +330,7 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar: toggleOpen, isMobile } = useSidebar();
   const toggleSidebar = useSidebarToggle(toggleOpen);
+  useCloseMobileSidebarOnNavigate();
   const mobileSidebarSheetMounted = useMobileSidebarSheetMounted();
   const isSidebarVisible = useSidebarVisibility();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
