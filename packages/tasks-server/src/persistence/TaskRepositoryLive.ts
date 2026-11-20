@@ -2586,6 +2586,7 @@ const makeTaskRepository = Effect.gen(function* () {
         Effect.gen(function* () {
           const dates = yield* schedule.datesForTask(input.id);
           yield* deleteTaskTags({ taskId: input.id });
+          yield* sql`DELETE FROM task_events WHERE task_id = ${input.id}`;
           yield* schedule.deleteForTask(input.id);
           yield* deleteTaskRow(input);
           return dates;
@@ -3068,7 +3069,15 @@ const makeTaskRepository = Effect.gen(function* () {
   const appendEvent: TaskRepositoryShape["appendEvent"] = (input) =>
     sql
       .withTransaction(
-        insertTaskEvent(input).pipe(
+        sql`SELECT 1 FROM tasks WHERE id = ${input.taskId}`.pipe(
+          Effect.flatMap((rows) =>
+            rows.length === 0
+              ? Effect.fail(
+                  toTaskPersistenceSqlError("TaskRepository.appendEvent:get")("Task not found"),
+                )
+              : Effect.void,
+          ),
+          Effect.andThen(insertTaskEvent(input)),
           Effect.andThen(getTaskEventRow({ id: input.id })),
           Effect.flatMap(
             Option.match({

@@ -1265,8 +1265,14 @@ const make = Effect.gen(function* () {
     releasedRunId,
     startCeiling,
   }: TaskChangedInput) {
-    // Archive and unarchive record their own history events in the repository.
-    if (reason !== "run-finished" && reason !== "archived" && reason !== "unarchived") {
+    // Archive and unarchive record their own history events in the repository;
+    // a deleted task's events went with it.
+    if (
+      reason !== "run-finished" &&
+      reason !== "archived" &&
+      reason !== "unarchived" &&
+      reason !== "deleted"
+    ) {
       yield* appendEvent(queuedTask, `task.${reason}`, {
         status: queuedTask.status,
         tags: queuedTask.tags,
