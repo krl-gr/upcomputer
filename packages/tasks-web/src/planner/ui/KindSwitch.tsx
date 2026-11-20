@@ -1,10 +1,12 @@
 import { useGT } from "gt-react";
+import { ListTodoIcon, RepeatIcon } from "lucide-react";
 
 import {
   ToggleGroup,
   ToggleGroupItem,
 } from "../../../../../apps/web/src/components/ui/toggle-group.tsx";
 import type { PlannerKind } from "../data/preferences.ts";
+import { HeaderSwitchLabel } from "./HeaderSwitchLabel.tsx";
 
 const kindOf = (value: unknown) => (value === "task" || value === "routine" ? value : null);
 
@@ -17,6 +19,7 @@ export function KindSwitch(props: {
   readonly onChange: (kind: PlannerKind) => void;
 }) {
   const gt = useGT();
+  const labels: Record<PlannerKind, string> = { task: gt("Tasks"), routine: gt("Routines") };
   return (
     <ToggleGroup
       aria-label={gt("Tasks or routines")}
@@ -27,8 +30,12 @@ export function KindSwitch(props: {
         if (next) props.onChange(next);
       }}
     >
-      <ToggleGroupItem value="task">{gt("Tasks")}</ToggleGroupItem>
-      <ToggleGroupItem value="routine">{gt("Routines")}</ToggleGroupItem>
+      <ToggleGroupItem value="task" aria-label={labels.task}>
+        <HeaderSwitchLabel icon={ListTodoIcon} label={labels.task} compactBelow="listHeader" />
+      </ToggleGroupItem>
+      <ToggleGroupItem value="routine" aria-label={labels.routine}>
+        <HeaderSwitchLabel icon={RepeatIcon} label={labels.routine} compactBelow="listHeader" />
+      </ToggleGroupItem>
     </ToggleGroup>
   );
 }

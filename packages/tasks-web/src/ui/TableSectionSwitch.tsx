@@ -1,9 +1,12 @@
+import { CalendarClockIcon, ListTodoIcon } from "lucide-react";
+
 import {
   ToggleGroup,
   ToggleGroupItem,
 } from "../../../../apps/web/src/components/ui/toggle-group.tsx";
 import type { TableSection } from "../planner/data/preferences.ts";
 import { useGT } from "gt-react";
+import { HeaderSwitchLabel } from "../planner/ui/HeaderSwitchLabel.tsx";
 
 /**
  * Tasks / Automations: what the Workers side lists, beside the Me / Workers
@@ -25,11 +28,19 @@ export function TableSectionSwitch(props: {
         if (next === "tasks" || next === "automations") props.onChange(next);
       }}
     >
-      <ToggleGroupItem value="tasks" data-track="tasks.section.tasks">
-        {gt("Tasks")}
+      <ToggleGroupItem value="tasks" aria-label={gt("Tasks")} data-track="tasks.section.tasks">
+        <HeaderSwitchLabel icon={ListTodoIcon} label={gt("Tasks")} compactBelow="workersHeader" />
       </ToggleGroupItem>
-      <ToggleGroupItem value="automations" data-track="tasks.section.automations">
-        {gt("Automations")}
+      <ToggleGroupItem
+        value="automations"
+        aria-label={gt("Automations")}
+        data-track="tasks.section.automations"
+      >
+        <HeaderSwitchLabel
+          icon={CalendarClockIcon}
+          label={gt("Automations")}
+          compactBelow="workersHeader"
+        />
       </ToggleGroupItem>
     </ToggleGroup>
   );

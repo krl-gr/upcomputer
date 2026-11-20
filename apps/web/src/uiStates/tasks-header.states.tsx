@@ -1,5 +1,5 @@
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { it, vi } from "vite-plus/test";
 
 import { TasksView, type TasksViewProps } from "@t3tools/tasks-web";
@@ -20,7 +20,7 @@ import { captureUiStateSheet, type UiState } from "./uiStateSheet";
 /*
  * The Tasks workspace header on every tab: Me (Tasks, Routines) and Workers
  * (Tasks, Automations), a create mode and a selected task, on the page at a
- * wide and a narrow width and in the right panel.
+ * wide and a narrow width and two phone widths, and in the right panel.
  */
 
 // The planner and automations wait for an environment's Tasks probe; none is connected here.
@@ -82,16 +82,36 @@ const TASK = {
   runCounts: [],
 } as unknown as TasksViewProps["tasks"][number];
 
-type Frame = "wide" | "narrow" | "panel";
-const FRAME_WIDTH: Record<Frame, number> = { wide: 960, narrow: 480, panel: 400 };
+type Frame = "wide" | "narrow" | "phone" | "small-phone" | "panel";
+const FRAME_WIDTH: Record<Frame, number> = {
+  wide: 960,
+  narrow: 480,
+  phone: 390,
+  "small-phone": 320,
+  panel: 400,
+};
+const PHONE_FRAMES: ReadonlySet<Frame> = new Set(["phone", "small-phone"]);
 
-/** A page view fills the window (`h-dvh`); the cell shows its header and the top of its content. */
+/**
+ * A page view fills the window (`h-dvh`); the cell shows its header and the top of its content.
+ * A phone frame has the phone's narrow gutters and leaves room for the sidebar toggle, which
+ * floats over the header's left end there.
+ */
 function Frame(props: { readonly frame: Frame; readonly children: ReactNode }) {
+  const phone = PHONE_FRAMES.has(props.frame);
   return (
-    <SidebarProvider className="min-h-0">
+    <SidebarProvider className="min-h-0" defaultOpen={!phone}>
       <div
         className="-mx-(--sidebar-content-inset) -my-1 flex h-28 flex-col overflow-hidden border border-border bg-background"
-        style={{ width: FRAME_WIDTH[props.frame] }}
+        style={{
+          width: FRAME_WIDTH[props.frame],
+          ...(phone
+            ? ({
+                "--workspace-gutter-start": "0.75rem",
+                "--workspace-gutter-end": "0.75rem",
+              } as CSSProperties)
+            : {}),
+        }}
       >
         {props.children}
       </div>
@@ -112,6 +132,8 @@ function TasksTable(props: {
   readonly frame: Frame;
   readonly selected?: boolean;
   readonly asleep?: boolean;
+  /** Two filters applied: the filter button shows their count. */
+  readonly filtered?: boolean;
 }) {
   return (
     <TasksView
@@ -122,7 +144,12 @@ function TasksTable(props: {
       projectFilter={null}
       viewSwitch={workersSwitch("tasks")}
       projectSelect={<span className="text-sm">All projects</span>}
-      filters={{ status: "__all__", lastRun: "__all__", tags: [], archive: "active" }}
+      filters={{
+        status: props.filtered ? "In Progress" : "__all__",
+        lastRun: "__all__",
+        tags: props.filtered ? ["dev-2"] : [],
+        archive: "active",
+      }}
       onFiltersChange={noop}
       hasMore={false}
       loadingMore={false}
@@ -204,6 +231,7 @@ function states(frame: Frame): ReadonlyArray<UiState> {
       />
     )),
     framed("Workers · Tasks", () => <TasksTable frame={frame} />),
+    framed("Workers · Tasks · two filters applied", () => <TasksTable frame={frame} filtered />),
     framed("Workers · Tasks · New task", () => <TasksTable frame={frame} />, openCreateTask),
     framed("Workers · Tasks · a selected task", () => <TasksTable frame={frame} selected />),
     framed("Workers · Tasks · another computer asleep: a quiet note, no error", () => (
@@ -233,5 +261,66 @@ it("tasks-header", async () => {
       { title: "Right panel (400px)", states: states("panel") },
     ],
     { cellWidth: FRAME_WIDTH.wide },
+  );
+});
+
+/**
+ * The wide planner's list column with the sidebar collapsed, as PlannerLayout sizes it at the
+ * default list width: its least width, which clears the sidebar toggle and, on macOS, the traffic
+ * lights (`--workspace-controls-left`), and keeps 324px of header.
+ */
+function CollapsedListColumn(props: {
+  readonly macos: boolean;
+  readonly kind: "task" | "routine";
+}) {
+  return (
+    <SidebarProvider
+      className="min-h-0"
+      defaultOpen={false}
+      style={props.macos ? ({ "--workspace-controls-left": "90px" } as CSSProperties) : undefined}
+    >
+      <div
+        className="-mx-(--sidebar-content-inset) -my-1 flex h-28 flex-col overflow-hidden border border-border bg-background"
+        // The column has no border of its own: the frame's sits outside its width.
+        style={{
+          boxSizing: "content-box",
+          width:
+            "max(420px, calc(var(--workspace-titlebar-content-left) + var(--workspace-gutter-end) + 324px))",
+        }}
+      >
+        <PlannerListHeader frame="wide" kind={props.kind} />
+      </div>
+    </SidebarProvider>
+  );
+}
+
+it("tasks-header-planner-list", async () => {
+  const column = (macos: boolean) =>
+    (["task", "routine"] as const).map((kind): UiState => ({
+      name: `Me · ${kind === "task" ? "Tasks" : "Routines"} (planner)`,
+      render: () => <CollapsedListColumn macos={macos} kind={kind} />,
+    }));
+  await captureUiStateSheet(
+    "tasks-header-planner-list",
+    [
+      {
+        title: "Desktop, macOS, sidebar collapsed, list at its default width (474px)",
+        states: column(true),
+      },
+      { title: "Web, sidebar collapsed, list at its least width (420px)", states: column(false) },
+    ],
+    { cellWidth: 480 },
+  );
+});
+
+// A sheet of its own: one sheet with every width grows too tall to capture whole.
+it("tasks-header-phone", async () => {
+  await captureUiStateSheet(
+    "tasks-header-phone",
+    [
+      { title: "Page, phone (390px)", states: states("phone") },
+      { title: "Page, small phone (320px)", states: states("small-phone") },
+    ],
+    { cellWidth: FRAME_WIDTH.phone },
   );
 });

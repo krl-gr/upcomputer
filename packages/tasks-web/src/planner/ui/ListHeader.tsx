@@ -26,6 +26,7 @@ import type { PlannerTask } from "../data/pendingOps.ts";
 import type { PlannerKind } from "../data/preferences.ts";
 import { BulkActions } from "./BulkActions.tsx";
 import { IconAction } from "./IconAction.tsx";
+import { TASKS_HEADER_CONTAINER_CLASS } from "./HeaderSwitchLabel.tsx";
 import { KindSwitch } from "./KindSwitch.tsx";
 import { usePlanner } from "./plannerContext.ts";
 
@@ -73,7 +74,7 @@ export function ListHeader(props: {
       electron={isElectron && props.titleBar}
       reserveNativeControls={isElectron && props.titleBar && !weekBeside}
       clearCollapsedSidebar={props.titleBar}
-      className="border-b border-border"
+      className={`${TASKS_HEADER_CONTAINER_CLASS} border-b border-border`}
     >
       {props.selectMode ? (
         <BulkActions
