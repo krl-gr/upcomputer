@@ -170,8 +170,8 @@ function formatProtection(
     !protection.memoryControllerAvailable
       ? `  Memory protection: unavailable, ${MEMORY_CONTROLLER_DISABLED}`
       : protection.unprotected === undefined
-        ? `  Memory protection: on${protection.setByProtect ? " (t3 service protect)" : ""}`
-        : `  Memory protection: off, ${protection.unprotected} grants none. Run \`t3 service protect\`.`,
+        ? `  Memory protection: on${protection.setByProtect ? " (up service protect)" : ""}`
+        : `  Memory protection: off, ${protection.unprotected} grants none. Run \`up service protect\`.`,
     ...(protection.oomScoreAdj === undefined ? [] : [`  OOM score: ${protection.oomScoreAdj}`]),
   ];
 }
@@ -186,7 +186,7 @@ function formatServiceStatus(
     return "Up.computer service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd, macOS with launchd, Windows with Task Scheduler";
   }
   if (!status.installed) {
-    return `T3 Code service\n  Status: not installed\n  Next: Run \`${commands.install}\`.`;
+    return `Up.computer service\n  Status: not installed\n  Next: Run \`${commands.install}\`.`;
   }
   if (status.otherBaseDir !== undefined) {
     return [
@@ -484,8 +484,8 @@ const serviceProtectCommand = Command.make("protect", {
           yield* ServiceProtection.applyProtection(plan);
           yield* Console.log(
             memoryController
-              ? "Protected T3 Code. Memory protection applies now; the server takes its OOM score after `t3 service restart`. Undo with `t3 service protect --undo`."
-              : "Protected T3 Code's OOM score; the server takes it after `t3 service restart`. Memory protection applies once the kernel's memory controller is enabled. Undo with `t3 service protect --undo`.",
+              ? "Protected Up.computer. Memory protection applies now; the server takes its OOM score after `up service restart`. Undo with `up service protect --undo`."
+              : "Protected Up.computer's OOM score; the server takes it after `up service restart`. Memory protection applies once the kernel's memory controller is enabled. Undo with `up service protect --undo`.",
           );
         }).pipe(Effect.provide(ProcessRunner.layer)),
       );

@@ -2404,7 +2404,7 @@ describe("EnvironmentSupervisor routes", () => {
       const failures = [
         new ConnectionBlockedError({
           reason: "permission",
-          detail: "T3 Connect is not enabled on this machine.",
+          detail: "UpComputer Connect is not enabled on this machine.",
           hop: "tunnel",
           failureCause: "tunnel_not_enabled",
         }),

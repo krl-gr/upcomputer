@@ -199,7 +199,7 @@ describe("presentConnectionDiagnosis", () => {
     expect(diagnosis?.steps.join(" ")).toContain("up auth connect-device approve K7QM-2XFD");
   });
 
-  it("tells a host that refused this device's login to sign in again, not to start T3 Code", () => {
+  it("tells a host that refused this device's login to sign in again, not to start Up.computer", () => {
     const failure = mapRemoteEnvironmentError(
       new EnvironmentAuthInvalidError({
         code: "auth_invalid",
@@ -208,7 +208,7 @@ describe("presentConnectionDiagnosis", () => {
       }),
     );
     const steps = diagnose(backoff(failure), "direct")?.steps.join(" ");
-    expect(steps).not.toContain("Make sure T3 Code is running");
+    expect(steps).not.toContain("Make sure Up.computer is running");
     expect(steps).toMatch(/pair|sign in/i);
   });
 

@@ -23,7 +23,7 @@ page's full address, into the code field in the client where you started sign-in
 This works the same from any device.
 
 The code is temporary. Paste it only into the setup field. The page alone does not
-confirm account access; wait for T3 Code's confirmation.
+confirm account access; wait for Up.computer's confirmation.
 
 ### Other sign-in methods
 
@@ -62,7 +62,7 @@ is available. Up.computer checks Google's CLI release channel while provider upd
 are enabled. Installing or reinstalling also checks that channel. Updates keep
 your profile and existing runtime available if the new release fails validation.
 
-T3 needs Antigravity 1.5 or newer and recommends 1.5.12 or newer. Sessions do not
+Up.computer needs Antigravity 1.5 or newer and recommends 1.5.12 or newer. Sessions do not
 start on an older runtime: update the managed runtime here, or update the executable
 a custom binary path or `PATH` points at. You may need to sign in again after
 updating from a runtime older than 1.5. Threads already running finish with their
@@ -87,7 +87,7 @@ Questions with fixed choices still need one of the offered answers, even in
 
 On web and desktop, [Edit from here](./composer.md#edit-an-earlier-prompt) works with
 Antigravity. Antigravity cannot rewind its own conversation, so the next turn
-starts a fresh Antigravity session and T3 Code sends it the kept conversation,
+starts a fresh Antigravity session and Up.computer sends it the kept conversation,
 without the turns you removed.
 
 Use `/compact` to summarize a long conversation when your Antigravity runtime

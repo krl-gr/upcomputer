@@ -201,7 +201,7 @@ it.layer(NodeServices.layer)("up update under a managed policy", (it) => {
   );
 });
 
-it.layer(NodeServices.layer)("t3 update launcher", (it) => {
+it.layer(NodeServices.layer)("up update launcher", (it) => {
   it.effect("replaces a legacy symlink with a script that execs the new version", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -619,7 +619,7 @@ it.layer(NodeServices.layer)("up update with a background service", (it) => {
   );
 });
 
-it.layer(NodeServices.layer)("t3 update checks the database before switching", (it) => {
+it.layer(NodeServices.layer)("up update checks the database before switching", (it) => {
   const preflightOutput = (stdout: string, code = 0) => ({
     stdout,
     stderr: code === 0 ? "" : "Unknown command: __service-preflight",

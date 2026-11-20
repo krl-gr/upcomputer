@@ -34,7 +34,7 @@ export class ConnectMcpApprovalUnavailableError extends Schema.TaggedError<Conne
   }
 
   get i18nMessage(): MarkedText {
-    return [msg("Could not reach that environment through T3 Connect with this account.")];
+    return [msg("Could not reach that environment through UpComputer Connect with this account.")];
   }
 }
 

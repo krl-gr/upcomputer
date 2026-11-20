@@ -389,7 +389,7 @@ function initialThreadTitlePrompt(
   projectTitle: string | undefined,
   hasInstructions: boolean,
 ): string {
-  return `Generate a title that will help the user recognize this T3 Code thread weeks later.
+  return `Generate a title that will help the user recognize this Up.computer thread weeks later.
 Return JSON with keys title and needsRefinement.
 Set needsRefinement to true only if the subject is still unknown, such as an unresolved link, "fix this", or an unexplained attachment. Otherwise set it to false.
 

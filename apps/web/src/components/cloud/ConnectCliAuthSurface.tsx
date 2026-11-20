@@ -17,7 +17,7 @@ const invalidLinkMessage = {
   context: msg("Authorization request"),
   title: msg("This connect link is incomplete"),
   description: msg(
-    "The link is missing its authorization request. Re-run `t3 connect` in your terminal and open the freshly printed URL.",
+    "The link is missing its authorization request. Re-run `up connect` in your terminal and open the freshly printed URL.",
   ),
 } as const;
 
@@ -83,8 +83,8 @@ export function ConnectCliAuthorizeSurface() {
         title={gt("Connecting your terminal")}
         description={
           isSignedIn
-            ? gt("Redirecting to authorize T3 Connect for your CLI…")
-            : gt("Sign in to continue authorizing T3 Connect for your CLI.")
+            ? gt("Redirecting to authorize UpComputer Connect for your CLI…")
+            : gt("Sign in to continue authorizing UpComputer Connect for your CLI.")
         }
       />
       {loadFailed ? (

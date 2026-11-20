@@ -22,7 +22,7 @@ setting in **Settings → Diffs**.
 
 ## Connect an account
 
-Install Git and configure authentication on the machine running your T3 Code server. For a remote
+Install Git and configure authentication on the machine running your Up.computer server. For a remote
 environment, do this on the remote machine. After signing in, open **Settings → Source control & issues**
 and choose **Rescan**.
 
@@ -158,7 +158,7 @@ Use **Add Project** in the command palette (`Cmd/Ctrl+K`) to clone a repository.
 provider or paste a Git URL, then choose where to save it. Only GitHub is listed at first. To list
 another provider here and in **Publish Repository**, turn on its switch under
 **Settings → Source control & issues**. A branch or file page copied from GitHub,
-GitLab, GitCafe, Codeberg or Bitbucket also works: T3 Code clones that repository's default branch.
+GitLab, GitCafe, Codeberg or Bitbucket also works: Up.computer clones that repository's default branch.
 On other hosts, paste the repository's clone URL. The project opens right away while the
 clone runs in the background: you can write your first prompt, and sending waits until the files
 are in place. A toast tracks progress and lets you cancel; if the clone fails, retry it from the
@@ -318,7 +318,7 @@ and so does an agent creating one with `gh pr create` or `glab mr create`. Agent
 pull requests with the `link_pull_request` tool.
 
 Agents can also read, open, update, reply on, and merge pull requests in the thread's repository
-through T3 Code's own tools, which use the same sign-in as the Pull requests page. An agent merges
+through Up.computer's own tools, which use the same sign-in as the Pull requests page. An agent merges
 only the commit it last read: if someone pushed since, the merge is refused. On github.com an
 agent can also land a GitHub stack in one merge, like **Merge stack** below.
 

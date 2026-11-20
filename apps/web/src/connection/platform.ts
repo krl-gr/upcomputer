@@ -275,7 +275,7 @@ export const provisionDesktopSshEnvironment = Effect.fn(
         reason: "configuration",
         detail: m(
           msg(
-            "{label} runs T3 Code {serverVersion}, but this desktop is {appVersion}, and that server could not accept its pairing. Restart the T3 server on {label} so it runs {appVersion}, then retry.",
+            "{label} runs Up.computer {serverVersion}, but this desktop is {appVersion}, and that server could not accept its pairing. Restart the Up.computer server on {label} so it runs {appVersion}, then retry.",
             {
               label: descriptor.label,
               serverVersion: descriptor.serverVersion,
@@ -377,7 +377,7 @@ const layerCapabilities = Layer.effectContext(
         if (session === null) {
           return yield* new ConnectionBlockedError({
             reason: "authentication",
-            detail: m(msg("Sign in to T3 Connect to connect this environment.")),
+            detail: m(msg("Sign in to UpComputer Connect to connect this environment.")),
           });
         }
         const token = yield* session.readClerkToken().pipe(
@@ -392,7 +392,7 @@ const layerCapabilities = Layer.effectContext(
         if (token === null) {
           return yield* new ConnectionBlockedError({
             reason: "authentication",
-            detail: m(msg("The T3 Connect session is unavailable.")),
+            detail: m(msg("The UpComputer Connect session is unavailable.")),
           });
         }
         return token;

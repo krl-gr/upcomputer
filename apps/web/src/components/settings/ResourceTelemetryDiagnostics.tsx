@@ -114,7 +114,7 @@ function categoryLabel(
     case "resource-monitor":
       return resolve(msg("Monitor"));
     case "unknown-t3":
-      return resolve(msg("T3 process"));
+      return resolve(msg("Up.computer process"));
   }
 }
 
@@ -1095,7 +1095,7 @@ function ResourceTelemetryDiagnosticsBody({
           <div className="flex flex-col gap-3 border-b border-border/60 bg-linear-to-r from-muted/45 via-muted/20 to-transparent px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div>
               <div className="text-3xs font-semibold uppercase tracking-widest text-muted-foreground/70">
-                <T>T3 system footprint</T>
+                <T>Up.computer system footprint</T>
               </div>
               <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
                 <T>

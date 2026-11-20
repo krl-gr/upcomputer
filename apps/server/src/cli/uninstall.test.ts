@@ -88,7 +88,7 @@ it.live("reports failure when the Windows cleanup shell cannot start", () =>
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer))),
 );
 
-it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("t3 uninstall command", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("up uninstall command", (it) => {
   it.effect("names another home's service it leaves installed", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

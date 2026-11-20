@@ -109,7 +109,7 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
           {
             id: "legacy" as const,
             title: "Delete the database from before 0.1.0",
-            description: `Frees ${formatBytes(status.legacyDatabaseBytes)}.\n  Warning: after this, a T3 Code version before 0.1.0 starts with no threads or settings, so you can no longer roll back.`,
+            description: `Frees ${formatBytes(status.legacyDatabaseBytes)}.\n  Warning: after this, an Up.computer version before 0.1.0 starts with no threads or settings, so you can no longer roll back.`,
             recommended: false,
           },
         ]),

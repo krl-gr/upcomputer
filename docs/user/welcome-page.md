@@ -103,7 +103,7 @@ newest remaining visible user and assistant messages, with 200 messages total.
 It omits tool activity and attachments. For Codex, it omits generated setup
 context only when a canonical user event and a valid shared turn ID identify the
 same user turn. Ambiguous legacy or response-only context stays in the imported
-conversation so T3 Code does not remove user text. For Claude, slash commands
+conversation so Up.computer does not remove user text. For Claude, slash commands
 and `!` shell commands appear as you typed them; their output, background task
 notifications and interruption markers are left out, and a conversation that
 only ran commands such as `/clear`, with no reply, is skipped. It reads one

@@ -25,7 +25,7 @@ Run `up help` or `up --help` for the full reference. To start in a new working
 directory, use an explicit path such as `up ./my-project`. A bare directory name
 is accepted only if it already exists.
 
-If `t3` or `t3 start` reports an already running server, run the `t3 pair`
+If `up` or `up start` reports an already running server, run the `up pair`
 command it names and open the pairing URL to connect to that server. Stop it
 before starting a replacement, or use a different `--base-dir` for an
 independent server.

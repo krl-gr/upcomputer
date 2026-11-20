@@ -245,15 +245,15 @@ const T3_TOOL_SENTENCES: ReadonlyMap<string, T3ToolSentence> = new Map<string, T
     "Create\nCreating\nCreated\nT3 threads",
     {
       detail: msg(
-        "{status, select, inProgress {Creating T3 threads} completed {Created T3 threads} failed {Failed to create T3 threads} declined {Declined to create T3 threads} stopped {Stopped creating T3 threads} other {Creating T3 threads}}",
+        "{status, select, inProgress {Creating Up.computer threads} completed {Created Up.computer threads} failed {Failed to create Up.computer threads} declined {Declined to create Up.computer threads} stopped {Stopped creating Up.computer threads} other {Creating Up.computer threads}}",
       ),
     },
   ],
   [
-    "Start\nStarting\nStarted\na T3 thread",
+    "Start\nStarting\nStarted\na Up.computer thread",
     {
       detail: msg(
-        "{status, select, inProgress {Starting a T3 thread} completed {Started a T3 thread} failed {Failed to start a T3 thread} declined {Declined to start a T3 thread} stopped {Stopped starting a T3 thread} other {Starting a T3 thread}}",
+        "{status, select, inProgress {Starting an Up.computer thread} completed {Started an Up.computer thread} failed {Failed to start an Up.computer thread} declined {Declined to start an Up.computer thread} stopped {Stopped starting an Up.computer thread} other {Starting an Up.computer thread}}",
       ),
     },
   ],
@@ -261,31 +261,31 @@ const T3_TOOL_SENTENCES: ReadonlyMap<string, T3ToolSentence> = new Map<string, T
     "List\nListing\nListed\nT3 threads",
     {
       detail: msg(
-        "{status, select, inProgress {Listing T3 threads} completed {Listed T3 threads} failed {Failed to list T3 threads} declined {Declined to list T3 threads} stopped {Stopped listing T3 threads} other {Listing T3 threads}}",
+        "{status, select, inProgress {Listing Up.computer threads} completed {Listed Up.computer threads} failed {Failed to list Up.computer threads} declined {Declined to list Up.computer threads} stopped {Stopped listing Up.computer threads} other {Listing Up.computer threads}}",
       ),
     },
   ],
   [
-    "Read\nReading\nRead\na T3 thread",
+    "Read\nReading\nRead\na Up.computer thread",
     {
       detail: msg(
-        "{status, select, inProgress {Reading a T3 thread} completed {Read a T3 thread} failed {Failed to read a T3 thread} declined {Declined to read a T3 thread} stopped {Stopped reading a T3 thread} other {Reading a T3 thread}}",
+        "{status, select, inProgress {Reading an Up.computer thread} completed {Read an Up.computer thread} failed {Failed to read an Up.computer thread} declined {Declined to read an Up.computer thread} stopped {Stopped reading an Up.computer thread} other {Reading an Up.computer thread}}",
       ),
     },
   ],
   [
-    "Send\nSending\nSent\nto a T3 thread",
+    "Send\nSending\nSent\nto an Up.computer thread",
     {
       detail: msg(
-        "{status, select, inProgress {Sending to a T3 thread} completed {Sent to a T3 thread} failed {Failed to send to a T3 thread} declined {Declined to send to a T3 thread} stopped {Stopped sending to a T3 thread} other {Sending to a T3 thread}}",
+        "{status, select, inProgress {Sending to an Up.computer thread} completed {Sent to an Up.computer thread} failed {Failed to send to an Up.computer thread} declined {Declined to send to an Up.computer thread} stopped {Stopped sending to an Up.computer thread} other {Sending to an Up.computer thread}}",
       ),
     },
   ],
   [
-    "Wait\nWaiting\nWaited\nfor a T3 thread",
+    "Wait\nWaiting\nWaited\nfor an Up.computer thread",
     {
       detail: msg(
-        "{status, select, inProgress {Waiting for a T3 thread} completed {Waited for a T3 thread} failed {Failed to wait for a T3 thread} declined {Declined to wait for a T3 thread} stopped {Stopped waiting for a T3 thread} other {Waiting for a T3 thread}}",
+        "{status, select, inProgress {Waiting for an Up.computer thread} completed {Waited for an Up.computer thread} failed {Failed to wait for an Up.computer thread} declined {Declined to wait for an Up.computer thread} stopped {Stopped waiting for an Up.computer thread} other {Waiting for an Up.computer thread}}",
       ),
     },
   ],
@@ -306,10 +306,10 @@ const T3_TOOL_SENTENCES: ReadonlyMap<string, T3ToolSentence> = new Map<string, T
     },
   ],
   [
-    "Interrupt\nInterrupting\nRequested an interrupt of\na T3 thread",
+    "Interrupt\nInterrupting\nRequested an interrupt of\na Up.computer thread",
     {
       detail: msg(
-        "{status, select, inProgress {Interrupting a T3 thread} completed {Requested an interrupt of a T3 thread} failed {Failed to interrupt a T3 thread} declined {Declined to interrupt a T3 thread} stopped {Stopped interrupting a T3 thread} other {Interrupting a T3 thread}}",
+        "{status, select, inProgress {Interrupting an Up.computer thread} completed {Requested an interrupt of an Up.computer thread} failed {Failed to interrupt an Up.computer thread} declined {Declined to interrupt an Up.computer thread} stopped {Stopped interrupting an Up.computer thread} other {Interrupting an Up.computer thread}}",
       ),
     },
   ],
@@ -685,7 +685,7 @@ const T3_TOOL_SENTENCES: ReadonlyMap<string, T3ToolSentence> = new Map<string, T
     "Update\nUpdating\nUpdated\nT3 thread metadata",
     {
       detail: msg(
-        "{status, select, inProgress {Updating T3 thread metadata} completed {Updated T3 thread metadata} failed {Failed to update T3 thread metadata} declined {Declined to update T3 thread metadata} stopped {Stopped updating T3 thread metadata} other {Updating T3 thread metadata}}",
+        "{status, select, inProgress {Updating Up.computer thread metadata} completed {Updated Up.computer thread metadata} failed {Failed to update Up.computer thread metadata} declined {Declined to update Up.computer thread metadata} stopped {Stopped updating Up.computer thread metadata} other {Updating Up.computer thread metadata}}",
       ),
     },
   ],

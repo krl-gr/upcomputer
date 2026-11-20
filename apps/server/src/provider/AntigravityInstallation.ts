@@ -282,7 +282,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
     if (record.releaseId === releaseId && record.executable.name !== cliExecutableName) {
       return yield* installationError(
         "resolve",
-        `Antigravity ${record.version} predates the Antigravity CLI and no longer works with this T3 Code release. Update it in Antigravity setup.`,
+        `Antigravity ${record.version} predates the Antigravity CLI and no longer works with this Up.computer release. Update it in Antigravity setup.`,
       );
     }
     if (

@@ -95,7 +95,7 @@ A steer waits until Claude finishes the tool calls it is running, then Claude re
 in the same turn. The message shows as unread until then. If Claude drops it before
 reading it, the message is sent as the next turn, after any messages queued before it.
 If Claude exits or the server restarts first, the message waits in the queue in that
-same place until you resume it. If you press Stop, T3 Code shows a notice with the text
+same place until you resume it. If you press Stop, Up.computer shows a notice with the text
 of any steer Claude had not read.
 
 ## Skills

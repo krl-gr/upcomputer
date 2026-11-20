@@ -81,9 +81,9 @@ Fix:
    If it says the host's network has an old cached answer, wait: it usually
    clears within about 30 minutes.
 4. If it says the address no longer points to this machine's tunnel, the
-   environment was likely removed from T3 Connect. Link it again: on a desktop
-   host, turn **T3 Connect** off and on in **Settings > Sharing & access**. On a
-   command-line host, run `t3 connect link`, then restart T3 Code.
+   environment was likely removed from UpComputer Connect. Link it again: on a desktop
+   host, turn **UpComputer Connect** off and on in **Settings > Sharing & access**. On a
+   command-line host, run `up connect link`, then restart Up.computer.
 
 ## This device can't reach T3 Connect
 

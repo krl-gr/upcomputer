@@ -85,7 +85,7 @@ export function resolveMcpGate(
   if (!input.thisMachine) {
     if (relay.status === "loading") return { kind: "checking" };
     if (relay.status === "failed")
-      return { kind: "error", message: resolve(msg("Could not reach T3 Connect.")) };
+      return { kind: "error", message: resolve(msg("Could not reach UpComputer Connect.")) };
     if (endpoint === undefined) return { kind: "turn-on" };
   }
   const { reachability } = input;

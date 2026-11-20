@@ -197,7 +197,7 @@ export const repointLauncher = Effect.fn("cli.update.repoint_launcher")(function
   }).pipe(
     Effect.mapError(
       (cause) =>
-        new CliUpdateError({ reason: `Could not repoint the t3 launcher at ${launcher}.`, cause }),
+        new CliUpdateError({ reason: `Could not repoint the up launcher at ${launcher}.`, cause }),
     ),
   );
   return Option.some(launcher);
@@ -513,7 +513,7 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
                 ? error
                 : new PinnedRuntimePreflightBlockedError({
                     version: targetVersion,
-                    reason: `t3@${targetVersion} could not confirm it supports this database (its check exited with code ${error.exitCode}), so t3 did not switch to it.`,
+                    reason: `t3@${targetVersion} could not confirm it supports this database (its check exited with code ${error.exitCode}), so up did not switch to it.`,
                   }),
             ),
         }),

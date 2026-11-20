@@ -100,7 +100,7 @@ export function LinkedEnvironmentsSettings({
         <SettingsRow
           title={gt("No linked environments")}
           description={gt(
-            "Link another machine running T3 Code, such as a VPS, so agents here can launch and drive threads there.",
+            "Link another machine running Up.computer, such as a VPS, so agents here can launch and drive threads there.",
           )}
         />
       ) : (
@@ -133,7 +133,7 @@ function LinkedEnvironmentRow({
   const forget = async () => {
     const confirmed = await (requestConfirmDialog(
       gt(
-        "Forget {label}? Agents here stop working there. Revoke \"T3 Code · …\" in {label}''s Sharing & access to end the session there too.",
+        "Forget {label}? Agents here stop working there. Revoke \"Up.computer · …\" in {label}''s Sharing & access to end the session there too.",
         { label: link.label },
       ),
       { variant: "destructive" },
@@ -385,7 +385,7 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
                   onChange={(event) => setPairingCode(event.target.value)}
                   placeholder={
                     machine === null
-                      ? gt("From Sharing & access there, or t3 pair")
+                      ? gt("From Sharing & access there, or up pair")
                       : gt("Paste the code")
                   }
                   disabled={busy}

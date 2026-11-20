@@ -62,12 +62,12 @@ it.effect("does not install the relay client when the user declines the managed 
 );
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))(
-  "t3 connect next steps",
+  "up connect next steps",
   (it) => {
     it.effect.each([
       { subcommand: "status", hint: "connect link" },
       { subcommand: "publish", hint: "connect login" },
-    ])("t3 connect $subcommand names `t3 $hint` with --base-dir", ({ subcommand, hint }) =>
+    ])("up connect $subcommand names `t3 $hint` with --base-dir", ({ subcommand, hint }) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-connect-hint-test-" });
@@ -96,7 +96,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
 );
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))(
-  "t3 connect unlink and status",
+  "up connect unlink and status",
   (it) => {
     const runConnect = (
       recordedPid: number,

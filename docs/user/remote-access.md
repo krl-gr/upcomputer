@@ -159,7 +159,7 @@ reporting that address.
 Up.computer connects over the first route that answers. Away from home, a LAN
 address that does not answer is checked briefly and skipped. It is only tried
 again, after the other routes, if none of them connect. While connected over a
-later route, T3 Code checks the earlier ones when your network changes, when you
+later route, Up.computer checks the earlier ones when your network changes, when you
 return to the app, and every minute, and moves back as soon as one works. A
 route whose machine refused this device's sign-in is marked **Sign-in
 refused**; pair that address again with **Add route** to use it.
@@ -220,9 +220,9 @@ HTTPS** in **Settings → Sharing & access**. Turn it off there to remove that r
 
 Your tailnet needs MagicDNS and HTTPS certificates enabled; see
 [Tailscale's HTTPS setup](https://tailscale.com/docs/how-to/set-up-https-certificates).
-On Linux, T3 Code also needs permission to manage Tailscale; see
+On Linux, Up.computer also needs permission to manage Tailscale; see
 [operator permission](https://tailscale.com/docs/reference/troubleshooting/linux/linux-operator-permission)
-for non-root users. If any of these is missing, T3 Code still starts but can't
+for non-root users. If any of these is missing, Up.computer still starts but can't
 add the HTTPS route.
 
 To start a command-line server with Tailscale HTTPS:
@@ -276,7 +276,7 @@ check with:
 ssh user@example.com 'sh -lc "command -v claude codex"'
 ```
 
-T3 Code cannot answer a second sign-in prompt such as a Duo code. On macOS and
+Up.computer cannot answer a second sign-in prompt such as a Duo code. On macOS and
 Linux it can reuse a connection you signed in to in a terminal instead: turn on
 connection sharing for the host in `~/.ssh/config`, run `ssh <alias>`, then
 connect. When that connection closes, sign in again in a terminal and retry.
@@ -355,7 +355,7 @@ anyone who can use the host's browser tabs can still view its `localhost` pages
 there. An administrator can also turn it off with a
 [managed policy](./managed-policy.md#other-capabilities).
 
-The first tab downloads a headless Chrome, about 120 MB, into the T3 home. It
+The first tab downloads a headless Chrome, about 120 MB, into the Up.computer home. It
 is the same browser [HTML renders](html-renders.md) use, so a host downloads it
 only once. Some Linux hosts need [setup](#browser-host-setup) before it can
 start.
@@ -501,7 +501,7 @@ The selected scopes replace the default permissions. The same option works with
 `up auth pairing create` and `up auth session issue`; each command's
 `--help` lists the available scopes. Without `--scope`, pairing tokens and issued
 bearer sessions get the standard client permissions, including managing access.
-Setting up or replacing a T3 Connect link requires the separate `relay:configure` permission.
+Setting up or replacing a UpComputer Connect link requires the separate `relay:configure` permission.
 A terminal or a full-access agent on the host can reach those as well, so a
 client that should not manage access also needs to go without `terminal:operate`
 and `orchestration:operate`.
@@ -524,8 +524,8 @@ worktree still creates that branch and worktree with `orchestration:operate`,
 and the agent it runs can use Git however the environment allows.
 
 Settings changes, provider management, environment maintenance, access
-management, and T3 Connect preferences can each be granted separately. Setting
-up or replacing a T3 Connect link requires the administrative
+management, and UpComputer Connect preferences can each be granted separately. Setting
+up or replacing a UpComputer Connect link requires the administrative
 `relay:configure` permission. `relay:write` covers preferences and unlinking.
 New pairings without `--scope` include the standard client permissions. Existing clients keep the
 permissions they paired with and can stay connected after an update, but newly
@@ -544,18 +544,18 @@ can access, even when the pairing link omits file permissions. With
 credentials. Grant these permissions only to clients you trust with those
 capabilities.
 
-To remove an environment from T3 Connect, open your account menu's **T3 Connect**
-page, or **Settings → T3 Connect** on mobile, and choose **Deregister**. This
+To remove an environment from UpComputer Connect, open your account menu's **UpComputer Connect**
+page, or **Settings → UpComputer Connect** on mobile, and choose **Deregister**. This
 revokes its cloud access and frees its host space even when the environment is
-offline or has been wiped. When T3 Connect rejects a host's link, the host
-shows that it was removed from T3 Connect. To link it again, turn on
-**T3 Connect** in **Settings → Sharing & access** on web or desktop, or turn on
+offline or has been wiped. When UpComputer Connect rejects a host's link, the host
+shows that it was removed from UpComputer Connect. To link it again, turn on
+**UpComputer Connect** in **Settings → Sharing & access** on web or desktop, or turn on
 **Live Activity Updates** in **Settings → Notifications** on mobile; if it is
 already on, turn it off and on again. Either needs a client paired with
 `relay:read`, `relay:write`, and `relay:configure`. The desktop app's own session
 and the startup pairing link include all three; a pairing link created in
 **Settings → Sharing & access** needs `relay:configure` selected. You can also
-run `t3 connect link` on the host and then restart T3 Code there. A
+run `up connect link` on the host and then restart Up.computer there. A
 command-line host that released its tunnel when it last stopped may link itself
 again on its next start; run `up connect unlink` on that host to keep it off.
 Removing an environment from a device's connection settings only forgets it on

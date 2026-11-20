@@ -209,8 +209,8 @@ const formatNextSteps = (routes: Routes, serviceInstalled: boolean, hints: Hints
       ? []
       : [
           serviceInstalled
-            ? "Remote access is off. T3 Code still runs here in the background."
-            : `Remote access is off. Run \`${hints.run}\` to use T3 Code here.`,
+            ? "Remote access is off. Up.computer still runs here in the background."
+            : `Remote access is off. Run \`${hints.run}\` to use Up.computer here.`,
         ]),
   ].join("\n");
 

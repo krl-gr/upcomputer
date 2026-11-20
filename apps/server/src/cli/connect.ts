@@ -202,11 +202,11 @@ function formatCloudStatus(
         : "not provisioned";
   const publishOnly = status.desired && status.linkMode === "publish_only";
   const nextStep = !status.authenticated
-    ? `Run \`${commands.link}\` to authorize and enable T3 Connect.`
+    ? `Run \`${commands.link}\` to authorize and enable UpComputer Connect.`
     : status.revoked
       ? `Run \`${commands.link}\` to link this environment again.`
       : !status.desired
-        ? `Run \`${commands.link}\` to enable T3 Connect.`
+        ? `Run \`${commands.link}\` to enable UpComputer Connect.`
         : !status.linked
           ? publishOnly
             ? "Start Up.computer to provision the environment link."

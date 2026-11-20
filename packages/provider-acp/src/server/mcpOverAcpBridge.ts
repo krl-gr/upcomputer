@@ -202,7 +202,7 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
         });
         if (!response.ok && response.status !== 404) {
           return yield* new AcpMcpOverAcpError({
-            message: `T3 Code MCP endpoint rejected disconnect with HTTP ${response.status}.`,
+            message: `Up.computer MCP endpoint rejected disconnect with HTTP ${response.status}.`,
           });
         }
         yield* Effect.promise(
@@ -214,7 +214,7 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
           orElse: () =>
             Effect.fail(
               new AcpMcpOverAcpError({
-                message: "T3 Code MCP endpoint did not answer disconnect.",
+                message: "Up.computer MCP endpoint did not answer disconnect.",
               }),
             ),
         }),

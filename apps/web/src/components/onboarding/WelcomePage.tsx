@@ -365,7 +365,7 @@ function TelemetryNotice({ environmentId }: { readonly environmentId: Environmen
     <p className="mt-auto pt-12 text-2xs leading-relaxed text-muted-foreground/70">
       {telemetryOff === undefined ? (
         <T>
-          T3 Code collects anonymous usage data to improve the app. To opt out, see the{" "}
+          Up.computer collects anonymous usage data to improve the app. To opt out, see the{" "}
           <a
             className="underline decoration-current/40 underline-offset-2 hover:text-muted-foreground"
             href={PRIVACY_POLICY_URL}
@@ -1011,7 +1011,7 @@ function PhoneSection({ environmentId }: { readonly environmentId: EnvironmentId
             <SmartphoneIcon className="size-4" />
           </RowIcon>
           <span className="min-w-0 flex-1 text-sm font-medium text-foreground">
-            <T>Use T3 Code on your phone</T>
+            <T>Use Up.computer on your phone</T>
           </span>
           <CollapsibleTrigger render={<Button variant="ghost-muted" size="xs" />}>
             {open ? gt("Hide") : gt("Set up")}
@@ -1037,7 +1037,7 @@ function PhoneSection({ environmentId }: { readonly environmentId: EnvironmentId
                 size={124}
                 level="M"
                 marginSize={2}
-                title={gt("T3 Code app for iPhone and Android")}
+                title={gt("Up.computer app for iPhone and Android")}
               />
             </div>
           </div>
@@ -1087,7 +1087,7 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
   if (isSignedIn && link === null && linkState.isPending) {
     return (
       <p className="text-sm text-muted-foreground">
-        <T>Checking T3 Connect…</T>
+        <T>Checking UpComputer Connect…</T>
       </p>
     );
   }
@@ -1095,9 +1095,9 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
     return (
       <>
         <p className="text-sm text-foreground">
-          <T>Could not check T3 Connect.</T>
+          <T>Could not check UpComputer Connect.</T>
         </p>
-        {settingsLink(gt("Check T3 Connect"))}
+        {settingsLink(gt("Check UpComputer Connect"))}
       </>
     );
   }
@@ -1112,7 +1112,7 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
   if (isSignedIn && shared && reachability === undefined) {
     return (
       <p className="text-sm text-foreground">
-        <T>T3 Connect is on for this computer. Sign in to the app with the same account.</T>
+        <T>UpComputer Connect is on for this computer. Sign in to the app with the same account.</T>
       </p>
     );
   }
@@ -1122,17 +1122,17 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
       <>
         <p className="text-sm text-foreground">
           {shared
-            ? gt("T3 Connect is on, but the app cannot reach this computer.")
+            ? gt("UpComputer Connect is on, but the app cannot reach this computer.")
             : gt("Signed in. Share this computer so the app can reach it.")}
         </p>
-        {settingsLink(shared ? gt("Check T3 Connect") : gt("Set up T3 Connect"))}
+        {settingsLink(shared ? gt("Check UpComputer Connect") : gt("Set up UpComputer Connect"))}
       </>
     );
   }
   return (
     <>
       <p className="text-sm text-foreground">
-        <T>Sign in to T3 Connect here, then in the app with the same account.</T>
+        <T>Sign in to UpComputer Connect here, then in the app with the same account.</T>
       </p>
       {loadFailed ? (
         <Button variant="outline" size="xs" onClick={retryClerkLoad}>
@@ -1140,7 +1140,7 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
         </Button>
       ) : (
         <Button variant="outline" size="xs" disabled={!isLoaded} onClick={openAuthPrompt}>
-          <T>Sign in to T3 Connect</T>
+          <T>Sign in to UpComputer Connect</T>
         </Button>
       )}
     </>
