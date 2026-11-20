@@ -122,6 +122,29 @@ const PROPER_NOUNS = new Set([
   "Qwen",
 ]);
 
+// Gateways answer an oversized body with a 413 page; resending the same history fails identically.
+const REQUEST_TOO_LARGE_STATUS = /^\s*(?:(?:API Error|Error|HTTP|status)(?:\s*:)?\s*)?413\b/iu;
+const REQUEST_TOO_LARGE_REASON = /\b(?:Request Entity|Payload|Content) Too Large\b/iu;
+
+function isRequestTooLarge(text: string | undefined): boolean {
+  return (
+    text !== undefined && (REQUEST_TOO_LARGE_STATUS.test(text) || REQUEST_TOO_LARGE_REASON.test(text))
+  );
+}
+
+// macOS privacy protection (TCC) refuses a CLI the project folder with EPERM.
+const PERMISSION_DENIED_OUTPUT = /\bEPERM\b|Operation not permitted/u;
+
+/**
+ * What to do after a provider CLI exits on its own. Only recognises the
+ * output; the output itself stays out of the message.
+ */
+export function providerProcessExitGuidance(output: unknown): string {
+  return typeof output === "string" && PERMISSION_DENIED_OUTPUT.test(output)
+    ? "It was denied access to a file or folder (EPERM). On macOS, allow T3 Code under System Settings > Privacy & Security > Files and Folders, or move the project out of Desktop, Documents, or Downloads, then retry the turn."
+    : "Check the server logs for the provider's output, then retry the turn.";
+}
+
 // codex_protocol::protocol::validate_thread_goal_objective
 const CODEX_GOAL_VALIDATION_MESSAGE =
   /^goal objective must (?:not be empty|be at most \d{1,6} characters)$/u;
@@ -162,6 +185,7 @@ function safeReason(record: Record<string, unknown>): string | undefined {
       return typeof record.errorMessage === "string" ? record.errorMessage : undefined;
     }
     case "AcpProcessExitedError":
+    case "CodexAppServerProcessExitedError":
       // Only the structured status; stderr and the spawner cause can carry provider output.
       if (typeof record.signal === "string" && /^SIG[A-Z0-9]{1,16}$/u.test(record.signal)) {
         return `it quit after signal ${record.signal}`;
@@ -224,6 +248,8 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
         case "ClaudeSettingsLaunchArgError":
         case "ClaudeMcpRegistrationTimeoutError":
         case "ClaudeCodeRootRefusalError":
+        case "ClaudeCodeStartupExitError":
+        case "ClaudeConversationNotFoundError":
         case "CursorModelUnavailableError":
         case "CodexGoalObjectiveTooLongError":
         case "ProviderSetupError":
@@ -261,6 +287,37 @@ function describeCause(cause: unknown, provider: string): DescribedCause | undef
             return {
               message: `Codex's managed requirements do not allow \`${access[1]}\` \`${access[2]}\`, which this thread's access mode uses. Switch the thread to an access mode the policy allows.`,
               code: undefined,
+              retryable: undefined,
+              detail: undefined,
+              known: true,
+            };
+          }
+          const text = rawText(record);
+          if (text !== undefined) raw.push(text);
+          break;
+        }
+        case "AcpProcessExitedError":
+        case "CodexAppServerProcessExitedError": {
+          // Only the EPERM refusal is recognized in the output; the output stays in the detail.
+          if (PERMISSION_DENIED_OUTPUT.test(stringField(record, "stderr") ?? "")) {
+            return {
+              message: `${provider} stopped. ${providerProcessExitGuidance(record.stderr)}`,
+              code: wrapper === "open_session" ? ProviderFailureCode.sessionOpen : undefined,
+              retryable: undefined,
+              detail: rawText(record),
+              known: true,
+            };
+          }
+          const text = rawText(record);
+          if (text !== undefined) raw.push(text);
+          break;
+        }
+        // ACP reserves -32000 for auth_required; the agent's own text is not shown.
+        case "AcpRequestError": {
+          if (record.code === -32000) {
+            return {
+              message: `${provider} needs you to sign in. Sign in from Settings or with ${midSentence(provider)}'s own app or CLI, then send the message again.`,
+              code: wrapper === "open_session" ? ProviderFailureCode.sessionOpen : undefined,
               retryable: undefined,
               detail: undefined,
               known: true,
@@ -412,7 +469,7 @@ export function knownProviderFailureMessage(
 
 function stringField(
   value: unknown,
-  key: "message" | "code" | "cwd" | "instanceId",
+  key: "message" | "code" | "cwd" | "instanceId" | "stderr",
 ): string | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   try {
@@ -500,7 +557,11 @@ export function makeProviderFailure(input: {
   const described =
     input.cause === undefined ? undefined : describeCauseSafely(input.cause, provider);
   const fallback = unexplained(provider, undefined).message;
-  const rawMessage = input.message ?? described?.message ?? fallback;
+  // A provider's own text arrives as the message or, wrapped in a sentence, as the detail.
+  const requestTooLarge = isRequestTooLarge(input.message) || isRequestTooLarge(input.detail);
+  const rawMessage = requestTooLarge
+    ? `This thread's request is too large for ${midSentence(provider)} (HTTP 413), so sending it again fails the same way. Start a fresh session with /clear, or continue in a new thread.`
+    : (input.message ?? described?.message ?? fallback);
   const message = boundedText(rawMessage, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH);
   const rawCode = input.code ?? stringField(input.cause, "code") ?? described?.code ?? null;
   const code =
@@ -513,7 +574,7 @@ export function makeProviderFailure(input: {
     class: input.class ?? "unknown",
     message: message || boundedText(fallback, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH),
     code,
-    retryable: input.retryable ?? described?.retryable ?? null,
+    retryable: requestTooLarge ? false : (input.retryable ?? described?.retryable ?? null),
     ...(input.class === "usage_limit" &&
     input.resetAt != null &&
     Number.isFinite(Date.parse(input.resetAt))

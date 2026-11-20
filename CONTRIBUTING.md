@@ -64,6 +64,9 @@ trust status. Expect `vouch:unvouched` until you are added to
 I review as time allows. I may ask you to shrink a change, or implement the idea differently
 myself.
 
+A banned account is denounced in [.github/VOUCHED.td](.github/VOUCHED.td). Any issue or PR it opens
+is closed when it is opened.
+
 <a id="closure-and-reconsideration"></a>
 
 ### If I close your pull request

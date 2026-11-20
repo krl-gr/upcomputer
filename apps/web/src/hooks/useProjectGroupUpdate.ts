@@ -7,9 +7,11 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import * as Cause from "effect/Cause";
+import { msg } from "gt-react";
 
 import { errorToastDescription } from "../components/errors/ErrorDetails";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import { m } from "../i18n/messages";
 import type { SidebarProjectGroupMember } from "../sidebarProjectGrouping";
 import { useProjects, useServerConfigs } from "../state/entities";
 import { readEnvironment } from "../state/environments";
@@ -54,7 +56,13 @@ export function useProjectGroupUpdate() {
     if (unavailable) {
       return failWith(
         failureTitle,
-        `Connect ${unavailable.environmentLabel ?? "the selected environment"} and try again.`,
+        unavailable.environmentLabel == null
+          ? m(msg("Connect the selected environment and try again."))
+          : m(
+              msg("Connect {environment} and try again.", {
+                environment: unavailable.environmentLabel,
+              }),
+            ),
       );
     }
     for (const member of members) {
@@ -74,7 +82,14 @@ export function useProjectGroupUpdate() {
       if (result._tag === "Failure") {
         reportProjectFailure(
           members.length > 1
-            ? `${failureTitle} on ${member.environmentLabel ?? "the current environment"}`
+            ? member.environmentLabel == null
+              ? m(msg("{title} on the current environment", { title: failureTitle }))
+              : m(
+                  msg("{title} on {environment}", {
+                    title: failureTitle,
+                    environment: member.environmentLabel,
+                  }),
+                )
             : failureTitle,
           result,
         );
@@ -116,7 +131,7 @@ export function useProjectPin() {
     void updateProjectGroup(
       group.memberProjects,
       { pinned },
-      pinned ? "Failed to pin project" : "Failed to unpin project",
+      pinned ? m(msg("Failed to pin project")) : m(msg("Failed to unpin project")),
     );
   };
   return {
@@ -137,7 +152,13 @@ export function checkProjectAccess(
   return denied
     ? failWith(
         failureTitle,
-        `This connection cannot change projects in ${denied.environmentLabel ?? "this environment"}.`,
+        denied.environmentLabel == null
+          ? m(msg("This connection cannot change projects in this environment."))
+          : m(
+              msg("This connection cannot change projects in {environment}.", {
+                environment: denied.environmentLabel,
+              }),
+            ),
       )
     : null;
 }

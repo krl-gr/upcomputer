@@ -21,6 +21,7 @@ import { buildProviderOptionSelectionsFromDescriptors } from "@t3tools/shared/mo
 import { settingsSecretLiteral } from "@t3tools/contracts";
 
 import { OpenCodeSettings } from "../settings.ts";
+import type { ProviderCompatibilityLookup } from "@t3tools/provider-core/server/compatibility";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import * as OpenCodeServerOwner from "./OpenCodeServerOwner.ts";
 import {
@@ -528,6 +529,7 @@ const checkProvider = Effect.fn("checkProvider")(function* (
     ReadonlyArray<OpenCode2Model>,
     OpenCodeRuntime.OpenCodeRuntimeError
   > = Effect.succeed([]),
+  compatibility?: ProviderCompatibilityLookup,
 ) {
   return yield* Effect.scoped(
     Effect.gen(function* () {
@@ -547,6 +549,7 @@ const checkProvider = Effect.fn("checkProvider")(function* (
         probe,
         openCode2Models,
         environment,
+        compatibility,
       ).pipe(Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner));
     }),
   );
@@ -1340,18 +1343,39 @@ it.layer(layerTest)("checkOpenCodeProviderStatus with configured server URL", (i
     }),
   );
 
-  it.effect("rejects an unsupported server before loading inventory", () =>
+  it.effect("reports a version the policy rates broken before loading inventory", () =>
     Effect.gen(function* () {
-      runtimeMock.state.connectionError = new Error(
-        "OpenCode v1.14.18 is too old. Upgrade to v1.14.19 or newer.",
+      const snapshot = yield* checkProvider(
+        makeOpenCodeSettings(),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () =>
+          Effect.succeed({
+            status: "broken",
+            message: null,
+            recommendedVersion: null,
+            recommendedRange: ">=2.0.18",
+          }),
       );
+
+      NodeAssert.equal(snapshot.status, "error");
+      NodeAssert.match(snapshot.message ?? "", /OpenCode 1\.14\.19 does not work/);
+      NodeAssert.equal(runtimeMock.state.sdkClientInputs.length, 0);
+    }),
+  );
+
+  it.effect("reports a failed server connection before loading inventory", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.connectionError = new Error("OpenCode server refused the connection.");
       const snapshot = yield* checkProvider(
         makeOpenCodeSettings({ serverUrl: "http://127.0.0.1:9999" }),
       );
 
       NodeAssert.equal(snapshot.status, "error");
       NodeAssert.equal(snapshot.models.length, 0);
-      NodeAssert.match(snapshot.message ?? "", /v1\.14\.18 is too old/);
+      NodeAssert.match(snapshot.message ?? "", /refused the connection/);
       NodeAssert.equal(runtimeMock.state.sdkClientInputs.length, 0);
     }),
   );

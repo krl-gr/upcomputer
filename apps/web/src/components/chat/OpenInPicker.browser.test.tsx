@@ -238,7 +238,7 @@ describe("open in editor announcement", () => {
       for (const region of regions()) region.textContent = "";
     };
     const spoken = async () => {
-      await act(async () => vi.runAllTimers());
+      await act(async () => vi.advanceTimersByTime(250));
       return regions()
         .map((region) => region.textContent)
         .join("");
