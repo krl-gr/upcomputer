@@ -147,7 +147,6 @@ export function SidebarProjectsSection(props: {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   const openProjectSettings = (project: SidebarProjectSnapshot) => {
-    if (isMobile) setOpenMobile(false);
     void router.navigate({
       to: "/projects/$projectKey",
       params: { projectKey: project.projectKey },
