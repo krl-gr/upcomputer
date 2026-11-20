@@ -2266,7 +2266,7 @@ describe("OrchestratorMcpService provider resolution", () => {
           getProviders: Effect.sync(() => providers),
         }),
         adapterRegistryLayer([claudeInstanceId, codexInstanceId, opencodeInstanceId]),
-        Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedNone }),
         Layer.mock(SecretRequests.SecretRequests)({}),
         Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
         Layer.mock(RemoteDelegation.RemoteDelegation)({}),
@@ -2433,7 +2433,7 @@ describe("OrchestratorMcpService provider resolution", () => {
               Ref.update(probes, (count) => count + 1).pipe(Effect.as([codex, claudeWarning])),
           }),
           adapterRegistryLayer([codexInstanceId, claudeInstanceId]),
-          Layer.mock(ProjectService.ProjectService)({}),
+          Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedNone }),
           Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
           Layer.mock(RemoteDelegation.RemoteDelegation)({}),
@@ -2861,7 +2861,12 @@ describe("OrchestratorMcpService provider resolution", () => {
               } as never;
             }),
         }),
-        ServerSettings.layerTest(),
+        // UpComputer: a provider turned off for the caller's project lists no models.
+        ServerSettings.layerTest({
+          providerInstances: {
+            [opencodeInstanceId]: { driver: ProviderDriverKind.make("opencode"), enabled: true },
+          },
+        }),
         Layer.mock(ProviderRegistry.ProviderRegistry)({
           getProviders: Effect.succeed([opencode]),
           refreshInstance: () => Effect.succeed([opencode]),
@@ -3127,17 +3132,19 @@ describe("OrchestratorMcpService provider resolution", () => {
         assert.equal(prefixed.code, "model_unavailable");
         assert.equal(
           prefixed.message,
-          "Model anthropic/claude-opus-5-3 is not advertised by provider codex. " +
-            "Did you mean claude-opus-5-3?",
+          // UpComputer: plain-language refusal around upstream's hint.
+          "Can't hand this to codex: it has no model anthropic/claude-opus-5-3. " +
+            "Did you mean claude-opus-5-3? Pick one of its models, or another provider.",
         );
 
         const unmatched = yield* refuse("opus-5.5");
         assert.equal(
           unmatched.message,
-          "Model opus-5.5 is not advertised by provider codex. Advertised models: " +
+          "Can't hand this to codex: it has no model opus-5.5. Advertised models: " +
             "claude-opus-5-1, claude-opus-5-2, claude-opus-5-3, claude-opus-5-4, claude-opus-5-5, " +
             "claude-opus-5-6, claude-opus-5-7, claude-opus-5-8 and 2 more; " +
-            "orchestrator_capabilities with search finds them.",
+            "orchestrator_capabilities with search finds them. " +
+            "Pick one of its models, or another provider.",
         );
 
         const updateRequired = yield* refuse("claude-fable-5-2");

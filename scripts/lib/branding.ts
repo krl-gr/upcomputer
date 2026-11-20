@@ -165,6 +165,11 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
     path: /^apps\/server\/src\/orchestration-v2\/Adapters\/CodexAdapterV2\.test\.ts$/,
     line: /clientInfo: \{ name: "T3 Code"|userAgent: "T3 Code\//,
   },
+  // `codex exec` sends the same name as its originator.
+  {
+    path: /^apps\/server\/src\/textGeneration\/CodexTextGeneration\.test\.ts$/,
+    line: /requireOriginator: "T3 Code"/,
+  },
   // Muse MSP `initialize` clientInfo, which the Muse replay fixtures pin, and
   // the replay helper that renames upstream's product in those fixtures.
   {
@@ -189,6 +194,11 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
   { path: /^apps\/desktop\/src\/wsl\/DesktopWslBackend\.ts$/, line: /npx t3@latest/ },
   // Comments in the shell script the SSH tunnel runs on the remote host.
   { path: /^packages\/ssh\/src\/tunnel\.ts$/, line: /^#/ },
+  // The upstream recording's sender note, which the replay test rewrites to ours.
+  {
+    path: /^apps\/server\/src\/mcp\/OrchestratorMcpToolkit\.integration\.test\.ts$/,
+    line: /^\s*"\[T3 Code: the agent in T3 thread ",$/,
+  },
   // What the remote host's own `t3` binary prints in the tunnel tests; it is upstream's command there.
   { path: /^packages\/ssh\/src\/tunnel\.test\.ts$/, line: /"host t3 serve\\n"/ },
   // Its headings are the anchors clients link to (T3_CONNECT_TROUBLESHOOTING_SECTIONS in

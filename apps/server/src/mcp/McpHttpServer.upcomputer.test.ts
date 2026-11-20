@@ -51,7 +51,10 @@ const listToolsAsAgent = Effect.gen(function* () {
         Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
         Layer.mock(PullRequestService.PullRequestService)({}),
         Layer.mock(Orchestrator.OrchestratorV2)({}),
-        Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+        // The auth middleware reads the thread's forge on every request.
+        Layer.mock(ProjectionStore.ProjectionStoreV2)({
+          getThreadShell: () => Effect.succeed(null),
+        }),
         NodeServices.layer,
         NodeCrypto.layer,
       ),

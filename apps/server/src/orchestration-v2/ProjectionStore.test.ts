@@ -7573,6 +7573,8 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           [
             "message:turn-start-commands:compact",
             "message:turn-start-commands:goal",
+            // UpComputer: turn notes skip every earlier slash command, so all of them are read.
+            "message:turn-start-commands:later",
             "message:turn-start-commands:rolled-back",
           ],
         );
@@ -7595,8 +7597,8 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             params,
           )).map((row) => row.detail);
         });
+        // UpComputer: the messages read takes every slash command, so the deferred-command index is not used.
         for (const [table, index] of [
-          ["messages", "orchestration_v2_projection_messages_deferred_command_idx"],
           ["subagents", "orchestration_v2_projection_subagents_routable_idx"],
           ["context_transfers", "orchestration_v2_projection_context_transfers_fork_idx"],
         ] as const) {

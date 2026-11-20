@@ -4333,7 +4333,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         if (outcome === "failed") {
           assert.equal(
             harness.terminalEvents()[0]?.failure?.message,
-            "Codex reported an error: remote compaction stream disconnected. Send the message again.",
+            "Codex reported an error: remote item stream disconnected. Send the message again.",
           );
         }
       }).pipe(

@@ -13450,11 +13450,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   ) {
                     context.permissionMode = message.permissionMode;
                   }
-                  if (message.type === "system" && message.subtype === "init") {
-                    return updateMcpStatus({ servers: message.mcp_servers }).pipe(
-                      Effect.andThen(handleSdkMessage({ query: querySession, message })),
-                    );
-                  }
                   if (message.type === "result") {
                     const ledger = claudeModelLedger(message.modelUsage);
                     const growth = claudeLedgerDelta(context.modelLedger, ledger);
@@ -13475,7 +13470,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                       Effect.andThen(handleSdkMessage({ query: querySession, message })),
                     );
                   }
-                  const handled = handleSdkMessage({ query: querySession, message });
+                  const handled =
+                    message.type === "system" && message.subtype === "init"
+                      ? updateMcpStatus({ servers: message.mcp_servers }).pipe(
+                          Effect.andThen(handleSdkMessage({ query: querySession, message })),
+                        )
+                      : handleSdkMessage({ query: querySession, message });
                   const reportedCwd = turnInput.runtimePolicy.cwd;
                   if (!firstInit || reportedCwd === null || !adapterOptions.onSessionInit) {
                     return handled;

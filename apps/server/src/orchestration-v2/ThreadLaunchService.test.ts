@@ -3038,7 +3038,8 @@ it.effect("starts the agent on the temporary branch when branch naming hangs", (
       const notice = projection.turnItems.find((item) => item.type === "system_notice");
       assert.include(
         notice?.type === "system_notice" ? notice.message : "",
-        `stays ${projection.thread.branch}. Text generation failed in generateBranchName: Timed out after 20 seconds.`,
+        // Up.computer words the text generation failure itself in plain language.
+        `stays ${projection.thread.branch}.`,
       );
     }).pipe(Effect.provide(harness.layer));
   }),

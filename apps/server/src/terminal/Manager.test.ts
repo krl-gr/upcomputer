@@ -2066,7 +2066,8 @@ it.layer(
         type: "snapshot",
         snapshot: {
           status: "error",
-          error: expect.stringContaining("Failed to spawn PTY process"),
+          // UpComputer: PtySpawnError words the failure in plain language.
+          error: expect.stringContaining("couldn't start a terminal"),
         },
       };
       const record = (events: TerminalAttachStreamEvent[]) => (event: TerminalAttachStreamEvent) =>

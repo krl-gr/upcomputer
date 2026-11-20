@@ -867,9 +867,14 @@ it.effect("a refused dispatch records its refusal, and opaque causes stay generi
         commandType: "message.dispatch",
         cause,
       });
-    const generic = refused(undefined).message;
+    // UpComputer: the run history reads as a plain sentence about the run.
+    const generic =
+      "It didn't run because of an internal error. It tries again at its next scheduled time.";
     const cases = [
-      [refusal, refusal],
+      [
+        refusal,
+        "It didn't run: thread thread:refused was stopped. It tries again at its next scheduled time.",
+      ],
       ["   ", generic],
       [new Error("private-nested-secret"), generic],
     ] as const;

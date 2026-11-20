@@ -206,7 +206,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
     },
     {
       label: "a route turns off with no service to run",
-      prints: ["Run `t3 --base-dir <baseDir>` to use Up.computer here."],
+      prints: ["Run `up --base-dir <baseDir>` to use Up.computer here."],
       installed: false,
       env: "T3CODE_LAN=true\n",
       args: ["--no-lan"],

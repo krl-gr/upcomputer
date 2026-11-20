@@ -1925,7 +1925,7 @@ describe("orchestration v2 provider switching", () => {
             const failure = projection.turnItems.findLast((item) => item.type === "error");
             assert.equal(
               failure?.type === "error" ? failure.failure.message : null,
-              "claudeAgent provider protocol error: the provider returned its existing session when asked for a fresh one, so the conversation context could not be moved to a new session.",
+              "Claude stopped before finishing: the provider returned its existing session when asked for a fresh one, so the conversation context could not be moved to a new session. Send the message again; if it keeps happening, check Claude in Settings.",
             );
             assert.deepEqual(
               (yield* Ref.get(capturedTurns)).map((turn) => turn.driver),
@@ -1979,7 +1979,7 @@ describe("orchestration v2 provider switching", () => {
             const failure = projection.turnItems.findLast((item) => item.type === "error");
             assert.equal(
               failure?.type === "error" ? failure.failure.message : null,
-              "claudeAgent provider protocol error: the provider returned its existing session when asked for a fresh one, so the conversation context could not be moved to a new session.",
+              "Claude stopped before finishing: the provider returned its existing session when asked for a fresh one, so the conversation context could not be moved to a new session. Send the message again; if it keeps happening, check Claude in Settings.",
             );
             assert.equal((yield* Ref.get(capturedTurns)).length, 1);
           }),

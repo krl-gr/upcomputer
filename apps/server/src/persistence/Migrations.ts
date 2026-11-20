@@ -308,8 +308,9 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   // The desktop waits past its readiness budget until the finished line follows this one.
   const hasPending = yield* hasPendingMigrations();
   if (hasPending) yield* Effect.log(DATABASE_MIGRATIONS_STARTED_MESSAGE);
+  // A V1 ledger stops at 37, so it always has pending migrations; the reconcile takes the write lock.
   const upComputerV1Migrations =
-    toMigrationInclusive === undefined || toMigrationInclusive >= 37
+    hasPending && (toMigrationInclusive === undefined || toMigrationInclusive >= 37)
       ? yield* reconcileUpComputerV1Migrations()
       : [];
   const includesV2 =

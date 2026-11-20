@@ -427,12 +427,9 @@ const RESTART_INTERRUPTED_ERROR =
 
 function dispatchErrorMessage(cause: Cause.Cause<unknown>): string {
   const failure = Cause.squash(cause);
+  if (!isOrchestratorDispatchError(failure)) return errorMessage(failure);
   // Direct orchestration refusals are user-facing; nested defects can contain private data.
-  return errorMessage(
-    isOrchestratorDispatchError(failure) && typeof failure.cause === "string"
-      ? failure.cause
-      : failure,
-  );
+  return errorMessage(typeof failure.cause === "string" ? failure.cause : undefined);
 }
 
 function webhookPath(taskId: string, token: string): string {

@@ -108,6 +108,11 @@ const readDelegatedTaskStatusTranscript = Effect.fn("readDelegatedTaskStatusTran
     const transcript = yield* decodeProviderReplayNdjson(
       text
         .replaceAll(queuedFollowupResult, followupResult)
+        // UpComputer: the branded sender note the recording predates.
+        .replaceAll(
+          "[T3 Code: the agent in T3 thread ",
+          "[Up.computer: the agent in Up.computer thread ",
+        )
         .replace(
           /"name":"Replay fixture: delegated_task_status"/g,
           () => `"name":${JSON.stringify(threadNames.shift())}`,

@@ -1545,7 +1545,7 @@ it.effect.each([
     reply: {
       _tag: "OrchestratorMcpFailure",
       code: "orchestration_error",
-      message: "The operation could not be completed.",
+      message: "Couldn't do that. Try again, or ask the person to do it in the app.",
     },
   },
 ])("t3_thread_send_attachments $outcome", ({ refusal, reply }) => {

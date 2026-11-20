@@ -1349,7 +1349,10 @@ function failureResetAt(
   if (classifyCodexManagedError(failure.code)?.usageLimit) return null;
   return (
     codexUsageLimitResetAt(snapshot) ??
-    (text === undefined ? null : codexMessageResetAt(failure.message, text.failedAt, text.zone))
+    (text === undefined
+      ? null
+      : // UpComputer: our usage-limit message rewrites Codex's text; its detail keeps the original.
+        codexMessageResetAt(failure.detail ?? failure.message, text.failedAt, text.zone))
   );
 }
 
