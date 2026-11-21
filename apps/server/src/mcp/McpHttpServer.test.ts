@@ -1049,6 +1049,47 @@ it.effect("bounds page text made of wide characters before dropping locators", (
   ).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("returns the bounded page state beside the saved screenshot path", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const accessibilityTree = '- button "Save" [ref=t3-snapshot-e1]';
+      yield* serveSnapshots("mcp-saved-client", {
+        ...snapshotResult,
+        visibleText: "界".repeat(9_000),
+        accessibilityTree,
+      });
+
+      const result = yield* callSnapshot({ save: true });
+
+      expect(result.isError).toBe(false);
+      const { screenshotPath } = result.structuredContent as { screenshotPath: string };
+      const saved = yield* (yield* FileSystem.FileSystem).readFile(screenshotPath);
+      expect(Buffer.from(saved).toString()).toBe("png");
+      const [identity, text, notice] = result.content;
+      expect(result.content.map((content) => content.type)).toEqual(["text", "text", "text"]);
+      expect(identity?.type === "text" ? decodeJsonText(identity.text) : null).toEqual({
+        url: snapshotResult.url,
+      });
+      const body = text?.type === "text" ? text.text : "";
+      expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(
+        McpHttpServer.MAX_SNAPSHOT_TEXT_BYTES,
+      );
+      expect(decodeJsonText(body)).toMatchObject({
+        title: snapshotResult.title,
+        visibleText: expect.stringMatching(/^界+…$/),
+        accessibilityTree,
+        screenshot: { mimeType: "image/png", width: 10, height: 5 },
+        screenshotPath,
+      });
+      expect(notice?.type === "text" ? notice.text : "").toContain("visibleText after");
+      expect(result.structuredContent).toEqual({
+        ...(decodeJsonText(body) as object),
+        omitted: [expect.stringContaining("visibleText after")],
+      });
+    }),
+  ).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("terminates HTTP MCP sessions with DELETE", () =>
   Effect.scoped(
     Effect.gen(function* () {
