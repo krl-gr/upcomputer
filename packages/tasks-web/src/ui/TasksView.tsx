@@ -98,6 +98,7 @@ import type { TasksViewGrouping } from "./useTaskList.ts";
 import { taskListLayout, type TaskListLayout } from "./taskListLayout.ts";
 import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
+import { writeTextToClipboard } from "../../../../apps/web/src/hooks/useCopyToClipboard.ts";
 import { observeResize } from "../../../../apps/web/src/lib/observeResize.ts";
 import { useMediaQuery } from "../../../../apps/web/src/hooks/useMediaQuery.ts";
 import { TableRunCounts } from "./RunCountNumbers.tsx";
@@ -225,38 +226,62 @@ const DESCRIPTION_EDITOR_CLASS =
 const DETAIL_DESCRIPTION_EDITOR_CLASS =
   "min-h-10 w-full px-3 py-1.5 text-sm leading-relaxed text-foreground";
 
+type TitleDraftState =
+  | { readonly kind: "editing"; readonly text: string; readonly dirty: boolean }
+  | { readonly kind: "saving"; readonly base: string; readonly text: string };
+
 /**
  * Full wrapping task title at the top of the detail main column, editable in
- * place. Enter saves and blurs; Escape restores the saved title without
- * leaving the task view.
+ * place. Holds the draft while focused so remote refreshes cannot clobber
+ * active typing, and drops a failed save cleanly.
  */
 function DetailTitleHeading(props: {
   readonly value: string;
   readonly canEdit: boolean;
   readonly disabled: boolean;
-  readonly onSave: (title: string) => void;
+  readonly onSave: (title: string) => Promise<boolean>;
 }) {
   const gt = useGT();
-  const [draft, setDraft] = useState<{ readonly base: string; readonly text: string }>();
+  const [draft, setDraft] = useState<TitleDraftState | null>(null);
   const cancelledRef = useRef(false);
-  const value = draft?.base === props.value ? draft.text : props.value;
+  const value =
+    draft === null
+      ? props.value
+      : draft.kind === "editing"
+        ? draft.text
+        : draft.base === props.value
+          ? draft.text
+          : props.value;
 
   if (!props.canEdit) {
     return (
-      <h2 className="mb-2 break-words px-2 text-lg font-semibold leading-snug text-foreground">
+      <h2 className="mb-2 break-words px-2 py-0.5 text-lg font-semibold leading-snug text-foreground">
         {props.value}
       </h2>
     );
   }
 
   const commit = (raw: string) => {
-    const title = raw.trim();
-    if (!title || title === props.value) {
-      setDraft(undefined);
+    if (draft?.kind === "editing" && !draft.dirty) {
+      setDraft(null);
       return;
     }
-    setDraft({ base: props.value, text: title });
-    props.onSave(title);
+    const title = raw.trim();
+    if (!title || title === props.value) {
+      setDraft(null);
+      return;
+    }
+    const base = props.value;
+    setDraft({ kind: "saving", base, text: title });
+    void props.onSave(title).then((saved) => {
+      if (!saved) {
+        setDraft((current) =>
+          current?.kind === "saving" && current.base === base && current.text === title
+            ? null
+            : current,
+        );
+      }
+    });
   };
 
   return (
@@ -266,10 +291,14 @@ function DetailTitleHeading(props: {
       disabled={props.disabled}
       aria-label={gt("Task title")}
       placeholder={gt("Task title…")}
-      className="field-sizing-content mb-2 block w-full resize-none overflow-hidden rounded-md bg-transparent px-2 py-0.5 text-lg font-semibold leading-snug text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:bg-accent/50 focus:bg-accent/50 disabled:opacity-60"
+      className="field-sizing-content mb-2 block w-full resize-none overflow-hidden rounded-md bg-transparent px-2 py-0.5 text-lg font-semibold leading-snug text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:bg-accent/50 focus:bg-accent/50 focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
+      onFocus={() => {
+        cancelledRef.current = false;
+        setDraft({ kind: "editing", text: value, dirty: false });
+      }}
       onChange={(event) => {
         const text = event.currentTarget.value.replace(/[\r\n]+/g, " ");
-        setDraft({ base: props.value, text });
+        setDraft({ kind: "editing", text, dirty: true });
       }}
       onBlur={(event) => {
         if (cancelledRef.current) {
@@ -279,13 +308,14 @@ function DetailTitleHeading(props: {
         commit(event.currentTarget.value);
       }}
       onKeyDown={(event) => {
+        if (event.nativeEvent?.isComposing || event.keyCode === 229) return;
         if (event.key === "Enter") {
           event.preventDefault();
           event.currentTarget.blur();
         } else if (event.key === "Escape") {
           event.preventDefault();
           cancelledRef.current = true;
-          setDraft(undefined);
+          setDraft(null);
           event.currentTarget.blur();
         }
       }}
@@ -1261,8 +1291,11 @@ export function TasksView(props: TasksViewProps) {
               <MenuPopup align="end">
                 <MenuItem
                   onClick={() => {
-                    void navigator.clipboard.writeText(selectedTask.id).then(
-                      () => toastManager.add({ type: "success", title: gt("Task ID copied") }),
+                    void writeTextToClipboard(selectedTask.id).then(
+                      (copied) => {
+                        if (copied)
+                          toastManager.add({ type: "success", title: gt("Task ID copied") });
+                      },
                       () =>
                         toastManager.add({
                           type: "error",
@@ -1353,7 +1386,7 @@ export function TasksView(props: TasksViewProps) {
                 value={selectedTask.title}
                 canEdit={props.canMutateEnvironment(selectedTask.environmentId)}
                 disabled={updatingField === "title"}
-                onSave={(title) => void updateTaskInline(selectedTask, "title", { title })}
+                onSave={(title) => updateTaskInline(selectedTask, "title", { title })}
               />
               {/* Opens once the text arrives, collapsed when the task has output, as before. */}
               <DetailSidebarSection
@@ -1667,7 +1700,13 @@ export function TasksView(props: TasksViewProps) {
       ) : createModeOpen ? (
         <div className={detailOuterClass}>
           <div className={detailInnerClass}>
-            <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <main
+              className={
+                stackedDetail
+                  ? "flex min-w-0 flex-col pb-3"
+                  : "flex min-h-0 min-w-0 flex-1 flex-col"
+              }
+            >
               <LazyMarkdownEditor
                 value={form.description}
                 placeholder={gt("Description…")}
