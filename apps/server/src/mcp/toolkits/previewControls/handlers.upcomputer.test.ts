@@ -57,7 +57,7 @@ it.effect(
         const closedTabs: Array<string | undefined> = [];
         const host = yield* broker.connect(
           { clientId: "chrome-host", environmentId, supportedOperations: ["close"] },
-          { serverHost: { preferred: Effect.succeed(true) } },
+          { serverHost: { preferred: () => Effect.succeed(true) } },
         );
         yield* Stream.runForEach(host, (event) => {
           if (event.type !== "request") return Effect.void;

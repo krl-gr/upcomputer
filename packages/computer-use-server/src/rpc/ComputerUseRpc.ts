@@ -52,6 +52,8 @@ async function snapshotFor(services: RuntimeServices): Promise<ComputerUseStateS
       status: browser.status,
       alwaysUseChrome: browserUse.alwaysUseChrome,
       profilePath: browser.profilePath,
+      installed: browser.installed,
+      ...(browser.launchError ? { launchError: browser.launchError } : {}),
       ...(browser.browserName ? { browserName: browser.browserName } : {}),
       ...(browser.currentUrl ? { currentUrl: browser.currentUrl } : {}),
       ...(browser.currentTitle ? { currentTitle: browser.currentTitle } : {}),

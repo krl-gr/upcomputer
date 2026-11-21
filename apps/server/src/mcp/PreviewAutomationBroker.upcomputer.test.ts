@@ -86,7 +86,7 @@ const setup = Effect.gen(function* () {
   yield* serve(
     "chrome",
     yield* broker.connect(host("chrome"), {
-      serverHost: { preferred: Effect.sync(() => state.alwaysUseChrome) },
+      serverHost: { preferred: () => Effect.sync(() => state.alwaysUseChrome) },
     }),
   );
   yield* serve(
@@ -130,5 +130,37 @@ it.effect("closes a Chrome tab left open after Chrome stops being preferred", ()
       "close:chrome",
       "status:environment-browser",
     ]);
+  }),
+);
+
+it.effect("a server host's own reason reaches the agent", () =>
+  Effect.gen(function* () {
+    const broker = yield* PreviewAutomationBroker.make.pipe(
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    );
+    const events = yield* broker.connect(
+      { clientId: "chrome", environmentId, supportedOperations: ["open"] },
+      { serverHost: { preferred: () => Effect.succeed(true) } },
+    );
+    yield* Stream.runForEach(events, (event) =>
+      event.type === "request"
+        ? broker.respond({
+            clientId: "chrome",
+            connectionId: event.connectionId,
+            requestId: event.request.requestId,
+            ok: false,
+            error: {
+              _tag: "PreviewAutomationExecutionError",
+              message: "Unable to find Chrome or Edge for UpComputer browser automation.",
+            },
+          })
+        : Effect.void,
+    ).pipe(Effect.forkScoped);
+    yield* Effect.yieldNow;
+    const failure = yield* broker
+      .invoke<never>({ scope, operation: "open", input: {} })
+      .pipe(Effect.flip);
+    expect(failure._tag).toBe("PreviewAutomationExecutionError");
+    expect(failure.message).toContain("Unable to find Chrome or Edge");
   }),
 );

@@ -56,6 +56,14 @@ function BrowserUseSettingsPage() {
 
   const browser = snapshot?.browser;
   const unavailable = !api;
+  const chromeUnavailable =
+    browser?.installed === false
+      ? gt("Chrome or Edge is not installed, so agents use the built-in browser.")
+      : browser?.launchError
+        ? gt("Chrome did not start, so agents use the built-in browser for now: {reason}", {
+            reason: browser.launchError,
+          })
+        : undefined;
   return (
     <SettingsPageContainer>
       <SettingsSection title={gt("Browser Use")} hideTitle>
@@ -68,6 +76,7 @@ function BrowserUseSettingsPage() {
               passkeys.
             </T>
           }
+          status={chromeUnavailable}
           control={
             <Switch
               checked={browser?.alwaysUseChrome ?? false}

@@ -10,6 +10,10 @@ export const BrowserUseSnapshot = Schema.Struct({
   /** Run the preview_* browser tools in Chrome even while the desktop app is open. */
   alwaysUseChrome: Schema.Boolean,
   profilePath: Schema.String,
+  /** False when no Chrome or Edge is installed; older servers leave it out. */
+  installed: Schema.optional(Schema.Boolean),
+  /** Why Chrome did not start, while agents use the built-in browser because of it. */
+  launchError: Schema.optional(Schema.String),
   browserName: Schema.optional(Schema.Literals(["chrome", "msedge"])),
   currentUrl: Schema.optional(Schema.String),
   currentTitle: Schema.optional(Schema.String),

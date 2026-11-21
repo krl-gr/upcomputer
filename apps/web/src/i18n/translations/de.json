@@ -1869,6 +1869,8 @@
   "979e18e755ea3dcb": "Unerledigte neu einplanen",
   "4ddec7b746f360c6": "Browser Use",
   "e8c758d3aa31284c": "Computer Use",
+  "69bfcc1223174ad9": "Chrome oder Edge ist nicht installiert, daher nutzen Agenten den integrierten Browser.",
+  "90178b2c0a9df8de": "Chrome ist nicht gestartet, daher nutzen Agenten vorerst den integrierten Browser: {reason}",
   "811b110849a16d6b": "Immer Chrome verwenden",
   "ba76e107833415a9": "Isoliertes Browserprofil",
   "ba45bf89f11e2932": "Browser geöffnet",

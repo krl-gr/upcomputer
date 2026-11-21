@@ -57,11 +57,15 @@ export interface PreviewAutomationInvokeInput {
 
 /**
  * A host running inside the server, such as a product's managed browser. It
- * serves after desktop hosts, and claims every call while `preferred` is true,
- * ahead of a `preferred` connection.
+ * serves after desktop hosts, and claims each call `preferred` answers true
+ * for, ahead of a `preferred` connection. Its failures reach agents with the
+ * host's own reason.
  */
 export interface PreviewAutomationServerHost {
-  readonly preferred: Effect.Effect<boolean>;
+  readonly preferred: (call: {
+    readonly scope: McpInvocationContext.McpThreadInvocationScope;
+    readonly operation: PreviewAutomationOperation;
+  }) => Effect.Effect<boolean>;
 }
 
 export interface PreviewAutomationConnectOptions {
@@ -103,6 +107,8 @@ interface PendingRequest {
   readonly queue: ClientConnection["queue"];
   readonly deferred: Deferred.Deferred<unknown, PreviewAutomationError>;
   readonly context: PreviewAutomationRequestErrorContext;
+  /** In-process hosts word their errors for agents, so their reason is passed on. */
+  readonly serverSide: boolean;
 }
 
 /** A lease belongs to this exact connectionId/queue; replacing the host invalidates it. */
@@ -236,6 +242,7 @@ const decodeTimeoutDetail = Schema.decodeUnknownOption(PreviewAutomationTimeoutD
 const classifyResponseError = (
   context: PreviewAutomationRequestErrorContext,
   error: NonNullable<PreviewAutomationResponse["error"]>,
+  serverSide: boolean,
 ): PreviewAutomationError => {
   const remoteDiagnostics = {
     remoteTag: error._tag,
@@ -286,7 +293,7 @@ const classifyResponseError = (
       return new PreviewAutomationTimeoutError({
         ...context,
         ...remoteDiagnostics,
-        ...(context.clientId === SERVER_BROWSER_AUTOMATION_CLIENT_ID && remoteReason !== undefined
+        ...(serverSide && remoteReason !== undefined
           ? { reason: remoteReason.slice(0, MAX_REASON_CHARS) }
           : {}),
         ...(remoteTimeoutMs === undefined
@@ -371,9 +378,7 @@ const classifyResponseError = (
       return new PreviewAutomationExecutionError({
         ...context,
         ...remoteDiagnostics,
-        ...(context.clientId === SERVER_BROWSER_AUTOMATION_CLIENT_ID
-          ? { reason: error.message.slice(0, MAX_REASON_CHARS) }
-          : {}),
+        ...(serverSide ? { reason: error.message.slice(0, MAX_REASON_CHARS) } : {}),
       });
   }
 };
@@ -528,7 +533,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       yield* Deferred.fail(
         pending.deferred,
         response.error
-          ? classifyResponseError(pending.context, response.error)
+          ? classifyResponseError(pending.context, response.error, pending.serverSide)
           : new PreviewAutomationMalformedResponseError(pending.context),
       );
     }
@@ -544,7 +549,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
         host.serverHost !== undefined &&
         host.environmentId === input.scope.environmentId &&
         supportsOperation(host, input.operation) &&
-        (yield* host.serverHost.preferred)
+        (yield* host.serverHost.preferred({ scope: input.scope, operation: input.operation }))
       ) {
         preferredClientId = host.clientId;
         break;
@@ -672,7 +677,14 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
         ...selectorDiagnostics,
       };
       const pending = new Map(current.pending);
-      pending.set(requestId, { queue: connection.queue, deferred, context });
+      pending.set(requestId, {
+        queue: connection.queue,
+        deferred,
+        context,
+        serverSide:
+          connection.clientId === SERVER_BROWSER_AUTOMATION_CLIENT_ID ||
+          connection.serverHost !== undefined,
+      });
       return [
         { connection, requestId, requestContext: context, requestSequence },
         { ...current, assignments, pending, requestSequence: current.requestSequence + 1 },

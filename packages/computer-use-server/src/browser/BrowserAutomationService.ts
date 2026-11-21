@@ -81,12 +81,18 @@ export interface BrowserAutomationServiceDependencies {
   readonly removeFile?: (path: string) => Promise<void>;
   readonly makeDirectory?: (path: string) => Promise<void>;
   readonly removeDirectory?: (path: string) => Promise<void>;
+  readonly findInstalledBrowser?: () => Promise<BrowserExecutableCandidate | null>;
+  readonly now?: () => number;
 }
 
 export interface BrowserProfileSnapshot {
   readonly profileId: "default";
   readonly profilePath: string;
   readonly status: "closed" | "open";
+  /** False when no Chrome or Edge was found, so agents use the built-in browser. */
+  readonly installed: boolean;
+  /** Why the last launch failed, while agents use the built-in browser because of it. */
+  readonly launchError?: string;
   readonly launchMode?: "cdp-attached";
   readonly browserName?: BrowserName;
   readonly debuggingPort?: number;
@@ -97,6 +103,11 @@ export interface BrowserProfileSnapshot {
 export interface BrowserAutomationServiceShape {
   /** Opens or reconnects the managed browser and returns its persistent profile context. */
   readonly context: () => Promise<BrowserContext>;
+  /**
+   * Whether agents can use the managed browser now: it is installed and opens.
+   * A failed launch is not retried for a while, so agents fall back quickly.
+   */
+  readonly ensureAvailable: () => Promise<boolean>;
   readonly snapshot: () => Promise<BrowserProfileSnapshot>;
   readonly openLoginWindow: (input?: { readonly url?: string }) => Promise<BrowserProfileSnapshot>;
   readonly closeBrowser: () => Promise<BrowserProfileSnapshot>;
@@ -129,9 +140,11 @@ function candidatePath(
   return join(...(parts as string[]));
 }
 
-function getInstalledBrowserCandidates(input?: {
+/** Where Chrome or Edge installs itself, in preference order; Chromium counts as Chrome. */
+export function getInstalledBrowserCandidates(input?: {
   readonly env?: NodeJS.ProcessEnv;
   readonly platform?: NodeJS.Platform;
+  readonly homeDir?: string;
 }): ReadonlyArray<BrowserExecutableCandidate> {
   const env = input?.env ?? process.env;
   // oxlint-disable-next-line t3code/no-global-process-runtime -- Plain helper; callers and tests pass `platform`.
@@ -169,24 +182,43 @@ function getInstalledBrowserCandidates(input?: {
   }
 
   if (platform === "darwin") {
-    return [
-      {
-        browserName: "chrome",
-        executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      },
-      {
-        browserName: "msedge",
-        executablePath: "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-      },
+    const homeDir = input?.homeDir ?? env.HOME;
+    const roots = [
+      "/Applications",
+      ...(homeDir ? [NodePath.posix.join(homeDir, "Applications")] : []),
     ];
+    const apps = [
+      ["chrome", "Google Chrome.app/Contents/MacOS/Google Chrome"],
+      ["msedge", "Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
+    ] as const;
+    return apps.flatMap(([browserName, bundlePath]) =>
+      roots.map((root) => ({ browserName, executablePath: NodePath.posix.join(root, bundlePath) })),
+    );
   }
 
-  return [
+  const pathDirs = (env.PATH ?? "").split(NodePath.posix.delimiter).filter(Boolean);
+  const onPath = (browserName: BrowserName, ...names: string[]) =>
+    names.flatMap((name) =>
+      pathDirs.map((dir) => ({ browserName, executablePath: NodePath.posix.join(dir, name) })),
+    );
+  const unique = new Map<string, BrowserExecutableCandidate>();
+  for (const candidate of [
     { browserName: "chrome", executablePath: "/usr/bin/google-chrome" },
     { browserName: "chrome", executablePath: "/usr/bin/google-chrome-stable" },
+    { browserName: "chrome", executablePath: "/opt/google/chrome/chrome" },
+    ...onPath("chrome", "google-chrome", "google-chrome-stable"),
     { browserName: "msedge", executablePath: "/usr/bin/microsoft-edge" },
     { browserName: "msedge", executablePath: "/usr/bin/microsoft-edge-stable" },
-  ];
+    { browserName: "msedge", executablePath: "/opt/microsoft/msedge/msedge" },
+    ...onPath("msedge", "microsoft-edge", "microsoft-edge-stable"),
+    { browserName: "chrome", executablePath: "/usr/bin/chromium" },
+    { browserName: "chrome", executablePath: "/usr/bin/chromium-browser" },
+    { browserName: "chrome", executablePath: "/snap/bin/chromium" },
+    ...onPath("chrome", "chromium", "chromium-browser"),
+  ] satisfies ReadonlyArray<BrowserExecutableCandidate>) {
+    if (!unique.has(candidate.executablePath)) unique.set(candidate.executablePath, candidate);
+  }
+  return [...unique.values()];
 }
 
 export function buildBrowserLaunchArgs(input: {
@@ -265,11 +297,10 @@ async function findAvailableLocalPort(): Promise<number> {
   });
 }
 
-async function resolveInstalledBrowserExecutable(): Promise<BrowserExecutableCandidate> {
-  const candidates = getInstalledBrowserCandidates();
-  for (const candidate of candidates) {
+async function findInstalledBrowser(): Promise<BrowserExecutableCandidate | null> {
+  for (const candidate of getInstalledBrowserCandidates()) {
     if (
-      await NodeFSP.access(candidate.executablePath).then(
+      await NodeFSP.access(candidate.executablePath, NodeFSP.constants.X_OK).then(
         () => true,
         () => false,
       )
@@ -277,7 +308,13 @@ async function resolveInstalledBrowserExecutable(): Promise<BrowserExecutableCan
       return candidate;
     }
   }
+  return null;
+}
 
+async function resolveInstalledBrowserExecutable(): Promise<BrowserExecutableCandidate> {
+  const installed = await findInstalledBrowser();
+  if (installed) return installed;
+  const candidates = getInstalledBrowserCandidates();
   throw new Error(
     `Unable to find Chrome or Edge for ${PRODUCT_BASE_NAME} browser automation. Checked: ${candidates
       .map((candidate) => candidate.executablePath)
@@ -317,6 +354,9 @@ async function probeCdpEndpoint(port: number): Promise<CdpEndpointProbeResult> {
     };
   }
 }
+
+/** After a failed launch, agents use the built-in browser this long before Chrome is tried again. */
+const LAUNCH_RETRY_AFTER_MS = 5 * 60_000;
 
 function processExitedBeforeCdpError(port: number, state: BrowserProcessExitState): Error {
   return new Error(
@@ -537,10 +577,13 @@ export function createBrowserAutomationService(
     dependencies.removeDirectory ??
     ((directoryPath: string) =>
       NodeFSP.rm(directoryPath, { recursive: true, force: true }).then(() => undefined));
+  const findBrowser = dependencies.findInstalledBrowser ?? findInstalledBrowser;
+  const now = dependencies.now ?? Date.now;
   let browserProcess: BrowserProcessHandle | null = null;
   let browser: Browser | null = null;
   let context: BrowserContext | null = null;
   let activePage: Page | null = null;
+  let launchFailure: { readonly message: string; readonly at: number } | null = null;
 
   const readRuntimeMetadata = async (): Promise<BrowserRuntimeMetadata | null> => {
     const raw = await readFile(profilePaths.defaultRuntimeMetadataPath).catch(() => "");
@@ -649,15 +692,24 @@ export function createBrowserAutomationService(
   const getContext = async (): Promise<BrowserContext> => {
     await makeDirectory(profilePaths.defaultProfileDir);
     if (!context) {
-      const reconnected = await reconnectFromRuntimeMetadata();
-      if (!reconnected) {
-        const launched = await launchBrowser({ userDataDir: profilePaths.defaultProfileDir });
-        await writeRuntimeMetadata(launched);
-        browserProcess = launched.browserProcess;
-        browser = launched.browser;
-        context = launched.context;
-        browser.on("disconnected", clearBrowserHandles);
+      try {
+        const reconnected = await reconnectFromRuntimeMetadata();
+        if (!reconnected) {
+          const launched = await launchBrowser({ userDataDir: profilePaths.defaultProfileDir });
+          await writeRuntimeMetadata(launched);
+          browserProcess = launched.browserProcess;
+          browser = launched.browser;
+          context = launched.context;
+          browser.on("disconnected", clearBrowserHandles);
+        }
+      } catch (cause) {
+        launchFailure = {
+          message: cause instanceof Error ? cause.message : String(cause),
+          at: now(),
+        };
+        throw cause;
       }
+      launchFailure = null;
     }
 
     const currentContext = context;
@@ -677,6 +729,21 @@ export function createBrowserAutomationService(
     return activePage;
   };
 
+  const recentLaunchFailure = () =>
+    launchFailure !== null && now() - launchFailure.at < LAUNCH_RETRY_AFTER_MS
+      ? launchFailure
+      : null;
+
+  const ensureAvailable = async (): Promise<boolean> => {
+    if (context) return true;
+    if (recentLaunchFailure() !== null) return false;
+    if ((await findBrowser()) === null && (await readRuntimeMetadata()) === null) return false;
+    return getContext().then(
+      () => true,
+      () => false,
+    );
+  };
+
   const snapshot = async (): Promise<BrowserProfileSnapshot> => {
     const page = activePage && !activePage.isClosed() ? activePage : null;
     const currentTitle = page ? await titleOf(page) : undefined;
@@ -690,10 +757,14 @@ export function createBrowserAutomationService(
       (recoveredMetadata && recoveredProbe?.ok
         ? metadataToRecoveredProcessHandle(recoveredMetadata)
         : null);
+    const open = Boolean(context || recoveredProbe?.ok);
+    const failure = open ? null : recentLaunchFailure();
     return {
       profileId: "default",
       profilePath: profilePaths.defaultProfileDir,
-      status: context || recoveredProbe?.ok ? "open" : "closed",
+      status: open ? "open" : "closed",
+      installed: open || (await findBrowser()) !== null,
+      ...(failure === null ? {} : { launchError: failure.message }),
       ...(snapshotProcess
         ? {
             launchMode: "cdp-attached" as const,
@@ -708,6 +779,7 @@ export function createBrowserAutomationService(
 
   return {
     context: getContext,
+    ensureAvailable,
     snapshot,
     openLoginWindow: async (input) => {
       const url = trimText(input?.url);

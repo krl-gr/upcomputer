@@ -9,6 +9,7 @@ import type { ServerConfig } from "../../../../apps/server/src/config.ts";
 import {
   buildBrowserLaunchArgs,
   createBrowserAutomationService,
+  getInstalledBrowserCandidates,
   minimizeBrowserWindows,
   type BrowserAutomationServiceDependencies,
 } from "./BrowserAutomationService.ts";
@@ -123,4 +124,88 @@ test("a fresh managed browser minimizes each of its windows once", async () => {
   );
   NodeAssert.ok(!calls.some(([, params]) => JSON.stringify(params)?.includes("worker-1")));
   NodeAssert.ok(detached);
+});
+
+test("Chrome is found in user installs, Chromium packages and on PATH", () => {
+  const paths = (platform: NodeJS.Platform, env: NodeJS.ProcessEnv) =>
+    getInstalledBrowserCandidates({ platform, env }).map((candidate) => candidate.executablePath);
+  NodeAssert.ok(
+    paths("darwin", { HOME: "/Users/someone" }).includes(
+      "/Users/someone/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    ),
+  );
+  const linux = paths("linux", { PATH: "/usr/local/bin:/home/someone/bin" });
+  for (const expected of [
+    "/opt/google/chrome/chrome",
+    "/opt/microsoft/msedge/msedge",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/snap/bin/chromium",
+    "/usr/local/bin/google-chrome",
+    "/home/someone/bin/chromium",
+  ]) {
+    NodeAssert.ok(linux.includes(expected), expected);
+  }
+  // Google Chrome and Edge come before Chromium.
+  NodeAssert.ok(linux.indexOf("/usr/bin/google-chrome") < linux.indexOf("/usr/bin/chromium"));
+  NodeAssert.equal(new Set(linux).size, linux.length);
+});
+
+test("a missing or failing Chrome sends agents to the built-in browser, and is tried again later", async () => {
+  let clock = 0;
+  let installed = false;
+  let launches = 0;
+  let launchFails = true;
+  const context = {} as BrowserContext;
+  const service = createBrowserAutomationService(
+    {
+      stateDir: STATE_DIR,
+      settingsPath: NodePath.join(STATE_DIR, "settings.json"),
+    } as ServerConfig["Service"],
+    {
+      now: () => clock,
+      findInstalledBrowser: async () =>
+        installed ? { browserName: "chrome", executablePath: "/test/chrome" } : null,
+      readFile: async () => "",
+      makeDirectory: async () => undefined,
+      writeFile: async () => undefined,
+      renameFile: async () => undefined,
+      launchCdpBrowser: async ({ userDataDir }) => {
+        launches += 1;
+        if (launchFails) throw new Error("Chrome exited before exposing CDP.");
+        return {
+          browserProcess: {
+            browserName: "chrome",
+            executablePath: "/test/chrome",
+            debuggingPort: DEBUGGING_PORT,
+            userDataDir,
+            dispose: async () => undefined,
+          },
+          browser: { on: () => undefined } as unknown as Browser,
+          context,
+        };
+      },
+    },
+  );
+
+  NodeAssert.equal(await service.ensureAvailable(), false);
+  NodeAssert.equal(launches, 0);
+  NodeAssert.equal((await service.snapshot()).installed, false);
+
+  installed = true;
+  NodeAssert.equal(await service.ensureAvailable(), false);
+  NodeAssert.equal(launches, 1);
+  const failed = await service.snapshot();
+  NodeAssert.equal(failed.installed, true);
+  NodeAssert.equal(failed.launchError, "Chrome exited before exposing CDP.");
+
+  // Agents do not wait for another failing launch right away.
+  launchFails = false;
+  NodeAssert.equal(await service.ensureAvailable(), false);
+  NodeAssert.equal(launches, 1);
+
+  clock += 5 * 60_000;
+  NodeAssert.equal(await service.ensureAvailable(), true);
+  NodeAssert.equal(launches, 2);
+  NodeAssert.equal((await service.snapshot()).launchError, undefined);
 });

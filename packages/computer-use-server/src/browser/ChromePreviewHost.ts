@@ -55,6 +55,7 @@ import {
   PreviewAutomationBroker,
   ServerEnvironment,
 } from "../../../../apps/server/src/extensionApi.ts";
+import type { PreviewAutomationServerHost } from "../../../../apps/server/src/mcp/PreviewAutomationBroker.ts";
 import { BrowserAutomationService } from "./BrowserAutomationService.ts";
 import { readBrowserUseSettings } from "./BrowserUseSettings.ts";
 import {
@@ -876,7 +877,7 @@ export const CHROME_PREVIEW_HOST_CLIENT_ID = "upcomputer-chrome";
 export const serveChromePreviewHost = Effect.fn("ChromePreviewHost.serve")(function* (input: {
   readonly host: ChromePreviewHost;
   readonly environmentId: EnvironmentId;
-  readonly preferred: Effect.Effect<boolean>;
+  readonly preferred: PreviewAutomationServerHost["preferred"];
 }) {
   const broker = yield* PreviewAutomationBroker;
   const events = yield* broker.connect(
@@ -922,9 +923,30 @@ export const serveChromePreviewHost = Effect.fn("ChromePreviewHost.serve")(funct
 });
 
 /**
+ * Which calls Chrome claims from the built-in browser: a thread it should
+ * serve gets Chrome for a new tab while Chrome is installed and starts, and
+ * keeps Chrome for the tabs it has there. Anything else stays where it is,
+ * so a thread working in the built-in browser is never moved mid-task.
+ */
+export const chromePreference =
+  (input: {
+    readonly host: Pick<ChromePreviewHost, "liveTabs">;
+    readonly wantsChrome: (
+      scope: Parameters<PreviewAutomationServerHost["preferred"]>[0]["scope"],
+    ) => Promise<boolean>;
+    readonly ensureAvailable: () => Promise<boolean>;
+  }): PreviewAutomationServerHost["preferred"] =>
+  ({ scope, operation }) =>
+    Effect.promise(async () => {
+      if (!(await input.wantsChrome(scope))) return false;
+      if (operation === "open") return input.ensureAvailable();
+      return input.host.liveTabs().some((tab) => tab.threadId === scope.thread.threadId);
+    });
+
+/**
  * The managed Chrome as a server-side preview host: upstream's environment
- * browser and desktop apps serve agents first, and Chrome takes every call
- * while "Always use Chrome" is on.
+ * browser and desktop apps serve agents first, and Chrome takes the calls
+ * `chromePreference` gives it.
  */
 export const ChromePreviewHostLive = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -932,11 +954,14 @@ export const ChromePreviewHostLive = Layer.effectDiscard(
     const browser = yield* BrowserAutomationService;
     const environmentId = yield* (yield* ServerEnvironment).getEnvironmentId;
     const host = createChromePreviewHost({ getContext: browser.context });
-    const preferred = Effect.promise(() =>
-      readBrowserUseSettings(serverConfig.settingsPath).then(
-        (settings) => settings.alwaysUseChrome,
-      ),
-    );
+    const preferred = chromePreference({
+      host,
+      wantsChrome: () =>
+        readBrowserUseSettings(serverConfig.settingsPath).then(
+          (settings) => settings.alwaysUseChrome,
+        ),
+      ensureAvailable: browser.ensureAvailable,
+    });
     yield* forkParked(
       serveChromePreviewHost({ host, environmentId, preferred }).pipe(
         Effect.andThen(Effect.sleep("1 second")),

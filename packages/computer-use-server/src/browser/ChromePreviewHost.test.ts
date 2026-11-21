@@ -11,6 +11,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   EnvironmentId,
   PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING,
+  PreviewTabId,
   PreviewAutomationSnapshot,
   ProviderInstanceId,
   ThreadId,
@@ -31,6 +32,7 @@ import { computerUseSettingsPath } from "../settings/ComputerUseSettingsFile.ts"
 import { createBrowserAutomationService } from "./BrowserAutomationService.ts";
 import { readBrowserUseSettings } from "./BrowserUseSettings.ts";
 import {
+  chromePreference,
   createChromePreviewHost,
   serveChromePreviewHost,
   toPreviewAutomationRemoteError,
@@ -446,6 +448,42 @@ test("a snapshot whose screenshot fails still returns the page text and tree", a
   NodeAssert.equal(snapshot.warning, PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING);
 });
 
+test("Chrome claims a thread's new tabs while it starts, and its own tabs' calls", async () => {
+  let wantsChrome = true;
+  let available = true;
+  let liveTabs: Array<{ threadId: ThreadId; tabId: PreviewTabId }> = [];
+  const preferred = chromePreference({
+    host: { liveTabs: () => liveTabs },
+    wantsChrome: async () => wantsChrome,
+    ensureAvailable: async () => available,
+  });
+  const scope = {
+    environmentId: EnvironmentId.make("environment-1"),
+    requestNamespace: "session-1",
+    thread: {
+      threadId: ThreadId.make("thread-1"),
+      providerSessionId: "session-1",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    },
+    client: undefined,
+    capabilities: new Set(["preview"] as const),
+    issuedAt: 0,
+  };
+  const claims = (operation: PreviewAutomationOperation) =>
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- A plain Effect.promise.
+    Effect.runPromise(preferred({ scope, operation }));
+
+  NodeAssert.equal(await claims("open"), true);
+  // A thread working in the built-in browser keeps it until it opens a tab.
+  NodeAssert.equal(await claims("snapshot"), false);
+  liveTabs = [{ threadId: scope.thread.threadId, tabId: PreviewTabId.make("chrome-1") }];
+  NodeAssert.equal(await claims("snapshot"), true);
+  available = false;
+  NodeAssert.equal(await claims("open"), false);
+  wantsChrome = false;
+  NodeAssert.equal(await claims("snapshot"), false);
+});
+
 test("the Always use Chrome preference is read from its own file, then from a V1 settings.json", async () => {
   const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "browser-use-settings-"));
   onTestFinished(() => NodeFS.rmSync(directory, { recursive: true, force: true }));
@@ -488,7 +526,7 @@ test("agents reach Chrome through the preview broker unless a desktop app serves
       yield* serveChromePreviewHost({
         host: createChromePreviewHost({ getContext: async () => context }),
         environmentId,
-        preferred: Effect.sync(() => alwaysUseChrome),
+        preferred: () => Effect.sync(() => alwaysUseChrome),
       }).pipe(
         Effect.provideService(PreviewAutomationBroker.PreviewAutomationBroker, broker),
         Effect.forkScoped,
