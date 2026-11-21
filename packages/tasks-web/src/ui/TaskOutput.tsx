@@ -89,7 +89,7 @@ export function TaskOutput(props: {
       filePanelRef={filePanelRef}
       onOpenFile={opensWindow ? (path, line) => open({ path, line }) : undefined}
       // The quote button stands at the right of a block's first line, in room kept free of text.
-      className={`${props.quoteSource ? "pr-9 pl-3" : "px-3"} py-2 text-lg leading-8 text-foreground`}
+      className={`${props.quoteSource ? "pr-9 pl-3" : "px-3"} py-1.5 text-sm leading-relaxed text-foreground`}
     />
   );
   return (
@@ -320,7 +320,7 @@ function QuotableTaskOutput(props: {
                 data-task-output-quote-button="true"
                 aria-label={reply}
                 className="absolute right-1.5 flex size-6 items-center justify-center rounded-md border border-border bg-popover text-muted-foreground shadow-xs hover:bg-accent hover:text-foreground"
-                style={{ top: top + 4 }}
+                style={{ top }}
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={() => citeBlock(block)}
               />

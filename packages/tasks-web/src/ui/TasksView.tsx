@@ -8,8 +8,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ArrowLeftIcon, GripVerticalIcon } from "lucide-react";
+import { ArrowLeftIcon, GripVerticalIcon, MoreHorizontalIcon } from "lucide-react";
 import { msg, useGT, useMessages } from "gt-react";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   AGENT_RESTORED_STATUS,
   DEFAULT_TASK_STATUS,
@@ -18,7 +19,6 @@ import {
   TASK_STATUSES,
   TaskId,
   type TaskArchiveFilter,
-  type TaskAudience,
   type TaskEvent,
 } from "@t3tools/tasks-contracts/v1";
 import { taskRunPresentation, groupTaskRunCounts, runSearchStatus } from "./taskRunPresentation.ts";
@@ -41,11 +41,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../../apps/web/src/components/ui/select.tsx";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuTrigger,
+} from "../../../../apps/web/src/components/ui/menu.tsx";
 import { ProjectFavicon } from "../../../../apps/web/src/components/ProjectFavicon.tsx";
 import { TaskOutput } from "./TaskOutput.tsx";
 import { openFileInWorkerThread } from "./TaskFileWindow.tsx";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
 import { TaskThreadLink } from "./TaskThreadLink.tsx";
+import { useOmittedThreadShell } from "./useOmittedThreadShell.ts";
 import { getTaskRunAgentPresentation } from "./agentModelOptions.ts";
 import { persistPlannedTaskMove, planVisibleTaskMove } from "./taskReorder.ts";
 import {
@@ -91,6 +98,7 @@ import type { TasksViewGrouping } from "./useTaskList.ts";
 import { taskListLayout, type TaskListLayout } from "./taskListLayout.ts";
 import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
+import { writeTextToClipboard } from "../../../../apps/web/src/hooks/useCopyToClipboard.ts";
 import { observeResize } from "../../../../apps/web/src/lib/observeResize.ts";
 import { useMediaQuery } from "../../../../apps/web/src/hooks/useMediaQuery.ts";
 import { TableRunCounts } from "./RunCountNumbers.tsx";
@@ -135,11 +143,6 @@ interface TaskFormState {
   readonly description: string;
 }
 
-/** Who does a task, in its details: changing it moves the task between Agents and Me. */
-const AUDIENCE_LABELS: Record<TaskAudience, string> = {
-  agent: msg("Workers"),
-  person: msg("Me", { $context: "the person themselves, as who does a task" }),
-};
 const TASKS_OFFLINE_TEXT = msg(
   "The computer with your tasks isn't reachable right now. Tasks show when it connects.",
 );
@@ -219,7 +222,142 @@ function errorDescription(error: unknown): string {
 }
 
 const DESCRIPTION_EDITOR_CLASS =
-  "min-h-36 w-full flex-1 px-3 py-2 text-lg leading-8 text-foreground";
+  "min-h-36 w-full flex-1 px-3 py-2 text-sm leading-relaxed text-foreground";
+const DETAIL_DESCRIPTION_EDITOR_CLASS =
+  "min-h-10 w-full px-3 py-1.5 text-sm leading-relaxed text-foreground";
+
+type TitleDraftState =
+  | { readonly kind: "editing"; readonly text: string; readonly dirty: boolean }
+  | { readonly kind: "saving"; readonly base: string; readonly text: string };
+
+/**
+ * Full wrapping task title at the top of the detail main column, editable in
+ * place. Holds the draft while focused so remote refreshes cannot clobber
+ * active typing, and drops a failed save cleanly.
+ */
+function DetailTitleHeading(props: {
+  readonly value: string;
+  readonly canEdit: boolean;
+  readonly disabled: boolean;
+  readonly onSave: (title: string) => Promise<boolean>;
+}) {
+  const gt = useGT();
+  const [draft, setDraft] = useState<TitleDraftState | null>(null);
+  const cancelledRef = useRef(false);
+  const value =
+    draft === null
+      ? props.value
+      : draft.kind === "editing"
+        ? draft.text
+        : draft.base === props.value
+          ? draft.text
+          : props.value;
+
+  if (!props.canEdit) {
+    return (
+      <h2 className="mb-2 break-words px-2 py-0.5 text-lg font-semibold leading-snug text-foreground">
+        {props.value}
+      </h2>
+    );
+  }
+
+  const commit = (raw: string) => {
+    if (draft?.kind === "editing" && !draft.dirty) {
+      setDraft(null);
+      return;
+    }
+    const title = raw.trim();
+    if (!title || title === props.value) {
+      setDraft(null);
+      return;
+    }
+    const base = props.value;
+    setDraft({ kind: "saving", base, text: title });
+    void props.onSave(title).then((saved) => {
+      if (!saved) {
+        setDraft((current) =>
+          current?.kind === "saving" && current.base === base && current.text === title
+            ? null
+            : current,
+        );
+      }
+    });
+  };
+
+  return (
+    <textarea
+      rows={1}
+      value={value}
+      disabled={props.disabled}
+      aria-label={gt("Task title")}
+      placeholder={gt("Task title…")}
+      className="field-sizing-content mb-2 block w-full resize-none overflow-hidden rounded-md bg-transparent px-2 py-0.5 text-lg font-semibold leading-snug text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:bg-accent/50 focus:bg-accent/50 focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
+      onFocus={() => {
+        cancelledRef.current = false;
+        setDraft({ kind: "editing", text: value, dirty: false });
+      }}
+      onChange={(event) => {
+        const text = event.currentTarget.value.replace(/[\r\n]+/g, " ");
+        setDraft({ kind: "editing", text, dirty: true });
+      }}
+      onBlur={(event) => {
+        if (cancelledRef.current) {
+          cancelledRef.current = false;
+          return;
+        }
+        commit(event.currentTarget.value);
+      }}
+      onKeyDown={(event) => {
+        if (event.nativeEvent?.isComposing || event.keyCode === 229) return;
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          cancelledRef.current = true;
+          setDraft(null);
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+/** Source thread row inside the Details list, linking directly to the originating thread. */
+function DetailSourceThreadRow(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly onOpen: (environmentId: EnvironmentId, threadId: ThreadId) => void;
+}) {
+  const gt = useGT();
+  const threadRef = useMemo(
+    () => scopeThreadRef(props.environmentId, props.threadId),
+    [props.environmentId, props.threadId],
+  );
+  const thread = useOmittedThreadShell(threadRef, true);
+  const unavailable = thread?.deletedAt != null;
+  const title = thread?.title || gt("Source thread");
+
+  return (
+    <DetailSidebarRow
+      label={gt("Source thread")}
+      controlSelector={unavailable ? undefined : "button"}
+    >
+      {unavailable ? (
+        <span className="truncate text-muted-foreground">{gt("Unavailable")}</span>
+      ) : (
+        <button
+          type="button"
+          className="min-w-0 max-w-full cursor-pointer truncate text-right text-sm font-normal leading-relaxed tracking-normal text-foreground hover:underline"
+          title={title}
+          onClick={() => props.onOpen(props.environmentId, props.threadId)}
+        >
+          {title}
+        </button>
+      )}
+    </DetailSidebarRow>
+  );
+}
 
 /**
  * A task's description in the table detail, saved when the field loses focus.
@@ -243,7 +381,7 @@ function DetailDescriptionEditor(props: {
       disabled={props.disabled}
       placeholder={gt("Description…")}
       ariaLabel={gt("Task description")}
-      className={DESCRIPTION_EDITOR_CLASS}
+      className={DETAIL_DESCRIPTION_EDITOR_CLASS}
       onChange={(next) => {
         textRef.current = next;
         setDraft({ base: props.value, text: next });
@@ -315,7 +453,6 @@ export function TasksView(props: TasksViewProps) {
   const pendingDetailRefresh = useRef<(() => void) | null>(null);
   const detailPagesRef = useRef(1);
   const [runFilter, setRunFilter] = useState(ALL_FILTER);
-  const [activeRuns, setActiveRuns] = useState<readonly ScopedTaskAgentRun[]>([]);
   const [moreRuns, setMoreRuns] = useState(false);
   const [fetchedTask, setFetchedTask] = useState<ScopedTask | null>(null);
   /** English from `msg()`, shown through `useMessages()`. */
@@ -399,8 +536,7 @@ export function TasksView(props: TasksViewProps) {
     [props.projects, selectedTask?.environmentId],
   );
   const taskThreads = detailRuns;
-  // Active runs come unfiltered; the history can be filtered by status.
-  const latestRun = [...activeRuns, ...detailRuns].reduce<ScopedTaskAgentRun | undefined>(
+  const latestRun = detailRuns.reduce<ScopedTaskAgentRun | undefined>(
     (latest, run) => (latest === undefined || run.startedAt > latest.startedAt ? run : latest),
     undefined,
   );
@@ -665,25 +801,8 @@ export function TasksView(props: TasksViewProps) {
         }
         return { runs, hasMore };
       };
-      const fetchActive = async () => {
-        const runs: ScopedTaskAgentRun[] = [];
-        let cursor: { startedAt: string; id: ScopedTaskAgentRun["id"] } | undefined;
-        while (detailRequestRef.current === requestId) {
-          const result = await client.agents.searchRuns({
-            taskId: task.id,
-            activeOnly: true,
-            limit: 500,
-            ...(cursor ? { cursor } : {}),
-          });
-          runs.push(...result.runs.map((run) => ({ ...run, environmentId: task.environmentId })));
-          const tail = result.runs.at(-1);
-          if (result.runs.length < 500 || !tail) break;
-          cursor = { startedAt: tail.startedAt, id: tail.id };
-        }
-        return { runs };
-      };
-      void Promise.all([fetchHistory(), fetchActive()]).then(
-        ([result, active]) => {
+      void fetchHistory().then(
+        (result) => {
           if (detailRequestRef.current !== requestId) return;
           const scoped = result.runs.map((run) => ({ ...run, environmentId: task.environmentId }));
           setDetailRuns((previous) => [
@@ -691,7 +810,6 @@ export function TasksView(props: TasksViewProps) {
               (append ? [...previous, ...scoped] : scoped).map((run) => [run.id, run]),
             ).values(),
           ]);
-          setActiveRuns(active.runs.map((run) => ({ ...run, environmentId: task.environmentId })));
           setMoreRuns(result.hasMore);
           if (append) detailPagesRef.current += 1;
           finished();
@@ -721,7 +839,6 @@ export function TasksView(props: TasksViewProps) {
 
   useEffect(() => {
     setDetailRuns([]);
-    setActiveRuns([]);
     setMoreRuns(false);
     detailPagesRef.current = 1;
     if (selectedTask) loadTaskRunsRef.current(selectedTask);
@@ -1091,7 +1208,7 @@ export function TasksView(props: TasksViewProps) {
     ? "flex w-full min-w-0 py-3"
     : "flex min-h-0 w-full flex-1 py-5";
   const detailInnerClass = stackedDetail
-    ? "flex min-w-0 flex-1 flex-col gap-3"
+    ? "flex min-w-0 flex-1 flex-col"
     : "flex min-h-0 min-w-0 flex-1 gap-5";
 
   return (
@@ -1165,6 +1282,58 @@ export function TasksView(props: TasksViewProps) {
                 {gt("Archived", { $context: "status of an archived task" })}
               </span>
             ) : null}
+            <Menu>
+              <MenuTrigger
+                render={<Button size="icon-sm" variant="outline" aria-label={gt("More actions")} />}
+              >
+                <MoreHorizontalIcon />
+              </MenuTrigger>
+              <MenuPopup align="end">
+                <MenuItem
+                  onClick={() => {
+                    void writeTextToClipboard(selectedTask.id).then(
+                      (copied) => {
+                        if (copied)
+                          toastManager.add({ type: "success", title: gt("Task ID copied") });
+                      },
+                      () =>
+                        toastManager.add({
+                          type: "error",
+                          title: gt("Could not copy task ID"),
+                        }),
+                    );
+                  }}
+                >
+                  {gt("Copy task ID")}
+                </MenuItem>
+                {selectedTask.kind !== "routine" &&
+                props.canMutateEnvironment(selectedTask.environmentId) ? (
+                  <MenuItem
+                    disabled={updatingField === "audience"}
+                    onClick={() => {
+                      const task = selectedTask;
+                      const audience = task.audience === "agent" ? "person" : "agent";
+                      void updateTaskInline(task, "audience", { audience }).then((moved) => {
+                        if (!moved) return;
+                        toastAudienceMoved(
+                          audience,
+                          task.title,
+                          () =>
+                            audience === "person"
+                              ? props.onOpenInPlanner?.(task.environmentId, task.id)
+                              : selectTaskKey(taskKey(task)),
+                          gt,
+                        );
+                      });
+                    }}
+                  >
+                    {selectedTask.audience === "agent"
+                      ? gt("Move to my planner")
+                      : gt("Move to workers")}
+                  </MenuItem>
+                ) : null}
+              </MenuPopup>
+            </Menu>
           </>
         ) : createModeOpen ? undefined : (
           <>
@@ -1212,6 +1381,13 @@ export function TasksView(props: TasksViewProps) {
         <div className={detailOuterClass}>
           <div className={detailInnerClass}>
             <main className={stackedDetail ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto"}>
+              <DetailTitleHeading
+                key={`${taskKey(selectedTask)}:title`}
+                value={selectedTask.title}
+                canEdit={props.canMutateEnvironment(selectedTask.environmentId)}
+                disabled={updatingField === "title"}
+                onSave={(title) => updateTaskInline(selectedTask, "title", { title })}
+              />
               {/* Opens once the text arrives, collapsed when the task has output, as before. */}
               <DetailSidebarSection
                 key={`${taskKey(selectedTask)}:description:${selectedTaskText === null ? "loading" : "loaded"}`}
@@ -1219,7 +1395,7 @@ export function TasksView(props: TasksViewProps) {
                 defaultOpen={selectedTaskText !== null && !hasSelectedTaskOutput}
               >
                 {selectedTaskText === null ? (
-                  <p className="px-3 py-2 text-sm text-muted-foreground">{gt("Loading task…")}</p>
+                  <p className="px-3 py-1.5 text-sm text-muted-foreground">{gt("Loading task…")}</p>
                 ) : props.canMutateEnvironment(selectedTask.environmentId) ? (
                   <DetailDescriptionEditor
                     key={`${taskKey(selectedTask)}:description-editor`}
@@ -1230,11 +1406,13 @@ export function TasksView(props: TasksViewProps) {
                     }
                   />
                 ) : selectedTaskText.description.trim() ? (
-                  <p className="whitespace-pre-wrap px-3 py-2 text-lg leading-8 text-foreground">
+                  <p className="whitespace-pre-wrap px-3 py-1.5 text-sm leading-relaxed text-foreground">
                     {selectedTaskText.description}
                   </p>
                 ) : (
-                  <p className="px-3 py-2 text-sm text-muted-foreground">{gt("No description.")}</p>
+                  <p className="px-3 py-1.5 text-sm text-muted-foreground">
+                    {gt("No description.")}
+                  </p>
                 )}
               </DetailSidebarSection>
               {hasSelectedTaskOutput ? (
@@ -1277,37 +1455,6 @@ export function TasksView(props: TasksViewProps) {
               <DetailSidebarSection title={gt("Details")}>
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow
-                    label={gt("Title")}
-                    controlSelector={
-                      props.canMutateEnvironment(selectedTask.environmentId) ? "input" : undefined
-                    }
-                  >
-                    {props.canMutateEnvironment(selectedTask.environmentId) ? (
-                      <input
-                        key={`${selectedTask.updatedAt}:title`}
-                        className={DETAIL_INPUT_CLASS}
-                        defaultValue={selectedTask.title}
-                        disabled={updatingField === "title"}
-                        aria-label={gt("Task title")}
-                        onBlur={(event) => {
-                          const title = event.currentTarget.value.trim();
-                          if (title && title !== selectedTask.title)
-                            void updateTaskInline(selectedTask, "title", { title });
-                          else event.currentTarget.value = selectedTask.title;
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") event.currentTarget.blur();
-                          if (event.key === "Escape") {
-                            event.currentTarget.value = selectedTask.title;
-                            event.currentTarget.blur();
-                          }
-                        }}
-                      />
-                    ) : (
-                      selectedTask.title
-                    )}
-                  </DetailSidebarRow>
-                  <DetailSidebarRow
                     label={gt("Status")}
                     controlSelector={
                       props.canMutateEnvironment(selectedTask.environmentId) ? "button" : undefined
@@ -1340,74 +1487,6 @@ export function TasksView(props: TasksViewProps) {
                     ) : (
                       selectedTask.status
                     )}
-                  </DetailSidebarRow>
-                  {selectedTask.kind === "routine" ? null : (
-                    <DetailSidebarRow
-                      label={gt("For", { $context: "who a task is for" })}
-                      controlSelector={
-                        props.canMutateEnvironment(selectedTask.environmentId)
-                          ? "button"
-                          : undefined
-                      }
-                    >
-                      {props.canMutateEnvironment(selectedTask.environmentId) ? (
-                        <Select
-                          value={selectedTask.audience}
-                          onValueChange={(audience) => {
-                            if (audience !== "agent" && audience !== "person") return;
-                            if (audience === selectedTask.audience) return;
-                            const task = selectedTask;
-                            void updateTaskInline(task, "audience", { audience }).then((moved) => {
-                              if (!moved) return;
-                              toastAudienceMoved(
-                                audience,
-                                task.title,
-                                () =>
-                                  audience === "person"
-                                    ? props.onOpenInPlanner?.(task.environmentId, task.id)
-                                    : selectTaskKey(taskKey(task)),
-                                gt,
-                              );
-                            });
-                          }}
-                        >
-                          <SelectTrigger
-                            className={DETAIL_SELECT_TRIGGER_CLASS}
-                            style={{ color: "var(--foreground)" }}
-                            variant="ghost"
-                            aria-label={gt("For", { $context: "who a task is for" })}
-                            disabled={updatingField === "audience"}
-                          >
-                            <SelectValue>{m(AUDIENCE_LABELS[selectedTask.audience])}</SelectValue>
-                          </SelectTrigger>
-                          <SelectPopup>
-                            <SelectItem value="agent">{m(AUDIENCE_LABELS.agent)}</SelectItem>
-                            <SelectItem value="person">{m(AUDIENCE_LABELS.person)}</SelectItem>
-                          </SelectPopup>
-                        </Select>
-                      ) : (
-                        m(AUDIENCE_LABELS[selectedTask.audience])
-                      )}
-                    </DetailSidebarRow>
-                  )}
-                  <DetailSidebarRow label={gt("ID")}>
-                    <button
-                      type="button"
-                      className="max-w-full truncate font-mono text-xs hover:underline"
-                      title={gt("Copy task ID")}
-                      onClick={() => {
-                        void navigator.clipboard.writeText(selectedTask.id).then(
-                          () => toastManager.add({ type: "success", title: gt("Task ID copied") }),
-                          () =>
-                            toastManager.add({
-                              type: "error",
-                              title: gt("Could not copy task ID"),
-                            }),
-                        );
-                      }}
-                    >
-                      {selectedTask.id}
-                    </button>
                   </DetailSidebarRow>
                   <DetailSidebarRow
                     label={gt("Project")}
@@ -1507,6 +1586,13 @@ export function TasksView(props: TasksViewProps) {
                       )}
                     </DetailSidebarRow>
                   )}
+                  {selectedTask.sourceThreadId ? (
+                    <DetailSourceThreadRow
+                      environmentId={selectedTask.environmentId}
+                      threadId={selectedTask.sourceThreadId as ThreadId}
+                      onOpen={props.onOpenThread}
+                    />
+                  ) : null}
                   <DetailSidebarRow label={gt("Created", { $context: "date a task was created" })}>
                     {new Date(selectedTask.createdAt).toLocaleDateString()}
                   </DetailSidebarRow>
@@ -1529,51 +1615,6 @@ export function TasksView(props: TasksViewProps) {
                   ) : null}
                 </dl>
               </DetailSidebarSection>
-              {selectedTask.sourceThreadId ? (
-                <DetailSidebarSection title={gt("Source thread")}>
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    <TaskThreadLink
-                      environmentId={selectedTask.environmentId}
-                      threadId={selectedTask.sourceThreadId as ThreadId}
-                      title={gt("Source thread")}
-                      loadOmitted
-                      onOpen={props.onOpenThread}
-                    />
-                  </div>
-                </DetailSidebarSection>
-              ) : null}
-              <DetailSidebarSection title={gt("Active runs")} count={activeRuns.length}>
-                {activeRuns.length === 0 ? (
-                  <p className="px-2 py-3 text-sm text-muted-foreground">
-                    {detailRunsStatus === "loading"
-                      ? gt("Loading active runs…")
-                      : detailRunsStatus === "error"
-                        ? gt("Could not refresh active runs.")
-                        : gt("No active runs.")}
-                  </p>
-                ) : (
-                  activeRuns.map((run) => {
-                    const { agentName, modelLabel } = getTaskRunAgentPresentation(
-                      run,
-                      props.agents,
-                      props.providerEntriesByEnvironment.get(run.environmentId),
-                      gt,
-                    );
-                    return (
-                      <TaskThreadLink
-                        key={run.id}
-                        environmentId={run.environmentId}
-                        threadId={run.threadId}
-                        title={agentName}
-                        label={agentName}
-                        detail={modelLabel}
-                        runStatus={run.status}
-                        onOpen={props.onOpenThread}
-                      />
-                    );
-                  })
-                )}
-              </DetailSidebarSection>
               <DetailSidebarSection
                 title={gt("Runs", { $context: "noun: a task's worker runs" })}
                 count={detailRuns.length}
@@ -1591,39 +1632,50 @@ export function TasksView(props: TasksViewProps) {
                   </div>
                 ) : null}
                 {detailRunsStatus === "loading" && taskThreads.length === 0 ? (
-                  <div className="px-2 py-5 text-sm text-muted-foreground">
+                  <p className="px-2 py-2 text-sm text-muted-foreground">
                     {gt("Loading worker runs...")}
-                  </div>
+                  </p>
+                ) : detailRunsStatus === "error" && taskThreads.length === 0 ? (
+                  <p className="px-2 py-2 text-sm text-muted-foreground">
+                    {gt("Could not refresh runs.")}
+                  </p>
                 ) : taskThreads.length === 0 ? (
-                  <div className="px-2 py-5 text-sm text-muted-foreground">
+                  <p className="px-2 py-2 text-sm text-muted-foreground">
                     {runFilter === ALL_FILTER
                       ? gt("No worker has worked on this task yet.")
                       : gt("No runs match this status.")}
-                  </div>
+                  </p>
                 ) : (
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    {taskThreads.map((run) => {
-                      const { agentName, modelLabel } = getTaskRunAgentPresentation(
-                        run,
-                        props.agents,
-                        props.providerEntriesByEnvironment.get(run.environmentId),
-                        gt,
-                      );
-                      return (
-                        <TaskThreadLink
-                          key={`${run.environmentId}:${run.id}`}
-                          environmentId={run.environmentId}
-                          threadId={run.threadId}
-                          title={agentName}
-                          label={agentName}
-                          detail={modelLabel}
-                          runStatus={run.status}
-                          timestamp={run.startedAt}
-                          onOpen={props.onOpenThread}
-                        />
-                      );
-                    })}
-                  </div>
+                  <>
+                    {detailRunsStatus === "error" ? (
+                      <p className="px-2 py-1.5 text-sm text-muted-foreground">
+                        {gt("Could not refresh runs.")}
+                      </p>
+                    ) : null}
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      {taskThreads.map((run) => {
+                        const { agentName, modelLabel } = getTaskRunAgentPresentation(
+                          run,
+                          props.agents,
+                          props.providerEntriesByEnvironment.get(run.environmentId),
+                          gt,
+                        );
+                        return (
+                          <TaskThreadLink
+                            key={`${run.environmentId}:${run.id}`}
+                            environmentId={run.environmentId}
+                            threadId={run.threadId}
+                            title={agentName}
+                            label={agentName}
+                            detail={modelLabel}
+                            runStatus={run.status}
+                            timestamp={run.startedAt}
+                            onOpen={props.onOpenThread}
+                          />
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
                 {moreRuns ? (
                   <button
@@ -1648,7 +1700,13 @@ export function TasksView(props: TasksViewProps) {
       ) : createModeOpen ? (
         <div className={detailOuterClass}>
           <div className={detailInnerClass}>
-            <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <main
+              className={
+                stackedDetail
+                  ? "flex min-w-0 flex-col pb-3"
+                  : "flex min-h-0 min-w-0 flex-1 flex-col"
+              }
+            >
               <LazyMarkdownEditor
                 value={form.description}
                 placeholder={gt("Description…")}

@@ -17,8 +17,9 @@ const passthrough = vi.hoisted(
       createElement(type, props, children),
 );
 
+const toastAdd = vi.hoisted(() => vi.fn());
 vi.mock("../../../../apps/web/src/components/ui/toast.tsx", () => ({
-  toastManager: { add: () => {} },
+  toastManager: { add: toastAdd },
   stackedThreadToast: (toast: unknown) => toast,
 }));
 // A select exposes its value and change handler; tests find it by its trigger's label.
@@ -41,6 +42,23 @@ vi.mock("../../../../apps/web/src/components/ui/collapsible.tsx", () => ({
   Collapsible: passthrough("section"),
   CollapsibleTrigger: passthrough("div"),
   CollapsibleContent: passthrough("div"),
+}));
+vi.mock("../../../../apps/web/src/components/ui/menu.tsx", () => ({
+  Menu: passthrough("div"),
+  MenuTrigger: passthrough("div"),
+  MenuPopup: passthrough("div"),
+  MenuItem: ({
+    children,
+    ...props
+  }: {
+    children?: ReactNode;
+    disabled?: boolean;
+    onClick?: () => void;
+  }) => createElement("button", { role: "menuitem", ...props }, children),
+}));
+vi.mock("./useOmittedThreadShell.ts", () => ({
+  useOmittedThreadShell: (ref: { readonly threadId: string } | null) =>
+    ref?.threadId === "thread-source" ? { title: "Origin thread", deletedAt: null } : null,
 }));
 vi.mock("../../../../apps/web/src/components/ProjectFavicon.tsx", () => ({
   ProjectFavicon: () => null,
@@ -118,6 +136,8 @@ const task = (overrides: Partial<ScopedTaskListItem> = {}) =>
     archivedAt: null,
     notBefore: null,
     triggerChangedAt: created,
+    audience: "agent",
+    kind: "task",
     environmentId: "local",
     projectName: "Project",
     runCounts: [],
@@ -150,6 +170,15 @@ const calls = {
   unarchive: vi.fn(),
   events: vi.fn(),
 };
+let searchRunsImpl: () => Promise<{ runs: unknown[] }> = async () => ({ runs: [] });
+let updateImpl: (input: {
+  status?: string;
+  title?: string;
+  audience?: string;
+}) => Promise<ScopedTaskListItem> = async (input) => {
+  stored = task({ ...stored, ...input } as Partial<ScopedTaskListItem>);
+  return stored;
+};
 const client = {
   tasks: {
     get: async () => stored,
@@ -158,10 +187,9 @@ const client = {
       calls.events(input);
       return { events: history };
     },
-    update: async (input: { status?: string }) => {
+    update: async (input: { status?: string; title?: string; audience?: string }) => {
       calls.update(input);
-      stored = task({ ...stored, ...input });
-      return stored;
+      return updateImpl(input);
     },
     archive: async (input: unknown) => {
       calls.archive(input);
@@ -174,7 +202,7 @@ const client = {
       return { results: [{ id: "task-1", outcome: "unarchived" }] };
     },
   },
-  agents: { searchRuns: async () => ({ runs: [] }) },
+  agents: { searchRuns: async () => searchRunsImpl() },
 };
 
 beforeEach(() => {
@@ -185,6 +213,12 @@ beforeEach(() => {
     removeEventListener: () => {},
   });
   stored = task();
+  searchRunsImpl = async () => ({ runs: [] });
+  updateImpl = async (input) => {
+    stored = task({ ...stored, ...input } as Partial<ScopedTaskListItem>);
+    return stored;
+  };
+  toastAdd.mockClear();
   for (const call of Object.values(calls)) call.mockClear();
 });
 
@@ -194,9 +228,15 @@ afterEach(async () => {
 });
 
 async function render(
-  props: { filters?: TasksPageFilters; selected?: boolean; projects?: readonly unknown[] } = {},
+  props: {
+    filters?: TasksPageFilters;
+    selected?: boolean;
+    projects?: readonly unknown[];
+    onOpenThread?: (environmentId: string, threadId: string) => void;
+  } = {},
 ) {
   const onFiltersChange = vi.fn();
+  const onOpenThread = props.onOpenThread ?? vi.fn();
   await act(async () => {
     renderer = create(
       createElement(TasksView, {
@@ -218,11 +258,11 @@ async function render(
         getClient: () => client as never,
         onReload: () => {},
         onNavigateBack: () => {},
-        onOpenThread: () => {},
+        onOpenThread,
       } as never),
     );
   });
-  return { onFiltersChange };
+  return { onFiltersChange, onOpenThread };
 }
 
 function selectLabelled(label: string): ReactTestInstance {
@@ -324,4 +364,171 @@ it("the detail shows the status and archive history as a timeline", async () => 
   expect(entries[0]).toContain("Person: Obsolete");
   expect(entries[1]).toContain("Backlog → To Do");
   expect(entries[1]).toContain("Chat agent");
+});
+
+it("the detail edits the wrapping title heading in place, guards IME, preserves focused drafts on remote updates, and reverts failed saves", async () => {
+  const makeElement = (overrides: Record<string, unknown> = {}) =>
+    createElement(TasksView, {
+      projects: [],
+      tasks: [stored],
+      statuses: ["To Do", "done"],
+      projectFilter: null,
+      filters: { status: "__all__", lastRun: "__all__", tags: [] },
+      onFiltersChange: () => {},
+      hasMore: false,
+      loadingMore: false,
+      onLoadMore: () => {},
+      agents: [],
+      runs: [],
+      providerEntriesByEnvironment: new Map(),
+      status: "ready",
+      initialSelectedTaskKey: "local:task-1",
+      canMutateEnvironment: () => true,
+      getClient: () => client as never,
+      onReload: () => {},
+      onNavigateBack: () => {},
+      onOpenThread: () => {},
+      ...overrides,
+    } as never);
+  await act(async () => {
+    renderer = create(makeElement());
+  });
+  const heading = () =>
+    renderer.root.find(
+      (node) => node.type === "textarea" && node.props["aria-label"] === "Task title",
+    );
+  expect(heading().props.value).toBe("Tidy the backlog");
+
+  await act(async () => heading().props.onFocus());
+  await act(async () => heading().props.onChange({ currentTarget: { value: "Edited\ntitle" } }));
+  expect(heading().props.value).toBe("Edited title");
+
+  // IME composition Enter/Escape must not blur or cancel.
+  const imePrevent = vi.fn();
+  const imeBlur = vi.fn();
+  await act(async () =>
+    heading().props.onKeyDown({
+      key: "Enter",
+      keyCode: 229,
+      nativeEvent: { isComposing: true },
+      preventDefault: imePrevent,
+      currentTarget: { blur: imeBlur },
+    }),
+  );
+  expect(imePrevent).not.toHaveBeenCalled();
+  expect(imeBlur).not.toHaveBeenCalled();
+
+  // Remote title update while focused must not clobber active typing.
+  stored = task({ title: "Remote title" });
+  await act(async () => renderer.update(makeElement({ tasks: [stored] })));
+  expect(heading().props.value).toBe("Edited title");
+
+  // Escape cancels and reveals the latest remote title.
+  const preventDefault = vi.fn();
+  const blur = vi.fn(() => heading().props.onBlur({ currentTarget: { value: "Edited title" } }));
+  await act(async () =>
+    heading().props.onKeyDown({
+      key: "Escape",
+      nativeEvent: { isComposing: false },
+      preventDefault,
+      currentTarget: { blur },
+    }),
+  );
+  expect(preventDefault).toHaveBeenCalledTimes(1);
+  expect(calls.update).not.toHaveBeenCalled();
+  expect(heading().props.value).toBe("Remote title");
+
+  // Focusing and blurring without typing does not overwrite a remote title update.
+  await act(async () => heading().props.onFocus());
+  stored = task({ title: "Newer remote title" });
+  await act(async () => renderer.update(makeElement({ tasks: [stored] })));
+  expect(heading().props.value).toBe("Remote title");
+  await act(async () => heading().props.onBlur({ currentTarget: { value: "Remote title" } }));
+  expect(calls.update).not.toHaveBeenCalled();
+  expect(heading().props.value).toBe("Newer remote title");
+
+  // Failed save drops the stuck draft and reverts to the saved title.
+  updateImpl = async () => {
+    throw new Error("offline");
+  };
+  await act(async () => heading().props.onFocus());
+  await act(async () => heading().props.onChange({ currentTarget: { value: "Failed title" } }));
+  await act(async () => heading().props.onBlur({ currentTarget: { value: "Failed title" } }));
+  expect(calls.update).toHaveBeenCalledWith({ id: "task-1", title: "Failed title" });
+  expect(heading().props.value).toBe("Newer remote title");
+
+  // A newer edit started before an earlier failed save settles is preserved.
+  let rejectFirst!: (error: Error) => void;
+  updateImpl = () =>
+    new Promise((_, reject) => {
+      rejectFirst = reject;
+    });
+  await act(async () => heading().props.onFocus());
+  await act(async () => heading().props.onChange({ currentTarget: { value: "First attempt" } }));
+  await act(async () => heading().props.onBlur({ currentTarget: { value: "First attempt" } }));
+  await act(async () => heading().props.onFocus());
+  await act(async () => heading().props.onChange({ currentTarget: { value: "Second edit" } }));
+  await act(async () => rejectFirst(new Error("offline")));
+  expect(heading().props.value).toBe("Second edit");
+
+  // Successful save commits the trimmed title.
+  updateImpl = async (input) => {
+    stored = task({ ...stored, ...input } as Partial<ScopedTaskListItem>);
+    return stored;
+  };
+  await act(async () => heading().props.onChange({ currentTarget: { value: "  New title  " } }));
+  await act(async () => heading().props.onBlur({ currentTarget: { value: "  New title  " } }));
+  expect(calls.update).toHaveBeenCalledWith({ id: "task-1", title: "New title" });
+  expect(heading().props.value).toBe("New title");
+});
+
+it("the task menu copies the task ID (including error toast when clipboard is unavailable) and moves the task between workers and planner", async () => {
+  const writeText = vi.fn(async () => undefined);
+  vi.stubGlobal("window", {
+    matchMedia: () => ({
+      matches: false,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }),
+  });
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  await render({ selected: true });
+
+  const menuItem = (label: string) =>
+    renderer.root.find(
+      (node) => node.type === "button" && node.props.role === "menuitem" && text(node) === label,
+    );
+
+  await act(async () => menuItem("Copy task ID").props.onClick());
+  expect(writeText).toHaveBeenCalledWith("task-1");
+  expect(toastAdd).toHaveBeenCalledWith({ type: "success", title: "Task ID copied" });
+
+  // Missing navigator.clipboard shows the error toast instead of throwing synchronously.
+  toastAdd.mockClear();
+  vi.stubGlobal("navigator", {});
+  await act(async () => menuItem("Copy task ID").props.onClick());
+  expect(toastAdd).toHaveBeenCalledWith({ type: "error", title: "Could not copy task ID" });
+
+  await act(async () => menuItem("Move to my planner").props.onClick());
+  expect(calls.update).toHaveBeenCalledWith({ id: "task-1", audience: "person" });
+
+  await act(async () => menuItem("Move to workers").props.onClick());
+  expect(calls.update).toHaveBeenCalledWith({ id: "task-1", audience: "agent" });
+});
+
+it("the detail shows Source thread inside Details and surfaces run refresh errors in Runs", async () => {
+  stored = task({ sourceThreadId: "thread-source" as never });
+  searchRunsImpl = async () => {
+    throw new Error("network");
+  };
+  const { onOpenThread } = await render({ selected: true });
+
+  const sourceButton = renderer.root.find(
+    (node) => node.type === "button" && text(node) === "Origin thread",
+  );
+  await act(async () => sourceButton.props.onClick());
+  expect(onOpenThread).toHaveBeenCalledWith("local", "thread-source");
+
+  expect(text(renderer.root)).toContain("Could not refresh runs.");
+  expect(text(renderer.root)).not.toContain("No worker has worked on this task yet.");
 });

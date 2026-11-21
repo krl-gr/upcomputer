@@ -25,7 +25,7 @@ export function DetailColumn({
     <aside
       className={
         stacked
-          ? "min-w-0 border-t border-border pt-3 text-foreground"
+          ? "min-w-0 text-foreground"
           : "min-h-0 w-[380px] shrink-0 overflow-y-auto border-l border-border pl-3 text-foreground"
       }
     >
