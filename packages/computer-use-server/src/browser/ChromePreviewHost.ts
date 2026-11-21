@@ -2,28 +2,39 @@
 // @effect-diagnostics globalDate:off
 // @effect-diagnostics globalTimers:off
 import * as NodeCrypto from "node:crypto";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
 
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import {
   errors,
   type BrowserContext,
   type CDPSession,
+  type Dialog,
+  type Download,
   type ElementHandle,
+  type FileChooser,
   type Locator,
   type Page,
 } from "playwright-core";
 
 import {
   FILL_PREVIEW_VIEWPORT,
+  isOrchestrationV2WorkActive,
   PREVIEW_AUTOMATION_V1_OPERATIONS,
   type BrowserNavigationTarget,
   type EnvironmentId,
+  type OrchestrationV2DomainEvent,
   type PreviewAutomationActionEvent,
   type PreviewAutomationClickInput,
   type PreviewAutomationConsoleEntry,
+  type PreviewAutomationDialogInput,
+  type PreviewAutomationDragInput,
   type PreviewAutomationEvaluateInput,
+  type PreviewAutomationHoverInput,
   type PreviewAutomationNavigateInput,
   type PreviewAutomationHostFocus,
   type PreviewAutomationNetworkEntry,
@@ -35,16 +46,17 @@ import {
   type PreviewAutomationResizeInput,
   type PreviewAutomationResizeResult,
   type PreviewAutomationScrollInput,
+  type PreviewAutomationSelectInput,
   type PreviewAutomationSetColorSchemeInput,
   type PreviewAutomationSetColorSchemeResult,
-  type PreviewAutomationSnapshot,
+  type PreviewAutomationSnapshotInput,
   type PreviewAutomationStatus,
   type PreviewAutomationTypeInput,
+  type PreviewAutomationUploadInput,
   type PreviewAutomationWaitForInput,
   type PreviewViewportSetting,
   type ThreadId,
   PreviewTabId,
-  PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING,
 } from "@t3tools/contracts";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import { resolvePreviewViewport } from "@t3tools/shared/previewViewport";
@@ -52,28 +64,35 @@ import { resolvePreviewViewport } from "@t3tools/shared/previewViewport";
 import { ServerConfig } from "../../../../apps/server/src/config.ts";
 import {
   forkParked,
+  isActiveRun,
   PreviewAutomationBroker,
   ServerEnvironment,
+  ThreadManagementService,
 } from "../../../../apps/server/src/extensionApi.ts";
+import type { PreviewAutomationServerHost } from "../../../../apps/server/src/mcp/PreviewAutomationBroker.ts";
+import * as ServerBrowserPage from "../../../../apps/server/src/preview/ServerBrowserPage.ts";
 import { BrowserAutomationService } from "./BrowserAutomationService.ts";
 import { readBrowserUseSettings } from "./BrowserUseSettings.ts";
-import {
-  PREVIEW_AUTOMATION_MAX_EVALUATION_BYTES,
-  PREVIEW_AUTOMATION_MAX_SCREENSHOT_WIDTH,
-  PREVIEW_AUTOMATION_PAGE_SNAPSHOT_EXPRESSION,
-} from "./previewAutomationPage.ts";
+import type { BrowserForAgents } from "@t3tools/computer-use-contracts/rpc";
 
 /** How a failed request is reported to the broker, with the tags desktop hosts use. */
 export type PreviewAutomationRemoteError = NonNullable<PreviewAutomationResponse["error"]>;
 
 const DIAGNOSTIC_BUFFER_LIMIT = 200;
+/** Largest serialized `evaluate` result, as in the built-in browser. */
+const MAX_EVALUATION_BYTES = 64_000;
+/** Saved downloads a tab lists; older files are deleted. */
+const DOWNLOAD_LIMIT = 20;
+/** The built-in browser's limits, so an agent that loops cannot fill Chrome with tabs. */
+const AGENT_TAB_LIMIT = 8;
+const TOTAL_TAB_LIMIT = 32;
+/** An agent tab nobody used this long is closed; workers that stop early leave tabs behind. */
+export const CHROME_TAB_IDLE_MS = 30 * 60_000;
 /** How long a locator may take to become actionable when the call sets no timeout. */
 const LOCATOR_ACTION_TIMEOUT_MS = 5_000;
 /** Leaves time to reply before the broker gives up on the request. */
 const BROKER_REPLY_MARGIN_MS = 500;
 const WAIT_FOR_POLL_INTERVAL_MS = 100;
-/** A page that cannot paint never answers a capture; the snapshot answers with its text instead. */
-const SNAPSHOT_SCREENSHOT_TIMEOUT_MS = 5_000;
 const INVALID_SELECTOR_PATTERN =
   /strict mode violation|while parsing|unexpected token|unknown engine|not a valid selector/iu;
 
@@ -84,6 +103,8 @@ interface LocatorInput {
   readonly locator?: string | undefined;
 }
 
+type ChromeDownload = NonNullable<PreviewAutomationStatus["downloads"]>[number];
+
 interface ChromeTab {
   readonly id: PreviewTabId;
   readonly threadId: ThreadId;
@@ -93,6 +114,11 @@ interface ChromeTab {
   readonly consoleEntries: PreviewAutomationConsoleEntry[];
   readonly networkEntries: PreviewAutomationNetworkEntry[];
   readonly actionTimeline: PreviewAutomationActionEvent[];
+  dialog: Dialog | null;
+  fileChooser: { readonly chooser: FileChooser; readonly accept: string } | null;
+  readonly downloads: ChromeDownload[];
+  readonly savingDownloads: Set<Promise<void>>;
+  usedAt: number;
 }
 
 /** A failure reported to agents with the same tags desktop hosts use. */
@@ -113,14 +139,30 @@ const hostError = (_tag: string, message: string, detail?: unknown) =>
 const errorMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
 
-export const toPreviewAutomationRemoteError = (cause: unknown): PreviewAutomationRemoteError =>
-  cause instanceof ChromePreviewHostError
-    ? cause.remote
-    : { _tag: "PreviewAutomationExecutionError", message: errorMessage(cause) };
+export const toPreviewAutomationRemoteError = (cause: unknown): PreviewAutomationRemoteError => {
+  if (cause instanceof ChromePreviewHostError) return cause.remote;
+  // The built-in browser's page actions, which this host shares, fail with their own tags.
+  if (cause instanceof ServerBrowserPage.ServerBrowserOperationError) {
+    const { tag, message, detail } = cause;
+    return { _tag: tag, message, ...(detail === undefined ? {} : { detail }) };
+  }
+  return { _tag: "PreviewAutomationExecutionError", message: errorMessage(cause) };
+};
 
-/** Same selector conventions as the desktop host: `selector` is legacy CSS. */
-const automationLocator = (input: LocatorInput): string | null =>
-  input.locator ?? (input.selector ? `css=${input.selector}` : null);
+/** Runs one of the built-in browser's page actions, with its error tags. */
+const sharedAction = <A>(run: () => Promise<A>): Promise<A> =>
+  run().catch((cause: unknown) => {
+    throw ServerBrowserPage.toOperationError(cause);
+  });
+
+const DIALOG_PENDING_MESSAGE =
+  "A browser dialog is pending. Read preview_status and use preview_dialog first.";
+
+/** Same selector conventions as the desktop host: `selector` is legacy CSS; refs come from snapshots. */
+const automationLocator = (page: Page, input: LocatorInput): Locator | null => {
+  const locator = input.locator ?? (input.selector ? `css=${input.selector}` : undefined);
+  return locator === undefined ? null : ServerBrowserPage.targetLocator(page, { locator });
+};
 
 const selectorDiagnostics = (
   input: LocatorInput,
@@ -134,8 +176,9 @@ const selectorDiagnostics = (
   return { selectorKind: "focused-element" };
 };
 
-const locatorFailure = (cause: unknown, input: LocatorInput): ChromePreviewHostError => {
+const locatorFailure = (cause: unknown, input: LocatorInput): Error => {
   if (cause instanceof ChromePreviewHostError) return cause;
+  if (cause instanceof ServerBrowserPage.ServerBrowserOperationError) return cause;
   const message = errorMessage(cause);
   if (INVALID_SELECTOR_PATTERN.test(message)) {
     return hostError("PreviewAutomationInvalidSelectorError", message, selectorDiagnostics(input));
@@ -236,20 +279,32 @@ interface ScrollTarget {
 const scrollTarget = (target: ScrollTarget, delta: { left: number; top: number }): void =>
   target.scrollBy({ ...delta, behavior: "instant" });
 
-const pngSize = (png: Buffer): { readonly width: number; readonly height: number } => ({
-  width: png.readUInt32BE(16),
-  height: png.readUInt32BE(20),
-});
+/** A download's suggested name as a plain file name. */
+const downloadFileName = (suggested: string): string =>
+  NodePath.basename(suggested.replaceAll("\\", "/"))
+    .replace(/[<>:"|?*\u0000-\u001f]/gu, "_")
+    .slice(0, 200) || "download";
 
 export interface ChromePreviewHostOptions {
   /** Opens the managed browser on first use and returns its persistent profile context. */
   readonly getContext: () => Promise<BrowserContext>;
+  /** Opens an agent's tab; the managed browser's keeps a minimized window minimized. */
+  readonly newPage?: () => Promise<Page>;
+  /** Where agents' downloads are saved, one folder per tab. Unset leaves them to Chrome. */
+  readonly downloadsDir?: string;
+  readonly now?: () => number;
 }
 
 export interface ChromePreviewHost {
   readonly supportedOperations: ReadonlyArray<PreviewAutomationOperation>;
   readonly execute: (request: PreviewAutomationRequest) => Promise<unknown>;
   readonly liveTabs: () => NonNullable<PreviewAutomationHostFocus["liveTabs"]>;
+  /** Closes the thread's tabs, for a deleted thread or a finished worker. */
+  readonly closeThreadTabs: (threadId: ThreadId) => Promise<void>;
+  /** Closes tabs no call used for `CHROME_TAB_IDLE_MS`. */
+  readonly closeIdleTabs: () => Promise<void>;
+  /** Called when a tab opens or closes outside a request, such as the user closing it. */
+  readonly onTabsChanged: (listener: () => void) => () => void;
 }
 
 /**
@@ -261,6 +316,16 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
   const tabs = new Map<string, ChromeTab>();
   const threadTabIds = new Map<string, string>();
   let actionSequence = 0;
+  let downloadSequence = 0;
+  const now = options.now ?? Date.now;
+  const newPage = options.newPage ?? (async () => (await options.getContext()).newPage());
+  const tabsChangedListeners = new Set<() => void>();
+  const tabsChanged = () => {
+    for (const listener of tabsChangedListeners) listener();
+  };
+
+  const openTabs = () => [...tabs.values()].filter((tab) => !tab.page.isClosed());
+  const threadTabs = (threadId: ThreadId) => openTabs().filter((tab) => tab.threadId === threadId);
 
   const registerTab = (page: Page, threadId: ThreadId): ChromeTab => {
     const tab: ChromeTab = {
@@ -272,6 +337,11 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       consoleEntries: [],
       networkEntries: [],
       actionTimeline: [],
+      dialog: null,
+      fileChooser: null,
+      downloads: [],
+      savingDownloads: new Set(),
+      usedAt: now(),
     };
     const timestamp = () => new Date().toISOString();
     page.on("console", (message) =>
@@ -290,19 +360,18 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         source: "exception",
       }),
     );
-    page.on("response", (response) => {
-      if (response.status() < 400) return;
+    page.on("response", (response) =>
       pushBounded(tab.networkEntries, {
-        url: response.url(),
+        url: ServerBrowserPage.withoutDataPayload(response.url()),
         method: response.request().method(),
         status: response.status(),
-        failed: true,
+        failed: response.status() >= 400,
         timestamp: timestamp(),
-      });
-    });
+      }),
+    );
     page.on("requestfailed", (request) =>
       pushBounded(tab.networkEntries, {
-        url: request.url(),
+        url: ServerBrowserPage.withoutDataPayload(request.url()),
         method: request.method(),
         status: null,
         failed: true,
@@ -310,15 +379,84 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         timestamp: timestamp(),
       }),
     );
-    page.on("close", () => tabs.delete(tab.id));
+    // Listening keeps Playwright from dismissing dialogs, so the agent sees and answers them.
+    page.on("dialog", (dialog) => {
+      tab.dialog = dialog;
+    });
+    // The user can answer a dialog in the Chrome window too.
+    void cdpSession(tab)
+      .then(async (cdp) => {
+        cdp.on("Page.javascriptDialogClosed", () => {
+          tab.dialog = null;
+        });
+        await cdp.send("Page.enable");
+      })
+      .catch(() => undefined);
+    // Listening also intercepts the native picker, so the agent answers it with upload.
+    page.on("filechooser", (chooser) => void offerFileChooser(tab, chooser));
+    page.on("framenavigated", (frame) => {
+      if (frame === page.mainFrame()) tab.fileChooser = null;
+    });
+    page.on("download", (download) => {
+      const saving = saveDownload(tab, download).finally(() => tab.savingDownloads.delete(saving));
+      tab.savingDownloads.add(saving);
+    });
+    page.on("close", () => {
+      tabs.delete(tab.id);
+      tabsChanged();
+    });
     tabs.set(tab.id, tab);
     return tab;
+  };
+
+  const offerFileChooser = async (tab: ChromeTab, chooser: FileChooser) => {
+    const accept =
+      (await chooser
+        .element()
+        .getAttribute("accept")
+        .catch(() => null)) ?? "";
+    tab.fileChooser = { chooser, accept: accept.slice(0, 1024) };
+  };
+
+  const saveDownload = async (tab: ChromeTab, download: Download): Promise<void> => {
+    const downloadsDir = options.downloadsDir;
+    if (downloadsDir === undefined) return;
+    const fileName = downloadFileName(download.suggestedFilename());
+    const directory = NodePath.join(downloadsDir, tab.id);
+    const path = NodePath.join(directory, `${++downloadSequence}-${fileName}`);
+    try {
+      await NodeFSP.mkdir(directory, { recursive: true, mode: 0o700 });
+      await download.saveAs(path);
+      if (await download.failure()) return;
+      const { size } = await NodeFSP.stat(path);
+      tab.downloads.push({
+        fileName,
+        path,
+        sizeBytes: size,
+        url: ServerBrowserPage.withoutDataPayload(download.url()).slice(0, 2048),
+        completedAt: new Date().toISOString(),
+      });
+      for (const evicted of tab.downloads.splice(0, tab.downloads.length - DOWNLOAD_LIMIT)) {
+        await NodeFSP.rm(evicted.path, { force: true }).catch(() => undefined);
+      }
+    } catch {
+      await NodeFSP.rm(path, { force: true }).catch(() => undefined);
+    }
   };
 
   const currentTab = (request: PreviewAutomationRequest): ChromeTab | undefined => {
     const tabId = request.tabId ?? threadTabIds.get(request.threadId);
     const tab = tabId === undefined ? undefined : tabs.get(tabId);
-    return tab && !tab.page.isClosed() ? tab : undefined;
+    if (!tab || tab.page.isClosed()) return undefined;
+    if (tab.threadId !== request.threadId) {
+      throw hostError(
+        "PreviewAutomationControlInterruptedError",
+        "This Chrome tab belongs to another agent. Open your own tab.",
+        "agentMismatch",
+      );
+    }
+    tab.usedAt = now();
+    return tab;
   };
 
   const requireTab = (request: PreviewAutomationRequest): ChromeTab => {
@@ -390,22 +528,53 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     }
   };
 
+  /** Whether the tab's window is on screen; a tab behind another one in it still counts. */
+  const windowShown = async (tab: ChromeTab): Promise<boolean> => {
+    const window = await cdpSession(tab)
+      .then((cdp) => cdp.send("Browser.getWindowForTarget"))
+      .catch(() => null);
+    return window !== null && window.bounds.windowState !== "minimized";
+  };
+
   const status = async (tab: ChromeTab): Promise<PreviewAutomationStatus> => {
-    const page = (await tab.page
-      .evaluate("({ readyState: document.readyState, width: innerWidth, height: innerHeight })")
-      .catch(() => null)) as {
-      readonly readyState: string;
-      readonly width: number;
-      readonly height: number;
-    } | null;
-    const title = await tab.page.title().catch(() => "");
+    // A pending dialog blocks page script, so status reads nothing from the page.
+    const page = tab.dialog
+      ? null
+      : ((await tab.page
+          .evaluate("({ readyState: document.readyState, width: innerWidth, height: innerHeight })")
+          .catch(() => null)) as {
+          readonly readyState: string;
+          readonly width: number;
+          readonly height: number;
+        } | null);
+    const title = tab.dialog ? "" : await tab.page.title().catch(() => "");
     return {
       available: true,
-      visible: true,
+      visible: await windowShown(tab),
       tabId: tab.id,
       url: tab.page.url() || null,
       title: title || null,
       loading: page?.readyState !== "complete",
+      dialog: tab.dialog
+        ? {
+            type: tab.dialog.type(),
+            message: tab.dialog.message().slice(0, 4000),
+            defaultValue: tab.dialog.defaultValue().slice(0, 4000),
+          }
+        : null,
+      fileChooser: tab.fileChooser
+        ? { multiple: tab.fileChooser.chooser.isMultiple(), accept: tab.fileChooser.accept }
+        : null,
+      downloads: [...tab.downloads],
+      tabs: await Promise.all(
+        threadTabs(tab.threadId).map(async (candidate) => ({
+          tabId: candidate.id,
+          url: candidate.page.url() || null,
+          owner: "agent" as const,
+          ownedByCaller: true,
+          visible: await windowShown(candidate),
+        })),
+      ),
       viewportSetting: tab.viewportSetting,
       ...(page && page.width > 0 && page.height > 0
         ? { viewport: { width: page.width, height: page.height } }
@@ -430,6 +599,14 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         timeout,
       });
     } catch (cause) {
+      // A URL Chrome downloads instead of showing; preview_status lists the file.
+      if (errorMessage(cause).includes("Download is starting")) {
+        await Promise.race([
+          Promise.all(tab.savingDownloads),
+          new Promise((resolve) => setTimeout(resolve, timeout)),
+        ]);
+        return;
+      }
       if (cause instanceof errors.TimeoutError) {
         throw hostError(
           "PreviewAutomationTimeoutError",
@@ -446,13 +623,31 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
   const open = async (request: PreviewAutomationRequest): Promise<PreviewAutomationStatus> => {
     const input = request.input as PreviewAutomationOpenInput;
     const existing = (input.reuseExistingTab ?? true) ? currentTab(request) : undefined;
-    const tab =
-      existing ?? registerTab(await (await options.getContext()).newPage(), request.threadId);
+    if (existing?.dialog) {
+      throw hostError(
+        "PreviewAutomationControlInterruptedError",
+        DIALOG_PENDING_MESSAGE,
+        "dialogPending",
+      );
+    }
+    if (
+      !existing &&
+      (threadTabs(request.threadId).length >= AGENT_TAB_LIMIT ||
+        openTabs().length >= TOTAL_TAB_LIMIT)
+    ) {
+      throw hostError(
+        "PreviewAutomationControlInterruptedError",
+        `Too many Chrome tabs are open (${AGENT_TAB_LIMIT} per agent, ${TOTAL_TAB_LIMIT} in all). Close one with t3_preview_close, or reuse a tabId from preview_status tabs.`,
+        "tabLimit",
+      );
+    }
+    const tab = existing ?? registerTab(await newPage(), request.threadId);
     threadTabIds.set(request.threadId, tab.id);
     if (input.url !== undefined) {
       await navigate(tab, resolveUrl(input.url), "load", replyBudgetMs(request));
     }
-    if (input.show ?? true) await tab.page.bringToFront().catch(() => undefined);
+    // Only an explicit request raises the window: agents work while the user does something else.
+    if ((input.open ?? input.show) === true) await tab.page.bringToFront().catch(() => undefined);
     return status(tab);
   };
 
@@ -480,87 +675,22 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     return { tabId: tab.id, setting, viewport };
   };
 
-  const captureScreenshot = async (
-    tab: ChromeTab,
-  ): Promise<NonNullable<PreviewAutomationSnapshot["screenshot"]>> => {
-    const cdp = await cdpSession(tab);
-    const page = (await evaluateInPage(
-      tab,
-      "({ devicePixelRatio, hidden: document.visibilityState !== 'visible' })",
-      { returnByValue: true, awaitPromise: false },
-    )) as { readonly devicePixelRatio: number; readonly hidden: boolean };
-    // A background tab of a headed browser renders no frames to capture.
-    if (page.hidden) await tab.page.bringToFront();
-    const { cssVisualViewport: viewport } = await cdp.send("Page.getLayoutMetrics");
-    const capture = async (scale: number) => {
-      const { data } = await cdp.send("Page.captureScreenshot", {
-        format: "png",
-        fromSurface: true,
-        captureBeyondViewport: false,
-        clip: {
-          x: viewport.pageX,
-          y: viewport.pageY,
-          width: viewport.clientWidth,
-          height: viewport.clientHeight,
-          scale,
-        },
-      });
-      return { data, ...pngSize(Buffer.from(data, "base64")) };
-    };
-    // Like the desktop host: device pixels, scaled down to the maximum width.
-    const targetWidth = Math.min(
-      PREVIEW_AUTOMATION_MAX_SCREENSHOT_WIDTH,
-      Math.round(viewport.clientWidth * page.devicePixelRatio),
+  /** The built-in browser's snapshot: an AI-mode tree with refs that actions accept. */
+  const snapshot = async (tab: ChromeTab, input: PreviewAutomationSnapshotInput | undefined) => {
+    const rendering = {
+      page: tab.page,
+      cdp: await cdpSession(tab),
+      renderScale: "display",
+      fullScreenshot: input?.fullScreenshot,
+      consoleEntries: tab.consoleEntries,
+      networkEntries: tab.networkEntries,
+      actionTimeline: tab.actionTimeline,
+    } as const;
+    return sharedAction(() =>
+      input?.pixelsRequired === false
+        ? ServerBrowserPage.snapshotMetadata(rendering)
+        : ServerBrowserPage.snapshot(rendering),
     );
-    const scale = targetWidth / viewport.clientWidth;
-    let screenshot = await capture(scale);
-    // Some displays apply their pixel ratio on top of the clip scale.
-    if (screenshot.width > PREVIEW_AUTOMATION_MAX_SCREENSHOT_WIDTH) {
-      screenshot = await capture((scale * targetWidth) / screenshot.width);
-    }
-    return { mimeType: "image/png", ...screenshot };
-  };
-
-  /** Undefined when the capture fails or misses its deadline. */
-  const screenshotWithin = async (tab: ChromeTab, ms: number) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const late = new Promise<undefined>((resolve) => {
-      timer = setTimeout(() => resolve(undefined), ms);
-    });
-    return Promise.race([captureScreenshot(tab).catch(() => undefined), late]).finally(() =>
-      clearTimeout(timer),
-    );
-  };
-
-  const snapshot = async (
-    tab: ChromeTab,
-    request: PreviewAutomationRequest,
-  ): Promise<PreviewAutomationSnapshot> => {
-    const deadline = Date.now() + replyBudgetMs(request);
-    const cdp = await cdpSession(tab);
-    await cdp.send("Accessibility.enable");
-    const page = (await evaluateInPage(tab, PREVIEW_AUTOMATION_PAGE_SNAPSHOT_EXPRESSION, {
-      returnByValue: true,
-      awaitPromise: true,
-    })) as Pick<
-      PreviewAutomationSnapshot,
-      "url" | "title" | "loading" | "visibleText" | "interactiveElements"
-    >;
-    const accessibilityTree = await cdp.send("Accessibility.getFullAXTree");
-    const screenshot = await screenshotWithin(
-      tab,
-      Math.max(1, Math.min(SNAPSHOT_SCREENSHOT_TIMEOUT_MS, deadline - Date.now())),
-    );
-    return {
-      ...page,
-      accessibilityTree,
-      consoleEntries: [...tab.consoleEntries],
-      networkEntries: [...tab.networkEntries],
-      actionTimeline: [...tab.actionTimeline],
-      ...(screenshot === undefined
-        ? { screenshot: null, warning: PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING }
-        : { screenshot }),
-    };
   };
 
   const click = async (
@@ -568,7 +698,9 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     request: PreviewAutomationRequest,
     input: PreviewAutomationClickInput,
   ): Promise<void> => {
-    const locator = automationLocator(input);
+    const locator = automationLocator(tab.page, input);
+    const options = { button: input.button ?? "left", clickCount: input.clickCount ?? 1 } as const;
+    let clicked: Promise<void>;
     if (locator === null) {
       const x = input.x ?? 0;
       const y = input.y ?? 0;
@@ -584,15 +716,27 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
           `Click point (${x}, ${y}) is outside the ${viewport.width}x${viewport.height} viewport.`,
         );
       }
-      await tab.page.mouse.click(x, y);
-      return;
+      clicked = tab.page.mouse.click(x, y, options);
+    } else {
+      clicked = locator
+        .click({ ...options, timeout: locatorTimeoutMs(request, input.timeoutMs) })
+        .catch((cause: unknown) => {
+          throw locatorFailure(cause, input);
+        });
     }
-    await tab.page
-      .locator(locator)
-      .click({ timeout: locatorTimeoutMs(request, input.timeoutMs) })
-      .catch((cause: unknown) => {
-        throw locatorFailure(cause, input);
-      });
+    // A dialog blocks the click until it is answered, so the click returns when one opens.
+    let onDialog = () => {};
+    const dialogOpened = new Promise<"dialog">((resolve) => {
+      onDialog = () => resolve("dialog");
+      tab.page.once("dialog", onDialog);
+    });
+    try {
+      if ((await Promise.race([clicked, dialogOpened])) === "dialog") {
+        void clicked.catch(() => undefined);
+      }
+    } finally {
+      tab.page.off("dialog", onDialog);
+    }
   };
 
   const typeText = async (
@@ -600,7 +744,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     request: PreviewAutomationRequest,
     input: PreviewAutomationTypeInput,
   ): Promise<void> => {
-    const locator = automationLocator(input);
+    const locator = automationLocator(tab.page, input);
     const timeout = locatorTimeoutMs(request, input.timeoutMs);
     let target: Locator | ElementHandle;
     if (locator === null) {
@@ -614,7 +758,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       }
       target = focused;
     } else {
-      target = tab.page.locator(locator);
+      target = locator;
     }
     try {
       const editable =
@@ -644,10 +788,9 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     request: PreviewAutomationRequest,
     input: PreviewAutomationPressInput,
   ): Promise<void> => {
-    const locator = automationLocator(input);
+    const locator = automationLocator(tab.page, input);
     if (locator !== null) {
-      const focused = await tab.page
-        .locator(locator)
+      const focused = await locator
         .evaluate(focusPressTarget, undefined, {
           timeout: locatorTimeoutMs(request, input.timeoutMs),
         })
@@ -670,13 +813,12 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     input: PreviewAutomationScrollInput,
   ): Promise<void> => {
     const delta = { left: input.deltaX ?? 0, top: input.deltaY ?? 0 };
-    const locator = automationLocator(input);
+    const locator = automationLocator(tab.page, input);
     if (locator === null) {
       await tab.page.evaluate(`scrollBy(${JSON.stringify({ ...delta, behavior: "instant" })})`);
       return;
     }
-    await tab.page
-      .locator(locator)
+    await locator
       .evaluate(scrollTarget, delta, { timeout: locatorTimeoutMs(request) })
       .catch((cause: unknown) => {
         throw locatorFailure(cause, input);
@@ -692,11 +834,11 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       awaitPromise: input.awaitPromise ?? true,
     });
     const bytes = Buffer.byteLength(JSON.stringify(value) ?? "null", "utf8");
-    if (bytes > PREVIEW_AUTOMATION_MAX_EVALUATION_BYTES) {
+    if (bytes > MAX_EVALUATION_BYTES) {
       throw hostError(
         "PreviewAutomationResultTooLargeError",
-        `The evaluation result is ${bytes} bytes; the limit is ${PREVIEW_AUTOMATION_MAX_EVALUATION_BYTES}.`,
-        { maximumBytes: PREVIEW_AUTOMATION_MAX_EVALUATION_BYTES },
+        `The evaluation result is ${bytes} bytes; the limit is ${MAX_EVALUATION_BYTES}.`,
+        { maximumBytes: MAX_EVALUATION_BYTES },
       );
     }
     return value;
@@ -707,7 +849,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     request: PreviewAutomationRequest,
     input: PreviewAutomationWaitForInput,
   ): Promise<void> => {
-    const locator = automationLocator(input);
+    const locator = automationLocator(tab.page, input);
     const pageConditions = `(${
       input.text === undefined
         ? "true"
@@ -723,15 +865,12 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       const selectorMatched =
         locator === null
           ? true
-          : (await tab.page
-              .locator(locator)
-              .count()
-              .catch((cause: unknown) => {
-                if (INVALID_SELECTOR_PATTERN.test(errorMessage(cause))) {
-                  throw locatorFailure(cause, input);
-                }
-                return 0;
-              })) > 0;
+          : (await locator.count().catch((cause: unknown) => {
+              if (INVALID_SELECTOR_PATTERN.test(errorMessage(cause))) {
+                throw locatorFailure(cause, input);
+              }
+              return 0;
+            })) > 0;
       // A navigation can replace the document mid-check; poll again.
       const pageMatched = await tab.page.evaluate(pageConditions).catch(() => false);
       if (selectorMatched && pageMatched === true) return;
@@ -743,15 +882,44 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     );
   };
 
-  const close = async (request: PreviewAutomationRequest): Promise<Record<string, never>> => {
-    const tab = requireTab(request);
-    if (tab.threadId !== request.threadId) {
+  const answerDialog = async (tab: ChromeTab, input: PreviewAutomationDialogInput) => {
+    const dialog = tab.dialog;
+    if (!dialog) throw hostError("PreviewAutomationExecutionError", "No dialog is pending.");
+    if (input.accept) await dialog.accept(input.promptText);
+    else await dialog.dismiss();
+    if (tab.dialog === dialog) tab.dialog = null;
+    return status(tab);
+  };
+
+  const upload = async (tab: ChromeTab, input: PreviewAutomationUploadInput) => {
+    const relative = input.paths.find((path) => !NodePath.isAbsolute(path));
+    if (relative !== undefined) {
       throw hostError(
-        "PreviewAutomationControlInterruptedError",
-        "Only the thread that opened this Chrome tab can close it.",
-        "agentMismatch",
+        "PreviewAutomationExecutionError",
+        `Upload paths must be absolute: ${relative}`,
       );
     }
+    if (await sharedAction(() => ServerBrowserPage.setInputFiles(tab.page, input)))
+      return undefined;
+    const open = tab.fileChooser;
+    if (!open) {
+      throw hostError(
+        "PreviewAutomationExecutionError",
+        "No file picker is open. Click the page's upload control first, or pass the file input's locator.",
+      );
+    }
+    if (input.paths.length > 1 && !open.chooser.isMultiple()) {
+      throw hostError("PreviewAutomationExecutionError", "This file picker accepts one file.");
+    }
+    await sharedAction(() =>
+      open.chooser.setFiles([...input.paths], { timeout: input.timeoutMs ?? 15_000 }),
+    );
+    if (tab.fileChooser === open) tab.fileChooser = null;
+    return undefined;
+  };
+
+  const close = async (request: PreviewAutomationRequest): Promise<Record<string, never>> => {
+    const tab = requireTab(request);
     try {
       await tab.page.close();
     } catch (cause) {
@@ -763,6 +931,19 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     tabs.delete(tab.id);
     if (threadTabIds.get(request.threadId) === tab.id) threadTabIds.delete(request.threadId);
     return {};
+  };
+
+  /** A pending dialog blocks the page, so every other action waits for its answer. */
+  const actionTab = (request: PreviewAutomationRequest): ChromeTab => {
+    const tab = requireTab(request);
+    if (tab.dialog) {
+      throw hostError(
+        "PreviewAutomationControlInterruptedError",
+        DIALOG_PENDING_MESSAGE,
+        "dialogPending",
+      );
+    }
+    return tab;
   };
 
   const execute = async (request: PreviewAutomationRequest): Promise<unknown> => {
@@ -784,8 +965,10 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         return open(request);
       case "close":
         return close(request);
+      case "dialog":
+        return answerDialog(requireTab(request), request.input as PreviewAutomationDialogInput);
       case "navigate": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationNavigateInput;
         await navigate(
           tab,
@@ -796,9 +979,9 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         return status(tab);
       }
       case "resize":
-        return resize(requireTab(request), request.input as PreviewAutomationResizeInput);
+        return resize(actionTab(request), request.input as PreviewAutomationResizeInput);
       case "setColorScheme": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationSetColorSchemeInput;
         await tab.page.emulateMedia({
           colorScheme: input.colorScheme === "system" ? null : input.colorScheme,
@@ -809,38 +992,65 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         } satisfies PreviewAutomationSetColorSchemeResult;
       }
       case "snapshot": {
-        const tab = requireTab(request);
-        return withAction(tab, "snapshot", () => snapshot(tab, request));
+        const tab = actionTab(request);
+        const input = request.input as PreviewAutomationSnapshotInput | undefined;
+        return withAction(tab, "snapshot", () => snapshot(tab, input));
       }
       case "click": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationClickInput;
         return withAction(tab, "click", () => click(tab, request, input));
       }
       case "type": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationTypeInput;
         return withAction(tab, "type", () => typeText(tab, request, input));
       }
       case "press": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationPressInput;
         return withAction(tab, "press", () => press(tab, request, input));
       }
       case "scroll": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationScrollInput;
         return withAction(tab, "scroll", () => scroll(tab, request, input));
       }
       case "evaluate": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationEvaluateInput;
         return withAction(tab, "evaluate", () => evaluate(tab, input));
       }
       case "waitFor": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationWaitForInput;
         return withAction(tab, "waitFor", () => waitFor(tab, request, input));
+      }
+      case "hover": {
+        const tab = actionTab(request);
+        const input = request.input as PreviewAutomationHoverInput;
+        return withAction(tab, "hover", () =>
+          sharedAction(() => ServerBrowserPage.hover(tab.page, input)),
+        );
+      }
+      case "select": {
+        const tab = actionTab(request);
+        const input = request.input as PreviewAutomationSelectInput;
+        return withAction(tab, "select", () =>
+          sharedAction(() => ServerBrowserPage.select(tab.page, input)),
+        );
+      }
+      case "drag": {
+        const tab = actionTab(request);
+        const input = request.input as PreviewAutomationDragInput;
+        return withAction(tab, "drag", () =>
+          sharedAction(() => ServerBrowserPage.drag(tab.page, input)),
+        );
+      }
+      case "upload": {
+        const tab = actionTab(request);
+        const input = request.input as PreviewAutomationUploadInput;
+        return withAction(tab, "upload", () => upload(tab, input));
       }
       case "recordingStart":
       case "recordingStop":
@@ -851,12 +1061,31 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     }
   };
 
-  const liveTabs = () =>
-    [...tabs.values()]
-      .filter((tab) => !tab.page.isClosed())
-      .map((tab) => ({ threadId: tab.threadId, tabId: tab.id }));
+  const liveTabs = () => openTabs().map((tab) => ({ threadId: tab.threadId, tabId: tab.id }));
 
-  return { supportedOperations: CHROME_PREVIEW_HOST_OPERATIONS, execute, liveTabs };
+  const closeTabs = async (closing: ReadonlyArray<ChromeTab>) => {
+    await Promise.all(
+      closing.map(async (tab) => {
+        tabs.delete(tab.id);
+        if (threadTabIds.get(tab.threadId) === tab.id) threadTabIds.delete(tab.threadId);
+        await tab.page.close().catch(() => undefined);
+      }),
+    );
+    if (closing.length > 0) tabsChanged();
+  };
+
+  return {
+    supportedOperations: CHROME_PREVIEW_HOST_OPERATIONS,
+    execute,
+    liveTabs,
+    closeThreadTabs: (threadId) => closeTabs(threadTabs(threadId)),
+    closeIdleTabs: () =>
+      closeTabs(openTabs().filter((tab) => now() - tab.usedAt >= CHROME_TAB_IDLE_MS)),
+    onTabsChanged: (listener) => {
+      tabsChangedListeners.add(listener);
+      return () => tabsChangedListeners.delete(listener);
+    },
+  };
 }
 
 /** What this host serves; the server's own browser serves the rest. */
@@ -865,6 +1094,11 @@ const CHROME_PREVIEW_HOST_OPERATIONS = [
   "resize",
   "setColorScheme",
   "close",
+  "dialog",
+  "hover",
+  "select",
+  "drag",
+  "upload",
 ] as const;
 
 export const CHROME_PREVIEW_HOST_CLIENT_ID = "upcomputer-chrome";
@@ -877,7 +1111,7 @@ export const CHROME_PREVIEW_HOST_CLIENT_ID = "upcomputer-chrome";
 export const serveChromePreviewHost = Effect.fn("ChromePreviewHost.serve")(function* (input: {
   readonly host: ChromePreviewHost;
   readonly environmentId: EnvironmentId;
-  readonly preferred: Effect.Effect<boolean>;
+  readonly preferred: PreviewAutomationServerHost["preferred"];
 }) {
   const broker = yield* PreviewAutomationBroker;
   const events = yield* broker.connect(
@@ -888,61 +1122,221 @@ export const serveChromePreviewHost = Effect.fn("ChromePreviewHost.serve")(funct
     },
     { serverHost: { preferred: input.preferred } },
   );
-  yield* Stream.runForEach(events, (event) => {
-    if (event.type !== "request") return Effect.void;
-    const reply = (fields: Pick<PreviewAutomationResponse, "ok" | "result" | "error">) =>
-      broker
-        .respond({
-          clientId: CHROME_PREVIEW_HOST_CLIENT_ID,
-          connectionId: event.connectionId,
-          requestId: event.request.requestId,
-          ...fields,
-        })
-        .pipe(Effect.ignore);
-    // The broker routes a named tab by these, so they are current before the agent sees a reply.
-    const reportLiveTabs = Effect.suspend(() =>
+  const runFork = Effect.runForkWith(yield* Effect.context<never>());
+  let connectionId: string | undefined;
+  const reportTabs = (reportConnectionId: string) =>
+    Effect.suspend(() =>
       broker.focusHost({
         clientId: CHROME_PREVIEW_HOST_CLIENT_ID,
         environmentId: input.environmentId,
-        connectionId: event.connectionId,
+        connectionId: reportConnectionId,
         focused: false,
         liveTabs: input.host.liveTabs(),
       }),
     );
-    return Effect.tryPromise({
-      try: () => input.host.execute(event.request),
-      catch: toPreviewAutomationRemoteError,
-    }).pipe(
-      Effect.matchEffect({
-        onSuccess: (result) => Effect.andThen(reportLiveTabs, reply({ ok: true, result })),
-        onFailure: (error) => Effect.andThen(reportLiveTabs, reply({ ok: false, error })),
-      }),
-      Effect.forkScoped,
+  yield* Effect.gen(function* () {
+    // Tabs closed without a request (the user, cleanup) must stop routing named-tab calls here.
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        input.host.onTabsChanged(() => {
+          if (connectionId !== undefined) runFork(reportTabs(connectionId));
+        }),
+      ),
+      (unsubscribe) => Effect.sync(unsubscribe),
     );
+    yield* Stream.runForEach(events, (event) => {
+      if (event.type === "connected") connectionId = event.connectionId;
+      if (event.type !== "request") return Effect.void;
+      const reply = (fields: Pick<PreviewAutomationResponse, "ok" | "result" | "error">) =>
+        broker
+          .respond({
+            clientId: CHROME_PREVIEW_HOST_CLIENT_ID,
+            connectionId: event.connectionId,
+            requestId: event.request.requestId,
+            ...fields,
+          })
+          .pipe(Effect.ignore);
+      // The broker routes a named tab by these, so they are current before the agent sees a reply.
+      const reportLiveTabs = reportTabs(event.connectionId);
+      return Effect.tryPromise({
+        try: () => input.host.execute(event.request),
+        catch: toPreviewAutomationRemoteError,
+      }).pipe(
+        Effect.matchEffect({
+          onSuccess: (result) => Effect.andThen(reportLiveTabs, reply({ ok: true, result })),
+          onFailure: (error) => Effect.andThen(reportLiveTabs, reply({ ok: false, error })),
+        }),
+        Effect.forkScoped,
+      );
+    });
   }).pipe(Effect.scoped);
 });
 
 /**
+ * Which calls Chrome claims from the built-in browser: a thread it should
+ * serve gets Chrome for a new tab while Chrome is installed and starts, and
+ * keeps Chrome for the tabs it has there. Anything else stays where it is,
+ * so a thread working in the built-in browser is never moved mid-task.
+ */
+export const chromePreference =
+  (input: {
+    readonly host: Pick<ChromePreviewHost, "liveTabs">;
+    readonly wantsChrome: (scope: PreviewScope) => Promise<boolean>;
+    readonly ensureAvailable: () => Promise<boolean>;
+  }): PreviewAutomationServerHost["preferred"] =>
+  ({ scope, operation }) =>
+    Effect.promise(async () => {
+      if (!(await input.wantsChrome(scope))) return false;
+      if (operation === "open") return input.ensureAvailable();
+      return input.host.liveTabs().some((tab) => tab.threadId === scope.thread.threadId);
+    });
+
+type PreviewScope = Parameters<PreviewAutomationServerHost["preferred"]>[0]["scope"];
+
+/**
+ * Whether "Browser for agents" gives a caller Chrome. Automatic gives it to
+ * workers and delegated runs, which run unattended and keep working in Chrome
+ * while the screen is off; chats keep the built-in browser the user watches.
+ */
+export const chromeForAgents =
+  (input: {
+    readonly browserForAgents: () => Promise<BrowserForAgents>;
+    readonly isWorker: (threadId: ThreadId) => Promise<boolean>;
+  }) =>
+  async (scope: PreviewScope): Promise<boolean> => {
+    const choice = await input.browserForAgents();
+    if (choice !== "automatic") return choice === "chrome";
+    return scope.thread.subagent === true || input.isWorker(scope.thread.threadId);
+  };
+
+/**
  * The managed Chrome as a server-side preview host: upstream's environment
- * browser and desktop apps serve agents first, and Chrome takes every call
- * while "Always use Chrome" is on.
+ * browser and desktop apps serve agents first, and Chrome takes the calls
+ * `chromePreference` gives it.
  */
 export const ChromePreviewHostLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const serverConfig = yield* ServerConfig;
     const browser = yield* BrowserAutomationService;
     const environmentId = yield* (yield* ServerEnvironment).getEnvironmentId;
-    const host = createChromePreviewHost({ getContext: browser.context });
-    const preferred = Effect.promise(() =>
-      readBrowserUseSettings(serverConfig.settingsPath).then(
-        (settings) => settings.alwaysUseChrome,
-      ),
+    const downloadsDir = NodePath.join(serverConfig.stateDir, "browser-downloads");
+    // Downloads are listed per tab in memory, so an earlier run's files are never listed again.
+    yield* Effect.promise(() =>
+      NodeFSP.rm(downloadsDir, { recursive: true, force: true }).catch(() => undefined),
     );
+    const host = createChromePreviewHost({
+      getContext: browser.context,
+      newPage: browser.newBackgroundPage,
+      downloadsDir,
+    });
+    const threads = yield* ThreadManagementService;
+    const workers = workerThreads(threads);
+    const preferred = chromePreference({
+      host,
+      wantsChrome: chromeForAgents({
+        browserForAgents: () =>
+          readBrowserUseSettings(serverConfig.settingsPath).then(
+            (settings) => settings.browserForAgents,
+          ),
+        isWorker: workers.isWorker,
+      }),
+      ensureAvailable: browser.ensureAvailable,
+    });
     yield* forkParked(
       serveChromePreviewHost({ host, environmentId, preferred }).pipe(
         Effect.andThen(Effect.sleep("1 second")),
         Effect.forever,
       ),
     );
+    yield* forkParked(
+      Effect.promise(() => host.closeIdleTabs()).pipe(Effect.repeat(Schedule.spaced("1 minute"))),
+    );
+    yield* forkParked(
+      Stream.runForEach(
+        threads.streamDomainEvents,
+        chromeTabCleanup({
+          host,
+          isWorker: workers.isWorker,
+          hasWorkLeft: threadWorkLeft(threads),
+        }),
+      ).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Chrome tab cleanup stopped reading thread events", { cause }),
+        ),
+        Effect.andThen(Effect.sleep("5 seconds")),
+        Effect.forever,
+      ),
+    );
   }),
 );
+
+/**
+ * A deleted thread's tabs close, and so do a worker's once its work ends. One
+ * worker run spans several v2 runs (queued follow-ups, delegated results), so a
+ * run that ends with work left keeps the tabs; interrupted runs may be continued
+ * and are left to the idle sweep.
+ */
+export const chromeTabCleanup =
+  (input: {
+    readonly host: Pick<ChromePreviewHost, "liveTabs" | "closeThreadTabs">;
+    readonly isWorker: (threadId: ThreadId) => Promise<boolean>;
+    readonly hasWorkLeft: (threadId: ThreadId) => Promise<boolean>;
+  }) =>
+  (event: OrchestrationV2DomainEvent): Effect.Effect<void> => {
+    const { host } = input;
+    if (!host.liveTabs().some((tab) => tab.threadId === event.threadId)) return Effect.void;
+    if (event.type === "thread.deleted") {
+      return Effect.promise(() => host.closeThreadTabs(event.threadId));
+    }
+    if (
+      event.type === "run.updated" &&
+      (event.payload.status === "completed" || event.payload.status === "failed")
+    ) {
+      return Effect.promise(async () => {
+        if (!(await input.isWorker(event.threadId))) return;
+        if (await input.hasWorkLeft(event.threadId)) return;
+        await host.closeThreadTabs(event.threadId);
+      });
+    }
+    return Effect.void;
+  };
+
+/** A queued or active run, or a delegated task whose result will wake the thread again. */
+const threadWorkLeft =
+  (threads: ThreadManagementService["Service"]) =>
+  (threadId: ThreadId): Promise<boolean> =>
+    Effect.runPromise(
+      threads.getThreadRecords(threadId, ["runs", "subagents"]).pipe(
+        Effect.map(
+          (records) =>
+            records.runs.some((run) => run.status === "queued" || isActiveRun(run)) ||
+            records.subagents.some(
+              (task) => task.origin === "app_owned" && isOrchestrationV2WorkActive(task.status),
+            ),
+        ),
+        // Unreadable means deleted or gone; thread.deleted closes those.
+        Effect.orElseSucceed(() => true),
+      ),
+    );
+
+/**
+ * Worker (task-agent run) threads are created hidden from the sidebar, and
+ * stay that way, so the answer is cached per thread.
+ */
+const workerThreads = (threads: ThreadManagementService["Service"]) => {
+  const known = new Map<ThreadId, boolean>();
+  const runPromise = Effect.runPromise;
+  return {
+    isWorker: async (threadId: ThreadId): Promise<boolean> => {
+      const cached = known.get(threadId);
+      if (cached !== undefined) return cached;
+      const shell = await runPromise(
+        threads.getThreadShell(threadId).pipe(Effect.orElseSucceed(() => null)),
+      );
+      if (shell === null) return false;
+      const worker = shell.sidebarHidden === true;
+      known.set(threadId, worker);
+      return worker;
+    },
+  };
+};
