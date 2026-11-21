@@ -1,7 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import type { ManagedPolicyDocument, UserSurveyReport } from "@t3tools/contracts";
+import type { ManagedPolicyDocument, UserFeedback, UserSurveyReport } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import type { UpcomputerBuildKind } from "@t3tools/shared/upcomputerIdentity";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -103,6 +103,7 @@ const runServer = <A, E>(
     ),
     // Provider login files would otherwise come from the real home directory.
     Effect.provideService(HostProcess.HomeDirectory, baseDir),
+    Effect.provideService(HostProcess.KernelRelease, "25.2.0"),
   );
 
 const CARD_ANSWER: UserSurveyReport = {
@@ -130,6 +131,14 @@ const ANSWERED: UserSurveyReport = {
     { questionId: "next", value: ["Voice dictation", "Calendar sync"] },
   ],
 };
+
+const SYSTEM_INFO: NonNullable<UserFeedback["systemInfo"]> = {
+  appVersion: "0.0.40",
+  system: "macOS (arm64)",
+  providers: ["Codex", "Claude"],
+};
+
+const ANONYMOUS_KEYS = ["$geoip_disable", "$ip", "$process_person_profile"];
 
 const surveyEvents = (sent: ReadonlyArray<SentEvent>) =>
   sent.filter((event) => event.event.startsWith("survey "));
@@ -357,5 +366,90 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("UserSurveys", (i
       );
       assert.deepEqual(surveyEvents(posthog.sent), []);
     }),
+  );
+  it.effect("feedback carries the email and system info only when they were checked", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW);
+      const baseDir = yield* tempDir;
+      const send = (feedback: UserFeedback, telemetry: boolean) =>
+        Effect.gen(function* () {
+          const posthog = fakePostHog();
+          yield* runServer(baseDir, posthog.client, (surveys) => surveys.sendFeedback(feedback), {
+            telemetry,
+          });
+          const sent = posthog.sent.filter((event) => event.event === "feedback sent");
+          assert.lengthOf(sent, 1);
+          return sent[0]!;
+        });
+
+      // Neither box: only the words, anonymously, also with analytics on.
+      const bare = yield* send({ text: "The sidebar flickers" }, true);
+      assert.deepEqual(Object.keys(bare.properties).toSorted(), [...ANONYMOUS_KEYS, "feedback"]);
+      assert.strictEqual(bare.properties.feedback, "The sidebar flickers");
+      assert.match(bare.distinct_id, /^[0-9a-f-]{36}$/);
+
+      // The email alone still leaves the app details out.
+      const withEmail = yield* send({ text: "Idea", email: "alex@example.com" }, true);
+      assert.deepEqual(Object.keys(withEmail.properties).toSorted(), [
+        ...ANONYMOUS_KEYS,
+        "email",
+        "feedback",
+      ]);
+      assert.strictEqual(withEmail.properties.email, "alex@example.com");
+
+      // System info with analytics on: identified, with the usual app details and the kernel version.
+      const withInfo = yield* send({ text: "Idea", systemInfo: SYSTEM_INFO }, true);
+      assert.notProperty(withInfo.properties, "$ip");
+      assert.notProperty(withInfo.properties, "email");
+      assert.isString(withInfo.properties.t3CodeVersion);
+      assert.strictEqual(withInfo.properties.appVersion, "0.0.40");
+      assert.strictEqual(withInfo.properties.system, "macOS (arm64)");
+      assert.strictEqual(withInfo.properties.kernelRelease, "25.2.0");
+      assert.deepEqual(withInfo.properties.providers, ["Codex", "Claude"]);
+
+      // System info with analytics off: still anonymous, with only what the form listed.
+      const offWithInfo = yield* send({ text: "Idea", systemInfo: SYSTEM_INFO }, false);
+      assert.deepEqual(Object.keys(offWithInfo.properties).toSorted(), [
+        ...ANONYMOUS_KEYS,
+        "appVersion",
+        "feedback",
+        "kernelRelease",
+        "providers",
+        "system",
+      ]);
+    }),
+  );
+
+  it.effect(
+    "feedback is not sent from a dev build and is refused when analytics is managed off",
+    () =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(NOW);
+        const baseDir = yield* tempDir;
+        const posthog = fakePostHog();
+        const feedback: UserFeedback = { text: "The sidebar flickers" };
+
+        yield* runServer(baseDir, posthog.client, (surveys) => surveys.sendFeedback(feedback), {
+          buildKind: "dev",
+        });
+        const refused = yield* runServer(
+          baseDir,
+          posthog.client,
+          (surveys) => Effect.flip(surveys.sendFeedback(feedback)),
+          { policy: { schemaVersion: 1, organization: "Acme", limits: { telemetry: false } } },
+        );
+        assert.strictEqual(refused.reason, "unavailable");
+        assert.deepEqual(
+          posthog.sent.filter((event) => event.event === "feedback sent"),
+          [],
+        );
+
+        const failed = yield* runServer(
+          baseDir,
+          fakePostHog({ batchStatus: 503 }).client,
+          (surveys) => Effect.flip(surveys.sendFeedback(feedback)),
+        );
+        assert.strictEqual(failed.reason, "send-failed");
+      }),
   );
 });

@@ -2,6 +2,8 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
 
+import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+
 /**
  * Shown only while the earlier single-choice question has one of `choices`
  * (their indexes) picked. Drawn under that question, as its follow-up.
@@ -90,13 +92,45 @@ export class UserSurveyError extends Schema.TaggedError<UserSurveyError>()("User
   }
 }
 
+const FeedbackDetail = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
+
+/** What "Include app version and system info" adds, as the form's disclosure lists it. */
+export const UserFeedbackSystemInfo = Schema.Struct({
+  appVersion: FeedbackDetail,
+  /** The operating system as the client knows it; the server adds its kernel version. */
+  system: Schema.NullOr(FeedbackDetail),
+  /** Names of the connected providers. */
+  providers: Schema.Array(FeedbackDetail).check(Schema.isMaxLength(32)),
+});
+export type UserFeedbackSystemInfo = typeof UserFeedbackSystemInfo.Type;
+
+/** Feedback sent from the notifications popover; the optional parts are there only when checked. */
+export const UserFeedback = Schema.Struct({
+  text: TrimmedNonEmptyString.check(Schema.isMaxLength(20_000)),
+  email: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(320))),
+  systemInfo: Schema.optionalKey(UserFeedbackSystemInfo),
+});
+export type UserFeedback = typeof UserFeedback.Type;
+
+export class UserFeedbackError extends Schema.TaggedError<UserFeedbackError>()(
+  "UserFeedbackError",
+  { reason: Schema.Literals(["unavailable", "send-failed"]) },
+) {
+  override get message(): string {
+    return this.reason === "unavailable"
+      ? "Your organization has turned off sending feedback."
+      : "Couldn't send. Check your connection and try again.";
+  }
+}
+
 export const USER_SURVEY_RPC_NAMESPACE = "upcomputer.user-surveys.v1";
 export const USER_SURVEY_RPC_METHODS = {
   current: `${USER_SURVEY_RPC_NAMESPACE}.current`,
   report: `${USER_SURVEY_RPC_NAMESPACE}.report`,
+  feedback: `${USER_SURVEY_RPC_NAMESPACE}.feedback`,
 } as const;
 
-/** The survey RPCs, a product feature on the core WebSocket transport. */
+/** The survey and feedback RPCs, a product feature on the core WebSocket transport. */
 export const UserSurveyRpcGroup = RpcGroup.make(
   Rpc.make(USER_SURVEY_RPC_METHODS.current, {
     payload: Schema.Struct({}),
@@ -105,5 +139,9 @@ export const UserSurveyRpcGroup = RpcGroup.make(
   Rpc.make(USER_SURVEY_RPC_METHODS.report, {
     payload: UserSurveyReport,
     error: UserSurveyError,
+  }),
+  Rpc.make(USER_SURVEY_RPC_METHODS.feedback, {
+    payload: UserFeedback,
+    error: UserFeedbackError,
   }),
 );
