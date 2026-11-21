@@ -17,6 +17,7 @@ import {
 } from "../product/FeatureRpc";
 import { useServerConfigs } from "../state/entities";
 import { useEnvironmentProviders, usePrimaryEnvironmentId } from "../state/environments";
+import { useManagedPolicy } from "../state/managedPolicy";
 import type { UserSurveyStatus } from "../userSurvey/surveyParts";
 import { EMPTY_FEEDBACK_DRAFT, feedbackPayload } from "./sendFeedback.logic";
 
@@ -32,14 +33,18 @@ export interface SendFeedbackSource {
   readonly submit: SubmitFeedback;
 }
 
-/** Whether this client may send feedback: false without a server or on a read-only pairing. */
+/**
+ * Whether this client may send feedback: false without a server, on a read-only pairing, or
+ * when the policy turns usage data off (the server refuses feedback then too).
+ */
 export function useSendFeedbackAvailable(): boolean {
   const environmentId = usePrimaryEnvironmentId();
   const allowed = useExperimentalFeatureRpcPermission(
     environmentId,
     USER_SURVEY_RPC_METHODS.feedback,
   );
-  return environmentId !== null && allowed;
+  const telemetryAllowed = useManagedPolicy(environmentId)?.limits?.telemetry !== false;
+  return environmentId !== null && allowed && telemetryAllowed;
 }
 
 /**

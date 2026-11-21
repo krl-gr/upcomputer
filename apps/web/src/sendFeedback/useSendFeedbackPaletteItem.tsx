@@ -2,6 +2,7 @@ import { useGT } from "gt-react";
 import { MessageSquareTextIcon } from "lucide-react";
 
 import { type CommandPaletteActionItem, ITEM_ICON_CLASS } from "~/components/CommandPalette.logic";
+import { productSurface } from "~/product/productFlags";
 import { requestSendFeedback } from "./sendFeedbackStore";
 import { useSendFeedbackAvailable } from "./useSendFeedback";
 
@@ -9,7 +10,8 @@ import { useSendFeedbackAvailable } from "./useSendFeedback";
 export function useSendFeedbackPaletteItem(): CommandPaletteActionItem | null {
   const gt = useGT();
   const available = useSendFeedbackAvailable();
-  if (!available) return null;
+  // The form lives in the notifications popover, which only our sidebar has.
+  if (!available || productSurface("sidebarNotifications") !== "upcomputer") return null;
   return {
     kind: "action",
     value: "action:send-feedback",
