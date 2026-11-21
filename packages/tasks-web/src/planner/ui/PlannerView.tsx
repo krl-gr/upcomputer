@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { DndContext, DragOverlay, pointerWithin } from "@dnd-kit/core";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { msg, useGT } from "gt-react";
@@ -158,6 +159,16 @@ function PlannerBody(props: {
   );
 
   const exitWeekSelection = useCallback(() => setWeekSelection(NO_SELECTION), []);
+  const composerDrag = useMemo(
+    () =>
+      props.panel
+        ? {
+            environmentId: props.environmentId,
+            projectNameById: new Map(props.projects.map((project) => [project.id, project.name])),
+          }
+        : undefined,
+    [props.environmentId, props.panel, props.projects],
+  );
   const dnd = usePlannerDnd({
     store,
     tasks: snapshot.view.tasks,
@@ -169,6 +180,7 @@ function PlannerBody(props: {
     selection: weekSelection,
     onBlockMoved: exitWeekSelection,
     slotHeight: preferences.slotHeight,
+    composerDrag,
   });
 
   const handlers = useMemo<EntryCardHandlers>(
@@ -400,17 +412,22 @@ function PlannerBody(props: {
             />
           }
         />
-        <DragOverlay dropAnimation={dnd.dropAnimation}>
-          {dnd.active?.kind === "task" ? (
-            <TaskDragPreview task={dnd.active.task} />
-          ) : dnd.active?.kind === "entry" ? (
-            <EntryDragPreview
-              entry={dnd.active.entry}
-              task={snapshot.view.tasks.get(dnd.active.entry.taskId)}
-              count={dnd.active.count}
-            />
-          ) : null}
-        </DragOverlay>
+        {(() => {
+          const overlay = (
+            <DragOverlay dropAnimation={dnd.dropAnimation} className="pointer-events-none">
+              {dnd.active?.kind === "task" ? (
+                <TaskDragPreview task={dnd.active.task} />
+              ) : dnd.active?.kind === "entry" ? (
+                <EntryDragPreview
+                  entry={dnd.active.entry}
+                  task={snapshot.view.tasks.get(dnd.active.entry.taskId)}
+                  count={dnd.active.count}
+                />
+              ) : null}
+            </DragOverlay>
+          );
+          return typeof document === "undefined" ? overlay : createPortal(overlay, document.body);
+        })()}
       </DndContext>
       <PlannerWindows
         windows={openWindows}

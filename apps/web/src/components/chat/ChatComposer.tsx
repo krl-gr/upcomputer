@@ -95,6 +95,11 @@ import {
   dataTransferHasComposerMention,
   makeComposerMentionDragHandlers,
 } from "./composerMentionDrag";
+import {
+  composerTaskDropTargetProps,
+  formatComposerTaskQuote,
+  useComposerTaskDrop,
+} from "./composerTaskDrag";
 import { serializeComposerImages } from "./composerImagePersistence";
 import {
   isInsideCollapsedComposerControls,
@@ -3004,6 +3009,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return setContextInsertionHandler(composerDraftTarget, insertContextReferencesAtCaretStable);
   }, [composerDraftTarget, insertContextReferencesAtCaretStable, setContextInsertionHandler]);
 
+  const onComposerDropInsertRejected = () => {
+    toastManager.add({
+      type: "error",
+      title: gt("Unable to add to chat"),
+      description: gt("The composer is busy; try again once it is ready."),
+    });
+  };
   // Capture drops before the editor; mention handlers own native propagation and moves.
   const composerMentionDragHandlers = makeComposerMentionDragHandlers({
     insertMentionAtEnd: (text) =>
@@ -3019,14 +3031,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
       return inserted;
     },
+    insertTaskAtEnd: (task) =>
+      insertComposerTextAtEndStable(formatComposerTaskQuote(task), {
+        ensureLeadingBoundary: true,
+      }),
     setDragActive: setIsDragOverComposer,
-    onInsertRejected: () => {
-      toastManager.add({
-        type: "error",
-        title: gt("Unable to add to chat"),
-        description: gt("The composer is busy; try again once it is ready."),
-      });
-    },
+    onInsertRejected: onComposerDropInsertRejected,
+  });
+
+  useComposerTaskDrop(composerFormRef, {
+    onDragOver: setIsDragOverComposer,
+    onDropTasks: (tasks) =>
+      insertComposerTextAtEndStable(tasks.map(formatComposerTaskQuote).join(""), {
+        ensureLeadingBoundary: true,
+      }),
+    onInsertRejected: onComposerDropInsertRejected,
   });
 
   const attachDroppedThreadFile = useEffectEvent((file: File) => addComposerAttachments([file]));
@@ -3715,6 +3734,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       className="mx-auto w-full min-w-0 max-w-(--chat-content-max-width)"
       data-chat-composer-form="true"
       {...threadContextDropTargetProps()}
+      {...composerTaskDropTargetProps()}
     >
       <ComposerBanner.Dock>
         <ComposerBanner.Column>

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   defaultDropAnimation,
   KeyboardSensor,
@@ -13,8 +13,16 @@ import {
   type DropAnimation,
   type Over,
 } from "@dnd-kit/core";
+import type { EnvironmentId } from "@t3tools/contracts";
 import type { TaskAutomationListItem, TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
+import {
+  buildComposerTaskDragData,
+  dropComposerTask,
+  endComposerTaskDrag,
+  moveComposerTaskDrag,
+  type ComposerTaskDragData,
+} from "../../../../../apps/web/src/components/chat/composerTaskDrag.ts";
 import type { AutomationAnchor } from "../data/automationStore.ts";
 import type { PlannerTask } from "../data/pendingOps.ts";
 import type { PlannerStore } from "../data/plannerStore.ts";
@@ -61,11 +69,64 @@ type Plan =
       readonly anchor: AutomationAnchor;
     };
 
-function clientY(event: Event | null): number | null {
+export interface PlannerComposerDragContext {
+  readonly environmentId: EnvironmentId;
+  readonly projectNameById: ReadonlyMap<string, string>;
+}
+
+/** Resolves the unique tasks carried by a planner drag for quoting in a chat composer. */
+export function resolvePlannerComposerTasks(
+  source: Source,
+  context: PlannerComposerDragContext,
+  tasks: ReadonlyMap<string, PlannerTask>,
+  days: ReadonlyMap<string, readonly TaskScheduleEntry[]>,
+): readonly ComposerTaskDragData[] {
+  if (source.kind === "automation") return [];
+  const toPayload = (task: PlannerTask | undefined): ComposerTaskDragData | null =>
+    task
+      ? buildComposerTaskDragData({
+          environmentId: context.environmentId,
+          taskId: task.id,
+          title: task.title,
+          kind: task.kind,
+          projectId: task.projectId,
+          projectName: context.projectNameById.get(task.projectId) ?? null,
+        })
+      : null;
+  if (source.kind === "task") {
+    const payload = toPayload(tasks.get(source.taskId));
+    return payload ? [payload] : [];
+  }
+  const entryById = new Map<string, TaskScheduleEntry>();
+  for (const entries of days.values()) {
+    for (const entry of entries) entryById.set(entry.id, entry);
+  }
+  const seenTaskIds = new Set<string>();
+  const result: ComposerTaskDragData[] = [];
+  for (const entryId of source.ids) {
+    const entry = entryById.get(entryId);
+    if (!entry || seenTaskIds.has(entry.taskId)) continue;
+    seenTaskIds.add(entry.taskId);
+    const payload = toPayload(tasks.get(entry.taskId));
+    if (payload) result.push(payload);
+  }
+  return result;
+}
+
+function clientPoint(event: Event | null): { readonly x: number; readonly y: number } | null {
   if (!event) return null;
-  if ("clientY" in event && typeof event.clientY === "number") return event.clientY;
-  if (typeof TouchEvent !== "undefined" && event instanceof TouchEvent)
-    return event.touches[0]?.clientY ?? event.changedTouches[0]?.clientY ?? null;
+  if (
+    "clientX" in event &&
+    typeof event.clientX === "number" &&
+    "clientY" in event &&
+    typeof event.clientY === "number"
+  ) {
+    return { x: event.clientX, y: event.clientY };
+  }
+  if (typeof TouchEvent !== "undefined" && event instanceof TouchEvent) {
+    const touch = event.touches[0] ?? event.changedTouches[0];
+    return touch ? { x: touch.clientX, y: touch.clientY } : null;
+  }
   return null;
 }
 
@@ -87,6 +148,8 @@ export function usePlannerDnd(input: {
   readonly selection: WeekSelection;
   readonly onBlockMoved: () => void;
   readonly slotHeight: number;
+  /** Set in the right panel so dragging a task or day entry onto the composer quotes it. */
+  readonly composerDrag?: PlannerComposerDragContext | undefined;
 }) {
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -99,11 +162,36 @@ export function usePlannerDnd(input: {
   const [dropAnimation, setDropAnimation] = useState<DropAnimation | null>(defaultDropAnimation);
   const drag = useRef<{
     source: Source;
+    startX: number | null;
     startY: number;
     grabOffsetY: number;
+    pointerX: number | null;
     pointerY: number | null;
     stopTracking: () => void;
   } | null>(null);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases window drag listeners and composer highlight if unmounted mid-drag
+  useEffect(
+    () => () => {
+      drag.current?.stopTracking();
+      drag.current = null;
+      endComposerTaskDrag();
+    },
+    [],
+  );
+
+  const pointerOf = (
+    current: NonNullable<typeof drag.current>,
+    delta: { readonly x: number; readonly y: number },
+  ): { readonly x: number; readonly y: number } | null => {
+    if (current.pointerX !== null && current.pointerY !== null) {
+      return { x: current.pointerX, y: current.pointerY };
+    }
+    if (current.startX !== null) {
+      return { x: current.startX + delta.x, y: current.startY + delta.y };
+    }
+    return null;
+  };
 
   const entryIdsByDate = () =>
     new Map([...input.days].map(([date, entries]) => [date, entries.map((entry) => entry.id)]));
@@ -223,21 +311,27 @@ export function usePlannerDnd(input: {
     setDropAnimation(defaultDropAnimation);
     const source = sourceOf(event.active);
     if (!source) return;
-    const startY = clientY(event.activatorEvent) ?? 0;
+    const start = clientPoint(event.activatorEvent);
+    const startY = start?.y ?? 0;
     const card =
       source.kind === "entry" && String(event.active.id).startsWith("calendar-entry:")
         ? document.querySelector(`[data-calendar-day] [data-entry-id="${source.entryId}"]`)
         : null;
     const track = (moveEvent: Event) => {
-      const y = clientY(moveEvent);
-      if (y !== null && drag.current) drag.current.pointerY = y;
+      const point = clientPoint(moveEvent);
+      if (point && drag.current) {
+        drag.current.pointerX = point.x;
+        drag.current.pointerY = point.y;
+      }
     };
     window.addEventListener("pointermove", track, { capture: true, passive: true });
     window.addEventListener("touchmove", track, { capture: true, passive: true });
     drag.current = {
       source,
+      startX: start?.x ?? null,
       startY,
       grabOffsetY: card ? startY - card.getBoundingClientRect().top : 0,
+      pointerX: null,
       pointerY: null,
       stopTracking: () => {
         window.removeEventListener("pointermove", track, { capture: true });
@@ -262,6 +356,18 @@ export function usePlannerDnd(input: {
     if (!current) return;
     const target = targetOf(event.over, event.delta.y);
     const planned = plan(current.source, target);
+    const point = pointerOf(current, event.delta);
+    if (
+      planned === null &&
+      event.over === null &&
+      input.composerDrag &&
+      current.source.kind !== "automation" &&
+      point
+    ) {
+      moveComposerTaskDrag(point);
+    } else {
+      endComposerTaskDrag();
+    }
     let next: DropIndicators = NO_INDICATORS;
     if (planned && target) {
       if (target.kind === "automation-item")
@@ -297,6 +403,7 @@ export function usePlannerDnd(input: {
   const reset = () => {
     drag.current?.stopTracking();
     drag.current = null;
+    endComposerTaskDrag();
     setActive(null);
     setIndicators(NO_INDICATORS);
   };
@@ -305,6 +412,26 @@ export function usePlannerDnd(input: {
     const current = drag.current;
     if (!current) return;
     const planned = plan(current.source, targetOf(event.over, event.delta.y));
+    const point = pointerOf(current, event.delta);
+    if (
+      planned === null &&
+      event.over === null &&
+      input.composerDrag &&
+      current.source.kind !== "automation" &&
+      point
+    ) {
+      const payloads = resolvePlannerComposerTasks(
+        current.source,
+        input.composerDrag,
+        input.tasks,
+        input.days,
+      );
+      if (payloads.length > 0 && dropComposerTask(point, payloads)) {
+        setDropAnimation(null);
+        reset();
+        return;
+      }
+    }
     if (!dropReturnsToSource(planned)) setDropAnimation(null);
     reset();
     if (!planned) return;

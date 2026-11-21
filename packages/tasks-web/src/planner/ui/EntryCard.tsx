@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
+import { COMPOSER_TASK_DRAG_OVERLAY_ATTRIBUTE } from "../../../../../apps/web/src/components/chat/composerTaskDrag.ts";
 import { cn } from "../../../../../apps/web/src/lib/utils.ts";
 import type { PlannerTask } from "../data/pendingOps.ts";
 import type { CalendarPosition } from "../logic/calendarLayout.ts";
@@ -379,7 +380,13 @@ export function EntryDragPreview(props: {
 }) {
   const surface = useEntrySurface(props.entry, props.task);
   return (
-    <div className={cn("relative w-40 rounded-md border px-2 py-1.5 shadow-lg", surface.actions)}>
+    <div
+      {...{ [COMPOSER_TASK_DRAG_OVERLAY_ATTRIBUTE]: "" }}
+      className={cn(
+        "pointer-events-none relative w-40 rounded-md border px-2 py-1.5 shadow-lg",
+        surface.actions,
+      )}
+    >
       <EntryBody entry={props.entry} task={props.task} />
       {props.count > 1 ? (
         <span className="absolute -right-2 -bottom-2 rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground tabular-nums">
@@ -393,7 +400,10 @@ export function EntryDragPreview(props: {
 /** What follows the pointer while dragging a list row. */
 export function TaskDragPreview(props: { readonly task: PlannerTask }) {
   return (
-    <div className="w-64 rounded-xl border bg-card px-3 py-2 shadow-lg">
+    <div
+      {...{ [COMPOSER_TASK_DRAG_OVERLAY_ATTRIBUTE]: "" }}
+      className="pointer-events-none w-64 rounded-xl border bg-card px-3 py-2 shadow-lg"
+    >
       <div className="truncate text-sm font-medium text-foreground">{props.task.title}</div>
     </div>
   );

@@ -952,6 +952,7 @@ export function TasksView(props: TasksViewProps) {
           canMutate={props.canMutateEnvironment(task.environmentId)}
           dragged={draggedTaskKey === taskKey(task)}
           reorderable={props.canMutateEnvironment(task.environmentId)}
+          quoteDraggable={panel}
           onDragStart={() => setDraggedTaskKey(taskKey(task))}
           onDragEnd={() => setDraggedTaskKey(null)}
           onMove={(direction) => void persistVisibleMove(task, direction)}
