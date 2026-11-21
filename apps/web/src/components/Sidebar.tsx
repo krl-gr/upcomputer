@@ -1461,7 +1461,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     });
   const sidebarWaiting =
     sidebarEmptyState === "waiting"
-      ? describeWorkspaceWaiting(workspaceDelivery.waitingOn, gt)
+      ? describeWorkspaceWaiting(
+          workspaceDelivery.waitingOn,
+          gt,
+          productSurface("sidebarNotifications") === "upcomputer",
+        )
       : null;
   // UpComputer: the Threads header, and the Pinned one above it once something is
   // pinned, sit in the list, so a thread drags between them to pin or unpin, and a

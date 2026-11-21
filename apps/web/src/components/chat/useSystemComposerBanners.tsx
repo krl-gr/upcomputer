@@ -25,6 +25,7 @@ import { type EnvironmentPresentation } from "../../state/environments";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import { ENVIRONMENT_RECONNECT_WARNING_GRACE_MS } from "../ChatView.logic";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { productSurface } from "../../product/productFlags";
 import { Button } from "../ui/button";
 import { ServerUpdateAction, serverUpdateStageLabel } from "../ServerUpdateAction";
 import { useAutoBalanceUpdateBanner } from "./useAutoBalanceUpdateBanner";
@@ -194,7 +195,9 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
     const showUnavailableBanner =
       activeEnvironmentUnavailableState !== null &&
       unavailableConnection !== null &&
-      !suppressUnavailableBanner;
+      !suppressUnavailableBanner &&
+      // UpComputer: an unreachable computer is a Notifications card.
+      (awaitingApproval || productSurface("sidebarNotifications") === "upstream");
     if (showUnavailableBanner) {
       items.push({
         id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,

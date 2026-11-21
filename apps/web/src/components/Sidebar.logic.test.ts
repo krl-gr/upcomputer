@@ -1581,6 +1581,11 @@ describe("describeWorkspaceWaiting", () => {
         gtFallback,
       ),
     ).toEqual({ text: "Can’t reach 2 environments right now.", unreachable: true });
+    // UpComputer's Notifications card says it instead; the list only says what it waits for.
+    expect(describeWorkspaceWaiting([environment("Cloud VM", true)], gtFallback, true)).toEqual({
+      text: "Connecting to Cloud VM…",
+      unreachable: false,
+    });
   });
 });
 
