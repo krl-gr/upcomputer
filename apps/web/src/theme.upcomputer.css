@@ -129,17 +129,6 @@ html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
   }
 }
 
-/* The compact column scrolls under a titlebar row placed against the sidebar's
- * container (`adaptiveSidebar.css`); a filter here would hold that row in the
- * scroll, and it changes no pixel anyway. */
-html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
-  [data-sidebar-compact="true"]
-  [data-app-sidebar]
-  [data-slot="sidebar-inner"] {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
 /* The compact undo tile floats over the column on the sidebar's opaque colour, which
  * reads as a patch over the material. Here it keeps only the control tint, like the pill. */
 html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
