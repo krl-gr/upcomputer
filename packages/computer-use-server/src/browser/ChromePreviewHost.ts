@@ -287,6 +287,8 @@ const downloadFileName = (suggested: string): string =>
 export interface ChromePreviewHostOptions {
   /** Opens the managed browser on first use and returns its persistent profile context. */
   readonly getContext: () => Promise<BrowserContext>;
+  /** Opens an agent's tab; the managed browser's keeps a minimized window minimized. */
+  readonly newPage?: () => Promise<Page>;
   /** Where agents' downloads are saved, one folder per tab. Unset leaves them to Chrome. */
   readonly downloadsDir?: string;
   readonly now?: () => number;
@@ -315,6 +317,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
   let actionSequence = 0;
   let downloadSequence = 0;
   const now = options.now ?? Date.now;
+  const newPage = options.newPage ?? (async () => (await options.getContext()).newPage());
   const tabsChangedListeners = new Set<() => void>();
   const tabsChanged = () => {
     for (const listener of tabsChangedListeners) listener();
@@ -637,8 +640,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         "tabLimit",
       );
     }
-    const tab =
-      existing ?? registerTab(await (await options.getContext()).newPage(), request.threadId);
+    const tab = existing ?? registerTab(await newPage(), request.threadId);
     threadTabIds.set(request.threadId, tab.id);
     if (input.url !== undefined) {
       await navigate(tab, resolveUrl(input.url), "load", replyBudgetMs(request));
@@ -1221,7 +1223,11 @@ export const ChromePreviewHostLive = Layer.effectDiscard(
     yield* Effect.promise(() =>
       NodeFSP.rm(downloadsDir, { recursive: true, force: true }).catch(() => undefined),
     );
-    const host = createChromePreviewHost({ getContext: browser.context, downloadsDir });
+    const host = createChromePreviewHost({
+      getContext: browser.context,
+      newPage: browser.newBackgroundPage,
+      downloadsDir,
+    });
     const threads = yield* ThreadManagementService;
     const workers = workerThreads(threads);
     const preferred = chromePreference({

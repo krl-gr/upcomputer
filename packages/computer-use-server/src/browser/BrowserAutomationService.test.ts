@@ -1,9 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeAssert from "node:assert/strict";
+import * as NodeNet from "node:net";
 import * as NodePath from "node:path";
 
-import type { Browser, BrowserContext } from "playwright-core";
-import { test } from "vite-plus/test";
+import { chromium, type Browser, type BrowserContext } from "playwright-core";
+import { onTestFinished, test } from "vite-plus/test";
 
 import type { ServerConfig } from "../../../../apps/server/src/config.ts";
 import {
@@ -208,4 +209,63 @@ test("a missing or failing Chrome sends agents to the built-in browser, and is t
   NodeAssert.equal(await service.ensureAvailable(), true);
   NodeAssert.equal(launches, 2);
   NodeAssert.equal((await service.snapshot()).launchError, undefined);
+});
+
+test("an agent's new tab opens in the background of the managed browser's own context", async (t) => {
+  const port = await new Promise<number>((resolve) => {
+    const server = NodeNet.createServer().listen(0, "127.0.0.1", () => {
+      const address = server.address() as NodeNet.AddressInfo;
+      server.close(() => resolve(address.port));
+    });
+  });
+  let launched: Browser | undefined;
+  for (const channel of ["chrome", undefined]) {
+    try {
+      launched = await chromium.launch({
+        headless: true,
+        args: [`--remote-debugging-port=${port}`],
+        ...(channel ? { channel } : {}),
+      });
+      break;
+    } catch {
+      // Try the next browser.
+    }
+  }
+  if (!launched) {
+    t.skip("Neither Google Chrome nor Playwright's Chromium is installed.");
+    return;
+  }
+  const owner = launched;
+  onTestFinished(() => owner.close());
+  const connected = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  onTestFinished(() => connected.close());
+  const context = connected.contexts()[0]!;
+  const service = createBrowserAutomationService(
+    {
+      stateDir: STATE_DIR,
+      settingsPath: NodePath.join(STATE_DIR, "settings.json"),
+    } as ServerConfig["Service"],
+    {
+      readFile: async () => "",
+      makeDirectory: async () => undefined,
+      writeFile: async () => undefined,
+      renameFile: async () => undefined,
+      launchCdpBrowser: async ({ userDataDir }) => ({
+        browserProcess: {
+          browserName: "chrome",
+          executablePath: "/test/chrome",
+          debuggingPort: port,
+          userDataDir,
+          dispose: async () => undefined,
+        },
+        browser: connected,
+        context,
+      }),
+    },
+  );
+  const page = await service.newBackgroundPage();
+  NodeAssert.equal(page.context(), context);
+  await page.goto("data:text/html,<title>Background</title>");
+  NodeAssert.equal(await page.title(), "Background");
+  NodeAssert.equal(await page.evaluate("document.visibilityState"), "visible");
 });

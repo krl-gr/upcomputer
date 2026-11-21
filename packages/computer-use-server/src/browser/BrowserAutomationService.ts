@@ -108,6 +108,8 @@ export interface BrowserAutomationServiceShape {
    * A failed launch is not retried for a while, so agents fall back quickly.
    */
   readonly ensureAvailable: () => Promise<boolean>;
+  /** A new tab for an agent that leaves a minimized window minimized. */
+  readonly newBackgroundPage: () => Promise<Page>;
   readonly snapshot: () => Promise<BrowserProfileSnapshot>;
   readonly openLoginWindow: (input?: { readonly url?: string }) => Promise<BrowserProfileSnapshot>;
   readonly closeBrowser: () => Promise<BrowserProfileSnapshot>;
@@ -549,6 +551,33 @@ async function launchCdpBrowser(input: {
   }
 }
 
+const targetIdOf = async (page: Page): Promise<string | undefined> => {
+  const session = await page.context().newCDPSession(page);
+  try {
+    return (await session.send("Target.getTargetInfo")).targetInfo.targetId;
+  } catch {
+    return undefined;
+  } finally {
+    await session.detach().catch(() => undefined);
+  }
+};
+
+/** The page Playwright attaches for a target made over CDP. */
+async function waitForPage(context: BrowserContext, targetId: string): Promise<Page> {
+  const attached = context.waitForEvent("page", {
+    predicate: async (page) => (await targetIdOf(page)) === targetId,
+    timeout: 10_000,
+  });
+  // The page may have attached before the wait began.
+  for (const page of context.pages()) {
+    if ((await targetIdOf(page)) === targetId) {
+      void attached.catch(() => undefined);
+      return page;
+    }
+  }
+  return attached;
+}
+
 export function createBrowserAutomationService(
   serverConfig: ServerConfig["Service"],
   dependencies: BrowserAutomationServiceDependencies = {},
@@ -744,6 +773,33 @@ export function createBrowserAutomationService(
     );
   };
 
+  const newBackgroundPage = async (): Promise<Page> => {
+    const currentContext = await getContext();
+    const currentBrowser = currentContext.browser();
+    if (!currentBrowser) return currentContext.newPage();
+    const session = await currentBrowser.newBrowserCDPSession();
+    try {
+      const hadWindow = (await session.send("Target.getTargets")).targetInfos.some(
+        (target) => target.type === "page",
+      );
+      // Playwright's newPage opens a foreground tab, which restores a minimized window.
+      const { targetId } = await session.send("Target.createTarget", {
+        url: "about:blank",
+        background: true,
+      });
+      const page = await waitForPage(currentContext, targetId);
+      if (!hadWindow) {
+        const { windowId } = await session.send("Browser.getWindowForTarget", { targetId });
+        await session
+          .send("Browser.setWindowBounds", { windowId, bounds: { windowState: "minimized" } })
+          .catch(() => undefined);
+      }
+      return page;
+    } finally {
+      await session.detach().catch(() => undefined);
+    }
+  };
+
   const snapshot = async (): Promise<BrowserProfileSnapshot> => {
     const page = activePage && !activePage.isClosed() ? activePage : null;
     const currentTitle = page ? await titleOf(page) : undefined;
@@ -780,6 +836,7 @@ export function createBrowserAutomationService(
   return {
     context: getContext,
     ensureAvailable,
+    newBackgroundPage,
     snapshot,
     openLoginWindow: async (input) => {
       const url = trimText(input?.url);
