@@ -1,3 +1,4 @@
+import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import type { BackgroundNotice, DesktopUpdateState, EnvironmentId } from "@t3tools/contracts";
 import type { useGT } from "gt-react";
 
@@ -22,6 +23,66 @@ export function visibleBackgroundNotices<Notice extends BackgroundNotice>(
     .flatMap((notices) => notices ?? [])
     .filter((notice) => !dismissed.has(backgroundNoticeDismissalKey(notice)))
     .toSorted((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+}
+
+/** How long a computer stays unreachable before its card shows: a quick reconnect shows nothing. */
+const COMPUTER_OUTAGE_GRACE_MS = 60_000;
+
+/**
+ * Trying and failing to connect. A computer switched off (`available`) is not, and one too old
+ * to connect (`unsupported`) has its update card instead.
+ */
+export function isComputerOutagePhase(phase: EnvironmentConnectionPhase): boolean {
+  return (
+    phase === "connecting" || phase === "reconnecting" || phase === "error" || phase === "offline"
+  );
+}
+
+/**
+ * When each unreachable computer stopped being reachable, or was first seen unreachable, which
+ * for one that never connected is the launch. Returns `previous` when nothing changed.
+ */
+export function trackComputerOutages(
+  previous: ReadonlyMap<EnvironmentId, number>,
+  computers: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly unreachable: boolean;
+  }>,
+  now: number,
+): ReadonlyMap<EnvironmentId, number> {
+  const next = new Map<EnvironmentId, number>();
+  for (const { environmentId, unreachable } of computers) {
+    if (unreachable) next.set(environmentId, previous.get(environmentId) ?? now);
+  }
+  const same =
+    next.size === previous.size &&
+    [...next].every(([environmentId, since]) => previous.get(environmentId) === since);
+  return same ? previous : next;
+}
+
+/** The outages past the grace, oldest first, and when the next one passes it. */
+export function shownComputerOutages(
+  starts: ReadonlyMap<EnvironmentId, number>,
+  now: number,
+  grace = COMPUTER_OUTAGE_GRACE_MS,
+): {
+  readonly shown: ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly since: number }>;
+  readonly nextAt: number | null;
+} {
+  const shown: Array<{ readonly environmentId: EnvironmentId; readonly since: number }> = [];
+  let nextAt: number | null = null;
+  for (const [environmentId, since] of starts) {
+    if (now - since >= grace) shown.push({ environmentId, since });
+    else nextAt = Math.min(nextAt ?? Infinity, since + grace);
+  }
+  return { shown: shown.toSorted((left, right) => left.since - right.since), nextAt };
+}
+
+/** A computer's own problems wait while it is unreachable: its one card stands for them. */
+export function withoutUnreachableComputers<
+  Notice extends { readonly environmentId: EnvironmentId },
+>(notices: ReadonlyArray<Notice>, unreachable: ReadonlyMap<EnvironmentId, unknown>): Notice[] {
+  return notices.filter((notice) => !unreachable.has(notice.environmentId));
 }
 
 /** A notice's in-app link, on the computer the notice came from. */

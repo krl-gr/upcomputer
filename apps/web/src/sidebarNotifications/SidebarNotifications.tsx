@@ -1,4 +1,4 @@
-import type { BackgroundNotice, DesktopUpdateState } from "@t3tools/contracts";
+import type { BackgroundNotice, DesktopUpdateState, EnvironmentId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
@@ -16,7 +16,7 @@ import {
   TriangleAlertIcon,
 } from "lucide-react";
 import { Fragment, memo, type ReactNode, useEffect, useEffectEvent, useState } from "react";
-import { T, useGT } from "gt-react";
+import { T, useGT, useMessages } from "gt-react";
 
 import {
   getDesktopUpdateDownloadedVersion,
@@ -33,8 +33,15 @@ import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../componen
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from "../components/ui/sidebar";
 import { Spinner } from "../components/ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { APP_BASE_NAME } from "../branding";
+import { environmentCatalog } from "../connection/catalog";
 import { useLocalStorage } from "../hooks/useLocalStorage";
+import { computerName } from "../sidebarComputers/useSidebarComputers";
 import { useServerConfigs } from "../state/entities";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+import { useAtomCommand } from "../state/use-atom-command";
+import { type ListedClientNotice, useClientNotices } from "./clientNotices";
+import { useComputerOutages } from "./computerOutages";
 import {
   NotificationButton,
   NotificationCard,
@@ -54,6 +61,7 @@ import {
   type SidebarNotificationsDot,
   updateRunFailed,
   visibleBackgroundNotices,
+  withoutUnreachableComputers,
 } from "./sidebarNotifications.logic";
 import { type SidebarUpdates, useSidebarUpdates } from "./useSidebarUpdates";
 import { useSidebarFooterTooltipSide } from "../adaptiveSidebar/adaptiveSidebar";
@@ -79,18 +87,78 @@ const DOT_CLASS: Record<SidebarNotificationsDot, string> = {
 const PROGRESS_RADIUS = 14;
 const PROGRESS_CIRCUMFERENCE = 2 * Math.PI * PROGRESS_RADIUS;
 
-/** Failures that belong to no thread (reminders, automations, scheduled runs, worktree cleanup, remote access). */
+/**
+ * Failures that belong to no thread: the servers' (reminders, automations, scheduled runs,
+ * worktree cleanup, remote access) and this client's (an unreachable computer, a list that
+ * didn't load).
+ */
 function useBackgroundNotices() {
+  const gt = useGT();
+  const m = useMessages();
   const configs = useServerConfigs();
+  const { environments } = useEnvironments();
+  const primaryId = usePrimaryEnvironmentId();
+  const outages = useComputerOutages();
+  const clientNotices = useClientNotices();
+  const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const [dismissedList, setDismissedList] = useLocalStorage(
     DISMISSED_KEY,
     [] as ReadonlyArray<string>,
     DismissedNotices,
   );
-  const notices = visibleBackgroundNotices(
-    [...configs].map(([environmentId, config]) =>
-      config.backgroundNotices?.map((notice) => ({ ...notice, environmentId })),
+  const nameOf = (environmentId: EnvironmentId) => {
+    const presentation = environments.find(
+      (environment) => environment.environmentId === environmentId,
+    );
+    return presentation ? computerName(presentation, primaryId, gt) : null;
+  };
+  const local: ListedClientNotice[] = [
+    ...outages.shown.flatMap(({ environmentId, since }): ListedClientNotice[] => {
+      const computer = nameOf(environmentId);
+      if (computer === null) return [];
+      return [
+        {
+          id: `client:${environmentId}:computer:unreachable`,
+          area: "app",
+          severity: "warning",
+          title: gt("Can't reach {computer}", { computer }),
+          message: gt("{appName} keeps trying. Its chats, bots and tasks show what they had.", {
+            appName: APP_BASE_NAME,
+          }),
+          link: { label: gt("Connections"), path: "/settings/connections" },
+          occurredAt: new Date(since).toISOString(),
+          environmentId,
+          retry: () => void retryEnvironment(environmentId),
+        },
+      ];
+    }),
+    ...withoutUnreachableComputers(clientNotices, outages.unreachable).flatMap(
+      (notice): ListedClientNotice[] => {
+        const computer = nameOf(notice.environmentId);
+        if (computer === null) return [];
+        return [
+          {
+            id: `client:${notice.environmentId}:${notice.id}`,
+            area: "app",
+            severity: notice.severity,
+            title: m(notice.title, { computer }),
+            message: m(notice.message, { computer }),
+            ...(notice.detail ? { detail: notice.detail } : {}),
+            occurredAt: notice.occurredAt,
+            environmentId: notice.environmentId,
+            ...(notice.retry ? { retry: notice.retry } : {}),
+          },
+        ];
+      },
     ),
+  ];
+  const notices = visibleBackgroundNotices<ListedClientNotice>(
+    [
+      ...[...configs].map(([environmentId, config]) =>
+        config.backgroundNotices?.map((notice) => ({ ...notice, environmentId })),
+      ),
+      local,
+    ],
     new Set(dismissedList),
   );
   const dismiss = (keys: ReadonlyArray<string>) =>
@@ -365,6 +433,13 @@ function NotificationsPanel({
         }}
         detail={notice.message}
         details={notice.detail}
+        action={
+          notice.retry ? (
+            <NotificationButton tone="secondary" onClick={notice.retry}>
+              {gt("Retry")}
+            </NotificationButton>
+          ) : null
+        }
         links={
           notice.link ? (
             <NotificationButton

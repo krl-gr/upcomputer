@@ -8,8 +8,12 @@ import {
   describeSidebarNotificationsButton,
   hasFailedUpdate,
   orderNotificationCards,
+  isComputerOutagePhase,
   resolveSidebarUpdateSignal,
+  shownComputerOutages,
+  trackComputerOutages,
   visibleBackgroundNotices,
+  withoutUnreachableComputers,
 } from "./sidebarNotifications.logic";
 
 const notice = (id: string, occurredAt: string): BackgroundNotice => ({
@@ -37,6 +41,81 @@ describe("visibleBackgroundNotices", () => {
     expect(visibleBackgroundNotices([[repeat]], new Set(["a@2026-10-28T08:00:00.000Z"]))).toEqual([
       repeat,
     ]);
+  });
+});
+
+describe("computer outages", () => {
+  const mini = EnvironmentId.make("mini");
+  const laptop = EnvironmentId.make("laptop");
+
+  it("counts only a computer the client keeps failing to reach", () => {
+    expect(
+      (["connecting", "reconnecting", "error", "offline"] as const).every(isComputerOutagePhase),
+    ).toBe(true);
+    // Switched off, connected, or too old to connect: no outage card.
+    expect((["available", "connected", "unsupported"] as const).some(isComputerOutagePhase)).toBe(
+      false,
+    );
+  });
+
+  it("keeps each outage's start until the computer is back", () => {
+    const first = trackComputerOutages(
+      new Map(),
+      [
+        { environmentId: mini, unreachable: true },
+        { environmentId: laptop, unreachable: false },
+      ],
+      1_000,
+    );
+    expect([...first]).toEqual([[mini, 1_000]]);
+    const later = trackComputerOutages(
+      first,
+      [
+        { environmentId: mini, unreachable: true },
+        { environmentId: laptop, unreachable: true },
+      ],
+      5_000,
+    );
+    expect([...later]).toEqual([
+      [mini, 1_000],
+      [laptop, 5_000],
+    ]);
+    // Nothing changed: the same map, so readers don't re-render.
+    expect(
+      trackComputerOutages(
+        later,
+        [
+          { environmentId: mini, unreachable: true },
+          { environmentId: laptop, unreachable: true },
+        ],
+        9_000,
+      ),
+    ).toBe(later);
+    // Back, then gone again: a new outage with a new start.
+    const back = trackComputerOutages(later, [{ environmentId: mini, unreachable: false }], 9_000);
+    expect(back.size).toBe(0);
+    expect([
+      ...trackComputerOutages(back, [{ environmentId: mini, unreachable: true }], 12_000),
+    ]).toEqual([[mini, 12_000]]);
+  });
+
+  it("shows an outage only past the grace, and says when the next one passes it", () => {
+    const starts = new Map([
+      [mini, 0],
+      [laptop, 50_000],
+    ]);
+    expect(shownComputerOutages(starts, 59_999, 60_000)).toEqual({ shown: [], nextAt: 60_000 });
+    expect(shownComputerOutages(starts, 60_000, 60_000)).toEqual({
+      shown: [{ environmentId: mini, since: 0 }],
+      nextAt: 110_000,
+    });
+    expect(shownComputerOutages(starts, 110_000, 60_000).nextAt).toBeNull();
+  });
+
+  it("lets an unreachable computer's one card stand for its other problems", () => {
+    const bots = { environmentId: mini, id: "bots:list" };
+    const tasks = { environmentId: laptop, id: "tasks:list" };
+    expect(withoutUnreachableComputers([bots, tasks], new Map([[mini, 0]]))).toEqual([tasks]);
   });
 });
 
