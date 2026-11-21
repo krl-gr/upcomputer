@@ -67,7 +67,7 @@ import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { AgentTaskCard } from "./AgentTaskCard.tsx";
 import { TaskFilterRow, TaskFiltersButton } from "./TaskFilters.tsx";
 import {
-  TaskGroupMore,
+  TaskGroupShowMore,
   TaskStatusCardGroup,
   TaskStatusGroupsProvider,
   TaskStatusTableGroup,
@@ -106,6 +106,9 @@ import "./taskArrival.css";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import { useComputerName } from "../../../../apps/web/src/sidebarComputers/useSidebarComputers.ts";
 
+/** Rows a status group shows at first, and how many more each "Show more" adds. */
+const GROUP_FIRST_ROWS = 20;
+const GROUP_MORE_ROWS = 50;
 const LIST_ONLY: ReadonlySet<string> = new Set([""]);
 
 /** The canonical statuses in workflow order, with Restore's status next to To Do. */
@@ -1080,17 +1083,25 @@ export function TasksView(props: TasksViewProps) {
     settleArrivals(group.tasks.map(taskKey));
     grouping?.onSettingsChange({ statusGroupOpen: { [group.key]: open } });
   };
-  // The end of an open group with more on the server: its next page loads when this scrolls into view.
-  const groupMore = (key: string, loaded: number, row: boolean) => {
-    const paging = grouping?.paging.get(key);
-    if (!grouping || !paging?.hasMore) return null;
+  const [groupRowLimits, setGroupRowLimits] = useState<Readonly<Record<string, number>>>({});
+  const groupRows = (group: TaskStatusGroup<ScopedTaskListItem>) =>
+    group.tasks.slice(0, groupRowLimits[group.key] ?? GROUP_FIRST_ROWS);
+  // The group's next rows, loading the server's next page when the loaded rows run out.
+  const groupShowMore = (group: TaskStatusGroup<ScopedTaskListItem>, row: boolean) => {
+    const limit = groupRowLimits[group.key] ?? GROUP_FIRST_ROWS;
+    const paging = grouping?.paging.get(group.key);
+    const hidden = Math.max(group.count, group.tasks.length) - limit;
+    if (!grouping || hidden <= 0 || (group.tasks.length <= limit && !paging?.hasMore)) return null;
     return (
-      <TaskGroupMore
-        // A new observer per page, so a short page that leaves the end in view loads the next one.
-        key={`more:${loaded}`}
+      <TaskGroupShowMore
         row={row}
         columnCount={showProjectColumn ? 5 : 4}
-        onVisible={() => grouping.onLoadGroup(key)}
+        hidden={hidden}
+        onShowMore={() => {
+          const next = limit + GROUP_MORE_ROWS;
+          setGroupRowLimits((limits) => ({ ...limits, [group.key]: next }));
+          if (group.tasks.length < next && paging?.hasMore) grouping.onLoadGroup(group.key);
+        }}
       />
     );
   };
@@ -1862,8 +1873,8 @@ export function TasksView(props: TasksViewProps) {
                           group={group}
                           onOpenChange={(open) => setGroupOpen(group, open)}
                         >
-                          {group.tasks.map(renderCard)}
-                          {groupMore(group.key, group.tasks.length, false)}
+                          {groupRows(group).map(renderCard)}
+                          {groupShowMore(group, false)}
                         </TaskStatusCardGroup>
                       ))}
                     </div>
@@ -1879,8 +1890,8 @@ export function TasksView(props: TasksViewProps) {
                             columnCount={showProjectColumn ? 5 : 4}
                             onOpenChange={(open) => setGroupOpen(group, open)}
                           >
-                            {group.tasks.map(renderRow)}
-                            {groupMore(group.key, group.tasks.length, true)}
+                            {groupRows(group).map(renderRow)}
+                            {groupShowMore(group, true)}
                           </TaskStatusTableGroup>
                         ))}
                       </table>

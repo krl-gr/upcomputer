@@ -37,6 +37,18 @@ export function isStatusGroupOpen(open: Readonly<Record<string, boolean>>, key: 
   return open[key] ?? !START_COLLAPSED.has(key);
 }
 
+/** The groups that stay loaded while closed: `kept`, and each one this change closed. */
+export function keptStatusGroups(
+  kept: ReadonlySet<string>,
+  before: Readonly<Record<string, boolean>>,
+  after: Readonly<Record<string, boolean>>,
+): ReadonlySet<string> {
+  const closed = Object.keys(after).filter(
+    (key) => !isStatusGroupOpen(after, key) && isStatusGroupOpen(before, key) && !kept.has(key),
+  );
+  return closed.length === 0 ? kept : new Set([...kept, ...closed]);
+}
+
 export interface TaskStatusGroup<T> {
   readonly key: string;
   readonly title: string;

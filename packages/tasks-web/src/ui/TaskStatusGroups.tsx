@@ -1,7 +1,6 @@
 import {
   createContext,
   useContext,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -20,11 +19,8 @@ import {
   type CollisionDetection,
   type Modifier,
 } from "@dnd-kit/core";
+import { useGT } from "gt-react";
 
-import {
-  Collapsible,
-  CollapsiblePanel,
-} from "../../../../apps/web/src/components/ui/collapsible.tsx";
 import { cn } from "../../../../apps/web/src/lib/utils.ts";
 import {
   SIDEBAR_DIM_TEXT,
@@ -284,7 +280,12 @@ function GroupHeader(props: {
  */
 const STICKY_HEADER_CLASS = "sticky top-0 z-10 bg-background";
 
-/** A group in the card list. Its header lines up with the cards' content on both sides. */
+/**
+ * A group in the card list. Its header lines up with the cards' content on both sides.
+ * The rows mount at the group's first open and stay mounted while it is closed, so it
+ * opens again without rendering anything: the panel only changes height. Closed, the
+ * rows skip layout and paint, and they leave the tab order.
+ */
 export function TaskStatusCardGroup(props: {
   readonly group: TaskStatusGroup<unknown>;
   readonly onOpenChange: (open: boolean) => void;
@@ -293,24 +294,40 @@ export function TaskStatusCardGroup(props: {
   const { group } = props;
   const drag = useGroupDrag(group.key);
   const { setNodeRef } = useDroppable({ id: group.key });
+  const [mounted, setMounted] = useState(group.open);
+  if (group.open && !mounted) setMounted(true);
   return (
     <div
       ref={setNodeRef}
       className={cn(SIDEBAR_SECTION_GAP, drag.dragging && "opacity-50")}
       data-task-status-group={group.key}
     >
-      <Collapsible open={group.open}>
-        <GroupHeader
-          group={group}
-          onOpenChange={props.onOpenChange}
-          className={cn("px-3", STICKY_HEADER_CLASS)}
-        />
-        <CollapsiblePanel>
+      <GroupHeader
+        group={group}
+        onOpenChange={props.onOpenChange}
+        className={cn("px-3", STICKY_HEADER_CLASS)}
+      />
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-200 ease-drawer motion-reduce:transition-none",
+          group.open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+        )}
+        data-task-status-group-panel=""
+        data-open={group.open}
+        inert={!group.open}
+      >
+        {/* Hidden only once the closing motion ends: content-visibility switches discretely. */}
+        <div
+          className={cn(
+            "min-h-0 overflow-clip transition-[content-visibility] transition-discrete duration-200 motion-reduce:transition-none",
+            !group.open && "[content-visibility:hidden]",
+          )}
+        >
           <div className={cn("flex min-w-0 flex-col", SIDEBAR_SECTION_HEADER_GAP)}>
-            {props.children}
+            {mounted ? props.children : null}
           </div>
-        </CollapsiblePanel>
-      </Collapsible>
+        </div>
+      </div>
     </div>
   );
 }
@@ -345,44 +362,32 @@ export function TaskStatusTableGroup(props: {
   );
 }
 
-/**
- * The end of an open group whose server has more: calls `onVisible` once it
- * scrolls into view, as the list's own scroller shows it.
- */
-export function TaskGroupMore(props: {
+/** The end of a group with more tasks than it shows: "Show more" and how many are left. */
+export function TaskGroupShowMore(props: {
   readonly row: boolean;
   readonly columnCount: number;
-  readonly onVisible: () => void;
+  readonly hidden: number;
+  readonly onShowMore: () => void;
 }) {
-  const ref = useRef<HTMLElement | null>(null);
-  const onVisible = useRef(props.onVisible);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the observer below calls the latest handler
-  useEffect(() => {
-    onVisible.current = props.onVisible;
-  });
-  // One observer for the element's life: a new one reports "visible" again before the rows
-  // of the page just loaded have rendered, and would load the next page too.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- watches the element's visibility in its scroller
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) onVisible.current();
-      },
-      { rootMargin: "0px 0px 400px 0px" },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-  const attach = (node: HTMLElement | null) => {
-    ref.current = node;
-  };
+  const gt = useGT();
+  const button = (
+    <button
+      type="button"
+      data-task-group-show-more=""
+      className="flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/70"
+      onClick={props.onShowMore}
+    >
+      {gt("Show more")}
+      <span className={cn("tabular-nums", SIDEBAR_DIM_TEXT)}>{props.hidden}</span>
+    </button>
+  );
   return props.row ? (
-    <tr aria-hidden data-task-group-more="">
-      <td colSpan={props.columnCount} className="h-px p-0" ref={attach} />
+    <tr>
+      <td colSpan={props.columnCount} className="py-1">
+        {button}
+      </td>
     </tr>
   ) : (
-    <div aria-hidden data-task-group-more="" className="h-px" ref={attach} />
+    <div className="flex px-2">{button}</div>
   );
 }

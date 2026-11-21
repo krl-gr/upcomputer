@@ -2,7 +2,12 @@ import * as NodeAssert from "node:assert/strict";
 import { test } from "vite-plus/test";
 
 import { planVisibleTaskMove } from "./taskReorder.ts";
-import { mergedGroupOrder, taskStatusGroups, tasksOfGroup } from "./taskStatusGroups.ts";
+import {
+  keptStatusGroups,
+  mergedGroupOrder,
+  taskStatusGroups,
+  tasksOfGroup,
+} from "./taskStatusGroups.ts";
 
 const task = (id: string, status: string) => ({ id, environmentId: "local", status });
 
@@ -103,5 +108,18 @@ test("in a grouped list a task moves among its own group's tasks only", () => {
     down.plan.request,
     { id: "b", afterTaskId: "c" },
     "neighbors from its group only",
+  );
+});
+
+test("a group closed after it was open stays loaded; one never opened does not", () => {
+  const none: ReadonlySet<string> = new Set();
+  // Backlog is open by default and Done closed: closing Backlog keeps it, Done was never open.
+  const closedBacklog = keptStatusGroups(none, {}, { backlog: false, done: false });
+  NodeAssert.deepEqual([...closedBacklog], ["backlog"]);
+  const opened = keptStatusGroups(closedBacklog, { backlog: false }, { done: true });
+  NodeAssert.equal(opened, closedBacklog, "opening a group changes nothing kept");
+  NodeAssert.deepEqual(
+    [...keptStatusGroups(opened, { done: true }, { done: false })],
+    ["backlog", "done"],
   );
 });
