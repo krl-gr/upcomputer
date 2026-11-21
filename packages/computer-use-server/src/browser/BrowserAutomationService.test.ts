@@ -205,8 +205,12 @@ test("a missing or failing Chrome sends agents to the built-in browser, and is t
   NodeAssert.equal(await service.ensureAvailable(), false);
   NodeAssert.equal(launches, 1);
 
+  // Two agents' first calls at once share a single launch.
   clock += 5 * 60_000;
-  NodeAssert.equal(await service.ensureAvailable(), true);
+  NodeAssert.deepEqual(await Promise.all([service.ensureAvailable(), service.ensureAvailable()]), [
+    true,
+    true,
+  ]);
   NodeAssert.equal(launches, 2);
   NodeAssert.equal((await service.snapshot()).launchError, undefined);
 });

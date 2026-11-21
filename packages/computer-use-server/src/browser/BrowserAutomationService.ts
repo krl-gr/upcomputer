@@ -718,27 +718,37 @@ export function createBrowserAutomationService(
     await removeRuntimeMetadata();
   };
 
+  const connectOrLaunch = async (): Promise<void> => {
+    try {
+      const reconnected = await reconnectFromRuntimeMetadata();
+      if (!reconnected) {
+        const launched = await launchBrowser({ userDataDir: profilePaths.defaultProfileDir });
+        await writeRuntimeMetadata(launched);
+        browserProcess = launched.browserProcess;
+        browser = launched.browser;
+        context = launched.context;
+        browser.on("disconnected", clearBrowserHandles);
+      }
+    } catch (cause) {
+      launchFailure = {
+        message: cause instanceof Error ? cause.message : String(cause),
+        at: now(),
+      };
+      throw cause;
+    }
+    launchFailure = null;
+  };
+
+  // Concurrent first calls share one launch: a second Chrome on the same profile would fail.
+  let pendingStart: Promise<void> | null = null;
+
   const getContext = async (): Promise<BrowserContext> => {
     await makeDirectory(profilePaths.defaultProfileDir);
     if (!context) {
-      try {
-        const reconnected = await reconnectFromRuntimeMetadata();
-        if (!reconnected) {
-          const launched = await launchBrowser({ userDataDir: profilePaths.defaultProfileDir });
-          await writeRuntimeMetadata(launched);
-          browserProcess = launched.browserProcess;
-          browser = launched.browser;
-          context = launched.context;
-          browser.on("disconnected", clearBrowserHandles);
-        }
-      } catch (cause) {
-        launchFailure = {
-          message: cause instanceof Error ? cause.message : String(cause),
-          at: now(),
-        };
-        throw cause;
-      }
-      launchFailure = null;
+      pendingStart ??= connectOrLaunch().finally(() => {
+        pendingStart = null;
+      });
+      await pendingStart;
     }
 
     const currentContext = context;
