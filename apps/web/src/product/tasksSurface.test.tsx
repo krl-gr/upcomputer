@@ -93,7 +93,10 @@ vi.mock("./productEntry", async () => {
 // The command palette's thread, beside which its panel entries open.
 vi.mock("../hooks/useThreadRouteTarget", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../hooks/useThreadRouteTarget")>()),
-  useThreadRouteRef: () => ({ environmentId: "local", threadId: "thread" }),
+  useThreadRouteTarget: () => ({
+    kind: "server",
+    threadRef: { environmentId: "local", threadId: "thread" },
+  }),
 }));
 
 // One environment with a Tasks server holding a routine and a task in Health and in Life OS.
