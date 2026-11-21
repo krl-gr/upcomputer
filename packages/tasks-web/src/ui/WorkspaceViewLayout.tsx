@@ -43,6 +43,24 @@ function HeaderAction(props: { readonly action: WorkspaceViewAction }) {
   );
 }
 
+/** The view's action over a headerless list: the large round button in the corner. */
+function FloatingMainAction(props: { readonly action: WorkspaceViewAction }) {
+  const { action } = props;
+  return (
+    <Button
+      variant="floating"
+      size="icon-floating"
+      aria-label={action.ariaLabel}
+      data-track={action.track}
+      disabled={action.disabled}
+      onClick={action.onClick}
+      title={action.title ?? action.ariaLabel}
+    >
+      {action.icon ?? <PlusIcon />}
+    </Button>
+  );
+}
+
 /**
  * The horizontal gutters of upstream's `WorkspacePageHeader`, so page content
  * starts under the page title and ends under the header's last control.
@@ -171,14 +189,7 @@ export function WorkspaceViewLayout({
           toolbar || action ? (
             <FloatingActions>
               {toolbar}
-              {action ? (
-                <HeaderAction
-                  action={{
-                    ...action,
-                    icon: action.hideIcon ? undefined : (action.icon ?? <PlusIcon />),
-                  }}
-                />
-              ) : null}
+              {action ? <FloatingMainAction action={action} /> : null}
             </FloatingActions>
           ) : null
         ) : header && (leadingAction || title || switches || toolbar || action) ? (

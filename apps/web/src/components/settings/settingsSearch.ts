@@ -391,7 +391,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: msg("Tasks in the panel menu"),
     to: "/settings/appearance",
     searchTerms: [
-      msg("right panel menu tasks my tasks worker tasks automations routines show hide"),
+      msg("right panel menu tasks my tasks worker tasks automations my routines show hide"),
     ],
   },
   {

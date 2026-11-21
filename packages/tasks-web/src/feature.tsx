@@ -132,6 +132,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
     {
       id: "tasks",
       label: msg("Tasks"),
+      description: msg("Every view in one tab, with its switches on top."),
       shortcut: "K",
       icon: ListTodoIcon,
       load: () => import("./ui/TasksPanel.tsx"),
@@ -140,6 +141,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
     {
       id: "tasks.mine",
       label: msg("My tasks"),
+      description: msg("Your own tasks, with the week on top."),
       shortcut: "Y",
       icon: UserIcon,
       load: () =>
@@ -148,6 +150,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
     {
       id: "tasks.workers",
       label: msg("Worker tasks"),
+      description: msg("The tasks your workers do."),
       shortcut: "W",
       icon: BotIcon,
       load: () =>
@@ -156,6 +159,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
     {
       id: "tasks.automations",
       label: msg("Automations"),
+      description: msg("Work your workers start on a schedule."),
       shortcut: "A",
       icon: CalendarClockIcon,
       load: () =>
@@ -165,7 +169,8 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
     },
     {
       id: "tasks.routines",
-      label: msg("Routines"),
+      label: msg("My routines"),
+      description: msg("Your own repeating habits and chores, with the week on top."),
       shortcut: "R",
       icon: RepeatIcon,
       load: () =>

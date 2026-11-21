@@ -344,7 +344,6 @@ function PlannerBody(props: {
             props.headerless && !listSelect.active ? (
               <FloatingActions>
                 <ListActions
-                  newLast
                   environments={props.environments}
                   onEnvironmentChange={props.onEnvironmentChange}
                   showArchived={showArchived}

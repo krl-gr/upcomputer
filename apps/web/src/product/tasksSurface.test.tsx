@@ -364,7 +364,7 @@ describe("the Tasks surface in the right panel", () => {
       "My tasksY",
       "Worker tasksW",
       "AutomationsA",
-      "RoutinesR",
+      "My routinesR",
     ]);
 
     pressKey(items[0]!, "k");

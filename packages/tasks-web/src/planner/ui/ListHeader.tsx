@@ -22,6 +22,7 @@ import {
 } from "../../../../../apps/web/src/components/ui/menu.tsx";
 import { isElectron } from "../../../../../apps/web/src/env.ts";
 import { WorkspacePageHeader } from "../../../../../apps/web/src/extensionApi.ts";
+import { useFloatingActions } from "../../ui/FloatingActions.tsx";
 import type { PlannerTask } from "../data/pendingOps.ts";
 import type { PlannerKind } from "../data/preferences.ts";
 import { BulkActions } from "./BulkActions.tsx";
@@ -107,10 +108,7 @@ type ListActionsProps = Pick<
   | "canHideWeek"
   | "weekHidden"
   | "onToggleWeek"
-> & {
-  /** Floating over the list: New comes last, in the corner, as in the other panel views. */
-  readonly newLast?: boolean;
-};
+>;
 
 /**
  * The list's own buttons: New, the list menu (Select, Show archive,
@@ -121,12 +119,16 @@ export function ListActions(props: ListActionsProps) {
   const gt = useGT();
   const { environmentId, windows, kind } = usePlanner();
   const pickEnvironment = props.environments.length > 1;
+  // Over a headerless list the buttons are round, and New comes last, in the corner.
+  const floating = useFloatingActions();
+  const variant = floating ? "floating" : "outline";
+  const size = floating ? "icon-floating-sm" : "icon-sm";
   const create = (
     <IconAction
       label={kind === "routine" ? gt("New routine") : gt("New task")}
       track={kind === "routine" ? "planner.create_routine" : "planner.create_task"}
-      variant="outline"
-      size="icon-sm"
+      variant={variant}
+      size={floating ? "icon-floating" : size}
       onClick={() => windows.openCreate(kind === "routine" ? { kind } : {})}
     >
       <PlusIcon />
@@ -135,7 +137,7 @@ export function ListActions(props: ListActionsProps) {
   const menu = (
     <Menu>
       <MenuTrigger
-        render={<Button size="icon-sm" variant="outline" aria-label={gt("List options")} />}
+        render={<Button size={size} variant={variant} aria-label={gt("List options")} />}
       >
         <MoreHorizontalIcon />
       </MenuTrigger>
@@ -174,14 +176,14 @@ export function ListActions(props: ListActionsProps) {
   const week = props.canHideWeek ? (
     <IconAction
       label={props.weekHidden ? gt("Show the week") : gt("Hide the week")}
-      variant="outline"
-      size="icon-sm"
+      variant={variant}
+      size={size}
       onClick={props.onToggleWeek}
     >
       {props.weekHidden ? <PanelRightOpenIcon /> : <PanelRightCloseIcon />}
     </IconAction>
   ) : null;
-  return props.newLast ? (
+  return floating ? (
     <>
       {week}
       {menu}

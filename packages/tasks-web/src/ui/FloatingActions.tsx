@@ -1,24 +1,31 @@
-import type { ReactNode } from "react";
+import { createContext, use, type ReactNode } from "react";
 
 /**
  * Bottom padding for a list under `FloatingActions`, so its last row scrolls
- * clear of the buttons: their 12px offset, their 38px bar and a 14px gap.
+ * clear of the buttons: their 12px offset, the 48px main button and a 20px gap.
  */
-export const FLOATING_ACTIONS_CLEARANCE_CLASS = "pb-16";
+export const FLOATING_ACTIONS_CLEARANCE_CLASS = "pb-20";
+
+const FloatingActionsContext = createContext(false);
+
+/** True inside `FloatingActions`: a list's button there takes the floating round look. */
+export function useFloatingActions(): boolean {
+  return use(FloatingActionsContext);
+}
 
 /**
- * A headerless panel view's controls: the header's own buttons in a small bar
- * over the bottom right corner of the list. The parent is the positioned box.
+ * A headerless panel view's controls: separate round buttons over the bottom
+ * right corner of the list, the main one last. The parent is the positioned box.
  */
 export function FloatingActions(props: { readonly children: ReactNode }) {
   return (
-    <div
-      data-tasks-floating-actions=""
-      className="pointer-events-none absolute right-3 bottom-3 z-20 flex justify-end"
-    >
-      <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-border bg-background p-1 shadow-md">
+    <FloatingActionsContext value={true}>
+      <div
+        data-tasks-floating-actions=""
+        className="pointer-events-none absolute right-3 bottom-3 z-20 flex items-center justify-end gap-2 *:pointer-events-auto"
+      >
         {props.children}
       </div>
-    </div>
+    </FloatingActionsContext>
   );
 }

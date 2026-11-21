@@ -22,5 +22,5 @@ export function useHiddenRightPanelSurfaces() {
       const rest = current.filter((id) => id !== surfaceId);
       return shown ? rest : [...rest, surfaceId];
     });
-  return { hidden, setShown, reset: () => setHidden(NONE_HIDDEN) } as const;
+  return { hidden, setShown } as const;
 }

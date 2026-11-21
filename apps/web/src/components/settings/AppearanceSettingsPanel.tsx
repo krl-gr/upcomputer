@@ -38,7 +38,7 @@ import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
 import { TypographySection } from "./TypographySettings";
 import { ThreadListSettingsRow } from "../../sidebarThreadRow/ThreadListSettingsRow";
 import { ThreadDetailsItemsRow } from "./ThreadDetailsItemsRow";
-import { RightPanelSurfacesSettingsRow } from "../../product/RightPanelSurfacesSettingsRow";
+import { RightPanelSurfacesSettingsSection } from "../../product/RightPanelSurfacesSettingsSection";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: msg("Artwork"),
@@ -326,7 +326,6 @@ export function AppearanceSettingsPanel() {
         />
         <ThreadListSettingsRow />
         <ThreadDetailsItemsRow />
-        <RightPanelSurfacesSettingsRow />
         <SettingsRow
           {...searchableSetting("effort-display")}
           description={gt(
@@ -526,6 +525,8 @@ export function AppearanceSettingsPanel() {
           />
         </AdvancedSettings>
       </SettingsSection>
+
+      <RightPanelSurfacesSettingsSection />
 
       <TypographySection />
     </SettingsPageContainer>
