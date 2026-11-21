@@ -30,6 +30,7 @@ import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { findProjectForChangeRequest } from "@t3tools/client-runtime/change-request-links";
 import { pullRequestLinkPanelTarget, useOpenPrLink } from "~/lib/openPullRequestLink";
 import { useClientSettings } from "~/hooks/useSettings";
+import { useIssuesShown } from "~/issuesSetting/issuesShown";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { usePullRequestIntentPrefetch } from "./usePullRequestIntentPrefetch";
 import { cn } from "~/lib/utils";
@@ -420,7 +421,8 @@ export function ThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
 function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThreadRef }) {
   const gt = useGT();
   const thread = useThreadShell(threadRef);
-  const issues = thread?.issues ?? [];
+  const issuesShown = useIssuesShown();
+  const issues = (issuesShown ? thread?.issues : undefined) ?? [];
   const projects = useProjects();
   const environmentProjects = projects
     .filter((project) => project.environmentId === threadRef.environmentId)

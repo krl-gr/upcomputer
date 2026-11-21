@@ -87,6 +87,8 @@ const SURFACE_SETTINGS_SEARCH_IDS: Partial<
 export function isProductSettingsSearchItemVisible(item: { readonly id: string }): boolean {
   const owner = SURFACE_SETTINGS_SEARCH_IDS[item.id];
   if (owner && WEB_PRODUCT.surfaces[owner[0]] !== owner[1]) return false;
+  // The Issues switch exists only where the `issues` flag leaves Issues opt-in.
+  if (item.id === "issues-page" && WEB_PRODUCT.flags.issues) return false;
   return isProductSettingsSearchItemShown(WEB_PRODUCT.flags, item.id);
 }
 

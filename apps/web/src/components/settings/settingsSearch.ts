@@ -520,6 +520,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("hide fold running monitoring threads inbox sidebar shelf")],
   },
   {
+    id: "issues-page",
+    title: msg("Issues"),
+    to: "/settings/general",
+    searchTerms: [msg("issues page sidebar tracker github linear bugs")],
+  },
+  {
     id: "boring-sidebar",
     title: msg("Boring sidebar (group by project)"),
     to: "/settings/labs",

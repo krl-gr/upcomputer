@@ -171,6 +171,7 @@ import { cn } from "../lib/utils";
 import { resolveRemoteOpenState, useRemoteOpenResolution } from "../remoteOpen";
 import { rightPanelHostRef, useRightPanelStore } from "../rightPanelStore";
 import { useOpenIssueLink } from "../lib/openIssueLink";
+import { useIssuesShown } from "../issuesSetting/issuesShown";
 import { issueTrackerEnvironment } from "../state/issueTrackers";
 import { useEnvironmentQuery } from "../state/query";
 import { readThreadShell, useProjects } from "../state/entities";
@@ -691,8 +692,15 @@ function useChatMarkdownState({
       },
     );
   };
-  const { pullRequestsEnabled, issuesEnabled, availableEditors, revealInFileManager, isMacOS } =
-    useAtomValue(markdownServerConfigFieldsAtom(environmentId));
+  const {
+    pullRequestsEnabled,
+    issuesEnabled: issuesSupported,
+    availableEditors,
+    revealInFileManager,
+    isMacOS,
+  } = useAtomValue(markdownServerConfigFieldsAtom(environmentId));
+  const issuesShown = useIssuesShown();
+  const issuesEnabled = issuesSupported && issuesShown;
   const revealInFileManagerLabel =
     revealInFileManager === undefined
       ? undefined

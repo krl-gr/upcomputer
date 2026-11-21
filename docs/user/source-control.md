@@ -366,6 +366,10 @@ out from the matching organization and repository.
 
 ## Issues
 
+The Issues page is off by default. Turn it on in **Settings → General → Issues**. Until then
+the sidebar and the command palette do not offer it, and issue links in chats open in your
+browser.
+
 The Issues page lists the issues of every project whose remote is on GitHub, GitLab, Azure
 DevOps or Forgejo, grouped per tracker account. Open it from the sidebar's utility row or with
 **Open issues** in the command palette. Filter by open or closed, by your involvement
