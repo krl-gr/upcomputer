@@ -4,7 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
 import {
-  isComputerOutagePhase,
+  isComputerOutage,
   shownComputerOutages,
   trackComputerOutages,
 } from "./sidebarNotifications.logic";
@@ -25,7 +25,7 @@ function follow() {
         starts,
         [...presentations].map(([environmentId, presentation]) => ({
           environmentId,
-          unreachable: isComputerOutagePhase(presentation.connection.phase),
+          unreachable: isComputerOutage(presentation.connection),
         })),
         Date.now(),
       );

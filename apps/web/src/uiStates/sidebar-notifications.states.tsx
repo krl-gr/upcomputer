@@ -67,6 +67,11 @@ vi.mock("../state/environments", async (importOriginal) => ({
         label: "Studio",
         connection: { phase: "reconnecting" },
       },
+      {
+        environmentId: "environment-office",
+        label: "Office",
+        connection: { phase: "error", error: "This device's pairing was revoked." },
+      },
     ],
   }),
   useEnvironmentProviders: () => new Map([["environment-ui-states", source.providers]]),
@@ -110,6 +115,7 @@ vi.mock("../components/sidebar/useUpdateEverything", async (importOriginal) => {
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-ui-states");
 const STUDIO_ID = EnvironmentId.make("environment-studio");
+const OFFICE_ID = EnvironmentId.make("environment-office");
 const NOW = Date.now();
 const minutesAgo = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
 
@@ -516,6 +522,9 @@ const CLIENT_STATES: ReadonlyArray<UiState> = [
   }),
   bell("a computer stays unreachable: amber tile, Retry and Connections", {
     outages: [STUDIO_ID],
+  }),
+  bell("a connection stopped on an error: red tile, the reason in Details", {
+    outages: [OFFICE_ID],
   }),
   bell("an unreachable computer's card stands for its failed lists", {
     outages: [STUDIO_ID],

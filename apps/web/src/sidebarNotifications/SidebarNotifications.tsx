@@ -1,4 +1,5 @@
 import type { BackgroundNotice, DesktopUpdateState, EnvironmentId } from "@t3tools/contracts";
+import { connectionErrorText } from "@t3tools/client-runtime/connection";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
@@ -106,25 +107,36 @@ function useBackgroundNotices() {
     [] as ReadonlyArray<string>,
     DismissedNotices,
   );
+  const presentationOf = (environmentId: EnvironmentId) =>
+    environments.find((environment) => environment.environmentId === environmentId);
   const nameOf = (environmentId: EnvironmentId) => {
-    const presentation = environments.find(
-      (environment) => environment.environmentId === environmentId,
-    );
+    const presentation = presentationOf(environmentId);
     return presentation ? computerName(presentation, primaryId, gt) : null;
   };
   const local: ListedClientNotice[] = [
     ...outages.shown.flatMap(({ environmentId, since }): ListedClientNotice[] => {
       const computer = nameOf(environmentId);
       if (computer === null) return [];
+      const connection = presentationOf(environmentId)?.connection;
+      // A connection stopped on an error (a revoked pairing) waits for Retry or a fix.
+      const stopped = connection?.phase === "error";
+      const detail = stopped ? connectionErrorText(connection, m) : null;
       return [
         {
           id: `client:${environmentId}:computer:unreachable`,
           area: "app",
-          severity: "warning",
-          title: gt("Can't reach {computer}", { computer }),
-          message: gt("{appName} keeps trying. Its chats, bots and tasks show what they had.", {
-            appName: APP_BASE_NAME,
-          }),
+          severity: stopped ? "error" : "warning",
+          title: stopped
+            ? gt("Can't connect to {computer}", { computer })
+            : gt("Can't reach {computer}", { computer }),
+          message: stopped
+            ? gt("{appName} stopped trying. Retry, or open Connections to see why.", {
+                appName: APP_BASE_NAME,
+              })
+            : gt("{appName} keeps trying. Its chats, bots and tasks show what they had.", {
+                appName: APP_BASE_NAME,
+              }),
+          ...(detail ? { detail } : {}),
           link: { label: gt("Connections"), path: "/settings/connections" },
           occurredAt: new Date(since).toISOString(),
           environmentId,

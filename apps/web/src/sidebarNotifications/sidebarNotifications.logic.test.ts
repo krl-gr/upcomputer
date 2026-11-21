@@ -1,4 +1,5 @@
 import { gtFallback } from "gt-react";
+import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import { describe, expect, it } from "vite-plus/test";
 
 import { EnvironmentId, type BackgroundNotice } from "@t3tools/contracts";
@@ -8,7 +9,7 @@ import {
   describeSidebarNotificationsButton,
   hasFailedUpdate,
   orderNotificationCards,
-  isComputerOutagePhase,
+  isComputerOutage,
   resolveSidebarUpdateSignal,
   shownComputerOutages,
   trackComputerOutages,
@@ -49,13 +50,12 @@ describe("computer outages", () => {
   const laptop = EnvironmentId.make("laptop");
 
   it("counts only a computer the client keeps failing to reach", () => {
-    expect(
-      (["connecting", "reconnecting", "error", "offline"] as const).every(isComputerOutagePhase),
-    ).toBe(true);
+    const outage = (phase: EnvironmentConnectionPhase) => isComputerOutage({ phase });
+    expect((["connecting", "reconnecting", "error", "offline"] as const).every(outage)).toBe(true);
     // Switched off, connected, or too old to connect: no outage card.
-    expect((["available", "connected", "unsupported"] as const).some(isComputerOutagePhase)).toBe(
-      false,
-    );
+    expect((["available", "connected", "unsupported"] as const).some(outage)).toBe(false);
+    // Reachable, waiting for the user to approve this device on the host.
+    expect(isComputerOutage({ phase: "reconnecting", awaitingApproval: true })).toBe(false);
   });
 
   it("keeps each outage's start until the computer is back", () => {

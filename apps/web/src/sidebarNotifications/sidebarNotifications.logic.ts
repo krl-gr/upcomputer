@@ -1,4 +1,4 @@
-import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import type { BackgroundNotice, DesktopUpdateState, EnvironmentId } from "@t3tools/contracts";
 import type { useGT } from "gt-react";
 
@@ -29,10 +29,15 @@ export function visibleBackgroundNotices<Notice extends BackgroundNotice>(
 const COMPUTER_OUTAGE_GRACE_MS = 60_000;
 
 /**
- * Trying and failing to connect. A computer switched off (`available`) is not, and one too old
- * to connect (`unsupported`) has its update card instead.
+ * Trying and failing to connect, or stopped on an error. A computer switched off (`available`) is
+ * not, one too old to connect (`unsupported`) has its update card instead, and one waiting for the
+ * user to approve this device says so in the composer.
  */
-export function isComputerOutagePhase(phase: EnvironmentConnectionPhase): boolean {
+export function isComputerOutage(
+  connection: Pick<EnvironmentConnectionPresentation, "phase" | "awaitingApproval">,
+): boolean {
+  const { phase } = connection;
+  if (connection.awaitingApproval) return false;
   return (
     phase === "connecting" || phase === "reconnecting" || phase === "error" || phase === "offline"
   );
