@@ -1,8 +1,9 @@
 /*
  * The hint's loop: the pointer clicks the bell, the popover opens, and Send
  * feedback lights up. Only transform and opacity move, so it stays on the
- * compositor. Without the animation the rules below draw the last frame,
- * which is the still that reduced motion shows.
+ * compositor. It plays three times and stops at 88% of the third, the frame
+ * with Send feedback lit, so nothing repaints after. Without the animation the
+ * rules below draw that frame, which is the still reduced motion shows.
  */
 [data-sfh="stage"] {
   --sfh-loop: 4s;
@@ -21,7 +22,8 @@
   [data-sfh="button-lit"] {
     animation-duration: var(--sfh-loop);
     animation-timing-function: linear;
-    animation-iteration-count: infinite;
+    animation-iteration-count: 2.88;
+    animation-fill-mode: forwards;
   }
   [data-sfh="pointer"] {
     animation-name: sfh-pointer;

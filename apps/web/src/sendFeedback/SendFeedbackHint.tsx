@@ -17,8 +17,8 @@ function SendFeedbackLabel() {
 
 /**
  * A corner of the app in small: the pointer clicks the bell, the notifications
- * popover opens and Send feedback lights up. It loops; reduced motion gets the
- * last frame as a still.
+ * popover opens and Send feedback lights up. It plays three times and rests on
+ * that frame; reduced motion gets it as a still.
  */
 function SendFeedbackLoop() {
   return (
