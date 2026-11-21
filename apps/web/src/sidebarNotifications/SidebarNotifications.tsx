@@ -9,6 +9,7 @@ import {
   CircleAlertIcon,
   ExternalLinkIcon,
   InfoIcon,
+  MessageSquareTextIcon,
   RefreshCwIcon,
   RotateCcwIcon,
   ServerIcon,
@@ -57,7 +58,10 @@ import {
 import { type SidebarUpdates, useSidebarUpdates } from "./useSidebarUpdates";
 import { useSidebarFooterTooltipSide } from "../adaptiveSidebar/adaptiveSidebar";
 import { BadgedIcon } from "../badgedIcon/BadgedIcon";
-import { useSurveyForm } from "../userSurvey/surveyParts";
+import { SendFeedbackForm } from "../sendFeedback/SendFeedbackForm";
+import { useSendFeedbackRequests } from "../sendFeedback/sendFeedbackStore";
+import { useSendFeedback, useSendFeedbackForm } from "../sendFeedback/useSendFeedback";
+import { SurveyAction, SurveyAutoHeight, useSurveyForm } from "../userSurvey/surveyParts";
 import { UserSurveyCard } from "../userSurvey/UserSurveyCard";
 import { UserSurveyDialog } from "../userSurvey/UserSurveyDialog";
 import { useUserSurvey } from "../userSurvey/useUserSurvey";
@@ -110,6 +114,21 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
     userSurvey?.submit ?? null,
     userSurvey?.partial ?? null,
   );
+  const feedbackSource = useSendFeedback();
+  const feedback = useSendFeedbackForm(feedbackSource.submit);
+  const [view, setView] = useState<"list" | "feedback">("list");
+  // The command palette asks for the form: a new request opens the popover on it.
+  const feedbackRequests = useSendFeedbackRequests();
+  const [seenFeedbackRequests, setSeenFeedbackRequests] = useState(feedbackRequests);
+  if (feedbackRequests !== seenFeedbackRequests) {
+    setSeenFeedbackRequests(feedbackRequests);
+    setView("feedback");
+    setOpen(true);
+  }
+  const showList = () => {
+    setView("list");
+    if (feedback.status.kind === "sent") feedback.reset();
+  };
   const { dot, label } = describeSidebarNotificationsButton(
     {
       severities: notices.map((notice) => notice.severity),
@@ -133,6 +152,10 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
           onOpenChange={(next) => {
             setOpen(next);
             if (next) userSurvey?.shown();
+          }}
+          // Closing keeps the draft, and the bell opens on the notifications again.
+          onOpenChangeComplete={(next) => {
+            if (!next) showList();
           }}
         >
           <Tooltip>
@@ -163,31 +186,47 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
             side={tooltipSide}
             align={tooltipSide === "top" ? "start" : "end"}
             padding="compact"
-            className="w-85"
+            className="w-85 max-w-[calc(100vw-1rem)]"
           >
-            <NotificationsPanel
-              updates={updates}
-              notices={notices}
-              dismiss={dismiss}
-              surveyCard={
-                userSurvey ? (
-                  <UserSurveyCard
-                    key={userSurvey.survey.id}
-                    survey={userSurvey.survey}
-                    draft={surveyForm.draft}
-                    onStart={(draft) => {
-                      surveyForm.start(draft);
-                      setOpen(false);
-                      setSurveyOpen(true);
-                    }}
-                    onDismiss={() => {
-                      if (surveyForm.leftOn) userSurvey.dismiss(surveyForm.leftOn);
-                    }}
-                  />
-                ) : null
-              }
-              onClose={() => setOpen(false)}
-            />
+            <SurveyAutoHeight>
+              {view === "feedback" ? (
+                <SendFeedbackForm
+                  draft={feedback.draft}
+                  status={feedback.status}
+                  accountEmail={feedbackSource.accountEmail}
+                  systemInfo={feedbackSource.systemInfo}
+                  onDraftChange={feedback.setDraft}
+                  onSubmit={feedback.submit}
+                  onBack={showList}
+                  onDone={showList}
+                />
+              ) : (
+                <NotificationsPanel
+                  updates={updates}
+                  notices={notices}
+                  dismiss={dismiss}
+                  surveyCard={
+                    userSurvey ? (
+                      <UserSurveyCard
+                        key={userSurvey.survey.id}
+                        survey={userSurvey.survey}
+                        draft={surveyForm.draft}
+                        onStart={(draft) => {
+                          surveyForm.start(draft);
+                          setOpen(false);
+                          setSurveyOpen(true);
+                        }}
+                        onDismiss={() => {
+                          if (surveyForm.leftOn) userSurvey.dismiss(surveyForm.leftOn);
+                        }}
+                      />
+                    ) : null
+                  }
+                  onClose={() => setOpen(false)}
+                  onSendFeedback={() => setView("feedback")}
+                />
+              )}
+            </SurveyAutoHeight>
           </PopoverPopup>
         </Popover>
         <UpdateEverythingDialog
@@ -287,6 +326,7 @@ function NotificationsPanel({
   dismiss,
   surveyCard,
   onClose,
+  onSendFeedback,
 }: {
   readonly updates: SidebarUpdates;
   readonly notices: ReturnType<typeof useBackgroundNotices>["notices"];
@@ -294,6 +334,8 @@ function NotificationsPanel({
   /** The survey the server offers, as its card; it ranks with the notices. */
   readonly surveyCard: ReactNode;
   readonly onClose: () => void;
+  /** Turns the popover to the feedback form. */
+  readonly onSendFeedback: () => void;
 }) {
   const gt = useGT();
   const navigate = useNavigate();
@@ -546,6 +588,17 @@ function NotificationsPanel({
           ))}
         </ol>
       )}
+      <div className="mt-2 flex border-t border-foreground/7 pt-1.5">
+        <SurveyAction
+          size="sm"
+          tone="quiet"
+          data-track="notifications.send-feedback"
+          onClick={onSendFeedback}
+        >
+          <MessageSquareTextIcon aria-hidden />
+          <T>Send feedback</T>
+        </SurveyAction>
+      </div>
     </div>
   );
 }

@@ -186,8 +186,10 @@ import {
 } from "../rightPanelStore";
 import {
   isProductFeatureShown,
+  productSurface,
   resolveProductThreadReferenceCopyTarget,
 } from "../product/productFlags";
+import { useSendFeedbackPaletteItem } from "../sendFeedback/useSendFeedbackPaletteItem";
 import { useThreadProjectMovePaletteItem } from "../threadProjectMove/useThreadProjectMovePaletteItem";
 import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
@@ -520,6 +522,7 @@ function OpenCommandPaletteDialog(props: {
   const moveThreadItem = useThreadProjectMovePaletteItem(
     activeThread ? scopeThreadRef(activeThread.environmentId, activeThread.id) : null,
   );
+  const sendFeedbackItem = useSendFeedbackPaletteItem();
   const paletteRouteTarget = useThreadRouteTarget();
   const projects = useProjects();
   const referenceThreadRef =
@@ -1419,6 +1422,9 @@ function OpenCommandPaletteDialog(props: {
       run: () => startTriage(triageEnvironmentId),
     });
   }
+
+  // The form lives in the notifications popover, which only our sidebar has.
+  if (productSurface("sidebarNotifications") === "upcomputer") actionItems.push(sendFeedbackItem);
 
   if (activeThreadKey !== null && supportsThreadFind) {
     actionItems.push({

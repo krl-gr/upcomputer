@@ -6,6 +6,7 @@ import { useRef } from "react";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogPopup } from "../components/ui/dialog";
 import { cn } from "../lib/utils";
+import { SendFeedbackHint } from "../sendFeedback/SendFeedbackHint";
 import {
   type SurveyFormProps,
   SurveyAction,
@@ -125,6 +126,9 @@ export function UserSurveyDialogPopup({
                 {thanks.title}
               </p>
               <p className="text-sm text-muted-foreground">{thanks.text}</p>
+              <div className="mt-6 w-full">
+                <SendFeedbackHint />
+              </div>
             </div>
           ) : (
             <>
