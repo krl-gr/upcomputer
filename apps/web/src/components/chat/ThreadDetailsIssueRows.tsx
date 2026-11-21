@@ -7,6 +7,7 @@ import { useState, type MouseEvent } from "react";
 import { cn } from "~/lib/utils";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useServerConfigs } from "~/state/entities";
+import { useIssuesShown } from "~/issuesSetting/issuesShown";
 import { useLinkedIssueDetail } from "~/state/issues";
 
 import {
@@ -158,6 +159,8 @@ export function ThreadDetailsIssueRows({
   onOpen?: () => void;
 }) {
   const [expandedThread, setExpandedThread] = useState<string | null>(null);
+  const issuesShown = useIssuesShown();
+  if (!issuesShown) return null;
   const threadKey = scopedThreadKey(threadRef);
   const expanded = expandedThread === threadKey;
   const hasMore = compact && links.length > 1;

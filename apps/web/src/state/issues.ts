@@ -12,6 +12,7 @@ import type { EnvironmentId, IssueState, ThreadIssueLink } from "@t3tools/contra
 import { Atom } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
+import { useIssuesShown } from "../issuesSetting/issuesShown";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useServerConfigs } from "./entities";
 import { formatEnvironmentQueryError, useEnvironmentQuery } from "./query";
@@ -34,8 +35,9 @@ export function useLinkedIssueDetail(
   mountScope?: "sidebar" | "thread-details" | "linked-items" | "sidebar-tooltip",
 ) {
   const configs = useServerConfigs();
+  const issuesShown = useIssuesShown();
   return useEnvironmentQuery(
-    link && configs.get(environmentId)?.environment.capabilities.issues === true
+    link && issuesShown && configs.get(environmentId)?.environment.capabilities.issues === true
       ? issueEnvironment.detail({ environmentId, input: linkedIssueRef(link) }, mountScope)
       : null,
   ).data;
@@ -48,8 +50,11 @@ export function useSidebarLinkedIssueState(
   links: ReadonlyArray<ThreadIssueLink> | undefined,
 ) {
   const configs = useServerConfigs();
+  const issuesShown = useIssuesShown();
   const aggregate =
-    links?.length && configs.get(environmentId)?.environment.capabilities.issues === true
+    links?.length &&
+    issuesShown &&
+    configs.get(environmentId)?.environment.capabilities.issues === true
       ? Atom.make((get): IssueState | null => {
           const states = links.map(
             (link) =>

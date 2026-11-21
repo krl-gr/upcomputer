@@ -78,6 +78,7 @@ import { useThreadSelectionStore } from "../../threadSelectionStore";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { vcsEnvironment, vcsBranchRevalidation } from "../../state/vcs";
+import { useIssuesShown } from "../../issuesSetting/issuesShown";
 import { useSidebarLinkedIssueState } from "../../state/issues";
 import { useEnvironmentQuery } from "../../state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
@@ -1145,7 +1146,8 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
         onOpenPullRequest={handlePrClick}
       />
     ) : null;
-  const firstIssue = thread.issues?.[0];
+  const issuesShown = useIssuesShown();
+  const firstIssue = issuesShown ? thread.issues?.[0] : undefined;
   const issueCount = thread.issues?.length ?? 0;
   const issueState = useSidebarLinkedIssueState(
     thread.environmentId,

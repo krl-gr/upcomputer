@@ -213,6 +213,7 @@ import {
   isProductFeatureShown,
   resolveProductThreadReferenceCopyTarget,
 } from "~/product/productFlags";
+import { useIssuesShown } from "~/issuesSetting/issuesShown";
 import { showsUpComputerComposerContextRow } from "~/composerContextRow/composerContextRowSurface";
 import { UpComputerComposerContextRow } from "~/composerContextRow/UpComputerComposerContextRow";
 import {
@@ -2074,9 +2075,10 @@ export default function ChatView(props: ChatViewProps) {
   const visiblePullRequestCount = visiblePullRequests.length;
   const pullRequestsSurfaceAvailable =
     isServerThread && supportsThreadPullRequests && visiblePullRequestCount > 0;
+  const issuesShown = useIssuesShown();
   const linkedItemsSurfaceAvailable =
     pullRequestsSurfaceAvailable ||
-    (isServerThread && (activeThreadShell?.issues?.length ?? 0) > 0);
+    (issuesShown && isServerThread && (activeThreadShell?.issues?.length ?? 0) > 0);
   const { state: deviceState, loaded: deviceStateLoaded } = useDeviceState(
     isProductFeatureShown("devices") ? (activeThreadRef?.environmentId ?? null) : null,
   );

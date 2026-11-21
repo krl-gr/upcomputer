@@ -8,6 +8,7 @@ import { useNavigate } from "@tanstack/react-router";
 import type { MouseEvent } from "react";
 
 import { readIssueListPreferences } from "../components/issue/issueListPreferences";
+import { useIssuesShown } from "../issuesSetting/issuesShown";
 import { ISSUES_PANEL_REF, PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
 import { useProjects, useServerConfigs } from "../state/entities";
 
@@ -32,8 +33,9 @@ export function useOpenIssueLink(
   const allProjects = useProjects();
   const serverConfigs = useServerConfigs();
   const navigate = useNavigate();
+  const issuesShown = useIssuesShown();
   return (event, targetUrl, targetEnvironmentId, trackers) => {
-    if (event.metaKey || event.ctrlKey) return false;
+    if (!issuesShown || event.metaKey || event.ctrlKey) return false;
     const resolvedPanelRef = panelRef ?? threadRef;
     // A list page's panel ref is a placeholder, not an environment; the link names its own.
     const environmentId = threadRef?.environmentId ?? targetEnvironmentId;

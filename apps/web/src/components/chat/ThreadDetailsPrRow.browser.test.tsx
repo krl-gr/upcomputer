@@ -50,6 +50,12 @@ vi.mock(import("~/state/entities"), async (importOriginal) => ({
     ref === null ? null : { branch: null, pullRequests: state.pullRequests }) as never,
 }));
 vi.mock(import("~/state/issues"), () => ({ useLinkedIssueDetail: () => null }));
+// Upstream's Issues, which the Up.computer product leaves off until a setting turns them on.
+vi.mock(import("~/issuesSetting/issuesShown"), () => ({
+  isIssuesSettingShown: () => false,
+  areIssuesShown: () => true,
+  useIssuesShown: () => true,
+}));
 
 const queryData = () => ({
   projectId: ProjectId.make("project"),
