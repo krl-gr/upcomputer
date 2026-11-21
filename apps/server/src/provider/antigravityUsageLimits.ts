@@ -17,6 +17,7 @@ import {
   makeUnavailableUsageLimits,
   makeUsageLimits,
 } from "@t3tools/provider-core/server/usageLimits";
+import { keyringRefusedLimits, rememberCliKeyringRead } from "./antigravityKeyringOnce.ts";
 
 export function antigravityUserAgent(platform: NodeJS.Platform, architecture: NodeJS.Architecture) {
   return `antigravity/hub/2.24.0 (aidev_client; os_type=${platform}; arch=${architecture}; cl=963137146)`;
@@ -340,8 +341,9 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
     "antigravity-acp",
     "antigravity-oauth-token",
   );
-  const readKeyringSecret =
-    input.readKeyringSecret ?? (yield* AntigravityCliKeyring)(platform, architecture);
+  const keyring = rememberCliKeyringRead(
+    input.readKeyringSecret ?? (yield* AntigravityCliKeyring)(platform, architecture),
+  );
   let cached:
     | { fingerprint: string; account: string; accessToken: string; expiresAt: number }
     | undefined;
@@ -368,7 +370,7 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
       cached = undefined;
       const stored = (yield* fs.exists(cliTokenPath))
         ? yield* fs.readFileString(cliTokenPath)
-        : yield* readKeyringSecret;
+        : yield* keyring.read;
       if (stored === undefined) {
         return makeUnavailableUsageLimits({
           checkedAt,
@@ -488,6 +490,7 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
   });
   const probe = read.pipe(
     Effect.provideService(Digest.Digest, crypto),
+    Effect.catchTags({ AntigravityKeyringRefusedError: keyringRefusedLimits }),
     Effect.timeout("30 seconds"),
     Effect.catch(() =>
       Effect.gen(function* () {
@@ -504,6 +507,7 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
     clear: Effect.sync(() => {
       cached = undefined;
       generation++;
+      keyring.reset();
     }),
   };
 });
