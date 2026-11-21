@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -6,6 +6,7 @@ import type { ExperimentalWebRightPanelSurfaceProps } from "../../../../apps/web
 
 import { deriveProviderInstanceEntries } from "../../../../apps/web/src/providerInstances.ts";
 import { useEnvironmentProviders } from "../../../../apps/web/src/state/environments.ts";
+import { useRightPanelStore } from "../../../../apps/web/src/rightPanelStore.ts";
 
 import {
   type PlannerKind,
@@ -23,7 +24,7 @@ import { TableSectionSwitch } from "./TableSectionSwitch.tsx";
 import { useTaskList } from "./useTaskList.ts";
 import { TasksView } from "./TasksView.tsx";
 import { useTasksWorkspaceData } from "./useWorkspaceData.ts";
-import { useTasksPageFilters } from "./pageFilters.ts";
+import { type TaskFiltersScope, useTasksPageFilters } from "./pageFilters.ts";
 import { usePagesProjectFilter } from "./usePagesProjectFilter.ts";
 import { ProjectFilterSelect } from "./ProjectFilterSelect.tsx";
 
@@ -97,6 +98,9 @@ export default function TasksPanel(props: ExperimentalWebRightPanelSurfaceProps)
 /** Which list a launcher entry of its own opens: one view, with no switches. */
 type TasksPanelEntry = "my-tasks" | "worker-tasks" | "automations" | "routines";
 
+/** The surface id `feature.tsx` gives My tasks, where "Open in planner" goes. */
+const MY_TASKS_SURFACE_ID = "tasks.mine";
+
 /**
  * One Tasks view as its own right-panel surface: the list without the
  * switches' header, its buttons floating over it. A task opened from the
@@ -111,13 +115,31 @@ function TasksEntryPanel(
       setSelectedTaskKey(taskKey({ environmentId, id: taskId })),
     [],
   );
-  const openInPlanner = useCallback(() => setSelectedTaskKey(undefined), []);
+  const [, setPlannerEnvironment] = useStoredPlannerEnvironment();
+  const panelRef = useMemo(
+    () => scopeThreadRef(props.environmentId, props.threadId),
+    [props.environmentId, props.threadId],
+  );
+  const { entry } = props;
+  // The task's window opens in the panel's planner: here in My tasks or My routines, or in
+  // the My tasks tab, which opens beside this one, from Worker tasks or Automations.
+  const openInPlanner = useCallback(
+    (environmentId: EnvironmentId, taskId: string) => {
+      setPlannerEnvironment(environmentId);
+      windowStoreFor(environmentId, "panel").openDetail(taskId);
+      setSelectedTaskKey(undefined);
+      if (entry === "worker-tasks" || entry === "automations")
+        useRightPanelStore.getState().openFeature(panelRef, MY_TASKS_SURFACE_ID);
+    },
+    [entry, panelRef, setPlannerEnvironment],
+  );
   if (props.entry === "worker-tasks" || selectedTaskKey !== undefined)
     return (
       <TablePanel
         viewSwitch={null}
         floatingControls
-        filePanelRef={scopeThreadRef(props.environmentId, props.threadId)}
+        filtersScope="panel.workers"
+        filePanelRef={panelRef}
         selectedTaskKey={selectedTaskKey}
         onSelectedTaskKeyChange={setSelectedTaskKey}
         onOpenInPlanner={openInPlanner}
@@ -204,6 +226,8 @@ function PlannerPanel(props: {
 function TablePanel(props: {
   readonly viewSwitch: ReactNode;
   readonly floatingControls?: boolean;
+  /** Filters of the panel entry's own, apart from the Tasks page's. */
+  readonly filtersScope?: TaskFiltersScope;
   readonly filePanelRef: ScopedThreadRef;
   readonly selectedTaskKey: string | undefined;
   readonly onSelectedTaskKeyChange: (taskKey: string | undefined) => void;
@@ -212,8 +236,8 @@ function TablePanel(props: {
   const navigate = useNavigate();
   const data = useTasksWorkspaceData(false);
   const providersByEnvironment = useEnvironmentProviders();
-  const { projectFilter, projectGroups, setProjectKey } = usePagesProjectFilter();
-  const [filters, setFilters] = useTasksPageFilters();
+  const { projectFilter, projectGroups, setProjectKey } = usePagesProjectFilter(props.filtersScope);
+  const [filters, setFilters] = useTasksPageFilters(props.filtersScope);
   const { pages, grouping } = useTaskList(data.taskTargets, projectFilter, filters);
   const providerEntriesByEnvironment = useMemo(
     () =>

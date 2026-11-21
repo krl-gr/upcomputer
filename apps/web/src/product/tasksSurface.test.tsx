@@ -66,6 +66,8 @@ const { createRoot } = await import("react-dom/client");
 type Root = import("react-dom/client").Root;
 const { RightPanelTabs } = await import("../components/RightPanelTabs");
 const { ProductRightPanelSurface } = await import("./ProductSlots");
+const { RightPanelSurfacesSettingsSection } = await import("./RightPanelSurfacesSettingsSection");
+const { useProductPanelSurfacePaletteItems } = await import("./useProductPanelSurfacePaletteItems");
 const { SidebarProvider } = await import("../components/ui/sidebar");
 
 // The UpComputer product, with or without the Tasks feature composed in.
@@ -87,6 +89,12 @@ vi.mock("./productEntry", async () => {
     },
   };
 });
+
+// The command palette's thread, beside which its panel entries open.
+vi.mock("../hooks/useThreadRouteTarget", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/useThreadRouteTarget")>()),
+  useThreadRouteRef: () => ({ environmentId: "local", threadId: "thread" }),
+}));
 
 // One environment with a Tasks server holding a routine and a task in Health and in Life OS.
 const tasksServer = vi.hoisted(() => {
@@ -316,6 +324,13 @@ function renderPanel(
   );
 }
 
+function renderSettings() {
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  act(() => root!.render(<RightPanelSurfacesSettingsSection />));
+}
+
 function launcherKeys() {
   return document
     .querySelector("[data-surface-launcher-keys]")
@@ -378,6 +393,68 @@ describe("the Tasks surface in the right panel", () => {
     expect(document.querySelector('[aria-label="Close Tasks"]')).not.toBeNull();
   });
 
+  it("leaves the entries switched off in Settings out of the panel menu and the palette", () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    function PaletteItems() {
+      return (
+        <ul data-palette-items="">
+          {useProductPanelSurfacePaletteItems().map((item) => (
+            <li key={item.value}>{item.title}</li>
+          ))}
+        </ul>
+      );
+    }
+    const paletteTitles = () =>
+      [...document.querySelectorAll("[data-palette-items] li")].map((item) => item.textContent);
+    act(() =>
+      root!.render(
+        <>
+          <RightPanelSurfacesSettingsSection />
+          <PaletteItems />
+        </>,
+      ),
+    );
+    const panelSwitch = (label: string) =>
+      document.querySelector<HTMLElement>(`[aria-label="Show ${label} in the panel menu"]`)!;
+    expect(paletteTitles()).toEqual([
+      "Open Tasks in the panel",
+      "Open My tasks in the panel",
+      "Open Worker tasks in the panel",
+      "Open Automations in the panel",
+      "Open My routines in the panel",
+    ]);
+
+    act(() => panelSwitch("Tasks").click());
+    act(() => panelSwitch("My routines").click());
+    expect(panelSwitch("Tasks").getAttribute("aria-checked")).toBe("false");
+    expect(paletteTitles()).toEqual([
+      "Open My tasks in the panel",
+      "Open Worker tasks in the panel",
+      "Open Automations in the panel",
+    ]);
+    act(() => root?.unmount());
+    container.remove();
+
+    const onAddFeatureSurface = vi.fn();
+    renderPanel([], onAddFeatureSurface);
+    expect(launcherKeys()).toBe("BTFDMYWA");
+    pressKey(document.body, "k");
+    pressKey(document.body, "r");
+    expect(onAddFeatureSurface).not.toHaveBeenCalled();
+    act(() => root?.unmount());
+    container.remove();
+
+    // Switched back on, an entry returns.
+    renderSettings();
+    act(() => panelSwitch("Tasks").click());
+    act(() => root?.unmount());
+    container.remove();
+    renderPanel([], onAddFeatureSurface);
+    expect(launcherKeys()).toBe("BTFDMKYWA");
+  });
+
   it("leaves Tasks out of a build without the feature and of panels not beside a thread", () => {
     product.tasks = false;
     renderPanel([], vi.fn());
@@ -401,7 +478,7 @@ describe("the Tasks surface's content", () => {
   }, 60_000);
 
   // The thread beside the panel is in Life OS; the page's filters decide what is listed.
-  function renderTasks(storage: Record<string, unknown>) {
+  function renderTasks(storage: Record<string, unknown>, featureSurfaceId = "tasks") {
     for (const [key, value] of Object.entries(storage)) {
       window.localStorage.setItem(key, JSON.stringify(value));
     }
@@ -412,7 +489,7 @@ describe("the Tasks surface's content", () => {
       root!.render(
         <SidebarProvider>
           <ProductRightPanelSurface
-            featureSurfaceId="tasks"
+            featureSurfaceId={featureSurfaceId}
             environmentId={"local" as never}
             threadId={"thread" as never}
             projectId={"life-os" as never}
@@ -459,6 +536,54 @@ describe("the Tasks surface's content", () => {
     } finally {
       measure.mockRestore();
     }
+  });
+
+  it("opens each entry on its own view, whatever the Tasks tab last showed, with no switches", async () => {
+    const floating = () => document.querySelector("[data-tasks-floating-actions]");
+    const switches = () => document.querySelector('[aria-label="Whose tasks"]');
+    // The combined tab's last choice: the table, and routines in the planner.
+    const tasksTab = { "tasks.view": "table", "tasks.planner.kind": "routine" };
+    const remount = () => {
+      act(() => root?.unmount());
+      container?.remove();
+    };
+
+    renderTasks(tasksTab, "tasks.mine");
+    await vi.waitFor(() => expect(shows("Life OS task")).toBe(true), { timeout: 5000 });
+    expect(shows("Health routine")).toBe(false);
+    expect(floating()?.querySelector('[aria-label="New task"]')).not.toBeNull();
+    expect(switches()).toBeNull();
+    remount();
+
+    renderTasks({ "tasks.view": "table", "tasks.planner.kind": "task" }, "tasks.routines");
+    await vi.waitFor(() => expect(shows("Life OS routine")).toBe(true), { timeout: 5000 });
+    expect(shows("Life OS task")).toBe(false);
+    expect(floating()?.querySelector('[aria-label="New routine"]')).not.toBeNull();
+    expect(switches()).toBeNull();
+    remount();
+
+    renderTasks({ "tasks.view": "planner" }, "tasks.workers");
+    await vi.waitFor(() => expect(shows("Health task")).toBe(true), { timeout: 5000 });
+    expect(floating()?.querySelector("[data-task-filters-button]")).not.toBeNull();
+    expect(switches()).toBeNull();
+    remount();
+
+    renderTasks({ "tasks.view": "planner" }, "tasks.automations");
+    await vi.waitFor(() => expect(floating()).not.toBeNull(), { timeout: 5000 });
+    expect(floating()?.querySelector('[aria-label="New automation"]')).not.toBeNull();
+    expect(switches()).toBeNull();
+  });
+
+  it("keeps the Worker tasks entry's filters apart from the Tasks page's", async () => {
+    renderTasks({ "upcomputer:pages:project": "health" }, "tasks.workers");
+    await vi.waitFor(() => expect(shows("Health task")).toBe(true), { timeout: 5000 });
+    expect(shows("Life OS task")).toBe(true);
+    act(() => root?.unmount());
+    container?.remove();
+
+    renderTasks({ "upcomputer:pages:project:panel.workers": "health" }, "tasks.workers");
+    await vi.waitFor(() => expect(shows("Health task")).toBe(true), { timeout: 5000 });
+    expect(shows("Life OS task")).toBe(false);
   });
 
   it("filters the table by the page's project, not the thread's", async () => {
