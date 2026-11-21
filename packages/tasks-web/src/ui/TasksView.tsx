@@ -1525,6 +1525,7 @@ export function TasksView(props: TasksViewProps) {
                       environmentId={selectedTask.environmentId}
                       threadId={selectedTask.sourceThreadId as ThreadId}
                       title={gt("Source thread")}
+                      loadOmitted
                       onOpen={props.onOpenThread}
                     />
                   </div>

@@ -505,6 +505,8 @@ export interface ActiveShellIndexEntry extends Pick<
   readonly mayBeLive: boolean;
   /** Whether it delegated a task to a linked environment, whose clients nest that task under it. */
   readonly hasRemoteTasks: boolean;
+  /** A task-agent thread, which thread lists leave out. */
+  readonly sidebarHidden: boolean;
 }
 
 /** What thread listings filter and order an active thread by, without building its shell. */
@@ -9444,6 +9446,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         readonly snoozed_until: string | null;
         readonly may_be_live: number;
         readonly has_remote_tasks: number;
+        readonly sidebar_hidden: number;
       }>`
         SELECT
           t.thread_id,
@@ -9503,7 +9506,15 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             WHERE subagent.origin = 'app_owned'
               AND subagent.child_thread_id IS NULL
               AND json_type(subagent.payload_json, '$.remoteChild') = 'object'
-          ) AS has_remote_tasks
+          ) AS has_remote_tasks,
+          -- One list for the whole read, through the upcomputer.core v3 partial index.
+          t.thread_id IN (
+            SELECT hidden.thread_id FROM orchestration_v2_projection_threads hidden
+            WHERE hidden.deleted_at IS NULL
+              AND hidden.archived_at IS NULL
+              AND CASE WHEN json_valid(hidden.payload_json)
+                THEN json_extract(hidden.payload_json, '$.sidebarHidden') END = 1
+          ) AS sidebar_hidden
         FROM orchestration_v2_projection_threads t
         WHERE t.deleted_at IS NULL
           AND t.archived_at IS NULL
@@ -9523,6 +9534,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         snoozedUntil: row.snoozed_until === null ? null : DateTime.makeUnsafe(row.snoozed_until),
         mayBeLive: row.may_be_live === 1,
         hasRemoteTasks: row.has_remote_tasks === 1,
+        sidebarHidden: row.sidebar_hidden === 1,
       }));
     }, Effect.mapError(shellSnapshotReadError));
 

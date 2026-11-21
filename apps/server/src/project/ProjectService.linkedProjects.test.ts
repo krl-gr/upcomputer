@@ -112,7 +112,11 @@ it.layer(TestLayer)("project linked projects", (it) => {
       `;
       assert.deepEqual(
         rows.map((row) => `${row.version}:${row.name}`),
-        ["1:ProjectionLinkedProjects", "2:ProjectionThreadProjectLinksPinned"],
+        [
+          "1:ProjectionLinkedProjects",
+          "2:ProjectionThreadProjectLinksPinned",
+          "3:ProjectionThreadsSidebarHiddenIndex",
+        ],
       );
     }),
   );

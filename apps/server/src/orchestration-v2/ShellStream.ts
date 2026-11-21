@@ -236,6 +236,14 @@ function shellTrimFacts(rows: ReadonlyArray<ShellTrimRow>): ShellTrimFacts {
   };
 }
 
+/**
+ * Task-agent threads stay out of thread lists, and clients read an idle one through its family
+ * when they open it, so the trims that drop older settled threads drop idle ones too.
+ */
+function isTaskAgentShellRow(row: { readonly sidebarHidden?: boolean | undefined }): boolean {
+  return row.sidebarHidden === true;
+}
+
 function hiddenChildAncestorIds(
   threads: ReadonlyArray<Pick<OrchestrationV2ThreadShell, "lineage">>,
 ) {
@@ -280,7 +288,7 @@ function omitOlderSettledShellsWith(
   const ancestorIds = hiddenChildAncestorIds(input.threads);
   const threads = input.threads.filter(
     (thread) =>
-      !isOlderSettledThreadShell(thread, beforeMs) ||
+      !(isOlderSettledThreadShell(thread, beforeMs) || isTaskAgentShellRow(thread)) ||
       thread.pinnedAt != null ||
       (thread.snoozedUntil != null && DateTime.toEpochMillis(thread.snoozedUntil) > nowMs) ||
       isLiveSubagentShell(thread) ||
@@ -394,8 +402,10 @@ function shellSubscriberThreadIds(
         ? [entry.id]
         : []
       : !options.omitOlderSettled ||
-          beforeMs === undefined ||
-          !isOlderSettledThreadShell(entry, beforeMs) ||
+          !(
+            (beforeMs !== undefined && isOlderSettledThreadShell(entry, beforeMs)) ||
+            isTaskAgentShellRow(entry)
+          ) ||
           entry.pinnedAt != null ||
           entry.snoozedUntil != null ||
           entry.mayBeLive ||
