@@ -294,21 +294,32 @@ interface SnapshotStages {
   readonly timedOut: Set<SnapshotStage>;
 }
 
-const snapshotTimedOut = (stages?: SnapshotStages) =>
-  new ServerBrowserOperationError({
+// The broker shows an agent `detail.reason` of a server browser timeout, not its message.
+const SNAPSHOT_FALLBACK =
+  "preview_evaluate and preview_act typing still work: read the page or click elements with preview_evaluate, or take another snapshot in a moment.";
+
+const snapshotTimedOut = (deadline: number, stages?: SnapshotStages) => {
+  const seconds = ((Date.now() - deadline + SNAPSHOT_TIMEOUT_MS) / 1000).toFixed(1);
+  return new ServerBrowserOperationError({
     tag: "PreviewAutomationTimeoutError",
     message: `Snapshot capture timed out after ${SNAPSHOT_TIMEOUT_MS}ms. Try the snapshot again.`,
     detail: {
       timeoutMs: SNAPSHOT_TIMEOUT_MS,
       pendingStages: stages ? [...new Set([...stages.timedOut, ...stages.running.keys()])] : [],
+      reason: `The page was too busy to answer, so the snapshot stopped after ${seconds} s. ${SNAPSHOT_FALLBACK}`,
     },
   });
+};
 
 const frameUnanswered = () =>
   new ServerBrowserOperationError({
     tag: "PreviewAutomationTimeoutError",
     message: `A frame on the page didn't answer within ${FRAME_ANSWER_MS}ms, so its content couldn't be checked for hidden values. Try the snapshot again.`,
-    detail: { timeoutMs: FRAME_ANSWER_MS, pendingStages: ["frames"] },
+    detail: {
+      timeoutMs: FRAME_ANSWER_MS,
+      pendingStages: ["frames"],
+      reason: `A frame on the page didn't answer within ${FRAME_ANSWER_MS / 1000} s, so its content couldn't be checked for hidden values and the snapshot stopped. ${SNAPSHOT_FALLBACK}`,
+    },
   });
 
 const isTimeout = (cause: unknown) => cause instanceof Error && cause.name === "TimeoutError";
@@ -690,7 +701,7 @@ const capture = async (
   };
   const { renderScale, viewport } = await track("metrics", () => renderingOf(input));
   // A late metrics reply must not begin a capture after viewers have resumed.
-  if (Date.now() >= deadline) throw snapshotTimedOut();
+  if (Date.now() >= deadline) throw snapshotTimedOut(deadline);
   const scale = Math.min(1, MAX_SCREENSHOT_WIDTH / (viewport.width * renderScale));
   const state = refsFor(input.page);
   invalidateRefs(input.page);
@@ -802,7 +813,7 @@ const runSnapshot = async (input: SnapshotInput, metadataOnly: boolean) => {
   const stages: SnapshotStages = { running: new Map(), timedOut: new Set() };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const expired = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(snapshotTimedOut(stages)), SNAPSHOT_TIMEOUT_MS);
+    timer = setTimeout(() => reject(snapshotTimedOut(deadline, stages)), SNAPSHOT_TIMEOUT_MS);
   });
   const turn = (snapshotTurns.get(input.page) ?? 0) + 1;
   snapshotTurns.set(input.page, turn);
@@ -817,7 +828,7 @@ const runSnapshot = async (input: SnapshotInput, metadataOnly: boolean) => {
   try {
     return await Promise.race([captured, expired]);
   } catch (cause) {
-    throw isTimeout(cause) ? snapshotTimedOut(stages) : cause;
+    throw isTimeout(cause) ? snapshotTimedOut(deadline, stages) : cause;
   } finally {
     clearTimeout(timer);
   }
