@@ -68,7 +68,9 @@ optional extras: **Include app version and system info** (on by default) adds th
 your operating system and the names of your connected providers, and **You can email me about
 this** adds your email. Chats, files, paths and tokens are never included. Feedback is sent when
 you press **Send**, also with product events off; then it goes out the same way as survey
-answers, under a random identifier. Without system info it always goes out that way. A managed
+answers, under a random identifier. Without system info it always goes out that way. With
+product events on and system info included, feedback is sent with the same identity as your
+other usage data, so an email you add is linked to it too. A managed
 policy that turns usage data off also turns feedback off.
 
 ## Mark a team or test device
