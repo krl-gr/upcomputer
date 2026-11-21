@@ -1,4 +1,8 @@
-import type { UserFeedback, UserFeedbackSystemInfo } from "@t3tools/contracts";
+import {
+  type UserFeedback,
+  USER_FEEDBACK_MAX_LENGTH,
+  type UserFeedbackSystemInfo,
+} from "@t3tools/contracts";
 
 export interface FeedbackDraft {
   readonly text: string;
@@ -32,7 +36,7 @@ export function feedbackPayload(
 ): UserFeedback {
   const email = draft.canEmail ? feedbackEmail(draft, accountEmail).trim() : "";
   return {
-    text: draft.text.trim(),
+    text: draft.text.trim().slice(0, USER_FEEDBACK_MAX_LENGTH).trimEnd(),
     ...(email === "" ? {} : { email }),
     ...(draft.includeSystemInfo ? { systemInfo } : {}),
   };

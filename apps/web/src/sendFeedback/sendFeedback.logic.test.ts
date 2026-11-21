@@ -1,4 +1,4 @@
-import type { UserFeedbackSystemInfo } from "@t3tools/contracts";
+import { USER_FEEDBACK_MAX_LENGTH, type UserFeedbackSystemInfo } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { EMPTY_FEEDBACK_DRAFT, type FeedbackDraft, feedbackPayload } from "./sendFeedback.logic";
@@ -52,6 +52,12 @@ describe("feedbackPayload", () => {
       draft: draft({ includeSystemInfo: false, canEmail: true, email: "  " }),
       account: "alex@example.com",
       expected: { text: "The sidebar flickers" },
+    },
+    {
+      name: "longer than the server takes: cut to the limit",
+      draft: draft({ includeSystemInfo: false, text: `${"x".repeat(USER_FEEDBACK_MAX_LENGTH)}y` }),
+      account: null,
+      expected: { text: "x".repeat(USER_FEEDBACK_MAX_LENGTH) },
     },
   ])("$name", ({ draft, account, expected }) => {
     expect(feedbackPayload(draft, account, INFO)).toEqual(expected);

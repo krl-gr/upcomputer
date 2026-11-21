@@ -1,4 +1,4 @@
-import type { UserFeedbackSystemInfo } from "@t3tools/contracts";
+import { USER_FEEDBACK_MAX_LENGTH, type UserFeedbackSystemInfo } from "@t3tools/contracts";
 import { T, useGT } from "gt-react";
 import { ArrowLeftIcon, CheckIcon, ChevronDownIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -172,6 +172,7 @@ export function SendFeedbackForm({
           size="lg"
           lines={4}
           autoFocus
+          maxLength={USER_FEEDBACK_MAX_LENGTH}
           aria-label={gt("Your feedback")}
           placeholder={gt("What happened, or what would you like to change?")}
           value={draft.text}

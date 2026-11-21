@@ -104,9 +104,11 @@ export const UserFeedbackSystemInfo = Schema.Struct({
 });
 export type UserFeedbackSystemInfo = typeof UserFeedbackSystemInfo.Type;
 
+export const USER_FEEDBACK_MAX_LENGTH = 20_000;
+
 /** Feedback sent from the notifications popover; the optional parts are there only when checked. */
 export const UserFeedback = Schema.Struct({
-  text: TrimmedNonEmptyString.check(Schema.isMaxLength(20_000)),
+  text: TrimmedNonEmptyString.check(Schema.isMaxLength(USER_FEEDBACK_MAX_LENGTH)),
   email: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(320))),
   systemInfo: Schema.optionalKey(UserFeedbackSystemInfo),
 });
