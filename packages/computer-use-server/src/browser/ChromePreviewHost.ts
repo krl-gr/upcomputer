@@ -2,6 +2,8 @@
 // @effect-diagnostics globalDate:off
 // @effect-diagnostics globalTimers:off
 import * as NodeCrypto from "node:crypto";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
 
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -10,7 +12,10 @@ import {
   errors,
   type BrowserContext,
   type CDPSession,
+  type Dialog,
+  type Download,
   type ElementHandle,
+  type FileChooser,
   type Locator,
   type Page,
 } from "playwright-core";
@@ -23,7 +28,10 @@ import {
   type PreviewAutomationActionEvent,
   type PreviewAutomationClickInput,
   type PreviewAutomationConsoleEntry,
+  type PreviewAutomationDialogInput,
+  type PreviewAutomationDragInput,
   type PreviewAutomationEvaluateInput,
+  type PreviewAutomationHoverInput,
   type PreviewAutomationNavigateInput,
   type PreviewAutomationHostFocus,
   type PreviewAutomationNetworkEntry,
@@ -35,16 +43,17 @@ import {
   type PreviewAutomationResizeInput,
   type PreviewAutomationResizeResult,
   type PreviewAutomationScrollInput,
+  type PreviewAutomationSelectInput,
   type PreviewAutomationSetColorSchemeInput,
   type PreviewAutomationSetColorSchemeResult,
-  type PreviewAutomationSnapshot,
+  type PreviewAutomationSnapshotInput,
   type PreviewAutomationStatus,
   type PreviewAutomationTypeInput,
+  type PreviewAutomationUploadInput,
   type PreviewAutomationWaitForInput,
   type PreviewViewportSetting,
   type ThreadId,
   PreviewTabId,
-  PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING,
 } from "@t3tools/contracts";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import { resolvePreviewViewport } from "@t3tools/shared/previewViewport";
@@ -56,25 +65,23 @@ import {
   ServerEnvironment,
 } from "../../../../apps/server/src/extensionApi.ts";
 import type { PreviewAutomationServerHost } from "../../../../apps/server/src/mcp/PreviewAutomationBroker.ts";
+import * as ServerBrowserPage from "../../../../apps/server/src/preview/ServerBrowserPage.ts";
 import { BrowserAutomationService } from "./BrowserAutomationService.ts";
 import { readBrowserUseSettings } from "./BrowserUseSettings.ts";
-import {
-  PREVIEW_AUTOMATION_MAX_EVALUATION_BYTES,
-  PREVIEW_AUTOMATION_MAX_SCREENSHOT_WIDTH,
-  PREVIEW_AUTOMATION_PAGE_SNAPSHOT_EXPRESSION,
-} from "./previewAutomationPage.ts";
 
 /** How a failed request is reported to the broker, with the tags desktop hosts use. */
 export type PreviewAutomationRemoteError = NonNullable<PreviewAutomationResponse["error"]>;
 
 const DIAGNOSTIC_BUFFER_LIMIT = 200;
+/** Largest serialized `evaluate` result, as in the built-in browser. */
+const MAX_EVALUATION_BYTES = 64_000;
+/** Saved downloads a tab lists; older files are deleted. */
+const DOWNLOAD_LIMIT = 20;
 /** How long a locator may take to become actionable when the call sets no timeout. */
 const LOCATOR_ACTION_TIMEOUT_MS = 5_000;
 /** Leaves time to reply before the broker gives up on the request. */
 const BROKER_REPLY_MARGIN_MS = 500;
 const WAIT_FOR_POLL_INTERVAL_MS = 100;
-/** A page that cannot paint never answers a capture; the snapshot answers with its text instead. */
-const SNAPSHOT_SCREENSHOT_TIMEOUT_MS = 5_000;
 const INVALID_SELECTOR_PATTERN =
   /strict mode violation|while parsing|unexpected token|unknown engine|not a valid selector/iu;
 
@@ -85,6 +92,8 @@ interface LocatorInput {
   readonly locator?: string | undefined;
 }
 
+type ChromeDownload = NonNullable<PreviewAutomationStatus["downloads"]>[number];
+
 interface ChromeTab {
   readonly id: PreviewTabId;
   readonly threadId: ThreadId;
@@ -94,6 +103,10 @@ interface ChromeTab {
   readonly consoleEntries: PreviewAutomationConsoleEntry[];
   readonly networkEntries: PreviewAutomationNetworkEntry[];
   readonly actionTimeline: PreviewAutomationActionEvent[];
+  dialog: Dialog | null;
+  fileChooser: { readonly chooser: FileChooser; readonly accept: string } | null;
+  readonly downloads: ChromeDownload[];
+  readonly savingDownloads: Set<Promise<void>>;
 }
 
 /** A failure reported to agents with the same tags desktop hosts use. */
@@ -114,14 +127,30 @@ const hostError = (_tag: string, message: string, detail?: unknown) =>
 const errorMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
 
-export const toPreviewAutomationRemoteError = (cause: unknown): PreviewAutomationRemoteError =>
-  cause instanceof ChromePreviewHostError
-    ? cause.remote
-    : { _tag: "PreviewAutomationExecutionError", message: errorMessage(cause) };
+export const toPreviewAutomationRemoteError = (cause: unknown): PreviewAutomationRemoteError => {
+  if (cause instanceof ChromePreviewHostError) return cause.remote;
+  // The built-in browser's page actions, which this host shares, fail with their own tags.
+  if (cause instanceof ServerBrowserPage.ServerBrowserOperationError) {
+    const { tag, message, detail } = cause;
+    return { _tag: tag, message, ...(detail === undefined ? {} : { detail }) };
+  }
+  return { _tag: "PreviewAutomationExecutionError", message: errorMessage(cause) };
+};
 
-/** Same selector conventions as the desktop host: `selector` is legacy CSS. */
-const automationLocator = (input: LocatorInput): string | null =>
-  input.locator ?? (input.selector ? `css=${input.selector}` : null);
+/** Runs one of the built-in browser's page actions, with its error tags. */
+const sharedAction = <A>(run: () => Promise<A>): Promise<A> =>
+  run().catch((cause: unknown) => {
+    throw ServerBrowserPage.toOperationError(cause);
+  });
+
+const DIALOG_PENDING_MESSAGE =
+  "A browser dialog is pending. Read preview_status and use preview_dialog first.";
+
+/** Same selector conventions as the desktop host: `selector` is legacy CSS; refs come from snapshots. */
+const automationLocator = (page: Page, input: LocatorInput): Locator | null => {
+  const locator = input.locator ?? (input.selector ? `css=${input.selector}` : undefined);
+  return locator === undefined ? null : ServerBrowserPage.targetLocator(page, { locator });
+};
 
 const selectorDiagnostics = (
   input: LocatorInput,
@@ -135,8 +164,9 @@ const selectorDiagnostics = (
   return { selectorKind: "focused-element" };
 };
 
-const locatorFailure = (cause: unknown, input: LocatorInput): ChromePreviewHostError => {
+const locatorFailure = (cause: unknown, input: LocatorInput): Error => {
   if (cause instanceof ChromePreviewHostError) return cause;
+  if (cause instanceof ServerBrowserPage.ServerBrowserOperationError) return cause;
   const message = errorMessage(cause);
   if (INVALID_SELECTOR_PATTERN.test(message)) {
     return hostError("PreviewAutomationInvalidSelectorError", message, selectorDiagnostics(input));
@@ -237,14 +267,17 @@ interface ScrollTarget {
 const scrollTarget = (target: ScrollTarget, delta: { left: number; top: number }): void =>
   target.scrollBy({ ...delta, behavior: "instant" });
 
-const pngSize = (png: Buffer): { readonly width: number; readonly height: number } => ({
-  width: png.readUInt32BE(16),
-  height: png.readUInt32BE(20),
-});
+/** A download's suggested name as a plain file name. */
+const downloadFileName = (suggested: string): string =>
+  NodePath.basename(suggested.replaceAll("\\", "/"))
+    .replace(/[<>:"|?*\u0000-\u001f]/gu, "_")
+    .slice(0, 200) || "download";
 
 export interface ChromePreviewHostOptions {
   /** Opens the managed browser on first use and returns its persistent profile context. */
   readonly getContext: () => Promise<BrowserContext>;
+  /** Where agents' downloads are saved, one folder per tab. Unset leaves them to Chrome. */
+  readonly downloadsDir?: string;
 }
 
 export interface ChromePreviewHost {
@@ -262,6 +295,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
   const tabs = new Map<string, ChromeTab>();
   const threadTabIds = new Map<string, string>();
   let actionSequence = 0;
+  let downloadSequence = 0;
 
   const registerTab = (page: Page, threadId: ThreadId): ChromeTab => {
     const tab: ChromeTab = {
@@ -273,6 +307,10 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       consoleEntries: [],
       networkEntries: [],
       actionTimeline: [],
+      dialog: null,
+      fileChooser: null,
+      downloads: [],
+      savingDownloads: new Set(),
     };
     const timestamp = () => new Date().toISOString();
     page.on("console", (message) =>
@@ -291,19 +329,18 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         source: "exception",
       }),
     );
-    page.on("response", (response) => {
-      if (response.status() < 400) return;
+    page.on("response", (response) =>
       pushBounded(tab.networkEntries, {
-        url: response.url(),
+        url: ServerBrowserPage.withoutDataPayload(response.url()),
         method: response.request().method(),
         status: response.status(),
-        failed: true,
+        failed: response.status() >= 400,
         timestamp: timestamp(),
-      });
-    });
+      }),
+    );
     page.on("requestfailed", (request) =>
       pushBounded(tab.networkEntries, {
-        url: request.url(),
+        url: ServerBrowserPage.withoutDataPayload(request.url()),
         method: request.method(),
         status: null,
         failed: true,
@@ -311,9 +348,66 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         timestamp: timestamp(),
       }),
     );
+    // Listening keeps Playwright from dismissing dialogs, so the agent sees and answers them.
+    page.on("dialog", (dialog) => {
+      tab.dialog = dialog;
+    });
+    // The user can answer a dialog in the Chrome window too.
+    void cdpSession(tab)
+      .then(async (cdp) => {
+        cdp.on("Page.javascriptDialogClosed", () => {
+          tab.dialog = null;
+        });
+        await cdp.send("Page.enable");
+      })
+      .catch(() => undefined);
+    // Listening also intercepts the native picker, so the agent answers it with upload.
+    page.on("filechooser", (chooser) => void offerFileChooser(tab, chooser));
+    page.on("framenavigated", (frame) => {
+      if (frame === page.mainFrame()) tab.fileChooser = null;
+    });
+    page.on("download", (download) => {
+      const saving = saveDownload(tab, download).finally(() => tab.savingDownloads.delete(saving));
+      tab.savingDownloads.add(saving);
+    });
     page.on("close", () => tabs.delete(tab.id));
     tabs.set(tab.id, tab);
     return tab;
+  };
+
+  const offerFileChooser = async (tab: ChromeTab, chooser: FileChooser) => {
+    const accept =
+      (await chooser
+        .element()
+        .getAttribute("accept")
+        .catch(() => null)) ?? "";
+    tab.fileChooser = { chooser, accept: accept.slice(0, 1024) };
+  };
+
+  const saveDownload = async (tab: ChromeTab, download: Download): Promise<void> => {
+    const downloadsDir = options.downloadsDir;
+    if (downloadsDir === undefined) return;
+    const fileName = downloadFileName(download.suggestedFilename());
+    const directory = NodePath.join(downloadsDir, tab.id);
+    const path = NodePath.join(directory, `${++downloadSequence}-${fileName}`);
+    try {
+      await NodeFSP.mkdir(directory, { recursive: true, mode: 0o700 });
+      await download.saveAs(path);
+      if (await download.failure()) return;
+      const { size } = await NodeFSP.stat(path);
+      tab.downloads.push({
+        fileName,
+        path,
+        sizeBytes: size,
+        url: ServerBrowserPage.withoutDataPayload(download.url()).slice(0, 2048),
+        completedAt: new Date().toISOString(),
+      });
+      for (const evicted of tab.downloads.splice(0, tab.downloads.length - DOWNLOAD_LIMIT)) {
+        await NodeFSP.rm(evicted.path, { force: true }).catch(() => undefined);
+      }
+    } catch {
+      await NodeFSP.rm(path, { force: true }).catch(() => undefined);
+    }
   };
 
   const currentTab = (request: PreviewAutomationRequest): ChromeTab | undefined => {
@@ -392,14 +486,17 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
   };
 
   const status = async (tab: ChromeTab): Promise<PreviewAutomationStatus> => {
-    const page = (await tab.page
-      .evaluate("({ readyState: document.readyState, width: innerWidth, height: innerHeight })")
-      .catch(() => null)) as {
-      readonly readyState: string;
-      readonly width: number;
-      readonly height: number;
-    } | null;
-    const title = await tab.page.title().catch(() => "");
+    // A pending dialog blocks page script, so status reads nothing from the page.
+    const page = tab.dialog
+      ? null
+      : ((await tab.page
+          .evaluate("({ readyState: document.readyState, width: innerWidth, height: innerHeight })")
+          .catch(() => null)) as {
+          readonly readyState: string;
+          readonly width: number;
+          readonly height: number;
+        } | null);
+    const title = tab.dialog ? "" : await tab.page.title().catch(() => "");
     return {
       available: true,
       visible: true,
@@ -407,6 +504,17 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       url: tab.page.url() || null,
       title: title || null,
       loading: page?.readyState !== "complete",
+      dialog: tab.dialog
+        ? {
+            type: tab.dialog.type(),
+            message: tab.dialog.message().slice(0, 4000),
+            defaultValue: tab.dialog.defaultValue().slice(0, 4000),
+          }
+        : null,
+      fileChooser: tab.fileChooser
+        ? { multiple: tab.fileChooser.chooser.isMultiple(), accept: tab.fileChooser.accept }
+        : null,
+      downloads: [...tab.downloads],
       viewportSetting: tab.viewportSetting,
       ...(page && page.width > 0 && page.height > 0
         ? { viewport: { width: page.width, height: page.height } }
@@ -431,6 +539,14 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         timeout,
       });
     } catch (cause) {
+      // A URL Chrome downloads instead of showing; preview_status lists the file.
+      if (errorMessage(cause).includes("Download is starting")) {
+        await Promise.race([
+          Promise.all(tab.savingDownloads),
+          new Promise((resolve) => setTimeout(resolve, timeout)),
+        ]);
+        return;
+      }
       if (cause instanceof errors.TimeoutError) {
         throw hostError(
           "PreviewAutomationTimeoutError",
@@ -447,6 +563,13 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
   const open = async (request: PreviewAutomationRequest): Promise<PreviewAutomationStatus> => {
     const input = request.input as PreviewAutomationOpenInput;
     const existing = (input.reuseExistingTab ?? true) ? currentTab(request) : undefined;
+    if (existing?.dialog) {
+      throw hostError(
+        "PreviewAutomationControlInterruptedError",
+        DIALOG_PENDING_MESSAGE,
+        "dialogPending",
+      );
+    }
     const tab =
       existing ?? registerTab(await (await options.getContext()).newPage(), request.threadId);
     threadTabIds.set(request.threadId, tab.id);
@@ -482,85 +605,22 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     return { tabId: tab.id, setting, viewport };
   };
 
-  const captureScreenshot = async (
-    tab: ChromeTab,
-  ): Promise<NonNullable<PreviewAutomationSnapshot["screenshot"]>> => {
-    const cdp = await cdpSession(tab);
-    // Tabs made over CDP keep rendering in the background, so no capture raises the window.
-    const page = (await evaluateInPage(tab, "({ devicePixelRatio })", {
-      returnByValue: true,
-      awaitPromise: false,
-    })) as { readonly devicePixelRatio: number };
-    const { cssVisualViewport: viewport } = await cdp.send("Page.getLayoutMetrics");
-    const capture = async (scale: number) => {
-      const { data } = await cdp.send("Page.captureScreenshot", {
-        format: "png",
-        fromSurface: true,
-        captureBeyondViewport: false,
-        clip: {
-          x: viewport.pageX,
-          y: viewport.pageY,
-          width: viewport.clientWidth,
-          height: viewport.clientHeight,
-          scale,
-        },
-      });
-      return { data, ...pngSize(Buffer.from(data, "base64")) };
-    };
-    // Like the desktop host: device pixels, scaled down to the maximum width.
-    const targetWidth = Math.min(
-      PREVIEW_AUTOMATION_MAX_SCREENSHOT_WIDTH,
-      Math.round(viewport.clientWidth * page.devicePixelRatio),
+  /** The built-in browser's snapshot: an AI-mode tree with refs that actions accept. */
+  const snapshot = async (tab: ChromeTab, input: PreviewAutomationSnapshotInput | undefined) => {
+    const rendering = {
+      page: tab.page,
+      cdp: await cdpSession(tab),
+      renderScale: "display",
+      fullScreenshot: input?.fullScreenshot,
+      consoleEntries: tab.consoleEntries,
+      networkEntries: tab.networkEntries,
+      actionTimeline: tab.actionTimeline,
+    } as const;
+    return sharedAction(() =>
+      input?.pixelsRequired === false
+        ? ServerBrowserPage.snapshotMetadata(rendering)
+        : ServerBrowserPage.snapshot(rendering),
     );
-    const scale = targetWidth / viewport.clientWidth;
-    let screenshot = await capture(scale);
-    // Some displays apply their pixel ratio on top of the clip scale.
-    if (screenshot.width > PREVIEW_AUTOMATION_MAX_SCREENSHOT_WIDTH) {
-      screenshot = await capture((scale * targetWidth) / screenshot.width);
-    }
-    return { mimeType: "image/png", ...screenshot };
-  };
-
-  /** Undefined when the capture fails or misses its deadline. */
-  const screenshotWithin = async (tab: ChromeTab, ms: number) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const late = new Promise<undefined>((resolve) => {
-      timer = setTimeout(() => resolve(undefined), ms);
-    });
-    return Promise.race([captureScreenshot(tab).catch(() => undefined), late]).finally(() =>
-      clearTimeout(timer),
-    );
-  };
-
-  const snapshot = async (
-    tab: ChromeTab,
-    request: PreviewAutomationRequest,
-  ): Promise<PreviewAutomationSnapshot> => {
-    const deadline = Date.now() + replyBudgetMs(request);
-    const cdp = await cdpSession(tab);
-    await cdp.send("Accessibility.enable");
-    const page = (await evaluateInPage(tab, PREVIEW_AUTOMATION_PAGE_SNAPSHOT_EXPRESSION, {
-      returnByValue: true,
-      awaitPromise: true,
-    })) as Pick<
-      PreviewAutomationSnapshot,
-      "url" | "title" | "loading" | "visibleText" | "interactiveElements"
-    >;
-    const accessibilityTree = await cdp.send("Accessibility.getFullAXTree");
-    const screenshot = await screenshotWithin(
-      tab,
-      Math.max(1, Math.min(SNAPSHOT_SCREENSHOT_TIMEOUT_MS, deadline - Date.now())),
-    );
-    return {
-      ...page,
-      accessibilityTree,
-      consoleEntries: [...tab.consoleEntries],
-      networkEntries: [...tab.networkEntries],
-      actionTimeline: [...tab.actionTimeline],
-      ...(screenshot === undefined
-        ? { screenshot: null, warning: PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING }
-        : { screenshot }),
-    };
   };
 
   const click = async (
@@ -568,7 +628,9 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     request: PreviewAutomationRequest,
     input: PreviewAutomationClickInput,
   ): Promise<void> => {
-    const locator = automationLocator(input);
+    const locator = automationLocator(tab.page, input);
+    const options = { button: input.button ?? "left", clickCount: input.clickCount ?? 1 } as const;
+    let clicked: Promise<void>;
     if (locator === null) {
       const x = input.x ?? 0;
       const y = input.y ?? 0;
@@ -584,15 +646,27 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
           `Click point (${x}, ${y}) is outside the ${viewport.width}x${viewport.height} viewport.`,
         );
       }
-      await tab.page.mouse.click(x, y);
-      return;
+      clicked = tab.page.mouse.click(x, y, options);
+    } else {
+      clicked = locator
+        .click({ ...options, timeout: locatorTimeoutMs(request, input.timeoutMs) })
+        .catch((cause: unknown) => {
+          throw locatorFailure(cause, input);
+        });
     }
-    await tab.page
-      .locator(locator)
-      .click({ timeout: locatorTimeoutMs(request, input.timeoutMs) })
-      .catch((cause: unknown) => {
-        throw locatorFailure(cause, input);
-      });
+    // A dialog blocks the click until it is answered, so the click returns when one opens.
+    let onDialog = () => {};
+    const dialogOpened = new Promise<"dialog">((resolve) => {
+      onDialog = () => resolve("dialog");
+      tab.page.once("dialog", onDialog);
+    });
+    try {
+      if ((await Promise.race([clicked, dialogOpened])) === "dialog") {
+        void clicked.catch(() => undefined);
+      }
+    } finally {
+      tab.page.off("dialog", onDialog);
+    }
   };
 
   const typeText = async (
@@ -600,7 +674,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     request: PreviewAutomationRequest,
     input: PreviewAutomationTypeInput,
   ): Promise<void> => {
-    const locator = automationLocator(input);
+    const locator = automationLocator(tab.page, input);
     const timeout = locatorTimeoutMs(request, input.timeoutMs);
     let target: Locator | ElementHandle;
     if (locator === null) {
@@ -614,7 +688,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       }
       target = focused;
     } else {
-      target = tab.page.locator(locator);
+      target = locator;
     }
     try {
       const editable =
@@ -644,10 +718,9 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     request: PreviewAutomationRequest,
     input: PreviewAutomationPressInput,
   ): Promise<void> => {
-    const locator = automationLocator(input);
+    const locator = automationLocator(tab.page, input);
     if (locator !== null) {
-      const focused = await tab.page
-        .locator(locator)
+      const focused = await locator
         .evaluate(focusPressTarget, undefined, {
           timeout: locatorTimeoutMs(request, input.timeoutMs),
         })
@@ -670,13 +743,12 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     input: PreviewAutomationScrollInput,
   ): Promise<void> => {
     const delta = { left: input.deltaX ?? 0, top: input.deltaY ?? 0 };
-    const locator = automationLocator(input);
+    const locator = automationLocator(tab.page, input);
     if (locator === null) {
       await tab.page.evaluate(`scrollBy(${JSON.stringify({ ...delta, behavior: "instant" })})`);
       return;
     }
-    await tab.page
-      .locator(locator)
+    await locator
       .evaluate(scrollTarget, delta, { timeout: locatorTimeoutMs(request) })
       .catch((cause: unknown) => {
         throw locatorFailure(cause, input);
@@ -692,11 +764,11 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       awaitPromise: input.awaitPromise ?? true,
     });
     const bytes = Buffer.byteLength(JSON.stringify(value) ?? "null", "utf8");
-    if (bytes > PREVIEW_AUTOMATION_MAX_EVALUATION_BYTES) {
+    if (bytes > MAX_EVALUATION_BYTES) {
       throw hostError(
         "PreviewAutomationResultTooLargeError",
-        `The evaluation result is ${bytes} bytes; the limit is ${PREVIEW_AUTOMATION_MAX_EVALUATION_BYTES}.`,
-        { maximumBytes: PREVIEW_AUTOMATION_MAX_EVALUATION_BYTES },
+        `The evaluation result is ${bytes} bytes; the limit is ${MAX_EVALUATION_BYTES}.`,
+        { maximumBytes: MAX_EVALUATION_BYTES },
       );
     }
     return value;
@@ -707,7 +779,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     request: PreviewAutomationRequest,
     input: PreviewAutomationWaitForInput,
   ): Promise<void> => {
-    const locator = automationLocator(input);
+    const locator = automationLocator(tab.page, input);
     const pageConditions = `(${
       input.text === undefined
         ? "true"
@@ -723,15 +795,12 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       const selectorMatched =
         locator === null
           ? true
-          : (await tab.page
-              .locator(locator)
-              .count()
-              .catch((cause: unknown) => {
-                if (INVALID_SELECTOR_PATTERN.test(errorMessage(cause))) {
-                  throw locatorFailure(cause, input);
-                }
-                return 0;
-              })) > 0;
+          : (await locator.count().catch((cause: unknown) => {
+              if (INVALID_SELECTOR_PATTERN.test(errorMessage(cause))) {
+                throw locatorFailure(cause, input);
+              }
+              return 0;
+            })) > 0;
       // A navigation can replace the document mid-check; poll again.
       const pageMatched = await tab.page.evaluate(pageConditions).catch(() => false);
       if (selectorMatched && pageMatched === true) return;
@@ -741,6 +810,42 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       "PreviewAutomationTimeoutError",
       `The wait conditions did not match within ${timeoutMs}ms.`,
     );
+  };
+
+  const answerDialog = async (tab: ChromeTab, input: PreviewAutomationDialogInput) => {
+    const dialog = tab.dialog;
+    if (!dialog) throw hostError("PreviewAutomationExecutionError", "No dialog is pending.");
+    if (input.accept) await dialog.accept(input.promptText);
+    else await dialog.dismiss();
+    if (tab.dialog === dialog) tab.dialog = null;
+    return status(tab);
+  };
+
+  const upload = async (tab: ChromeTab, input: PreviewAutomationUploadInput) => {
+    const relative = input.paths.find((path) => !NodePath.isAbsolute(path));
+    if (relative !== undefined) {
+      throw hostError(
+        "PreviewAutomationExecutionError",
+        `Upload paths must be absolute: ${relative}`,
+      );
+    }
+    if (await sharedAction(() => ServerBrowserPage.setInputFiles(tab.page, input)))
+      return undefined;
+    const open = tab.fileChooser;
+    if (!open) {
+      throw hostError(
+        "PreviewAutomationExecutionError",
+        "No file picker is open. Click the page's upload control first, or pass the file input's locator.",
+      );
+    }
+    if (input.paths.length > 1 && !open.chooser.isMultiple()) {
+      throw hostError("PreviewAutomationExecutionError", "This file picker accepts one file.");
+    }
+    await sharedAction(() =>
+      open.chooser.setFiles([...input.paths], { timeout: input.timeoutMs ?? 15_000 }),
+    );
+    if (tab.fileChooser === open) tab.fileChooser = null;
+    return undefined;
   };
 
   const close = async (request: PreviewAutomationRequest): Promise<Record<string, never>> => {
@@ -765,6 +870,19 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     return {};
   };
 
+  /** A pending dialog blocks the page, so every other action waits for its answer. */
+  const actionTab = (request: PreviewAutomationRequest): ChromeTab => {
+    const tab = requireTab(request);
+    if (tab.dialog) {
+      throw hostError(
+        "PreviewAutomationControlInterruptedError",
+        DIALOG_PENDING_MESSAGE,
+        "dialogPending",
+      );
+    }
+    return tab;
+  };
+
   const execute = async (request: PreviewAutomationRequest): Promise<unknown> => {
     switch (request.operation) {
       case "status": {
@@ -784,8 +902,10 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         return open(request);
       case "close":
         return close(request);
+      case "dialog":
+        return answerDialog(requireTab(request), request.input as PreviewAutomationDialogInput);
       case "navigate": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationNavigateInput;
         await navigate(
           tab,
@@ -796,9 +916,9 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         return status(tab);
       }
       case "resize":
-        return resize(requireTab(request), request.input as PreviewAutomationResizeInput);
+        return resize(actionTab(request), request.input as PreviewAutomationResizeInput);
       case "setColorScheme": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationSetColorSchemeInput;
         await tab.page.emulateMedia({
           colorScheme: input.colorScheme === "system" ? null : input.colorScheme,
@@ -809,38 +929,65 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         } satisfies PreviewAutomationSetColorSchemeResult;
       }
       case "snapshot": {
-        const tab = requireTab(request);
-        return withAction(tab, "snapshot", () => snapshot(tab, request));
+        const tab = actionTab(request);
+        const input = request.input as PreviewAutomationSnapshotInput | undefined;
+        return withAction(tab, "snapshot", () => snapshot(tab, input));
       }
       case "click": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationClickInput;
         return withAction(tab, "click", () => click(tab, request, input));
       }
       case "type": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationTypeInput;
         return withAction(tab, "type", () => typeText(tab, request, input));
       }
       case "press": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationPressInput;
         return withAction(tab, "press", () => press(tab, request, input));
       }
       case "scroll": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationScrollInput;
         return withAction(tab, "scroll", () => scroll(tab, request, input));
       }
       case "evaluate": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationEvaluateInput;
         return withAction(tab, "evaluate", () => evaluate(tab, input));
       }
       case "waitFor": {
-        const tab = requireTab(request);
+        const tab = actionTab(request);
         const input = request.input as PreviewAutomationWaitForInput;
         return withAction(tab, "waitFor", () => waitFor(tab, request, input));
+      }
+      case "hover": {
+        const tab = actionTab(request);
+        const input = request.input as PreviewAutomationHoverInput;
+        return withAction(tab, "hover", () =>
+          sharedAction(() => ServerBrowserPage.hover(tab.page, input)),
+        );
+      }
+      case "select": {
+        const tab = actionTab(request);
+        const input = request.input as PreviewAutomationSelectInput;
+        return withAction(tab, "select", () =>
+          sharedAction(() => ServerBrowserPage.select(tab.page, input)),
+        );
+      }
+      case "drag": {
+        const tab = actionTab(request);
+        const input = request.input as PreviewAutomationDragInput;
+        return withAction(tab, "drag", () =>
+          sharedAction(() => ServerBrowserPage.drag(tab.page, input)),
+        );
+      }
+      case "upload": {
+        const tab = actionTab(request);
+        const input = request.input as PreviewAutomationUploadInput;
+        return withAction(tab, "upload", () => upload(tab, input));
       }
       case "recordingStart":
       case "recordingStop":
@@ -865,6 +1012,11 @@ const CHROME_PREVIEW_HOST_OPERATIONS = [
   "resize",
   "setColorScheme",
   "close",
+  "dialog",
+  "hover",
+  "select",
+  "drag",
+  "upload",
 ] as const;
 
 export const CHROME_PREVIEW_HOST_CLIENT_ID = "upcomputer-chrome";
@@ -953,7 +1105,12 @@ export const ChromePreviewHostLive = Layer.effectDiscard(
     const serverConfig = yield* ServerConfig;
     const browser = yield* BrowserAutomationService;
     const environmentId = yield* (yield* ServerEnvironment).getEnvironmentId;
-    const host = createChromePreviewHost({ getContext: browser.context });
+    const downloadsDir = NodePath.join(serverConfig.stateDir, "browser-downloads");
+    // Downloads are listed per tab in memory, so an earlier run's files are never listed again.
+    yield* Effect.promise(() =>
+      NodeFSP.rm(downloadsDir, { recursive: true, force: true }).catch(() => undefined),
+    );
+    const host = createChromePreviewHost({ getContext: browser.context, downloadsDir });
     const preferred = chromePreference({
       host,
       wantsChrome: () =>
