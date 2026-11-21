@@ -23,6 +23,7 @@ import {
   subscribeTasksWebAccess,
   useTasksWebAccess,
 } from "../environmentApi.ts";
+import { isDisconnectError } from "../state/taskPageLoader.ts";
 import {
   botChatStatus,
   botStatus,
@@ -131,8 +132,9 @@ async function refresh(environmentId: EnvironmentId, store: BotListStore) {
       releaseNotice(store);
       publish(store, { ...EMPTY, loaded: true, unsupported: true });
     } else {
-      // A view that went away since the request no longer shows the list.
-      if (store.listeners.size > 0) {
+      // A view that went away since the request no longer shows the list, and a computer that
+      // went away is its outage card; its reconnect loads the list again.
+      if (store.listeners.size > 0 && !isDisconnectError(cause)) {
         const previous = store.releaseNotice;
         store.releaseNotice = holdClientNotice(
           {

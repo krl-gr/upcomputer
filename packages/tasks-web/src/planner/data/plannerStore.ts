@@ -548,7 +548,8 @@ export class PlannerStore {
       }
       this.rangeError = null;
     } catch (error) {
-      this.rangeError = errorMessage(error);
+      // A computer that went away reloads the week on reconnect.
+      if (!isDisconnectError(error)) this.rangeError = errorMessage(error);
     }
   }
 

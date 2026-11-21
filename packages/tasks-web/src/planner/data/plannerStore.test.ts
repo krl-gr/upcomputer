@@ -268,13 +268,28 @@ describe("planner store: change events", () => {
     );
   });
 
-  test("a computer that went away is not a failed week, but a real stream failure is", () => {
+  test("a computer that went away is not a failed week, but a real failure is", async () => {
     const h = harness();
     h.store.retain();
     h.failStream(new TaskChangeStreamEnded());
     NodeAssert.equal(h.store.getSnapshot().rangeError, null);
     h.failStream(new Error("Database is locked."));
     NodeAssert.notEqual(h.store.getSnapshot().rangeError, null);
+
+    // The same for the week's own load.
+    const loaded = harness();
+    await started(loaded);
+    const reloadWeek = async (error: unknown) => {
+      loaded.handlers.scheduleRange = () => Promise.reject(error);
+      loaded.emit(change({ scheduleDates: ["2026-10-07"] }));
+      await until(() => loaded.count("scheduleRange") >= 1);
+      await NodeTimersPromises.setTimeout(15);
+      loaded.reset();
+    };
+    await reloadWeek(new TaskChangeStreamEnded());
+    NodeAssert.equal(loaded.store.getSnapshot().rangeError, null);
+    await reloadWeek(new Error("Database is locked."));
+    NodeAssert.notEqual(loaded.store.getSnapshot().rangeError, null);
   });
 
   test("a sync reloads lists, days, progress and open schedules", async () => {

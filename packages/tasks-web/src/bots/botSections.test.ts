@@ -36,7 +36,8 @@ vi.mock("../environmentApi.ts", () => {
 });
 
 import { readClientNotices } from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
-import { useBotSectionLists } from "./botData.tsx";
+import { TaskChangeStreamEnded } from "../rpc/taskChanges.ts";
+import { botsChanged, useBotSectionLists } from "./botData.tsx";
 
 const botNotices = (environmentId: EnvironmentId) =>
   readClientNotices().filter((notice) => notice.environmentId === environmentId);
@@ -93,6 +94,10 @@ describe("Bots section lists", () => {
     const { seen, view } = await render([here]);
     await act(async () => servers.dropStream?.());
     expect(seen.at(-1)).toEqual([{ environmentId: here, bots: [], loaded: true }]);
+    expect(botNotices(here)).toEqual([]);
+    // A load cut off by the drop is no failed list either.
+    servers.lists.set(here, () => Promise.reject(new TaskChangeStreamEnded()));
+    await act(async () => botsChanged());
     expect(botNotices(here)).toEqual([]);
     view.unmount();
   });

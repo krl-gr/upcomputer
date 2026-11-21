@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { msg } from "gt-react";
-import type { EnvironmentId } from "@t3tools/contracts";
 import {
   type ClientNoticeInput,
   useHeldClientNotices,
@@ -343,7 +342,8 @@ export function useTaskPages(
   }
   const listStates = laneStates.filter(({ lane }) => lane.group === undefined);
 
-  const { status, errorMessage, offlineEnvironmentIds } = resolveTaskPagesStatus({
+  // A failed load is a Notifications card per computer.
+  const { status, failures, offlineEnvironmentIds } = resolveTaskPagesStatus({
     lanes: [
       // A lane's counts speak for it while its groups load; a lane without counts speaks by its rows.
       ...countLanes
@@ -351,11 +351,13 @@ export function useTaskPages(
         .map((lane) => ({
           environmentId: lane.target.environmentId,
           accessPending: lane.target.access.availability === "loading",
+          accessUnavailable: lane.target.access.availability === "unavailable",
           state: byCountLane[lane.key],
         })),
       ...lanes.map((lane) => ({
         environmentId: lane.target.environmentId,
         accessPending: lane.target.access.availability === "loading",
+        accessUnavailable: lane.target.access.availability === "unavailable",
         state: byLane[lane.key],
       })),
     ],
@@ -365,16 +367,6 @@ export function useTaskPages(
     for (const { loader } of countLoaders.current.values()) loader.refresh();
     for (const { loader } of loaders.current.values()) loader.refresh();
   }, []);
-  // A failed load is a Notifications card per computer; a disconnected one waits for its computer.
-  const failures = new Map<EnvironmentId, string>();
-  const laneLoads = [
-    ...countLanes.map((lane) => ({ lane, state: byCountLane[lane.key] })),
-    ...lanes.map((lane) => ({ lane, state: byLane[lane.key] })),
-  ];
-  for (const { lane, state } of laneLoads) {
-    if (state?.error !== undefined && !state.disconnected)
-      failures.set(lane.target.environmentId, state.error);
-  }
   useHeldClientNotices(
     [...failures].map(([environmentId, detail]): ClientNoticeInput => ({
       id: "tasks:list",
@@ -406,7 +398,6 @@ export function useTaskPages(
     }, []),
     hasMore: listStates.some(({ state }) => state.page?.nextCursor != null),
     loadingMore: listStates.some(({ state }) => state.loadingMore),
-    errorMessage,
     status,
     offlineEnvironmentIds,
     reload,
