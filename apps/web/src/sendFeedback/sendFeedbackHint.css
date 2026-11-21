@@ -1,0 +1,123 @@
+/*
+ * The hint's loop: the pointer clicks the bell, the popover opens, and Send
+ * feedback lights up. Only transform and opacity move, so it stays on the
+ * compositor. It plays three times and stops at 88% of the third, the frame
+ * with Send feedback lit, so nothing repaints after. Without the animation the
+ * rules below draw that frame, which is the still reduced motion shows.
+ */
+[data-sfh="stage"] {
+  --sfh-loop: 4s;
+}
+[data-sfh="pointer"] {
+  transform: translate(160px, 110px);
+}
+[data-sfh="popover"] {
+  transform-origin: 16px 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-sfh="pointer"],
+  [data-sfh="popover"],
+  [data-sfh="bell-lit"],
+  [data-sfh="button-lit"] {
+    animation-duration: var(--sfh-loop);
+    animation-timing-function: linear;
+    animation-iteration-count: 2.88;
+    animation-fill-mode: forwards;
+  }
+  [data-sfh="pointer"] {
+    animation-name: sfh-pointer;
+  }
+  [data-sfh="popover"] {
+    animation-name: sfh-popover;
+  }
+  [data-sfh="bell-lit"] {
+    animation-name: sfh-bell-lit;
+  }
+  [data-sfh="button-lit"] {
+    animation-name: sfh-button-lit;
+  }
+}
+
+@keyframes sfh-pointer {
+  0% {
+    opacity: 0;
+    transform: translate(176px, 150px);
+    animation-timing-function: ease-out;
+  }
+  6% {
+    opacity: 1;
+    transform: translate(176px, 150px);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  22% {
+    transform: translate(78px, 150px);
+  }
+  25% {
+    transform: translate(78px, 150px) scale(0.86);
+  }
+  28%,
+  38% {
+    transform: translate(78px, 150px);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  54%,
+  88% {
+    opacity: 1;
+    transform: translate(160px, 110px);
+  }
+  95%,
+  100% {
+    opacity: 0;
+    transform: translate(160px, 110px);
+  }
+}
+
+@keyframes sfh-popover {
+  0%,
+  26% {
+    opacity: 0;
+    transform: scale(0.96);
+    animation-timing-function: ease-out;
+  }
+  31%,
+  88% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  95%,
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+@keyframes sfh-bell-lit {
+  0%,
+  19% {
+    opacity: 0;
+  }
+  23%,
+  88% {
+    opacity: 1;
+  }
+  95%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes sfh-button-lit {
+  0%,
+  50% {
+    opacity: 0;
+  }
+  55%,
+  88% {
+    opacity: 1;
+  }
+  95%,
+  100% {
+    opacity: 0;
+  }
+}

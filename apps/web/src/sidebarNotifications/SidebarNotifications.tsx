@@ -9,12 +9,13 @@ import {
   CircleAlertIcon,
   ExternalLinkIcon,
   InfoIcon,
+  MessageSquareTextIcon,
   RefreshCwIcon,
   RotateCcwIcon,
   ServerIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { Fragment, memo, type ReactNode, useState } from "react";
+import { Fragment, memo, type ReactNode, useEffect, useEffectEvent, useState } from "react";
 import { T, useGT } from "gt-react";
 
 import {
@@ -29,7 +30,7 @@ import { UpdateEverythingDialog } from "../components/sidebar/UpdateEverythingDi
 import { dismissSettledUpdateRunMachines } from "../components/sidebar/updateEverythingRun";
 import { InlineButton } from "../components/ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
-import { SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
+import { SidebarMenuButton, SidebarMenuItem, useSidebar } from "../components/ui/sidebar";
 import { Spinner } from "../components/ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -57,7 +58,11 @@ import {
 import { type SidebarUpdates, useSidebarUpdates } from "./useSidebarUpdates";
 import { useSidebarFooterTooltipSide } from "../adaptiveSidebar/adaptiveSidebar";
 import { BadgedIcon } from "../badgedIcon/BadgedIcon";
-import { useSurveyForm } from "../userSurvey/surveyParts";
+import { WithConnectAccountEmail } from "../sendFeedback/ConnectAccountEmail";
+import { SendFeedbackForm } from "../sendFeedback/SendFeedbackForm";
+import { onSendFeedbackRequest } from "../sendFeedback/sendFeedbackStore";
+import { useSendFeedback, useSendFeedbackForm } from "../sendFeedback/useSendFeedback";
+import { SurveyAction, SurveyAutoHeight, useSurveyForm } from "../userSurvey/surveyParts";
 import { UserSurveyCard } from "../userSurvey/UserSurveyCard";
 import { UserSurveyDialog } from "../userSurvey/UserSurveyDialog";
 import { useUserSurvey } from "../userSurvey/useUserSurvey";
@@ -110,6 +115,23 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
     userSurvey?.submit ?? null,
     userSurvey?.partial ?? null,
   );
+  const feedbackSource = useSendFeedback();
+  const feedback = useSendFeedbackForm(feedbackSource);
+  const [view, setView] = useState<"list" | "feedback">("list");
+  const sidebar = useSidebar();
+  const openFeedbackForm = useEffectEvent(() => {
+    if (!feedbackSource.available) return;
+    if (sidebar.isMobile) sidebar.setOpenMobile(true);
+    else if (!sidebar.open) sidebar.setOpen(true);
+    setView("feedback");
+    setOpen(true);
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the command palette asks for the form from outside this tree
+  useEffect(() => onSendFeedbackRequest(openFeedbackForm), []);
+  const showList = () => {
+    setView("list");
+    if (feedback.status.kind === "sent") feedback.reset();
+  };
   const { dot, label } = describeSidebarNotificationsButton(
     {
       severities: notices.map((notice) => notice.severity),
@@ -133,6 +155,10 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
           onOpenChange={(next) => {
             setOpen(next);
             if (next) userSurvey?.shown();
+          }}
+          // Closing keeps the draft, and the bell opens on the notifications again.
+          onOpenChangeComplete={(next) => {
+            if (!next) showList();
           }}
         >
           <Tooltip>
@@ -163,31 +189,51 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
             side={tooltipSide}
             align={tooltipSide === "top" ? "start" : "end"}
             padding="compact"
-            className="w-85"
+            className="w-85 max-w-[calc(100vw-1rem)]"
           >
-            <NotificationsPanel
-              updates={updates}
-              notices={notices}
-              dismiss={dismiss}
-              surveyCard={
-                userSurvey ? (
-                  <UserSurveyCard
-                    key={userSurvey.survey.id}
-                    survey={userSurvey.survey}
-                    draft={surveyForm.draft}
-                    onStart={(draft) => {
-                      surveyForm.start(draft);
-                      setOpen(false);
-                      setSurveyOpen(true);
-                    }}
-                    onDismiss={() => {
-                      if (surveyForm.leftOn) userSurvey.dismiss(surveyForm.leftOn);
-                    }}
-                  />
-                ) : null
-              }
-              onClose={() => setOpen(false)}
-            />
+            <SurveyAutoHeight>
+              {view === "feedback" ? (
+                <WithConnectAccountEmail>
+                  {(accountEmail) => (
+                    <SendFeedbackForm
+                      draft={feedback.draft}
+                      status={feedback.status}
+                      accountEmail={accountEmail}
+                      systemInfo={feedbackSource.systemInfo}
+                      onDraftChange={feedback.setDraft}
+                      onSubmit={() => feedback.submit(accountEmail)}
+                      onBack={showList}
+                      onDone={showList}
+                    />
+                  )}
+                </WithConnectAccountEmail>
+              ) : (
+                <NotificationsPanel
+                  updates={updates}
+                  notices={notices}
+                  dismiss={dismiss}
+                  surveyCard={
+                    userSurvey ? (
+                      <UserSurveyCard
+                        key={userSurvey.survey.id}
+                        survey={userSurvey.survey}
+                        draft={surveyForm.draft}
+                        onStart={(draft) => {
+                          surveyForm.start(draft);
+                          setOpen(false);
+                          setSurveyOpen(true);
+                        }}
+                        onDismiss={() => {
+                          if (surveyForm.leftOn) userSurvey.dismiss(surveyForm.leftOn);
+                        }}
+                      />
+                    ) : null
+                  }
+                  onClose={() => setOpen(false)}
+                  onSendFeedback={feedbackSource.available ? () => setView("feedback") : null}
+                />
+              )}
+            </SurveyAutoHeight>
           </PopoverPopup>
         </Popover>
         <UpdateEverythingDialog
@@ -287,6 +333,7 @@ function NotificationsPanel({
   dismiss,
   surveyCard,
   onClose,
+  onSendFeedback,
 }: {
   readonly updates: SidebarUpdates;
   readonly notices: ReturnType<typeof useBackgroundNotices>["notices"];
@@ -294,6 +341,8 @@ function NotificationsPanel({
   /** The survey the server offers, as its card; it ranks with the notices. */
   readonly surveyCard: ReactNode;
   readonly onClose: () => void;
+  /** Turns the popover to the feedback form; null when this client may not send feedback. */
+  readonly onSendFeedback: (() => void) | null;
 }) {
   const gt = useGT();
   const navigate = useNavigate();
@@ -546,6 +595,19 @@ function NotificationsPanel({
           ))}
         </ol>
       )}
+      {onSendFeedback ? (
+        <div className="mt-2 flex border-t border-foreground/7 pt-1.5">
+          <SurveyAction
+            size="sm"
+            tone="quiet"
+            data-track="notifications.send-feedback"
+            onClick={onSendFeedback}
+          >
+            <MessageSquareTextIcon aria-hidden />
+            <T>Send feedback</T>
+          </SurveyAction>
+        </div>
+      ) : null}
     </div>
   );
 }
