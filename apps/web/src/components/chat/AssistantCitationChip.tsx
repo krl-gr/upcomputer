@@ -9,6 +9,7 @@ import {
   serializeAssistantCitation,
 } from "@t3tools/shared/assistantCitations";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useOpenTask } from "@t3tools/tasks-web/openTask";
 import { useGT } from "gt-react";
 import { PencilIcon, QuoteIcon } from "lucide-react";
 import {
@@ -44,11 +45,11 @@ function useCitationSourceLinkProps(citation: AssistantCitation) {
       ? null
       : scopeThreadRef(citation.environmentId, citation.threadId),
   );
-  // UpComputer: a quote from a task's output opens that task.
+  // UpComputer: a quote from a task's output opens that task beside the chat.
+  const openTask = useOpenTask();
   if (isTaskOutputCitation(citation)) {
     return {
-      to: "/tasks" as string,
-      search: { task: `${citation.environmentId}:${citation.taskId}` } as never,
+      ...openTask.linkProps(citation.environmentId, citation.taskId),
       "data-markdown-copy": serializeAssistantCitation(citation),
     };
   }

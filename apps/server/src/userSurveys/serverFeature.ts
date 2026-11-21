@@ -18,7 +18,7 @@ import * as UserSurveys from "./UserSurveys.ts";
 
 const USER_SURVEYS_FEATURE_ID = "upcomputer.user-surveys";
 
-/** The survey built into the release, and the RPCs the sidebar card asks and answers with. */
+/** The survey built into the release, its RPCs, and feedback sent from the notifications popover. */
 export const USER_SURVEYS_SERVER_FEATURE = defineExperimentalServerFeature({
   id: USER_SURVEYS_FEATURE_ID,
   version: 1,
@@ -42,6 +42,7 @@ export const USER_SURVEYS_SERVER_FEATURE = defineExperimentalServerFeature({
       requiredScopes: {
         [M.current]: AuthOrchestrationReadScope,
         [M.report]: AuthOrchestrationOperateScope,
+        [M.feedback]: AuthOrchestrationOperateScope,
       },
       handlers: () =>
         UserSurveyRpcGroup.toLayer(
@@ -50,6 +51,8 @@ export const USER_SURVEYS_SERVER_FEATURE = defineExperimentalServerFeature({
               Effect.flatMap(UserSurveys.UserSurveys, (surveys) => surveys.current),
             [M.report]: (input) =>
               Effect.flatMap(UserSurveys.UserSurveys, (surveys) => surveys.report(input)),
+            [M.feedback]: (input) =>
+              Effect.flatMap(UserSurveys.UserSurveys, (surveys) => surveys.sendFeedback(input)),
           }),
         ),
     }),

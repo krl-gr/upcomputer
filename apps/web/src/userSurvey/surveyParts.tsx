@@ -228,7 +228,7 @@ export function SurveyAutoHeight({ children }: { readonly children: ReactNode })
 }
 
 // Focus is a darker fill and a hairline in the text colour, not the blue ring.
-const fieldVariants = cva(
+export const surveyFieldVariants = cva(
   "w-full rounded-lg bg-foreground/5 text-foreground ring-1 ring-transparent outline-none transition-[background-color,box-shadow] duration-150 ring-inset placeholder:text-muted-foreground/75 hover:bg-foreground/7 focus:bg-foreground/8 focus:ring-foreground/16 disabled:opacity-64 max-sm:text-base motion-reduce:transition-none",
   {
     variants: {
@@ -241,7 +241,7 @@ const fieldVariants = cva(
 );
 
 /** A soft, borderless text box that grows with what is typed. */
-function SurveyTextBox({
+export function SurveyTextBox({
   size,
   lines = 1,
   ...props
@@ -254,7 +254,7 @@ function SurveyTextBox({
     <textarea
       rows={lines}
       className={cn(
-        fieldVariants({ size }),
+        surveyFieldVariants({ size }),
         "block max-h-48 resize-none field-sizing-content wrap-anywhere",
       )}
       style={{
@@ -348,7 +348,7 @@ export function SurveyAnswerInput({
         autoComplete="email"
         autoCapitalize="off"
         spellCheck={false}
-        className={fieldVariants({ size })}
+        className={surveyFieldVariants({ size })}
         aria-label={question.question}
         placeholder={question.placeholder ?? gt("you@example.com or @handle")}
         autoFocus={autoFocus}
@@ -449,11 +449,14 @@ export function SurveyError({ status }: { readonly status: UserSurveyStatus }) {
 }
 
 /** The thank-you check: the disc grows in and the tick draws itself, once. */
-export function SurveyThanksMark() {
+export function SurveyThanksMark({ size = "lg" }: { readonly size?: SurveyChipSize }) {
   return (
     <span
       aria-hidden
-      className="grid size-12 shrink-0 scale-100 place-items-center rounded-full bg-success/14 text-success-foreground opacity-100 transition-[scale,opacity] duration-300 ease-out starting:scale-50 starting:opacity-0 motion-reduce:transition-none"
+      className={cn(
+        "grid shrink-0 scale-100 place-items-center rounded-full bg-success/14 text-success-foreground opacity-100 transition-[scale,opacity] duration-300 ease-out starting:scale-50 starting:opacity-0 motion-reduce:transition-none",
+        size === "sm" ? "size-9" : "size-12",
+      )}
     >
       <svg
         viewBox="0 0 24 24"
@@ -462,7 +465,7 @@ export function SurveyThanksMark() {
         strokeWidth={2.25}
         strokeLinecap="round"
         strokeLinejoin="round"
-        className="size-6"
+        className={size === "sm" ? "size-4.5" : "size-6"}
       >
         <path
           d="M5 12.5 9.5 17 19 7.5"
