@@ -67,7 +67,12 @@ export function settledTurnsProjection(
     ),
     attempts: runIds.map(record("attempt")) as never,
     nodes: runIds.map(record("node")) as never,
-    messages: runIds.map(record("message")) as never,
+    messages: [
+      ...runIds.map(record("message")),
+      // Messages the server keeps outside any history window.
+      { id: "delegated-completion", runId: "run-1", delegatedCompletion: {} },
+      { id: "workflow-script", runId: "run-2", workflowScript: true },
+    ] as never,
     checkpoints: runIds.map(record("checkpoint")) as never,
     providerTurns: runIds.map((runId) => ({
       id: `provider-turn-${runId}`,

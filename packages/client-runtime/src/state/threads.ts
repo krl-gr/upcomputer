@@ -657,11 +657,13 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           if (applied._tag === "delete") break;
         }
         // Loaded earlier pages mean the user reads old turns; those stay until the thread closes.
+        // A load in flight would no longer match the moved cursor and stay stuck as loading.
         if (
           result._tag === "applied" &&
           canTrim &&
           settlesRun &&
           !result.history.expanded &&
+          !result.history.loading &&
           exceedsThreadWindow(result.projection, OPEN_THREAD_WINDOW.trimAbove)
         ) {
           const trimmed = trimThreadWindow(

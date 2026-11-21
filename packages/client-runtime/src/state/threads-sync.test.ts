@@ -2455,6 +2455,60 @@ describe("EnvironmentThreads", () => {
       }),
   );
 
+  it.effect("does not trim while older history is loading, so the load still finishes", () =>
+    Effect.gen(function* () {
+      const asked = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const harness = yield* makeHarness({
+        historyHttpClient: HttpClient.make((request) =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(asked, undefined);
+            yield* Deferred.await(release);
+            return HttpClientResponse.fromWeb(
+              request,
+              Response.json({
+                snapshotSequence: 4,
+                items: [],
+                nextCursor: null,
+                hasMoreHistory: false,
+              }),
+            );
+          }),
+        ),
+      });
+      const long = settledTurnsProjection(BASE_PROJECTION, 550);
+      yield* Queue.offer(harness.inputs, {
+        ...snapshot(long, 4),
+        historyCursor: "older",
+        hasMoreHistory: true,
+      });
+      yield* awaitThreadState(
+        harness.observed,
+        (value) => Option.isSome(value.data) && value.data.value.visibleTurnItems.length === 1_100,
+      );
+      const loading = yield* harness.loadEarlier().pipe(Effect.forkChild);
+      yield* Deferred.await(asked);
+      yield* Queue.offer(harness.inputs, {
+        kind: "event",
+        sequence: 5,
+        event: {
+          id: EventId.make("event-run-settled"),
+          type: "run.updated",
+          threadId: THREAD_ID,
+          occurredAt: v2Now,
+          payload: long.runs.at(-1)!,
+        },
+      });
+      const settled = yield* awaitThreadState(harness.observed, (value) => value.sequence === 5);
+      expect(Option.getOrThrow(settled.data).visibleTurnItems).toHaveLength(1_100);
+
+      yield* Deferred.succeed(release, undefined);
+      expect(yield* Fiber.join(loading)).toEqual({ _tag: "loaded" });
+      const loaded = yield* SubscriptionRef.get(harness.threadState);
+      expect(loaded.history).toMatchObject({ loading: false, expanded: true });
+    }),
+  );
+
   it.effect("preserves data after a domain failure and resumes on a replacement session", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ cached: BASE_PROJECTION });

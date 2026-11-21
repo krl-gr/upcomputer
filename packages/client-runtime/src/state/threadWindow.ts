@@ -79,9 +79,9 @@ export function exceedsThreadWindow(
 }
 
 /**
- * Drops the oldest whole turns beyond `budget` as a bounded snapshot leaves them out, with the
- * records of runs left without items, and points the history cursor at the first kept row so
- * loading earlier activity refills them. Null when the thread fits or cannot be cut.
+ * Drops the oldest whole turns beyond `budget` and their messages, as a bounded snapshot leaves
+ * them out, and points the history cursor at the first kept row so loading earlier activity
+ * refills them. Null when the thread fits or cannot be cut.
  */
 export function trimThreadWindow(
   projection: OrchestrationV2ThreadProjection,
@@ -134,20 +134,18 @@ export function trimThreadWindow(
     if (item.runId !== null) keptRunIds.add(item.runId);
   }
   for (const runId of keptRunIds) droppedRunIds.delete(runId);
-  const dropsRun = (runId: string | null) => runId !== null && droppedRunIds.has(runId);
-  const attempts = projection.attempts.filter((attempt) => !dropsRun(attempt.runId));
-  const keptAttemptIds = new Set<string>(attempts.map((attempt) => attempt.id));
 
+  // Runs, attempts, nodes, checkpoints and provider turns stay: history pages bring back only
+  // rows, so these are kept as the server's bounded snapshot keeps them.
   return {
     projection: {
       ...projection,
-      runs: projection.runs.filter((run) => !droppedRunIds.has(run.id)),
-      attempts,
-      nodes: projection.nodes.filter((node) => !dropsRun(node.runId)),
-      messages: projection.messages.filter((message) => !dropsRun(message.runId)),
-      checkpoints: projection.checkpoints.filter((checkpoint) => !dropsRun(checkpoint.runId)),
-      providerTurns: projection.providerTurns.filter(
-        (turn) => turn.runAttemptId === null || keptAttemptIds.has(turn.runAttemptId),
+      messages: projection.messages.filter(
+        (message) =>
+          message.runId === null ||
+          !droppedRunIds.has(message.runId) ||
+          message.delegatedCompletion !== undefined ||
+          message.workflowScript === true,
       ),
       turnItems: keptItems,
       visibleTurnItems: rows

@@ -20,7 +20,7 @@ describe("trimThreadWindow", () => {
     ).toBeNull();
   });
 
-  it("drops whole old turns with their runs' records and points the cursor at the first kept row", () => {
+  it("drops whole old turns with their messages and points the cursor at the first kept row", () => {
     const projection = thread(10);
     expect(exceedsThreadWindow(projection, { maxRows: 7, maxBytes: 1_000_000 })).toBe(true);
     const trimmed = trimThreadWindow(projection, EMPTY_THREAD_HISTORY_META, {
@@ -47,19 +47,17 @@ describe("trimThreadWindow", () => {
       "user-10",
       "command-10",
     ]);
-    const kept = ["run-8", "run-9", "run-10"];
-    expect(trimmed?.projection.runs.map((run) => run.id)).toEqual(kept);
-    for (const records of [
-      trimmed?.projection.attempts,
-      trimmed?.projection.nodes,
-      trimmed?.projection.messages,
-      trimmed?.projection.checkpoints,
-    ]) {
-      expect(records?.map((record) => (record as { runId: string }).runId)).toEqual(kept);
+    expect(trimmed?.projection.messages.map((message) => message.id)).toEqual([
+      "message-run-8",
+      "message-run-9",
+      "message-run-10",
+      "delegated-completion",
+      "workflow-script",
+    ]);
+    // History pages bring back only rows, so every run keeps its records.
+    for (const key of ["runs", "attempts", "nodes", "checkpoints", "providerTurns"] as const) {
+      expect(trimmed?.projection[key]).toBe(projection[key]);
     }
-    expect(trimmed?.projection.providerTurns.map((turn) => turn.runAttemptId)).toEqual(
-      kept.map((runId) => `attempt-${runId}`),
-    );
     expect(trimmed?.history).toMatchObject({ hasMoreHistory: true, expanded: false });
     // The server ends the next page just before the row the cursor names.
     expect(decodeCursor(trimmed!.history.historyCursor!)).toEqual({
@@ -80,7 +78,12 @@ describe("trimThreadWindow", () => {
       maxRows: 1_000,
       maxBytes: 250_000,
     });
-    expect(trimmed?.projection.runs.map((run) => run.id)).toEqual(["run-5", "run-6"]);
+    expect(trimmed?.projection.turnItems.map((item) => item.runId)).toEqual([
+      "run-5",
+      "run-5",
+      "run-6",
+      "run-6",
+    ]);
   });
 
   it("keeps everything while a run in the dropped range is unfinished", () => {
