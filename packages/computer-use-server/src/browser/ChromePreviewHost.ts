@@ -80,6 +80,7 @@ interface LocatorInput {
 
 interface ChromeTab {
   readonly id: string;
+  readonly threadId: string;
   readonly page: Page;
   viewportSetting: PreviewViewportSetting;
   cdp: Promise<CDPSession> | undefined;
@@ -241,9 +242,10 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
   const threadTabIds = new Map<string, string>();
   let actionSequence = 0;
 
-  const registerTab = (page: Page): ChromeTab => {
+  const registerTab = (page: Page, threadId: string): ChromeTab => {
     const tab: ChromeTab = {
       id: `chrome-${NodeCrypto.randomUUID().slice(0, 8)}`,
+      threadId,
       page,
       viewportSetting: FILL_PREVIEW_VIEWPORT,
       cdp: undefined,
@@ -424,7 +426,8 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
   const open = async (request: PreviewAutomationRequest): Promise<PreviewAutomationStatus> => {
     const input = request.input as PreviewAutomationOpenInput;
     const existing = (input.reuseExistingTab ?? true) ? currentTab(request) : undefined;
-    const tab = existing ?? registerTab(await (await options.getContext()).newPage());
+    const tab =
+      existing ?? registerTab(await (await options.getContext()).newPage(), request.threadId);
     threadTabIds.set(request.threadId, tab.id);
     if (input.url !== undefined) {
       await navigate(tab, resolveUrl(input.url), "load", replyBudgetMs(request));
@@ -675,6 +678,28 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     );
   };
 
+  const close = async (request: PreviewAutomationRequest): Promise<Record<string, never>> => {
+    const tab = requireTab(request);
+    if (tab.threadId !== request.threadId) {
+      throw hostError(
+        "PreviewAutomationControlInterruptedError",
+        "Only the thread that opened this Chrome tab can close it.",
+        "agentMismatch",
+      );
+    }
+    try {
+      await tab.page.close();
+    } catch (cause) {
+      throw hostError(
+        "PreviewAutomationExecutionError",
+        `Chrome could not close tab ${tab.id}: ${errorMessage(cause)}`,
+      );
+    }
+    tabs.delete(tab.id);
+    if (threadTabIds.get(request.threadId) === tab.id) threadTabIds.delete(request.threadId);
+    return {};
+  };
+
   const execute = async (request: PreviewAutomationRequest): Promise<unknown> => {
     switch (request.operation) {
       case "status": {
@@ -692,6 +717,8 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       }
       case "open":
         return open(request);
+      case "close":
+        return close(request);
       case "navigate": {
         const tab = requireTab(request);
         const input = request.input as PreviewAutomationNavigateInput;
@@ -769,6 +796,7 @@ const CHROME_PREVIEW_HOST_OPERATIONS = [
   ...PREVIEW_AUTOMATION_V1_OPERATIONS,
   "resize",
   "setColorScheme",
+  "close",
 ] as const;
 
 export const CHROME_PREVIEW_HOST_CLIENT_ID = "upcomputer-chrome";

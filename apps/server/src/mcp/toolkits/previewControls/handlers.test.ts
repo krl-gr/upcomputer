@@ -4,6 +4,7 @@ import { expect, it } from "@effect/vitest";
 import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
+  PreviewTabId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -100,4 +101,92 @@ it.effect.each([
       expect((yield* manager.list({ threadId })).sessions).toEqual([tab]);
     }
   }),
+);
+
+it.effect("close sends a tab without a preview session to its server-side host", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("preview-controls-thread");
+      const environmentId = EnvironmentId.make("preview-controls-environment");
+      const scope: McpInvocationContext.McpInvocationScope = {
+        environmentId,
+        requestNamespace: "preview-controls-provider-session",
+        thread: {
+          threadId,
+          providerSessionId: "preview-controls-provider-session",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+        },
+        client: undefined,
+        capabilities: new Set(["preview"]),
+        issuedAt: 0,
+      };
+      const manager = yield* Preview.make.pipe(
+        Effect.provide(
+          Layer.merge(
+            ServerConfig.layerTest(process.cwd(), { prefix: "t3-preview-controls-" }).pipe(
+              Layer.provide(NodeServices.layer),
+            ),
+            NodeCrypto.layer,
+          ),
+        ),
+      );
+      const broker = yield* PreviewAutomationBroker.make.pipe(
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      );
+      const closedTabs: Array<string | undefined> = [];
+      const host = yield* broker.connect(
+        { clientId: "chrome-host", environmentId, supportedOperations: ["close"] },
+        { serverHost: { preferred: Effect.succeed(true) } },
+      );
+      yield* Stream.runForEach(host, (event) => {
+        if (event.type !== "request") return Effect.void;
+        closedTabs.push(event.request.tabId);
+        const open = event.request.tabId === "chrome-open";
+        return broker.respond({
+          clientId: "chrome-host",
+          connectionId: event.connectionId,
+          requestId: event.request.requestId,
+          ok: open,
+          ...(open
+            ? { result: {} }
+            : {
+                error: {
+                  _tag: "PreviewAutomationTabNotFoundError",
+                  message: "Chrome tab chrome-gone is closed or unknown.",
+                },
+              }),
+        });
+      }).pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+      const layerDependencies = Layer.mergeAll(
+        Layer.succeed(PreviewAutomationBroker.PreviewAutomationBroker, broker),
+        Layer.succeed(Preview.PreviewManager, manager),
+        Layer.succeed(McpInvocationContext.McpInvocationContext, scope),
+        McpToolAccessTestkit.liveThreadsLayer,
+        Layer.mock(ServerSettings.ServerSettingsService)({
+          getSettings: Effect.succeed({
+            ...DEFAULT_SERVER_SETTINGS,
+            enableAgentBrowserAccess: true,
+          }),
+        }),
+      );
+      const toolkit = yield* PreviewControlsToolkit.pipe(
+        Effect.provide(
+          McpToolAccess.HandlersLayer.layer(PreviewControlsHandlers.layer).pipe(
+            Layer.provide(layerDependencies),
+          ),
+        ),
+      );
+      const close = (tabId: string) =>
+        toolkit
+          .handle("t3_preview_close", { tabId: PreviewTabId.make(tabId) })
+          .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(layerDependencies));
+
+      expect((yield* close("chrome-open")).at(-1)?.result).toEqual({});
+      expect((yield* close("chrome-gone")).at(-1)?.result).toMatchObject({
+        _tag: "PreviewAutomationTabNotFoundError",
+      });
+      expect(closedTabs).toEqual(["chrome-open", "chrome-gone"]);
+    }),
+  ),
 );
