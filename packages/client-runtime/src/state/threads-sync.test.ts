@@ -49,6 +49,7 @@ import {
 } from "../platform/orchestrationCache.ts";
 import * as RpcSession from "../rpc/session.ts";
 import { v2Now, v2Projection, v2ThreadId } from "./orchestrationV2TestFixtures.ts";
+import { settledTurnsProjection } from "./threadWindowTestFixtures.ts";
 import { onThreadRequestsResolved, type ThreadRequestsResolved } from "./threadRequests.ts";
 import { EMPTY_THREAD_HISTORY_META } from "./threadHistoryMerge.ts";
 import * as ThreadHistoryController from "./threadHistoryController.ts";
@@ -2411,6 +2412,47 @@ describe("EnvironmentThreads", () => {
       expect(saved[0]?.projection.thread.title).toBe("Streaming update");
       expect(saved[0]?.projection.runs[0]?.status).toBe("running");
     }),
+  );
+
+  it.effect(
+    "trims an open thread past its window when a run settles, and caches only the tail",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness();
+        const long = settledTurnsProjection(BASE_PROJECTION, 550);
+        yield* Queue.offer(harness.inputs, snapshot(long, 4));
+        yield* awaitThreadState(
+          harness.observed,
+          (value) =>
+            Option.isSome(value.data) && value.data.value.visibleTurnItems.length === 1_100,
+        );
+        yield* Queue.offer(harness.inputs, {
+          kind: "event",
+          sequence: 5,
+          event: {
+            id: EventId.make("event-run-settled"),
+            type: "run.updated",
+            threadId: THREAD_ID,
+            occurredAt: v2Now,
+            payload: long.runs.at(-1)!,
+          },
+        });
+        const trimmed = yield* awaitThreadState(
+          harness.observed,
+          (value) => Option.isSome(value.data) && value.data.value.visibleTurnItems.length < 1_100,
+        );
+        const rows = Option.getOrThrow(trimmed.data).visibleTurnItems;
+        expect(rows).toHaveLength(600);
+        expect(rows[0]?.sourceItemId).toBe("user-251");
+        expect(trimmed.history).toMatchObject({ hasMoreHistory: true, expanded: false });
+        expect(trimmed.history.historyCursor).not.toBeNull();
+
+        yield* TestClock.adjust("10 seconds");
+        const saved = (yield* Ref.get(harness.savedThreads)).at(-1);
+        expect(saved?.projection.visibleTurnItems).toHaveLength(300);
+        expect(saved?.projection.visibleTurnItems[0]?.sourceItemId).toBe("user-401");
+        expect(saved?.hasMoreHistory).toBe(true);
+      }),
   );
 
   it.effect("preserves data after a domain failure and resumes on a replacement session", () =>
