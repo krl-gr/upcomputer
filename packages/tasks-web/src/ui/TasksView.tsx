@@ -250,11 +250,6 @@ function DetailDescriptionEditor(props: {
   );
 }
 
-function shortTaskId(id: string): string {
-  const displayId = id.startsWith("task-") ? id.slice("task-".length) : id;
-  return displayId.length > 8 ? `${displayId.slice(0, 8)}…` : displayId;
-}
-
 function compareStatuses(left: string, right: string): number {
   const leftIndex = STATUS_ORDER.findIndex((status) => sameTaskStatus(status, left));
   const rightIndex = STATUS_ORDER.findIndex((status) => sameTaskStatus(status, right));
@@ -1154,9 +1149,6 @@ export function TasksView(props: TasksViewProps) {
       toolbar={
         selectedTask ? (
           <>
-            <span className="shrink-0 text-sm font-medium text-blue-400" title={selectedTask.id}>
-              {shortTaskId(selectedTask.id)}
-            </span>
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
               {selectedTask.title}
             </span>
