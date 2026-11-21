@@ -1,7 +1,8 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type AssistantCitation } from "@t3tools/contracts";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import { describe, expect, it } from "vite-plus/test";
 
-import { taskQuoteTarget } from "./taskQuoteTarget.ts";
+import { promptQuotesPassage, taskQuoteTarget } from "./taskQuoteTarget.ts";
 
 const environmentId = EnvironmentId.make("environment-1");
 const panel = { environmentId, threadId: ThreadId.make("panel-thread") };
@@ -45,5 +46,47 @@ describe("where a quote from a task's output goes", () => {
     expect(taskQuoteTarget({ besideThreadRef, environmentId, rootThreadId, rootThread })).toEqual(
       expected,
     );
+  });
+});
+
+describe("whether a prompt already quotes a passage", () => {
+  const passage: AssistantCitation = {
+    version: 1,
+    environmentId,
+    taskId: "task-1",
+    taskTitle: "Undo notice",
+    text: "A. Tile",
+    start: 10,
+    end: 17,
+    prefix: "Pick one: ",
+    suffix: " B. Banner",
+  };
+  const quote = (citation: AssistantCitation) => `${serializeAssistantCitation(citation)} `;
+
+  it.each([
+    { name: "an empty prompt", prompt: "", expected: false },
+    {
+      name: "the passage with the same comment",
+      prompt: quote({ ...passage, comment: "ok" }),
+      expected: true,
+    },
+    {
+      name: "the passage with a comment the person changed",
+      prompt: `Thanks. ${quote({ ...passage, comment: "ok, but keep undo" })}`,
+      expected: true,
+    },
+    { name: "the passage without a comment", prompt: quote(passage), expected: true },
+    {
+      name: "another passage of the same task",
+      prompt: quote({ ...passage, text: "B. Banner", start: 18, end: 27 }),
+      expected: false,
+    },
+    {
+      name: "the same text from another task",
+      prompt: quote({ ...passage, taskId: "task-2" }),
+      expected: false,
+    },
+  ])("$name: $expected", ({ prompt, expected }) => {
+    expect(promptQuotesPassage(prompt, { ...passage, comment: "ok" })).toBe(expected);
   });
 });

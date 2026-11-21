@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -16,6 +16,7 @@ import { AutomationsView } from "../planner/ui/AutomationsView.tsx";
 import { PlannerView } from "../planner/ui/PlannerView.tsx";
 import { TasksViewSwitch } from "../planner/ui/TasksViewSwitch.tsx";
 import { windowStoreFor } from "../planner/windows/windowStore.ts";
+import { setPanelTaskKey, usePanelTaskKey } from "./openTask.ts";
 import { taskKey } from "./shared.ts";
 import { TableSectionSwitch } from "./TableSectionSwitch.tsx";
 import { useTaskList } from "./useTaskList.ts";
@@ -34,14 +35,22 @@ export default function TasksPanel(props: ExperimentalWebRightPanelSurfaceProps)
   const [storedView, setStoredView] = useStoredTasksView();
   const [storedSection, setSection] = useStoredTableSection();
   const [, setPlannerEnvironment] = useStoredPlannerEnvironment();
-  // A task opened here, from the table or the planner's "Open in table".
-  const [selectedTaskKey, setSelectedTaskKey] = useState<string | undefined>(undefined);
+  // A task opened here, from the table or the planner's "Open in table", or from the chat.
+  const panelRef = useMemo(
+    () => scopeThreadRef(props.environmentId, props.threadId),
+    [props.environmentId, props.threadId],
+  );
+  const selectedTaskKey = usePanelTaskKey(panelRef);
+  const setSelectedTaskKey = useCallback(
+    (key: string | undefined) => setPanelTaskKey(panelRef, key),
+    [panelRef],
+  );
   const view = selectedTaskKey === undefined ? storedView : "table";
   const section = selectedTaskKey === undefined ? storedSection : "tasks";
   const openTask = useCallback(
     (environmentId: EnvironmentId, taskId: string) =>
       setSelectedTaskKey(taskKey({ environmentId, id: taskId })),
-    [],
+    [setSelectedTaskKey],
   );
   const openInPlanner = useCallback(
     (environmentId: EnvironmentId, taskId: string) => {
@@ -50,7 +59,7 @@ export default function TasksPanel(props: ExperimentalWebRightPanelSurfaceProps)
       setSelectedTaskKey(undefined);
       setStoredView("planner");
     },
-    [setPlannerEnvironment, setStoredView],
+    [setPlannerEnvironment, setSelectedTaskKey, setStoredView],
   );
 
   if (view === "planner")
@@ -76,7 +85,7 @@ export default function TasksPanel(props: ExperimentalWebRightPanelSurfaceProps)
   ) : (
     <TablePanel
       viewSwitch={viewSwitch}
-      filePanelRef={scopeThreadRef(props.environmentId, props.threadId)}
+      filePanelRef={panelRef}
       selectedTaskKey={selectedTaskKey}
       onSelectedTaskKeyChange={setSelectedTaskKey}
       onOpenInPlanner={openInPlanner}

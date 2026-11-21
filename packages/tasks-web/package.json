@@ -23,6 +23,10 @@
       "types": "./src/bots/Bots.tsx",
       "import": "./src/bots/Bots.tsx"
     },
+    "./openTask": {
+      "types": "./src/ui/openTask.ts",
+      "import": "./src/ui/openTask.ts"
+    },
     "./planner": {
       "types": "./src/planner/index.ts",
       "import": "./src/planner/index.ts"
