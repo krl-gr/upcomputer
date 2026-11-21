@@ -70,6 +70,7 @@ import { GroupCount } from "./TaskStatusGroups.tsx";
 import { IconAction } from "../planner/ui/IconAction.tsx";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import { isBotAgent } from "../bots/botData.tsx";
+import { agentUpsertInput, setAgentArchived } from "./agentUpsert.ts";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 
 const INSTRUCTIONS_EDITOR_CLASS =
@@ -186,20 +187,6 @@ function agentForm(agent: ScopedTaskAgent): AgentFormState {
     modelOptions: agent.config.modelSelection.options,
     runtimeMode: agent.config.runtimeMode ?? "full-access",
     interactionMode: agent.config.interactionMode ?? "default",
-  };
-}
-
-/** The worker as it is saved now; an upsert takes the whole definition. */
-function agentUpsertInput(agent: ScopedTaskAgent) {
-  return {
-    id: agent.id,
-    projectId: agent.projectId,
-    name: agent.name,
-    enabled: agent.enabled,
-    startStatuses: [...agent.startStatuses],
-    startTags: [...agent.startTags],
-    startRunStatuses: [...agent.startRunStatuses],
-    config: agent.config,
   };
 }
 
@@ -742,19 +729,20 @@ export function AgentsView(props: AgentsViewProps) {
       const client = props.getClient(agent.environmentId);
       if (!client) return;
       try {
+        let saved: Pick<ScopedTaskAgent, "enabled" | "name"> = agent;
         await enqueueMutation(agent.id, async () => {
-          await client.agents.upsert({ ...agentUpsertInput(agent), archived });
+          saved = await setAgentArchived(client, agent, archived);
         });
         toastManager.add({
           type: "success",
           title: archived ? gt("Worker archived") : gt("Worker unarchived"),
           // An unarchived worker that is switched on starts on its matching tasks at once.
           description:
-            !archived && agent.enabled
+            !archived && saved.enabled
               ? gt("{name} is switched on and may start on matching tasks right away.", {
-                  name: agent.name,
+                  name: saved.name,
                 })
-              : agent.name,
+              : saved.name,
         });
         props.onReload();
       } catch (error) {
