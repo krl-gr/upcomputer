@@ -112,6 +112,8 @@ interface HostAssignment {
   readonly queue: ClientConnection["queue"];
   readonly tabId?: PreviewTabId;
   readonly tabSequence?: number;
+  /** The session's previous host, resumed with its tab when the session moves back. */
+  readonly parked?: HostAssignment;
 }
 
 interface PreviewAutomationRequestErrorContext {
@@ -173,6 +175,9 @@ const selectorDiagnosticsFromInput = (
   }
   return {};
 };
+
+const withoutParked = ({ parked: _parked, ...assignment }: HostAssignment): HostAssignment =>
+  assignment;
 
 /** Codex/OpenCode share sessions across threads; include thread id to isolate tabs and ownership. */
 const hostAssignmentKey = (scope: McpInvocationContext.McpThreadInvocationScope): string =>
@@ -558,7 +563,25 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       const assignmentKey = hostAssignmentKey(input.scope);
       const assigned = assignments.get(assignmentKey);
       const assignedConnection = assigned ? current.clients.get(assigned.clientId) : undefined;
-      const hasLiveAssignment = assignedConnection?.environmentId === input.scope.environmentId;
+      const preferredConnection =
+        preferredClientId === undefined ? undefined : current.clients.get(preferredClientId);
+      // A server host keeps a session only for its open tabs; a new tab goes back to the earlier host.
+      const releasesServerHost =
+        preferredConnection === undefined &&
+        input.operation === "open" &&
+        assignedConnection?.serverHost !== undefined;
+      const hasLiveAssignment =
+        assignedConnection?.environmentId === input.scope.environmentId && !releasesServerHost;
+      const parkedConnection =
+        releasesServerHost && assigned?.parked
+          ? current.clients.get(assigned.parked.clientId)
+          : undefined;
+      const resumedConnection =
+        parkedConnection?.queue === assigned?.parked?.queue &&
+        parkedConnection?.environmentId === input.scope.environmentId &&
+        supportsOperation(parkedConnection, input.operation)
+          ? parkedConnection
+          : undefined;
       // Pin interactions to one desktop runtime so cookie/DOM state cannot jump between hosts.
       const ownsTargetTab = (host: ClientConnection, visibleOnly = false) =>
         host.liveTabs.some(
@@ -567,10 +590,9 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
             (!visibleOnly || tab.visible === true) &&
             (input.tabId === undefined || tab.tabId === input.tabId),
         );
-      const preferredConnection =
-        preferredClientId === undefined ? undefined : current.clients.get(preferredClientId);
-      const connection = preferredConnection
-        ? preferredConnection
+      const claimedConnection = preferredConnection ?? resumedConnection;
+      const connection = claimedConnection
+        ? claimedConnection
         : hasLiveAssignment && supportsOperation(assignedConnection, input.operation)
           ? assignedConnection
           : hasLiveAssignment
@@ -600,23 +622,25 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       // First open may install Chromium for ten minutes; keep it alive without replaying effects.
       const timeoutMs =
         input.timeoutMs ?? (input.operation === "open" && connection.preferred ? 660_000 : 15_000);
-      const canReuseAssignedTab =
-        assigned !== undefined &&
-        assigned.connectionId === connection.connectionId &&
-        assigned.queue === connection.queue;
+      const onConnection = (assignment: HostAssignment | undefined) =>
+        assignment?.connectionId === connection.connectionId &&
+        assignment.queue === connection.queue
+          ? assignment
+          : undefined;
+      const previous = onConnection(assigned) ?? onConnection(assigned?.parked);
+      const parked = previous === assigned ? assigned?.parked : assigned && withoutParked(assigned);
       assignments.set(assignmentKey, {
         clientId: connection.clientId,
         connectionId: connection.connectionId,
         queue: connection.queue,
-        ...(canReuseAssignedTab && assigned.tabId !== undefined ? { tabId: assigned.tabId } : {}),
-        ...(canReuseAssignedTab && assigned.tabSequence !== undefined
-          ? { tabSequence: assigned.tabSequence }
-          : {}),
+        ...(previous?.tabId === undefined ? {} : { tabId: previous.tabId }),
+        ...(previous?.tabSequence === undefined ? {} : { tabSequence: previous.tabSequence }),
+        ...(parked === undefined ? {} : { parked }),
       });
 
       const requestSequence = current.requestSequence;
       const requestId = `preview-${requestSequence}`;
-      const tabId = input.tabId ?? (canReuseAssignedTab ? assigned.tabId : undefined);
+      const tabId = input.tabId ?? previous?.tabId;
       const selectorDiagnostics = selectorDiagnosticsFromInput(input.input);
       const context: PreviewAutomationRequestErrorContext = {
         operation: input.operation,
