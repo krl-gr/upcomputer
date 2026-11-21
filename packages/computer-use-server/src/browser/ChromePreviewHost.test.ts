@@ -534,8 +534,9 @@ test("Chrome tabs have the built-in browser's limits, owners and idle cleanup", 
   NodeAssert.equal(context.pages().length, 0);
 });
 
-test("a deleted thread's Chrome tabs close, and a worker's when its run ends", async () => {
+test("a deleted thread's Chrome tabs close, and a worker's when its work ends", async () => {
   const closed: string[] = [];
+  const workLeft = new Set<string>();
   const cleanup = chromeTabCleanup({
     host: {
       liveTabs: () =>
@@ -548,6 +549,7 @@ test("a deleted thread's Chrome tabs close, and a worker's when its run ends", a
       },
     },
     isWorker: async (threadId) => threadId === "worker",
+    hasWorkLeft: async (threadId) => workLeft.has(threadId),
   });
   const event = (type: string, threadId: string, status?: string) =>
     ({ type, threadId, payload: { status } }) as unknown as OrchestrationV2DomainEvent;
@@ -557,7 +559,13 @@ test("a deleted thread's Chrome tabs close, and a worker's when its run ends", a
   await handle(event("run.updated", "worker", "running"));
   await handle(event("run.updated", "chat", "completed"));
   await handle(event("run.updated", "other", "completed"));
+  // A person may continue an interrupted worker; the idle sweep covers it.
+  await handle(event("run.updated", "worker", "interrupted"));
+  // A queued follow-up or a running delegated task belongs to the same worker run.
+  workLeft.add("worker");
+  await handle(event("run.updated", "worker", "completed"));
   NodeAssert.deepEqual(closed, []);
+  workLeft.delete("worker");
   await handle(event("run.updated", "worker", "completed"));
   await handle(event("thread.deleted", "chat"));
   NodeAssert.deepEqual(closed, ["worker", "chat"]);

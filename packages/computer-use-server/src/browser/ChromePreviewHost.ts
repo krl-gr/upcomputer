@@ -23,6 +23,7 @@ import {
 
 import {
   FILL_PREVIEW_VIEWPORT,
+  isOrchestrationV2WorkActive,
   PREVIEW_AUTOMATION_V1_OPERATIONS,
   type BrowserNavigationTarget,
   type EnvironmentId,
@@ -1253,7 +1254,11 @@ export const ChromePreviewHostLive = Layer.effectDiscard(
     yield* forkParked(
       Stream.runForEach(
         threads.streamDomainEvents,
-        chromeTabCleanup({ host, isWorker: workers.isWorker }),
+        chromeTabCleanup({
+          host,
+          isWorker: workers.isWorker,
+          hasWorkLeft: threadWorkLeft(threads),
+        }),
       ).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Chrome tab cleanup stopped reading thread events", { cause }),
@@ -1265,11 +1270,17 @@ export const ChromePreviewHostLive = Layer.effectDiscard(
   }),
 );
 
-/** A deleted thread's tabs close, and so do a worker's once its run ends. */
+/**
+ * A deleted thread's tabs close, and so do a worker's once its work ends. One
+ * worker run spans several v2 runs (queued follow-ups, delegated results), so a
+ * run that ends with work left keeps the tabs; interrupted runs may be continued
+ * and are left to the idle sweep.
+ */
 export const chromeTabCleanup =
   (input: {
     readonly host: Pick<ChromePreviewHost, "liveTabs" | "closeThreadTabs">;
     readonly isWorker: (threadId: ThreadId) => Promise<boolean>;
+    readonly hasWorkLeft: (threadId: ThreadId) => Promise<boolean>;
   }) =>
   (event: OrchestrationV2DomainEvent): Effect.Effect<void> => {
     const { host } = input;
@@ -1279,15 +1290,34 @@ export const chromeTabCleanup =
     }
     if (
       event.type === "run.updated" &&
-      !isActiveRun(event.payload) &&
-      event.payload.status !== "queued"
+      (event.payload.status === "completed" || event.payload.status === "failed")
     ) {
       return Effect.promise(async () => {
-        if (await input.isWorker(event.threadId)) await host.closeThreadTabs(event.threadId);
+        if (!(await input.isWorker(event.threadId))) return;
+        if (await input.hasWorkLeft(event.threadId)) return;
+        await host.closeThreadTabs(event.threadId);
       });
     }
     return Effect.void;
   };
+
+/** A queued or active run, or a delegated task whose result will wake the thread again. */
+const threadWorkLeft =
+  (threads: ThreadManagementService["Service"]) =>
+  (threadId: ThreadId): Promise<boolean> =>
+    Effect.runPromise(
+      threads.getThreadRecords(threadId, ["runs", "subagents"]).pipe(
+        Effect.map(
+          (records) =>
+            records.runs.some((run) => run.status === "queued" || isActiveRun(run)) ||
+            records.subagents.some(
+              (task) => task.origin === "app_owned" && isOrchestrationV2WorkActive(task.status),
+            ),
+        ),
+        // Unreadable means deleted or gone; thread.deleted closes those.
+        Effect.orElseSucceed(() => true),
+      ),
+    );
 
 /**
  * Worker (task-agent run) threads are created hidden from the sidebar, and
