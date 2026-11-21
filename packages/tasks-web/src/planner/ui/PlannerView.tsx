@@ -19,6 +19,7 @@ import {
 } from "../../../../../apps/web/src/state/environments.ts";
 import { usePlannerAvailability } from "../../environmentApi.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
+import { FloatingActions } from "../../ui/FloatingActions.tsx";
 import { agentTriggerTags } from "../../ui/pageFilters.ts";
 import type { HandOffAgent } from "../logic/handOff.ts";
 import type { TasksWebProject } from "../../ui/shared.ts";
@@ -47,7 +48,7 @@ import { usePlannerWindows, windowStoreFor } from "../windows/windowStore.ts";
 import { EntryDragPreview, TaskDragPreview, type EntryCardHandlers } from "./EntryCard.tsx";
 import type { EntryMenuTarget } from "./EntryMenu.tsx";
 import { PlannerContext, type PlannerContextValue } from "./plannerContext.ts";
-import { ListHeader, type PlannerEnvironmentOption } from "./ListHeader.tsx";
+import { ListActions, ListHeader, type PlannerEnvironmentOption } from "./ListHeader.tsx";
 import { PlannerLayout } from "./PlannerLayout.tsx";
 import { isInboxRoot, type PlannerProject } from "./ProjectChip.tsx";
 import { TaskList } from "./TaskList.tsx";
@@ -67,6 +68,8 @@ const NO_SELECTION: WeekSelection = { active: false, ids: new Set() };
 function PlannerBody(props: {
   readonly environmentId: EnvironmentId;
   readonly panel: boolean;
+  /** No list header: the list's buttons float over it, and select mode brings the bulk row. */
+  readonly headerless: boolean;
   /** List left and week right: the planner's own width, measured by `PlannerView`. */
   readonly wide: boolean;
   readonly projects: readonly PlannerProject[];
@@ -296,6 +299,10 @@ function PlannerBody(props: {
   );
 
   const weekHidden = wide && viewState.rightPaneHidden;
+  const toggleArchived = () => {
+    setShowArchived((current) => !current);
+    setListSelect({ active: false, ids: new Set() });
+  };
   return (
     <PlannerContext value={context}>
       <DndContext sensors={dnd.sensors} collisionDetection={pointerWithin} {...dnd.handlers}>
@@ -308,29 +315,51 @@ function PlannerBody(props: {
           weekHeader={weekHeader}
           week={weekContent}
           listHeader={
-            <ListHeader
-              viewSwitch={props.viewSwitch}
-              onKindChange={props.onKindChange}
-              environments={props.environments}
-              onEnvironmentChange={props.onEnvironmentChange}
-              showArchived={showArchived}
-              onToggleArchived={() => {
-                setShowArchived((current) => !current);
-                setListSelect({ active: false, ids: new Set() });
-              }}
-              selectMode={listSelect.active}
-              selected={selectedTasks}
-              queueDate={markedDate}
-              onSelectModeChange={(activeMode) =>
-                setListSelect({ active: activeMode, ids: new Set() })
-              }
-              onMoveUnder={() => setMoving(selectedTasks.map((task) => task.id))}
-              onDelete={() => setDeleting(selectedTasks.map((task) => task.id))}
-              canHideWeek={wide}
-              weekHidden={weekHidden}
-              onToggleWeek={() => updateViewState({ rightPaneHidden: !viewState.rightPaneHidden })}
-              titleBar={wide && !props.panel}
-            />
+            props.headerless && !listSelect.active ? null : (
+              <ListHeader
+                viewSwitch={props.viewSwitch}
+                onKindChange={props.onKindChange}
+                environments={props.environments}
+                onEnvironmentChange={props.onEnvironmentChange}
+                showArchived={showArchived}
+                onToggleArchived={toggleArchived}
+                selectMode={listSelect.active}
+                selected={selectedTasks}
+                queueDate={markedDate}
+                onSelectModeChange={(activeMode) =>
+                  setListSelect({ active: activeMode, ids: new Set() })
+                }
+                onMoveUnder={() => setMoving(selectedTasks.map((task) => task.id))}
+                onDelete={() => setDeleting(selectedTasks.map((task) => task.id))}
+                canHideWeek={wide}
+                weekHidden={weekHidden}
+                onToggleWeek={() =>
+                  updateViewState({ rightPaneHidden: !viewState.rightPaneHidden })
+                }
+                titleBar={wide && !props.panel}
+              />
+            )
+          }
+          listOverlay={
+            props.headerless && !listSelect.active ? (
+              <FloatingActions>
+                <ListActions
+                  newLast
+                  environments={props.environments}
+                  onEnvironmentChange={props.onEnvironmentChange}
+                  showArchived={showArchived}
+                  onToggleArchived={toggleArchived}
+                  onSelectModeChange={(activeMode) =>
+                    setListSelect({ active: activeMode, ids: new Set() })
+                  }
+                  canHideWeek={wide}
+                  weekHidden={weekHidden}
+                  onToggleWeek={() =>
+                    updateViewState({ rightPaneHidden: !viewState.rightPaneHidden })
+                  }
+                />
+              </FloatingActions>
+            ) : null
           }
           list={
             <TaskList
@@ -358,6 +387,7 @@ function PlannerBody(props: {
               deleting={deleting}
               onDeletingChange={setDeleting}
               centered={weekHidden}
+              floatingActions={props.headerless}
             />
           }
         />
@@ -435,12 +465,18 @@ export function PlannerView(props: {
   readonly taskTargets: readonly TasksStateTarget[];
   /** Every environment's agents; the planner suggests and marks their trigger tags. */
   readonly agents: ReadonlyArray<HandOffAgent & { readonly environmentId: string }>;
-  readonly onShowTable: () => void;
+  /** Left out where the view has no table to switch to. */
+  readonly onShowTable?: () => void;
   /** Opens a task in the table, where its runs are listed. */
   readonly onOpenTask: (environmentId: EnvironmentId, taskId: string) => void;
   readonly onNavigateBack: () => void;
   /** The right panel's planner: the page's lists under the panel's tab bar, task windows inside it. */
   readonly panel?: boolean;
+  /**
+   * A panel entry of its own (My tasks, Routines): this list only, with no
+   * header and so no switches; the list's buttons float over it.
+   */
+  readonly fixedKind?: PlannerKind;
 }) {
   const gt = useGT();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -475,7 +511,9 @@ export function PlannerView(props: {
     accessPending: tasksAccessPending(props.taskTargets),
     initialWaitOver: useTasksInitialWaitOver(),
   });
-  const [kind, setKind] = useStoredPlannerKind();
+  const [storedKind, setKind] = useStoredPlannerKind();
+  const kind = props.fixedKind ?? storedKind;
+  const headerless = props.fixedKind !== undefined;
   const agents = useMemo(
     () => props.agents.filter((agent) => agent.environmentId === environmentId),
     [props.agents, environmentId],
@@ -509,7 +547,7 @@ export function PlannerView(props: {
       variant={props.panel ? "panel" : "page"}
       switches={props.viewSwitch}
       // Until the planner shows, the page header keeps the title bar and the view switch.
-      header={!ready}
+      header={!ready && !headerless}
       toolbar={
         <>
           <span className="min-w-0 flex-1" />
@@ -554,9 +592,11 @@ export function PlannerView(props: {
         ) : availability === "unavailable" ? (
           <Notice
             action={
-              <Button size="sm" variant="outline" onClick={props.onShowTable}>
-                {gt("Open the table")}
-              </Button>
+              props.onShowTable ? (
+                <Button size="sm" variant="outline" onClick={props.onShowTable}>
+                  {gt("Open the table")}
+                </Button>
+              ) : undefined
             }
           >
             {gt(
@@ -570,6 +610,7 @@ export function PlannerView(props: {
                 key={environmentId}
                 environmentId={environmentId}
                 panel={props.panel === true}
+                headerless={headerless}
                 wide={plannerIsWide(plannerWidth)}
                 projects={plannerProjects}
                 viewSwitch={props.viewSwitch}

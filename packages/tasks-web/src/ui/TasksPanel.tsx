@@ -8,6 +8,7 @@ import { deriveProviderInstanceEntries } from "../../../../apps/web/src/provider
 import { useEnvironmentProviders } from "../../../../apps/web/src/state/environments.ts";
 
 import {
+  type PlannerKind,
   useStoredPlannerEnvironment,
   useStoredTableSection,
   useStoredTasksView,
@@ -84,8 +85,72 @@ export default function TasksPanel(props: ExperimentalWebRightPanelSurfaceProps)
   );
 }
 
+/** Which list a launcher entry of its own opens: one view, with no switches. */
+type TasksPanelEntry = "my-tasks" | "worker-tasks" | "automations" | "routines";
+
+/**
+ * One Tasks view as its own right-panel surface: the list without the
+ * switches' header, its buttons floating over it. A task opened from the
+ * person's lists or from an automation shows its details here, with Back.
+ */
+function TasksEntryPanel(
+  props: ExperimentalWebRightPanelSurfaceProps & { readonly entry: TasksPanelEntry },
+) {
+  const [selectedTaskKey, setSelectedTaskKey] = useState<string | undefined>(undefined);
+  const openTask = useCallback(
+    (environmentId: EnvironmentId, taskId: string) =>
+      setSelectedTaskKey(taskKey({ environmentId, id: taskId })),
+    [],
+  );
+  const openInPlanner = useCallback(() => setSelectedTaskKey(undefined), []);
+  if (props.entry === "worker-tasks" || selectedTaskKey !== undefined)
+    return (
+      <TablePanel
+        viewSwitch={null}
+        floatingControls
+        filePanelRef={scopeThreadRef(props.environmentId, props.threadId)}
+        selectedTaskKey={selectedTaskKey}
+        onSelectedTaskKeyChange={setSelectedTaskKey}
+        onOpenInPlanner={openInPlanner}
+      />
+    );
+  if (props.entry === "automations")
+    return (
+      <AutomationsPanel
+        viewSwitch={null}
+        floatingControls
+        onOpenTask={openTask}
+        onOpenInPlanner={openInPlanner}
+      />
+    );
+  return (
+    <PlannerPanel
+      viewSwitch={null}
+      fixedKind={props.entry === "routines" ? "routine" : "task"}
+      onOpenTask={openTask}
+    />
+  );
+}
+
+export function MyTasksPanel(props: ExperimentalWebRightPanelSurfaceProps) {
+  return <TasksEntryPanel {...props} entry="my-tasks" />;
+}
+
+export function WorkerTasksPanel(props: ExperimentalWebRightPanelSurfaceProps) {
+  return <TasksEntryPanel {...props} entry="worker-tasks" />;
+}
+
+export function AutomationsEntryPanel(props: ExperimentalWebRightPanelSurfaceProps) {
+  return <TasksEntryPanel {...props} entry="automations" />;
+}
+
+export function RoutinesPanel(props: ExperimentalWebRightPanelSurfaceProps) {
+  return <TasksEntryPanel {...props} entry="routines" />;
+}
+
 function AutomationsPanel(props: {
   readonly viewSwitch: ReactNode;
+  readonly floatingControls?: boolean;
   readonly onOpenTask: (environmentId: EnvironmentId, taskId: string) => void;
   readonly onOpenInPlanner: (environmentId: EnvironmentId, taskId: string) => void;
 }) {
@@ -93,6 +158,7 @@ function AutomationsPanel(props: {
   return (
     <AutomationsView
       panel
+      floatingControls={props.floatingControls === true}
       viewSwitch={props.viewSwitch}
       projects={data.projects}
       taskTargets={data.taskTargets}
@@ -106,7 +172,8 @@ function AutomationsPanel(props: {
 
 function PlannerPanel(props: {
   readonly viewSwitch: ReactNode;
-  readonly onShowTable: () => void;
+  readonly fixedKind?: PlannerKind;
+  readonly onShowTable?: () => void;
   readonly onOpenTask: (environmentId: EnvironmentId, taskId: string) => void;
 }) {
   const data = useTasksWorkspaceData(false);
@@ -117,7 +184,8 @@ function PlannerPanel(props: {
       projects={data.projects}
       taskTargets={data.taskTargets}
       agents={data.agents.agents}
-      onShowTable={props.onShowTable}
+      {...(props.fixedKind === undefined ? {} : { fixedKind: props.fixedKind })}
+      {...(props.onShowTable === undefined ? {} : { onShowTable: props.onShowTable })}
       onOpenTask={props.onOpenTask}
       onNavigateBack={() => undefined}
     />
@@ -126,6 +194,7 @@ function PlannerPanel(props: {
 
 function TablePanel(props: {
   readonly viewSwitch: ReactNode;
+  readonly floatingControls?: boolean;
   readonly filePanelRef: ScopedThreadRef;
   readonly selectedTaskKey: string | undefined;
   readonly onSelectedTaskKeyChange: (taskKey: string | undefined) => void;
@@ -151,6 +220,7 @@ function TablePanel(props: {
   return (
     <TasksView
       layout="panel"
+      floatingControls={props.floatingControls === true}
       filePanelRef={props.filePanelRef}
       projects={data.projects}
       tasks={pages.tasks}

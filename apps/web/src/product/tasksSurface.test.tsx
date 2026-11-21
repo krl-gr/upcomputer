@@ -329,18 +329,18 @@ function pressKey(target: EventTarget, key: string) {
 }
 
 describe("the Tasks surface in the right panel", () => {
-  it("lists Tasks after core's surfaces in the launcher, and K opens it", () => {
+  it("lists Tasks and its four views after core's surfaces in the launcher, and K opens Tasks", () => {
     const onAddFeatureSurface = vi.fn();
     renderPanel([], onAddFeatureSurface);
 
-    expect(launcherKeys()).toBe("BTFDMK");
+    expect(launcherKeys()).toBe("BTFDMKYWAR");
     expect(document.querySelector("[data-surface-launcher-keys]")?.textContent).toContain("Tasks");
 
     pressKey(document.body, "k");
     expect(onAddFeatureSurface).toHaveBeenCalledExactlyOnceWith("tasks");
   });
 
-  it("offers Tasks last in the + menu, where K opens it too", async () => {
+  it("offers Tasks and its four views last in the + menu, where K opens Tasks too", async () => {
     const onAddFeatureSurface = vi.fn();
     renderPanel([previewSurface], onAddFeatureSurface);
 
@@ -361,6 +361,10 @@ describe("the Tasks surface in the right panel", () => {
       "DiffD",
       "DeviceM",
       "TasksK",
+      "My tasksY",
+      "Worker tasksW",
+      "AutomationsA",
+      "RoutinesR",
     ]);
 
     pressKey(items[0]!, "k");
