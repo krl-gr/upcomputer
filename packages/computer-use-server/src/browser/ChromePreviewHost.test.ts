@@ -376,6 +376,31 @@ test("snapshots follow the desktop host's contract", async (t) => {
   );
 });
 
+test("only an explicit open raises the Chrome window", async (t) => {
+  const context = await openContext(t);
+  if (!context) return;
+  let raised = 0;
+  const newPage = context.newPage.bind(context);
+  context.newPage = async () => {
+    const page = await newPage();
+    const bringToFront = page.bringToFront.bind(page);
+    page.bringToFront = async () => {
+      raised += 1;
+      await bringToFront();
+    };
+    return page;
+  };
+  const host = createChromePreviewHost({ getContext: async () => context });
+  await host.execute(request("open", { url: `localhost:${port}` }));
+  await host.execute(request("open", { url: `localhost:${port}`, open: false, show: false }));
+  // A background tab still answers a snapshot with pixels, without being raised.
+  await host.execute(request("open", { reuseExistingTab: false }));
+  await host.execute(request("snapshot"));
+  NodeAssert.equal(raised, 0);
+  await host.execute(request("open", { open: true, show: true }));
+  NodeAssert.equal(raised, 1);
+});
+
 test("snapshot screenshots are scaled to the desktop host's maximum width", async (t) => {
   for (const [options, expected] of [
     [{ viewport: { width: 1000, height: 500 } }, { width: 1000, height: 500 }],

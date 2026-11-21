@@ -452,7 +452,8 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     if (input.url !== undefined) {
       await navigate(tab, resolveUrl(input.url), "load", replyBudgetMs(request));
     }
-    if (input.show ?? true) await tab.page.bringToFront().catch(() => undefined);
+    // Only an explicit request raises the window: agents work while the user does something else.
+    if ((input.open ?? input.show) === true) await tab.page.bringToFront().catch(() => undefined);
     return status(tab);
   };
 
@@ -484,13 +485,11 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     tab: ChromeTab,
   ): Promise<NonNullable<PreviewAutomationSnapshot["screenshot"]>> => {
     const cdp = await cdpSession(tab);
-    const page = (await evaluateInPage(
-      tab,
-      "({ devicePixelRatio, hidden: document.visibilityState !== 'visible' })",
-      { returnByValue: true, awaitPromise: false },
-    )) as { readonly devicePixelRatio: number; readonly hidden: boolean };
-    // A background tab of a headed browser renders no frames to capture.
-    if (page.hidden) await tab.page.bringToFront();
+    // Tabs made over CDP keep rendering in the background, so no capture raises the window.
+    const page = (await evaluateInPage(tab, "({ devicePixelRatio })", {
+      returnByValue: true,
+      awaitPromise: false,
+    })) as { readonly devicePixelRatio: number };
     const { cssVisualViewport: viewport } = await cdp.send("Page.getLayoutMetrics");
     const capture = async (scale: number) => {
       const { data } = await cdp.send("Page.captureScreenshot", {

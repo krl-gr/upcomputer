@@ -7,7 +7,9 @@ import { test } from "vite-plus/test";
 
 import type { ServerConfig } from "../../../../apps/server/src/config.ts";
 import {
+  buildBrowserLaunchArgs,
   createBrowserAutomationService,
+  minimizeBrowserWindows,
   type BrowserAutomationServiceDependencies,
 } from "./BrowserAutomationService.ts";
 
@@ -70,4 +72,55 @@ test("a running browser that still cannot be attached reports a clear error", as
   await NodeAssert.rejects(service.context(), {
     message: "The browser is not responding. Quit it and open it again.",
   });
+});
+
+test("the managed browser keeps background work running, with Windows' occlusion check off", () => {
+  const backgroundFlags = [
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+  ];
+  const args = (platform: NodeJS.Platform) =>
+    buildBrowserLaunchArgs({ debuggingPort: 9_222, userDataDir: "/profile", platform });
+  for (const platform of ["darwin", "linux", "win32"] as const) {
+    NodeAssert.deepEqual(
+      backgroundFlags.filter((flag) => args(platform).includes(flag)),
+      backgroundFlags,
+    );
+  }
+  NodeAssert.ok(args("win32").includes("--disable-features=CalculateNativeWinOcclusion"));
+  NodeAssert.ok(!args("darwin").some((arg) => arg.includes("CalculateNativeWinOcclusion")));
+});
+
+test("a fresh managed browser minimizes each of its windows once", async () => {
+  const calls: Array<readonly [string, unknown]> = [];
+  let detached = false;
+  const browser = {
+    newBrowserCDPSession: async () => ({
+      send: async (method: string, params?: unknown) => {
+        calls.push([method, params]);
+        if (method === "Target.getTargets") {
+          return {
+            targetInfos: [
+              { targetId: "page-1", type: "page" },
+              { targetId: "page-2", type: "page" },
+              { targetId: "worker-1", type: "service_worker" },
+            ],
+          };
+        }
+        if (method === "Browser.getWindowForTarget") return { windowId: 7 };
+        return {};
+      },
+      detach: async () => {
+        detached = true;
+      },
+    }),
+  } as unknown as Pick<Browser, "newBrowserCDPSession">;
+  await minimizeBrowserWindows(browser);
+  NodeAssert.deepEqual(
+    calls.filter(([method]) => method === "Browser.setWindowBounds"),
+    [["Browser.setWindowBounds", { windowId: 7, bounds: { windowState: "minimized" } }]],
+  );
+  NodeAssert.ok(!calls.some(([, params]) => JSON.stringify(params)?.includes("worker-1")));
+  NodeAssert.ok(detached);
 });

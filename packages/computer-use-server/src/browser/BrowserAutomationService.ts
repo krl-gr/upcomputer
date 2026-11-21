@@ -189,19 +189,59 @@ function getInstalledBrowserCandidates(input?: {
   ];
 }
 
-function buildBrowserLaunchArgs(input: {
+export function buildBrowserLaunchArgs(input: {
   readonly debuggingPort: number;
   readonly userDataDir: string;
   readonly initialUrl?: string;
+  readonly platform?: NodeJS.Platform;
 }): string[] {
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Plain helper; tests pass `platform`.
+  const platform = input.platform ?? process.platform;
   return [
     "--remote-debugging-address=127.0.0.1",
     `--remote-debugging-port=${input.debuggingPort}`,
     `--user-data-dir=${input.userDataDir}`,
     "--no-first-run",
     "--no-default-browser-check",
+    // Agents work while nobody watches: a covered, minimized or locked window keeps running.
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    ...(platform === "win32" ? ["--disable-features=CalculateNativeWinOcclusion"] : []),
     ...(trimText(input.initialUrl) ? [normalizePreviewUrl(input.initialUrl!)] : []),
   ];
+}
+
+/**
+ * Agents' tabs keep rendering in a minimized window, so the managed browser
+ * starts minimized and only the settings' Open browser or an agent's
+ * `open: true` shows it. Headless browsers have no windows to minimize.
+ */
+export async function minimizeBrowserWindows(
+  browser: Pick<Browser, "newBrowserCDPSession">,
+): Promise<void> {
+  const session = await browser.newBrowserCDPSession().catch(() => null);
+  if (!session) return;
+  try {
+    const { targetInfos } = await session.send("Target.getTargets");
+    const windowIds = new Set<number>();
+    for (const target of targetInfos) {
+      if (target.type !== "page") continue;
+      const window = await session
+        .send("Browser.getWindowForTarget", { targetId: target.targetId })
+        .catch(() => null);
+      if (window) windowIds.add(window.windowId);
+    }
+    for (const windowId of windowIds) {
+      await session
+        .send("Browser.setWindowBounds", { windowId, bounds: { windowState: "minimized" } })
+        .catch(() => undefined);
+    }
+  } catch {
+    // A browser that cannot list its windows still works; it only stays in front.
+  } finally {
+    await session.detach().catch(() => undefined);
+  }
 }
 
 async function findAvailableLocalPort(): Promise<number> {
@@ -423,19 +463,29 @@ async function openCdpWindow(port: number): Promise<void> {
       signal.addEventListener("abort", () => fail("timed out."));
       socket.addEventListener("error", () => fail("the CDP connection failed."));
       socket.addEventListener("close", () => fail("the CDP connection closed."));
-      socket.addEventListener("open", () =>
-        socket.send(
-          JSON.stringify({ id: 1, method: "Target.createTarget", params: { url: "about:blank" } }),
-        ),
-      );
+      const send = (id: number, method: string, params: object) =>
+        socket.send(JSON.stringify({ id, method, params }));
+      socket.addEventListener("open", () => send(1, "Target.createTarget", { url: "about:blank" }));
+      // The new window starts minimized like a fresh launch; failing to minimize is harmless.
       socket.addEventListener("message", (event) => {
         const message = JSON.parse(String(event.data)) as {
           readonly id?: number;
           readonly error?: { readonly message?: string };
+          readonly result?: { readonly targetId?: string; readonly windowId?: number };
         };
-        if (message.id !== 1) return;
-        if (message.error) fail(message.error.message ?? "Target.createTarget failed.");
-        else resolve();
+        if (message.id === 1) {
+          if (message.error) fail(message.error.message ?? "Target.createTarget failed.");
+          else if (message.result?.targetId === undefined) resolve();
+          else send(2, "Browser.getWindowForTarget", { targetId: message.result.targetId });
+        } else if (message.id === 2) {
+          if (message.result?.windowId === undefined) resolve();
+          else {
+            send(3, "Browser.setWindowBounds", {
+              windowId: message.result.windowId,
+              bounds: { windowState: "minimized" },
+            });
+          }
+        } else if (message.id === 3) resolve();
       });
     });
   } finally {
@@ -451,6 +501,7 @@ async function launchCdpBrowser(input: {
   try {
     await waitForCdpEndpoint(browserProcess.debuggingPort, 15_000, browserProcess);
     const { browser, context } = await connectOverCdp(browserProcess.debuggingPort);
+    await minimizeBrowserWindows(browser);
     return { browserProcess, browser, context };
   } catch (error) {
     await browserProcess.dispose().catch(() => undefined);
