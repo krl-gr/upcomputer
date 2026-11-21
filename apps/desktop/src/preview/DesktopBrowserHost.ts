@@ -15,7 +15,9 @@ import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
+import { keepDrivenGuestPainting } from "./BackgroundThrottlingHolds.ts";
 import { createCdpRelayConnection, type CdpRelayConnection } from "./CdpRelay.ts";
 import { sendPageCommand } from "./GuestInput.ts";
 
@@ -124,6 +126,7 @@ export class DesktopBrowserHost extends Context.Service<
 >()("@t3tools/desktop/preview/DesktopBrowserHost") {}
 
 export const make = Effect.gen(function* () {
+  const platform = yield* HostProcess.Platform;
   const outbox = yield* PubSub.unbounded<DesktopBrowserEventType>();
   const pointers = yield* PubSub.sliding<{
     readonly key: DesktopBrowserTabKey;
@@ -203,6 +206,7 @@ export const make = Effect.gen(function* () {
   const setFocusEmulation = (tab: AttachedTab, enabled: boolean) => {
     if (tab.focusEmulated === enabled) return;
     tab.focusEmulated = enabled;
+    keepDrivenGuestPainting(tab.debuggee.webContents, enabled, platform);
     // A guest that refuses it, or a debugger already gone, behaves as unfocused.
     const change: Promise<void> = tab.debuggee.debugger
       .sendCommand("Emulation.setFocusEmulationEnabled", { enabled })
@@ -509,6 +513,7 @@ export const make = Effect.gen(function* () {
     const tab = tabs.get(id);
     if (!tab) return;
     tabs.delete(id);
+    keepDrivenGuestPainting(tab.debuggee.webContents, false, platform);
     const announced = tab.stopWaiting === null;
     tab.stopWaiting?.();
     tab.relay = null;
