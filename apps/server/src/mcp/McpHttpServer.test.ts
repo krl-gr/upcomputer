@@ -646,6 +646,9 @@ it.effect("checks each preview_act action against that action's own input", () =
 
       yield* callTool("preview_act", { action: "type", selector: "#name", text: "Ada" });
       expect(inputs.at(-2)).toEqual({ selector: "#name", text: "Ada" });
+
+      yield* callTool("preview_act", { action: "press", selector: "#name", key: "Backspace" });
+      expect(inputs.at(-2)).toEqual({ selector: "#name", key: "Backspace" });
     }),
   ).pipe(Effect.provide(layerTest)),
 );
@@ -886,6 +889,25 @@ it.effect("bounds large ARIA trees without dropping every server locator", () =>
   ).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("returns a snapshot without a screenshot as text, even when an image is asked for", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const warning = "The page could not be painted in time.";
+      yield* serveSnapshots("mcp-unpainted-client", {
+        ...snapshotResult,
+        accessibilityTree: '- button "Save" [ref=t3-snapshot-e1]',
+        screenshot: null,
+        warning,
+      });
+      const result = yield* callSnapshot({ includeImage: true, save: true });
+      expect(result.isError).toBe(false);
+      expect(result.structuredContent).toMatchObject({ screenshot: null, warning });
+      expect(result.structuredContent).not.toHaveProperty("screenshotPath");
+      expect(result.content.map((content) => content.type)).toEqual(["text", "text"]);
+    }),
+  ).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("keeps the snapshot text under the agent's output ceiling", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -1023,6 +1045,47 @@ it.effect("bounds page text made of wide characters before dropping locators", (
       expect(notice?.type === "text" ? notice.text : "").toContain(
         "visibleText after 4000 characters",
       );
+    }),
+  ).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("returns the bounded page state beside the saved screenshot path", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const accessibilityTree = '- button "Save" [ref=t3-snapshot-e1]';
+      yield* serveSnapshots("mcp-saved-client", {
+        ...snapshotResult,
+        visibleText: "界".repeat(9_000),
+        accessibilityTree,
+      });
+
+      const result = yield* callSnapshot({ save: true });
+
+      expect(result.isError).toBe(false);
+      const { screenshotPath } = result.structuredContent as { screenshotPath: string };
+      const saved = yield* (yield* FileSystem.FileSystem).readFile(screenshotPath);
+      expect(Buffer.from(saved).toString()).toBe("png");
+      const [identity, text, notice] = result.content;
+      expect(result.content.map((content) => content.type)).toEqual(["text", "text", "text"]);
+      expect(identity?.type === "text" ? decodeJsonText(identity.text) : null).toEqual({
+        url: snapshotResult.url,
+      });
+      const body = text?.type === "text" ? text.text : "";
+      expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(
+        McpHttpServer.MAX_SNAPSHOT_TEXT_BYTES,
+      );
+      expect(decodeJsonText(body)).toMatchObject({
+        title: snapshotResult.title,
+        visibleText: expect.stringMatching(/^界+…$/),
+        accessibilityTree,
+        screenshot: { mimeType: "image/png", width: 10, height: 5 },
+        screenshotPath,
+      });
+      expect(notice?.type === "text" ? notice.text : "").toContain("visibleText after");
+      expect(result.structuredContent).toEqual({
+        ...(decodeJsonText(body) as object),
+        omitted: [expect.stringContaining("visibleText after")],
+      });
     }),
   ).pipe(Effect.provide(layerTest)),
 );

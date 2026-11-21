@@ -2,6 +2,7 @@
 
 import {
   type BrowserRecordingFrameRate,
+  PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   type PreviewAutomationClickInput,
   type PreviewAutomationConsoleEntry,
@@ -253,6 +254,9 @@ const withoutTreeDataPayloads = (tree: string) =>
 // The broker waits 15s for the host; a snapshot, retry included, answers well before.
 const SNAPSHOT_TIMEOUT_MS = 10_000;
 const FRAME_ANSWER_MS = 1_000;
+// A page that cannot paint (a sleeping display) never answers a capture; its text still can.
+const SNAPSHOT_SCREENSHOT_MS = 5_000;
+const SCREENSHOT_REPLY_MARGIN_MS = 1_000;
 
 // Include password and CSS-masked text in open shadow roots, normalized like accessible text.
 const DOTTED_SCRIPT = `(() => {
@@ -290,21 +294,32 @@ interface SnapshotStages {
   readonly timedOut: Set<SnapshotStage>;
 }
 
-const snapshotTimedOut = (stages?: SnapshotStages) =>
-  new ServerBrowserOperationError({
+// The broker shows an agent `detail.reason` of a server browser timeout, not its message.
+const SNAPSHOT_FALLBACK =
+  "preview_evaluate and preview_act typing still work: read the page or click elements with preview_evaluate, or take another snapshot in a moment.";
+
+const snapshotTimedOut = (deadline: number, stages?: SnapshotStages) => {
+  const seconds = ((Date.now() - deadline + SNAPSHOT_TIMEOUT_MS) / 1000).toFixed(1);
+  return new ServerBrowserOperationError({
     tag: "PreviewAutomationTimeoutError",
     message: `Snapshot capture timed out after ${SNAPSHOT_TIMEOUT_MS}ms. Try the snapshot again.`,
     detail: {
       timeoutMs: SNAPSHOT_TIMEOUT_MS,
       pendingStages: stages ? [...new Set([...stages.timedOut, ...stages.running.keys()])] : [],
+      reason: `The page was too busy to answer, so the snapshot stopped after ${seconds} s. ${SNAPSHOT_FALLBACK}`,
     },
   });
+};
 
 const frameUnanswered = () =>
   new ServerBrowserOperationError({
     tag: "PreviewAutomationTimeoutError",
     message: `A frame on the page didn't answer within ${FRAME_ANSWER_MS}ms, so its content couldn't be checked for hidden values. Try the snapshot again.`,
-    detail: { timeoutMs: FRAME_ANSWER_MS, pendingStages: ["frames"] },
+    detail: {
+      timeoutMs: FRAME_ANSWER_MS,
+      pendingStages: ["frames"],
+      reason: `A frame on the page didn't answer within ${FRAME_ANSWER_MS / 1000} s, so its content couldn't be checked for hidden values and the snapshot stopped. ${SNAPSHOT_FALLBACK}`,
+    },
   });
 
 const isTimeout = (cause: unknown) => cause instanceof Error && cause.name === "TimeoutError";
@@ -314,11 +329,11 @@ const VALUE_TOO_LONG = "A password field holds a value too long to hide, so no s
 /** Reuse one CDP session per out-of-process frame across snapshots. */
 const frameSessions = new WeakMap<Frame, Promise<CDPSession>>();
 
-/** Returns undefined on failure or frame timeout. */
-const answered = <A>(promise: Promise<A>) => {
+/** Returns undefined on failure or after `ms`. */
+const answered = <A>(promise: Promise<A>, ms = FRAME_ANSWER_MS) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<undefined>((resolve) => {
-    timer = setTimeout(() => resolve(undefined), FRAME_ANSWER_MS);
+    timer = setTimeout(() => resolve(undefined), ms);
   });
   return Promise.race([promise.catch(() => undefined), late]).finally(() => clearTimeout(timer));
 };
@@ -686,7 +701,7 @@ const capture = async (
   };
   const { renderScale, viewport } = await track("metrics", () => renderingOf(input));
   // A late metrics reply must not begin a capture after viewers have resumed.
-  if (Date.now() >= deadline) throw snapshotTimedOut();
+  if (Date.now() >= deadline) throw snapshotTimedOut(deadline);
   const scale = Math.min(1, MAX_SCREENSHOT_WIDTH / (viewport.width * renderScale));
   const state = refsFor(input.page);
   invalidateRefs(input.page);
@@ -694,17 +709,19 @@ const capture = async (
   const { readers, read } = await track("frames", () => openReaders(input.page, input.cdp));
   const before = await track("frames", () => read());
   // Bracket the tree with value reads to detect changes; await tree completion before retrying failed captures.
-  const pageAndScreenshot = Promise.all([
-    track(
-      "page state",
-      () =>
-        input.page.evaluate(SNAPSHOT_SCRIPT) as Promise<
-          Pick<
-            PreviewAutomationSnapshot,
-            "url" | "title" | "loading" | "visibleText" | "interactiveElements"
-          >
-        >,
-    ),
+  const pageData = track(
+    "page state",
+    () =>
+      input.page.evaluate(SNAPSHOT_SCRIPT) as Promise<
+        Pick<
+          PreviewAutomationSnapshot,
+          "url" | "title" | "loading" | "visibleText" | "interactiveElements"
+        >
+      >,
+  );
+  void pageData.catch(constVoid);
+  // Undefined on a failed or late capture, early enough that the text still answers in time.
+  const screenshot = answered(
     // A cheap real frame still sizes the screenshot; computing it from metrics drifted from the PNG.
     track("screenshot", () =>
       metadataOnly
@@ -721,8 +738,11 @@ const capture = async (
               : { data: full, full: undefined },
           ),
     ),
-  ]);
-  void pageAndScreenshot.catch(constVoid);
+    Math.max(
+      1,
+      Math.min(SNAPSHOT_SCREENSHOT_MS, deadline - Date.now() - SCREENSHOT_REPLY_MARGIN_MS),
+    ),
+  );
   // Leaves time for the second read; a frame that never loads holds the tree until then.
   const tree = await track("accessibility tree", () =>
     input.page.ariaSnapshot({
@@ -748,7 +768,8 @@ const capture = async (
     void iframe.dispose().catch(constVoid);
     if (frame && unread.includes(frame)) throw frameUnanswered();
   }
-  const [page, { full, data }] = await pageAndScreenshot;
+  const page = await pageData;
+  const pixels = await screenshot;
   if (state.generation !== generation) throw pageChanged();
   const mask = (text: string) => (dotted ? text.replace(dotted, MASKED_VALUE) : text);
   // Redacted before the cut, so a payload crossing it can't leave its start showing, and before
@@ -770,11 +791,17 @@ const capture = async (
     consoleEntries: [...input.consoleEntries],
     networkEntries: [...input.networkEntries],
     actionTimeline: [...input.actionTimeline],
-    // Reports the size the PNG path would have shrunk to.
-    screenshot: metadataOnly
-      ? scaledSize(jpegSize(data), scale)
-      : { mimeType: "image/png" as const, data, ...pngSize(data) },
-    ...(full !== undefined ? { fullScreenshot: { data: full, ...pngSize(full) } } : {}),
+    ...(pixels === undefined
+      ? { screenshot: null, warning: PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING }
+      : {
+          // Reports the size the PNG path would have shrunk to.
+          screenshot: metadataOnly
+            ? scaledSize(jpegSize(pixels.data), scale)
+            : { mimeType: "image/png" as const, data: pixels.data, ...pngSize(pixels.data) },
+          ...(pixels.full !== undefined
+            ? { fullScreenshot: { data: pixels.full, ...pngSize(pixels.full) } }
+            : {}),
+        }),
   };
 };
 
@@ -786,7 +813,7 @@ const runSnapshot = async (input: SnapshotInput, metadataOnly: boolean) => {
   const stages: SnapshotStages = { running: new Map(), timedOut: new Set() };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const expired = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(snapshotTimedOut(stages)), SNAPSHOT_TIMEOUT_MS);
+    timer = setTimeout(() => reject(snapshotTimedOut(deadline, stages)), SNAPSHOT_TIMEOUT_MS);
   });
   const turn = (snapshotTurns.get(input.page) ?? 0) + 1;
   snapshotTurns.set(input.page, turn);
@@ -801,7 +828,7 @@ const runSnapshot = async (input: SnapshotInput, metadataOnly: boolean) => {
   try {
     return await Promise.race([captured, expired]);
   } catch (cause) {
-    throw isTimeout(cause) ? snapshotTimedOut(stages) : cause;
+    throw isTimeout(cause) ? snapshotTimedOut(deadline, stages) : cause;
   } finally {
     clearTimeout(timer);
   }
@@ -1071,7 +1098,46 @@ export const setInputFiles = async (page: Page, input: PreviewAutomationUploadIn
 };
 
 export const press = async (page: Page, input: PreviewAutomationPressInput) => {
+  const locator = targetLocator(page, input);
+  if (locator !== null) await focusTarget(locator, input, input.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   await page.keyboard.press([...(input.modifiers ?? []), input.key].join("+"));
+};
+
+/** Without this check a key meant for a missing or unfocusable target goes to whatever has focus. */
+const focusTarget = async (
+  locator: Locator,
+  input: { readonly locator?: string | undefined; readonly selector?: string | undefined },
+  timeout: number,
+) => {
+  const selector = JSON.stringify(input.locator ?? input.selector);
+  const target =
+    selector.length > MAX_TARGET_CHARS ? `${selector.slice(0, MAX_TARGET_CHARS)}...` : selector;
+  const focused = await locator
+    .evaluate(
+      (element) => {
+        (element as unknown as { readonly focus?: () => void }).focus?.();
+        const root = element.getRootNode() as { readonly activeElement?: typeof element | null };
+        const active = root.activeElement;
+        return active != null && (active === element || element.contains(active));
+      },
+      undefined,
+      { timeout },
+    )
+    .catch(async (cause: unknown) => {
+      if (!(cause instanceof Error && cause.name === "TimeoutError")) throw cause;
+      if ((await locator.count().catch(() => 1)) > 0) throw cause;
+      throw new ServerBrowserOperationError({
+        tag: "PreviewAutomationExecutionError",
+        message: `No element matches ${target}, so no key was pressed. Take a fresh snapshot and use its locator.`,
+        cause,
+      });
+    });
+  if (!focused) {
+    throw new ServerBrowserOperationError({
+      tag: "PreviewAutomationExecutionError",
+      message: `${target} cannot take focus, so no key was pressed.`,
+    });
+  }
 };
 
 export const scroll = async (page: Page, input: PreviewAutomationScrollInput) => {
