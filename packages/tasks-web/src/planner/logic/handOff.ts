@@ -7,6 +7,8 @@ export interface HandOffAgent {
   /** Null for an agent that serves every project. */
   readonly projectId: string | null;
   readonly enabled: boolean;
+  /** Set while the agent is archived; an archived agent takes no tasks. */
+  readonly archivedAt?: string | null;
   /** Statuses the agent starts on; empty means any. */
   readonly startStatuses: readonly string[];
   readonly startTags: readonly string[];
@@ -15,7 +17,7 @@ export interface HandOffAgent {
 }
 
 /**
- * The agents a task in `projectId` can go to: the enabled agents serving that
+ * The agents a task in `projectId` can go to: the enabled, unarchived agents serving that
  * project that start on a task's own state, by name. An agent that starts
  * only on another agent's run would never start on a handed-off task.
  */
@@ -27,6 +29,7 @@ export function handOffAgents<Agent extends HandOffAgent>(
     .filter(
       (agent) =>
         agent.enabled &&
+        agent.archivedAt == null &&
         agent.startRunStatuses.length === 0 &&
         (agent.projectId === null || agent.projectId === projectId),
     )

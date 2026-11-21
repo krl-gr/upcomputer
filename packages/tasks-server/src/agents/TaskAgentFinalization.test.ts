@@ -98,6 +98,7 @@ test("finalization ownership and task truth commit atomically and idempotently",
         startRunStatuses: [],
         createdAt: timestamp,
         updatedAt: timestamp,
+        archivedAt: null,
       });
       yield* repository.createAgentRun({
         id: runId,

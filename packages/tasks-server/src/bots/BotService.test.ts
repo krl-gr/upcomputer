@@ -145,6 +145,7 @@ const seedBot = Effect.gen(function* () {
     config,
     createdAt: timestamp,
     updatedAt: timestamp,
+    archivedAt: null,
   });
   yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted)
     VALUES (${botId}, ${botThread}, ${project}, ${JSON.stringify([project])}, 0)`;
@@ -166,6 +167,7 @@ const seedTaskRun = Effect.gen(function* () {
     config,
     createdAt: timestamp,
     updatedAt: timestamp,
+    archivedAt: null,
   });
   yield* repository.upsert({
     id: taskId,
@@ -406,6 +408,7 @@ it.effect("one unreadable bot does not keep the others' chats from being restore
         config,
         createdAt: timestamp,
         updatedAt: timestamp,
+        archivedAt: null,
       });
       // Listed first, so the old code stopped before restoring the seeded bot.
       yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted)
@@ -554,6 +557,7 @@ it.effect("a busy bot chat on another provider still saves settings that keep th
         config: saved,
         createdAt: timestamp,
         updatedAt: timestamp,
+        archivedAt: null,
       });
       yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted)
         VALUES (${id}, ${busyChat}, ${project}, ${JSON.stringify([project])}, 0)`;

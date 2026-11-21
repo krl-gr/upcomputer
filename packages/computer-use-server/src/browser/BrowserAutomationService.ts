@@ -81,12 +81,18 @@ export interface BrowserAutomationServiceDependencies {
   readonly removeFile?: (path: string) => Promise<void>;
   readonly makeDirectory?: (path: string) => Promise<void>;
   readonly removeDirectory?: (path: string) => Promise<void>;
+  readonly findInstalledBrowser?: () => Promise<BrowserExecutableCandidate | null>;
+  readonly now?: () => number;
 }
 
 export interface BrowserProfileSnapshot {
   readonly profileId: "default";
   readonly profilePath: string;
   readonly status: "closed" | "open";
+  /** False when no Chrome or Edge was found, so agents use the built-in browser. */
+  readonly installed: boolean;
+  /** Why the last launch failed, while agents use the built-in browser because of it. */
+  readonly launchError?: string;
   readonly launchMode?: "cdp-attached";
   readonly browserName?: BrowserName;
   readonly debuggingPort?: number;
@@ -97,6 +103,13 @@ export interface BrowserProfileSnapshot {
 export interface BrowserAutomationServiceShape {
   /** Opens or reconnects the managed browser and returns its persistent profile context. */
   readonly context: () => Promise<BrowserContext>;
+  /**
+   * Whether agents can use the managed browser now: it is installed and opens.
+   * A failed launch is not retried for a while, so agents fall back quickly.
+   */
+  readonly ensureAvailable: () => Promise<boolean>;
+  /** A new tab for an agent that leaves a minimized window minimized. */
+  readonly newBackgroundPage: () => Promise<Page>;
   readonly snapshot: () => Promise<BrowserProfileSnapshot>;
   readonly openLoginWindow: (input?: { readonly url?: string }) => Promise<BrowserProfileSnapshot>;
   readonly closeBrowser: () => Promise<BrowserProfileSnapshot>;
@@ -129,9 +142,11 @@ function candidatePath(
   return join(...(parts as string[]));
 }
 
-function getInstalledBrowserCandidates(input?: {
+/** Where Chrome or Edge installs itself, in preference order; Chromium counts as Chrome. */
+export function getInstalledBrowserCandidates(input?: {
   readonly env?: NodeJS.ProcessEnv;
   readonly platform?: NodeJS.Platform;
+  readonly homeDir?: string;
 }): ReadonlyArray<BrowserExecutableCandidate> {
   const env = input?.env ?? process.env;
   // oxlint-disable-next-line t3code/no-global-process-runtime -- Plain helper; callers and tests pass `platform`.
@@ -169,39 +184,98 @@ function getInstalledBrowserCandidates(input?: {
   }
 
   if (platform === "darwin") {
-    return [
-      {
-        browserName: "chrome",
-        executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      },
-      {
-        browserName: "msedge",
-        executablePath: "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-      },
+    const homeDir = input?.homeDir ?? env.HOME;
+    const roots = [
+      "/Applications",
+      ...(homeDir ? [NodePath.posix.join(homeDir, "Applications")] : []),
     ];
+    const apps = [
+      ["chrome", "Google Chrome.app/Contents/MacOS/Google Chrome"],
+      ["msedge", "Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
+    ] as const;
+    return apps.flatMap(([browserName, bundlePath]) =>
+      roots.map((root) => ({ browserName, executablePath: NodePath.posix.join(root, bundlePath) })),
+    );
   }
 
-  return [
+  const pathDirs = (env.PATH ?? "").split(NodePath.posix.delimiter).filter(Boolean);
+  const onPath = (browserName: BrowserName, ...names: string[]) =>
+    names.flatMap((name) =>
+      pathDirs.map((dir) => ({ browserName, executablePath: NodePath.posix.join(dir, name) })),
+    );
+  const unique = new Map<string, BrowserExecutableCandidate>();
+  for (const candidate of [
     { browserName: "chrome", executablePath: "/usr/bin/google-chrome" },
     { browserName: "chrome", executablePath: "/usr/bin/google-chrome-stable" },
+    { browserName: "chrome", executablePath: "/opt/google/chrome/chrome" },
+    ...onPath("chrome", "google-chrome", "google-chrome-stable"),
     { browserName: "msedge", executablePath: "/usr/bin/microsoft-edge" },
     { browserName: "msedge", executablePath: "/usr/bin/microsoft-edge-stable" },
-  ];
+    { browserName: "msedge", executablePath: "/opt/microsoft/msedge/msedge" },
+    ...onPath("msedge", "microsoft-edge", "microsoft-edge-stable"),
+    { browserName: "chrome", executablePath: "/usr/bin/chromium" },
+    { browserName: "chrome", executablePath: "/usr/bin/chromium-browser" },
+    { browserName: "chrome", executablePath: "/snap/bin/chromium" },
+    ...onPath("chrome", "chromium", "chromium-browser"),
+  ] satisfies ReadonlyArray<BrowserExecutableCandidate>) {
+    if (!unique.has(candidate.executablePath)) unique.set(candidate.executablePath, candidate);
+  }
+  return [...unique.values()];
 }
 
-function buildBrowserLaunchArgs(input: {
+export function buildBrowserLaunchArgs(input: {
   readonly debuggingPort: number;
   readonly userDataDir: string;
   readonly initialUrl?: string;
+  readonly platform?: NodeJS.Platform;
 }): string[] {
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Plain helper; tests pass `platform`.
+  const platform = input.platform ?? process.platform;
   return [
     "--remote-debugging-address=127.0.0.1",
     `--remote-debugging-port=${input.debuggingPort}`,
     `--user-data-dir=${input.userDataDir}`,
     "--no-first-run",
     "--no-default-browser-check",
+    // Agents work while nobody watches: a covered, minimized or locked window keeps running.
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    ...(platform === "win32" ? ["--disable-features=CalculateNativeWinOcclusion"] : []),
     ...(trimText(input.initialUrl) ? [normalizePreviewUrl(input.initialUrl!)] : []),
   ];
+}
+
+/**
+ * Agents' tabs keep rendering in a minimized window, so the managed browser
+ * starts minimized and only the settings' Open browser or an agent's
+ * `open: true` shows it. Headless browsers have no windows to minimize.
+ */
+export async function minimizeBrowserWindows(
+  browser: Pick<Browser, "newBrowserCDPSession">,
+): Promise<void> {
+  const session = await browser.newBrowserCDPSession().catch(() => null);
+  if (!session) return;
+  try {
+    const { targetInfos } = await session.send("Target.getTargets");
+    const windowIds = new Set<number>();
+    for (const target of targetInfos) {
+      if (target.type !== "page") continue;
+      const window = await session
+        .send("Browser.getWindowForTarget", { targetId: target.targetId })
+        .catch(() => null);
+      if (window) windowIds.add(window.windowId);
+    }
+    for (const windowId of windowIds) {
+      await session
+        .send("Browser.setWindowBounds", { windowId, bounds: { windowState: "minimized" } })
+        .catch(() => undefined);
+    }
+  } catch {
+    // A browser that cannot list its windows still works; it only stays in front.
+  } finally {
+    await session.detach().catch(() => undefined);
+  }
 }
 
 async function findAvailableLocalPort(): Promise<number> {
@@ -225,11 +299,10 @@ async function findAvailableLocalPort(): Promise<number> {
   });
 }
 
-async function resolveInstalledBrowserExecutable(): Promise<BrowserExecutableCandidate> {
-  const candidates = getInstalledBrowserCandidates();
-  for (const candidate of candidates) {
+async function findInstalledBrowser(): Promise<BrowserExecutableCandidate | null> {
+  for (const candidate of getInstalledBrowserCandidates()) {
     if (
-      await NodeFSP.access(candidate.executablePath).then(
+      await NodeFSP.access(candidate.executablePath, NodeFSP.constants.X_OK).then(
         () => true,
         () => false,
       )
@@ -237,7 +310,13 @@ async function resolveInstalledBrowserExecutable(): Promise<BrowserExecutableCan
       return candidate;
     }
   }
+  return null;
+}
 
+async function resolveInstalledBrowserExecutable(): Promise<BrowserExecutableCandidate> {
+  const installed = await findInstalledBrowser();
+  if (installed) return installed;
+  const candidates = getInstalledBrowserCandidates();
   throw new Error(
     `Unable to find Chrome or Edge for ${PRODUCT_BASE_NAME} browser automation. Checked: ${candidates
       .map((candidate) => candidate.executablePath)
@@ -277,6 +356,9 @@ async function probeCdpEndpoint(port: number): Promise<CdpEndpointProbeResult> {
     };
   }
 }
+
+/** After a failed launch, agents use the built-in browser this long before Chrome is tried again. */
+const LAUNCH_RETRY_AFTER_MS = 5 * 60_000;
 
 function processExitedBeforeCdpError(port: number, state: BrowserProcessExitState): Error {
   return new Error(
@@ -423,19 +505,29 @@ async function openCdpWindow(port: number): Promise<void> {
       signal.addEventListener("abort", () => fail("timed out."));
       socket.addEventListener("error", () => fail("the CDP connection failed."));
       socket.addEventListener("close", () => fail("the CDP connection closed."));
-      socket.addEventListener("open", () =>
-        socket.send(
-          JSON.stringify({ id: 1, method: "Target.createTarget", params: { url: "about:blank" } }),
-        ),
-      );
+      const send = (id: number, method: string, params: object) =>
+        socket.send(JSON.stringify({ id, method, params }));
+      socket.addEventListener("open", () => send(1, "Target.createTarget", { url: "about:blank" }));
+      // The new window starts minimized like a fresh launch; failing to minimize is harmless.
       socket.addEventListener("message", (event) => {
         const message = JSON.parse(String(event.data)) as {
           readonly id?: number;
           readonly error?: { readonly message?: string };
+          readonly result?: { readonly targetId?: string; readonly windowId?: number };
         };
-        if (message.id !== 1) return;
-        if (message.error) fail(message.error.message ?? "Target.createTarget failed.");
-        else resolve();
+        if (message.id === 1) {
+          if (message.error) fail(message.error.message ?? "Target.createTarget failed.");
+          else if (message.result?.targetId === undefined) resolve();
+          else send(2, "Browser.getWindowForTarget", { targetId: message.result.targetId });
+        } else if (message.id === 2) {
+          if (message.result?.windowId === undefined) resolve();
+          else {
+            send(3, "Browser.setWindowBounds", {
+              windowId: message.result.windowId,
+              bounds: { windowState: "minimized" },
+            });
+          }
+        } else if (message.id === 3) resolve();
       });
     });
   } finally {
@@ -451,11 +543,39 @@ async function launchCdpBrowser(input: {
   try {
     await waitForCdpEndpoint(browserProcess.debuggingPort, 15_000, browserProcess);
     const { browser, context } = await connectOverCdp(browserProcess.debuggingPort);
+    await minimizeBrowserWindows(browser);
     return { browserProcess, browser, context };
   } catch (error) {
     await browserProcess.dispose().catch(() => undefined);
     throw error;
   }
+}
+
+const targetIdOf = async (page: Page): Promise<string | undefined> => {
+  const session = await page.context().newCDPSession(page);
+  try {
+    return (await session.send("Target.getTargetInfo")).targetInfo.targetId;
+  } catch {
+    return undefined;
+  } finally {
+    await session.detach().catch(() => undefined);
+  }
+};
+
+/** The page Playwright attaches for a target made over CDP. */
+async function waitForPage(context: BrowserContext, targetId: string): Promise<Page> {
+  const attached = context.waitForEvent("page", {
+    predicate: async (page) => (await targetIdOf(page)) === targetId,
+    timeout: 10_000,
+  });
+  // The page may have attached before the wait began.
+  for (const page of context.pages()) {
+    if ((await targetIdOf(page)) === targetId) {
+      void attached.catch(() => undefined);
+      return page;
+    }
+  }
+  return attached;
 }
 
 export function createBrowserAutomationService(
@@ -486,10 +606,13 @@ export function createBrowserAutomationService(
     dependencies.removeDirectory ??
     ((directoryPath: string) =>
       NodeFSP.rm(directoryPath, { recursive: true, force: true }).then(() => undefined));
+  const findBrowser = dependencies.findInstalledBrowser ?? findInstalledBrowser;
+  const now = dependencies.now ?? Date.now;
   let browserProcess: BrowserProcessHandle | null = null;
   let browser: Browser | null = null;
   let context: BrowserContext | null = null;
   let activePage: Page | null = null;
+  let launchFailure: { readonly message: string; readonly at: number } | null = null;
 
   const readRuntimeMetadata = async (): Promise<BrowserRuntimeMetadata | null> => {
     const raw = await readFile(profilePaths.defaultRuntimeMetadataPath).catch(() => "");
@@ -595,9 +718,8 @@ export function createBrowserAutomationService(
     await removeRuntimeMetadata();
   };
 
-  const getContext = async (): Promise<BrowserContext> => {
-    await makeDirectory(profilePaths.defaultProfileDir);
-    if (!context) {
+  const connectOrLaunch = async (): Promise<void> => {
+    try {
       const reconnected = await reconnectFromRuntimeMetadata();
       if (!reconnected) {
         const launched = await launchBrowser({ userDataDir: profilePaths.defaultProfileDir });
@@ -607,6 +729,26 @@ export function createBrowserAutomationService(
         context = launched.context;
         browser.on("disconnected", clearBrowserHandles);
       }
+    } catch (cause) {
+      launchFailure = {
+        message: cause instanceof Error ? cause.message : String(cause),
+        at: now(),
+      };
+      throw cause;
+    }
+    launchFailure = null;
+  };
+
+  // Concurrent first calls share one launch: a second Chrome on the same profile would fail.
+  let pendingStart: Promise<void> | null = null;
+
+  const getContext = async (): Promise<BrowserContext> => {
+    await makeDirectory(profilePaths.defaultProfileDir);
+    if (!context) {
+      pendingStart ??= connectOrLaunch().finally(() => {
+        pendingStart = null;
+      });
+      await pendingStart;
     }
 
     const currentContext = context;
@@ -626,6 +768,48 @@ export function createBrowserAutomationService(
     return activePage;
   };
 
+  const recentLaunchFailure = () =>
+    launchFailure !== null && now() - launchFailure.at < LAUNCH_RETRY_AFTER_MS
+      ? launchFailure
+      : null;
+
+  const ensureAvailable = async (): Promise<boolean> => {
+    if (context) return true;
+    if (recentLaunchFailure() !== null) return false;
+    if ((await findBrowser()) === null && (await readRuntimeMetadata()) === null) return false;
+    return getContext().then(
+      () => true,
+      () => false,
+    );
+  };
+
+  const newBackgroundPage = async (): Promise<Page> => {
+    const currentContext = await getContext();
+    const currentBrowser = currentContext.browser();
+    if (!currentBrowser) return currentContext.newPage();
+    const session = await currentBrowser.newBrowserCDPSession();
+    try {
+      const hadWindow = (await session.send("Target.getTargets")).targetInfos.some(
+        (target) => target.type === "page",
+      );
+      // Playwright's newPage opens a foreground tab, which restores a minimized window.
+      const { targetId } = await session.send("Target.createTarget", {
+        url: "about:blank",
+        background: true,
+      });
+      const page = await waitForPage(currentContext, targetId);
+      if (!hadWindow) {
+        const { windowId } = await session.send("Browser.getWindowForTarget", { targetId });
+        await session
+          .send("Browser.setWindowBounds", { windowId, bounds: { windowState: "minimized" } })
+          .catch(() => undefined);
+      }
+      return page;
+    } finally {
+      await session.detach().catch(() => undefined);
+    }
+  };
+
   const snapshot = async (): Promise<BrowserProfileSnapshot> => {
     const page = activePage && !activePage.isClosed() ? activePage : null;
     const currentTitle = page ? await titleOf(page) : undefined;
@@ -639,10 +823,14 @@ export function createBrowserAutomationService(
       (recoveredMetadata && recoveredProbe?.ok
         ? metadataToRecoveredProcessHandle(recoveredMetadata)
         : null);
+    const open = Boolean(context || recoveredProbe?.ok);
+    const failure = open ? null : recentLaunchFailure();
     return {
       profileId: "default",
       profilePath: profilePaths.defaultProfileDir,
-      status: context || recoveredProbe?.ok ? "open" : "closed",
+      status: open ? "open" : "closed",
+      installed: open || (await findBrowser()) !== null,
+      ...(failure === null ? {} : { launchError: failure.message }),
       ...(snapshotProcess
         ? {
             launchMode: "cdp-attached" as const,
@@ -657,6 +845,8 @@ export function createBrowserAutomationService(
 
   return {
     context: getContext,
+    ensureAvailable,
+    newBackgroundPage,
     snapshot,
     openLoginWindow: async (input) => {
       const url = trimText(input?.url);

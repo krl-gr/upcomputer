@@ -732,7 +732,7 @@ it.effect("serves from a server-side host only while no desktop host takes the c
     yield* answer(
       "server",
       yield* broker.connect(makeHost({ clientId: "server" }), {
-        serverHost: { preferred: Effect.sync(() => preferred) },
+        serverHost: { preferred: () => Effect.sync(() => preferred) },
       }),
     );
     yield* Effect.yieldNow;
@@ -743,7 +743,7 @@ it.effect("serves from a server-side host only while no desktop host takes the c
     yield* answer(
       "server",
       yield* broker.connect(makeHost({ clientId: "server" }), {
-        serverHost: { preferred: Effect.sync(() => preferred) },
+        serverHost: { preferred: () => Effect.sync(() => preferred) },
       }),
     );
     yield* Effect.yieldNow;
@@ -784,7 +784,7 @@ it.effect("serves from the environment browser, and from Chrome while it is pref
     yield* answer(
       "chrome",
       yield* broker.connect(makeHost({ clientId: "chrome" }), {
-        serverHost: { preferred: Effect.sync(() => alwaysUseChrome) },
+        serverHost: { preferred: () => Effect.sync(() => alwaysUseChrome) },
       }),
     );
     yield* answer("desktop", yield* broker.connect(makeHost({ clientId: "desktop" })));

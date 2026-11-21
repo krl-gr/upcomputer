@@ -23,6 +23,7 @@ export type AgentRunReasonCode =
   | "task_archived"
   | "task_deleted"
   | "agent_disabled"
+  | "agent_archived"
   | "agent_deleted"
   // A stop or failure a restart found half written and finished.
   | "finalization_resumed"

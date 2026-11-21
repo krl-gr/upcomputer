@@ -149,6 +149,7 @@ function agentInput(id: string, overrides: Partial<TaskAgent> = {}): TaskAgent {
     config: { role: id, modelSelection, instructions: "Work." },
     createdAt: at,
     updatedAt: at,
+    archivedAt: null,
     ...overrides,
   };
 }
@@ -1191,6 +1192,27 @@ test("no agent starts on an archived task, and unarchiving lets a matching agent
   );
 });
 
+test("an archived agent never starts on a matching task, and unarchiving it lets it start", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service } = harness;
+      // Archived regardless of enabled: the agent keeps enabled for when it comes back.
+      yield* repository.upsertAgent({ ...agentInput("dev"), archivedAt: isoNow() });
+      const task = yield* repository.upsert(taskInput("t"));
+      yield* service.scheduleTaskChanged({ task, reason: "created" });
+      yield* service.recover;
+      yield* Effect.sleep("300 millis");
+      NodeAssert.equal((yield* runsOf(repository, "t")).length, 0);
+      const unarchived = yield* repository.upsertAgent({ ...agentInput("dev"), archivedAt: null });
+      yield* service.scheduleAgentChanged({ agent: unarchived, reason: "upserted" });
+      yield* waitFor(
+        "run after the agent's unarchive",
+        runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
+      );
+    }),
+  );
+});
+
 test("an unarchive keeps its caller's ceiling until the agent starts", async () => {
   await withScheduler((harness) =>
     Effect.gen(function* () {
@@ -1786,6 +1808,11 @@ test("messaging refuses another active run of the agent, an archived task, and a
       NodeAssert.ok(!disabled.ok);
       NodeAssert.match(disabled.error, /is disabled/);
 
+      yield* repository.upsertAgent(idleAgent("dev", { archivedAt: isoNow() }));
+      const archivedAgent = yield* service.messageRun({ id: ended.id, text: "go" });
+      NodeAssert.ok(!archivedAgent.ok);
+      NodeAssert.match(archivedAgent.error, /Agent 'dev' \(dev\) is archived/);
+
       const missing = yield* service.messageRun({ id: TaskAgentRunId.make("nope"), text: "go" });
       NodeAssert.ok(!missing.ok);
       NodeAssert.match(missing.error, /'nope' was not found/);
@@ -1941,7 +1968,7 @@ test("a delayed duplicate stop of a finished run leaves the continuation on its 
   );
 });
 
-test("an archive, postponement or agent deletion between the start checks and the run insert prevents the start", async () => {
+test("an archive, postponement, agent archive or agent deletion between the start checks and the run insert prevents the start", async () => {
   const pause: { taskId: string | null; reached: boolean; release: () => void } = {
     taskId: null,
     reached: false,
@@ -1964,6 +1991,10 @@ test("an archive, postponement or agent deletion between the start checks and th
                 id: taskId,
                 notBefore: new Date(Date.now() + 3_600_000).toISOString(),
               }),
+          },
+          {
+            id: "agent-archived-meanwhile",
+            cancel: () => repository.upsertAgent({ ...agentInput("dev"), archivedAt: isoNow() }),
           },
           {
             id: "agent-deleted-meanwhile",

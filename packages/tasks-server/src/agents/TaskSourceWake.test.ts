@@ -268,6 +268,7 @@ const finishedRun = (
       config: { role: "Developer", modelSelection, instructions: "Work." },
       createdAt: at,
       updatedAt: at,
+      archivedAt: null,
     });
     yield* repository.upsert({
       id: taskId,

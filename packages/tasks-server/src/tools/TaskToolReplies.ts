@@ -87,6 +87,7 @@ export function changedAgentFields(before: TaskAgent, after: TaskAgent): Readonl
   const top = (
     ["projectId", "name", "enabled", "startStatuses", "startTags", "startRunStatuses"] as const
   ).filter((key) => !same(before[key], after[key]));
+  const archived = (before.archivedAt === null) !== (after.archivedAt === null) ? ["archived"] : [];
   const config = Object.keys({ ...before.config, ...after.config }).filter(
     (key) =>
       !same(
@@ -94,7 +95,7 @@ export function changedAgentFields(before: TaskAgent, after: TaskAgent): Readonl
         after.config[key as keyof TaskAgent["config"]],
       ),
   );
-  return [...top, ...config];
+  return [...top, ...archived, ...config];
 }
 
 /** The agent without its instructions text, which is only measured. */

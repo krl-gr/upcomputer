@@ -7,7 +7,7 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { ArrowLeftIcon } from "lucide-react";
+import { ArchiveRestoreIcon, ArrowLeftIcon } from "lucide-react";
 import { msg, useGT, useMessages } from "gt-react";
 import type {
   EnvironmentId,
@@ -40,6 +40,8 @@ import {
   SelectValue,
 } from "../../../../apps/web/src/components/ui/select.tsx";
 import { Switch } from "../../../../apps/web/src/components/ui/switch.tsx";
+import { SidebarSectionHeader } from "../../../../apps/web/src/sidebarProjects/SidebarSectionHeader.tsx";
+import { SIDEBAR_SECTION_GAP } from "../../../../apps/web/src/sidebarMetrics/sidebarMetrics.ts";
 
 import { TaskThreadLink } from "./TaskThreadLink.tsx";
 import {
@@ -64,8 +66,11 @@ import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { splitListInput, uniqueStatuses, type TasksWebProject } from "./shared.ts";
 import { pickerProjectFor, pickerProjects } from "./taskProjects.ts";
 import { ListEmptyState } from "./ListEmptyState.tsx";
+import { GroupCount } from "./TaskStatusGroups.tsx";
+import { IconAction } from "../planner/ui/IconAction.tsx";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import { isBotAgent } from "../bots/botData.tsx";
+import { agentUpsertInput, setAgentArchived } from "./agentUpsert.ts";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 
 const INSTRUCTIONS_EDITOR_CLASS =
@@ -220,6 +225,8 @@ interface AgentTableRowProps {
   readonly toggleLabel: string;
   readonly onOpen: () => void;
   readonly onToggleEnabled: () => void;
+  /** An archived worker's row: Unarchive stands where the Pause switch is. */
+  readonly unarchive?: { readonly label: string; readonly onClick: () => void };
 }
 
 export function AgentTableRow(props: AgentTableRowProps) {
@@ -235,6 +242,7 @@ export function AgentTableRow(props: AgentTableRowProps) {
     toggleLabel,
     onOpen,
     onToggleEnabled,
+    unarchive,
   } = props;
 
   return (
@@ -279,14 +287,28 @@ export function AgentTableRow(props: AgentTableRowProps) {
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
       >
-        <Switch
-          checked={agent.enabled}
-          disabled={!editable || saving}
-          aria-label={toggleLabel}
-          onCheckedChange={(checked) => {
-            if (Boolean(checked) !== agent.enabled) onToggleEnabled();
-          }}
-        />
+        {unarchive ? (
+          editable ? (
+            <IconAction
+              label={unarchive.label}
+              track="agents.unarchive"
+              variant="outline"
+              disabled={saving}
+              onClick={unarchive.onClick}
+            >
+              <ArchiveRestoreIcon />
+            </IconAction>
+          ) : null
+        ) : (
+          <Switch
+            checked={agent.enabled}
+            disabled={!editable || saving}
+            aria-label={toggleLabel}
+            onCheckedChange={(checked) => {
+              if (Boolean(checked) !== agent.enabled) onToggleEnabled();
+            }}
+          />
+        )}
       </td>
     </tr>
   );
@@ -328,9 +350,14 @@ export function AgentsView(props: AgentsViewProps) {
   // Bots have their own sidebar section and settings page. Deep links still
   // resolve against `props.agents`.
   const listedAgents = useMemo(
-    () => props.agents.filter((agent) => !isBotAgent(agent)),
+    () => props.agents.filter((agent) => !isBotAgent(agent) && agent.archivedAt === null),
     [props.agents],
   );
+  const archivedAgents = useMemo(
+    () => props.agents.filter((agent) => !isBotAgent(agent) && agent.archivedAt !== null),
+    [props.agents],
+  );
+  const [archivedOpen, setArchivedOpen] = useState(false);
   const projectsByKey = useMemo(
     () => new Map(props.projects.map((project) => [projectKey(project), project] as const)),
     [props.projects],
@@ -679,16 +706,7 @@ export function AgentsView(props: AgentsViewProps) {
       if (!client) return;
       try {
         await enqueueMutation(agent.id, async () => {
-          await client.agents.upsert({
-            id: agent.id,
-            projectId: agent.projectId,
-            name: agent.name,
-            enabled: !agent.enabled,
-            startStatuses: [...agent.startStatuses],
-            startTags: [...agent.startTags],
-            startRunStatuses: [...agent.startRunStatuses],
-            config: agent.config,
-          });
+          await client.agents.upsert({ ...agentUpsertInput(agent), enabled: !agent.enabled });
         });
         props.onReload();
       } catch (error) {
@@ -704,12 +722,109 @@ export function AgentsView(props: AgentsViewProps) {
     [enqueueMutation, gt, props],
   );
 
+  const setArchived = useCallback(
+    async (agent: ScopedTaskAgent, archived: boolean) => {
+      const client = props.getClient(agent.environmentId);
+      if (!client) return;
+      try {
+        let saved: Pick<ScopedTaskAgent, "enabled" | "name"> = agent;
+        await enqueueMutation(agent.id, async () => {
+          saved = await setAgentArchived(client, agent, archived);
+        });
+        toastManager.add({
+          type: "success",
+          title: archived ? gt("Worker archived") : gt("Worker unarchived"),
+          // An unarchived worker that is switched on starts on its matching tasks at once.
+          description:
+            !archived && saved.enabled
+              ? gt("{name} is switched on and may start on matching tasks right away.", {
+                  name: saved.name,
+                })
+              : saved.name,
+        });
+        props.onReload();
+      } catch (error) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: archived ? gt("Failed to archive worker") : gt("Failed to unarchive worker"),
+            description: errorDescription(error),
+          }),
+        );
+      }
+    },
+    [enqueueMutation, gt, props],
+  );
+  const editingAgentArchived = editingAgent !== null && editingAgent.archivedAt !== null;
+
+  const renderRow = (agent: ScopedTaskAgent) => {
+    const editable = props.canMutateEnvironment(agent.environmentId);
+    const agentProject = agent.projectId
+      ? (iconProjectsByKey.get(`${agent.environmentId}:${agent.projectId}`) ?? null)
+      : null;
+    const triggerLabel = [
+      agent.startStatuses.length > 0 ? agent.startStatuses.join(", ") : gt("Any status"),
+      agent.startTags.length > 0 ? agent.startTags.join(", ") : gt("Any tag"),
+      ...(agent.startRunStatuses.length > 0
+        ? [gt("after {statuses} runs", { statuses: agent.startRunStatuses.join(", ") })]
+        : []),
+    ].join(" · ");
+    return (
+      <AgentTableRow
+        key={`${agent.environmentId}:${agent.id}`}
+        agent={agent}
+        agentProject={agentProject}
+        showProject
+        editable={editable}
+        saving={savingKey !== null}
+        triggerLabel={triggerLabel}
+        openLabel={gt("Open worker {name}", { name: agent.name })}
+        toggleLabel={
+          agent.enabled
+            ? gt("Pause {name}", { name: agent.name })
+            : gt("Resume {name}", { name: agent.name })
+        }
+        modelLabel={getAgentModelLabel(
+          props.providerCatalogByEnvironment.get(agent.environmentId)?.entries,
+          agent.config.modelSelection,
+        )}
+        onOpen={() => openEdit(agent)}
+        onToggleEnabled={() => {
+          void toggleEnabled(agent);
+        }}
+        {...(agent.archivedAt !== null
+          ? {
+              unarchive: {
+                label: gt("Unarchive", { $context: "button that unarchives a worker" }),
+                onClick: () => {
+                  void setArchived(agent, false);
+                },
+              },
+            }
+          : {})}
+      />
+    );
+  };
+
   return (
     <WorkspaceViewLayout
       title={editingAgent ? "" : isCreateMode ? gt("New worker") : gt("Workers")}
       action={
         editingAgent
-          ? undefined
+          ? canEditAgent
+            ? {
+                ariaLabel: editingAgentArchived ? gt("Unarchive worker") : gt("Archive worker"),
+                track: editingAgentArchived ? "agents.unarchive" : "agents.archive",
+                disabled: savingKey !== null,
+                hideIcon: true,
+                label: editingAgentArchived
+                  ? gt("Unarchive", { $context: "button that unarchives a worker" })
+                  : gt("Archive", { $context: "button that archives a worker" }),
+                onClick: () => {
+                  void setArchived(editingAgent, !editingAgentArchived);
+                },
+              }
+            : undefined
           : isCreateMode
             ? {
                 ariaLabel: gt("Create worker"),
@@ -751,23 +866,30 @@ export function AgentsView(props: AgentsViewProps) {
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
               {editingAgent.name}
             </span>
-            {/* Base UI's Switch is a span, which the header's drag region would
-                otherwise swallow in Electron. */}
-            <span className="flex shrink-0 [-webkit-app-region:no-drag]">
-              <Switch
-                checked={form.enabled}
-                disabled={!canEditAgent}
-                aria-label={
-                  form.enabled
-                    ? gt("Pause {name}", { name: editingAgent.name })
-                    : gt("Enable {name}", { name: editingAgent.name })
-                }
-                onCheckedChange={(checked) => {
-                  const enabled = Boolean(checked);
-                  if (enabled !== form.enabled) commitForm({ ...form, enabled });
-                }}
-              />
-            </span>
+            {editingAgentArchived ? (
+              // An archived worker never starts, so the Pause switch gives way to the label.
+              <span className="shrink-0 text-sm text-muted-foreground">
+                {gt("Archived", { $context: "status of an archived worker" })}
+              </span>
+            ) : (
+              // Base UI's Switch is a span, which the header's drag region would
+              // otherwise swallow in Electron.
+              <span className="flex shrink-0 [-webkit-app-region:no-drag]">
+                <Switch
+                  checked={form.enabled}
+                  disabled={!canEditAgent}
+                  aria-label={
+                    form.enabled
+                      ? gt("Pause {name}", { name: editingAgent.name })
+                      : gt("Enable {name}", { name: editingAgent.name })
+                  }
+                  onCheckedChange={(checked) => {
+                    const enabled = Boolean(checked);
+                    if (enabled !== form.enabled) commitForm({ ...form, enabled });
+                  }}
+                />
+              </span>
+            )}
           </>
         ) : undefined
       }
@@ -1366,7 +1488,7 @@ export function AgentsView(props: AgentsViewProps) {
         </div>
       ) : (
         <div className="flex w-full min-w-0 flex-col gap-5 py-6">
-          {listedAgents.length === 0 ? (
+          {listedAgents.length + archivedAgents.length === 0 ? (
             // Blank while the list loads: it arrives within a moment of the page,
             // and a loading text would only flash before it.
             props.status === "loading" ? null : props.status === "offline" ? (
@@ -1390,7 +1512,8 @@ export function AgentsView(props: AgentsViewProps) {
               />
             )
           ) : (
-            <div className="min-w-0 overflow-x-auto">
+            // A container, so the Archived header can keep the visible width while the table scrolls.
+            <div className="@container min-w-0 overflow-x-auto">
               <table className="w-full min-w-[1000px] table-fixed border-collapse text-left text-sm">
                 <thead className="border-b border-border text-muted-foreground">
                   <tr>
@@ -1402,51 +1525,37 @@ export function AgentsView(props: AgentsViewProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {listedAgents.map((agent) => {
-                    const editable = props.canMutateEnvironment(agent.environmentId);
-                    const agentProject = agent.projectId
-                      ? (iconProjectsByKey.get(`${agent.environmentId}:${agent.projectId}`) ?? null)
-                      : null;
-                    const triggerLabel = [
-                      agent.startStatuses.length > 0
-                        ? agent.startStatuses.join(", ")
-                        : gt("Any status"),
-                      agent.startTags.length > 0 ? agent.startTags.join(", ") : gt("Any tag"),
-                      ...(agent.startRunStatuses.length > 0
-                        ? [
-                            gt("after {statuses} runs", {
-                              statuses: agent.startRunStatuses.join(", "),
-                            }),
-                          ]
-                        : []),
-                    ].join(" · ");
-                    return (
-                      <AgentTableRow
-                        key={`${agent.environmentId}:${agent.id}`}
-                        agent={agent}
-                        agentProject={agentProject}
-                        showProject
-                        editable={editable}
-                        saving={savingKey !== null}
-                        triggerLabel={triggerLabel}
-                        openLabel={gt("Open worker {name}", { name: agent.name })}
-                        toggleLabel={
-                          agent.enabled
-                            ? gt("Pause {name}", { name: agent.name })
-                            : gt("Resume {name}", { name: agent.name })
-                        }
-                        modelLabel={getAgentModelLabel(
-                          props.providerCatalogByEnvironment.get(agent.environmentId)?.entries,
-                          agent.config.modelSelection,
-                        )}
-                        onOpen={() => openEdit(agent)}
-                        onToggleEnabled={() => {
-                          void toggleEnabled(agent);
-                        }}
-                      />
-                    );
-                  })}
+                  {listedAgents.length === 0 ? (
+                    <tr className="border-b border-border">
+                      <td colSpan={5} className="py-4 text-muted-foreground">
+                        <div className="sticky left-0 w-[100cqw]">
+                          {gt("No active workers. Unarchive one to put it back to work.")}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    listedAgents.map(renderRow)
+                  )}
                 </tbody>
+                {archivedAgents.length > 0 ? (
+                  <tbody data-archived-workers="">
+                    <tr>
+                      <td colSpan={5} className={`px-0 pb-1 ${SIDEBAR_SECTION_GAP}`}>
+                        <div className="sticky left-0 w-[100cqw]">
+                          <div className="-ms-2">
+                            <SidebarSectionHeader
+                              title={gt("Archived", { $context: "group of archived workers" })}
+                              open={archivedOpen}
+                              onToggle={() => setArchivedOpen((open) => !open)}
+                              action={<GroupCount count={archivedAgents.length} />}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    {archivedOpen ? archivedAgents.map(renderRow) : null}
+                  </tbody>
+                ) : null}
               </table>
             </div>
           )}

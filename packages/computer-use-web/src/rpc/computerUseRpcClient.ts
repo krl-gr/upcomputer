@@ -1,4 +1,5 @@
 import {
+  type BrowserForAgents,
   COMPUTER_USE_RPC_METHODS,
   ComputerUseRpcGroup,
   type ComputerUseSettingsInput,
@@ -18,7 +19,7 @@ export interface ComputerUseWebRpcClient {
   readonly closeBrowser: () => Promise<ComputerUseStateSnapshot>;
   readonly clearBrowserProfile: () => Promise<ComputerUseStateSnapshot>;
   readonly updateBrowserSettings: (input: {
-    readonly alwaysUseChrome: boolean;
+    readonly browserForAgents: BrowserForAgents;
   }) => Promise<ComputerUseStateSnapshot>;
   readonly doctorComputerUse: () => Promise<ComputerUseStateSnapshot>;
   readonly updateComputerUseSettings: (
@@ -42,8 +43,14 @@ export function createComputerUseWebRpcClient(
     closeBrowser: () => request((client) => client[COMPUTER_USE_RPC_METHODS.closeBrowser]({})),
     clearBrowserProfile: () =>
       request((client) => client[COMPUTER_USE_RPC_METHODS.clearBrowserProfile]({})),
-    updateBrowserSettings: (input) =>
-      request((client) => client[COMPUTER_USE_RPC_METHODS.updateBrowserSettings](input)),
+    // An older server reads only `alwaysUseChrome`.
+    updateBrowserSettings: ({ browserForAgents }) =>
+      request((client) =>
+        client[COMPUTER_USE_RPC_METHODS.updateBrowserSettings]({
+          browserForAgents,
+          alwaysUseChrome: browserForAgents === "chrome",
+        }),
+      ),
     doctorComputerUse: () =>
       request((client) => client[COMPUTER_USE_RPC_METHODS.doctorComputerUse]({})),
     updateComputerUseSettings: (settings) =>

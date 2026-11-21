@@ -107,9 +107,15 @@ export function matchesLastRunFilter(
   return task.latestRunStatus === lastRun;
 }
 
-/** Tags an enabled agent starts on; the table renders them dimmer. */
+/** Tags an enabled, unarchived agent starts on; the table renders them dimmer. */
 export function agentTriggerTags(
-  agents: ReadonlyArray<{ readonly enabled: boolean; readonly startTags: ReadonlyArray<string> }>,
+  agents: ReadonlyArray<{
+    readonly enabled: boolean;
+    readonly archivedAt?: string | null;
+    readonly startTags: ReadonlyArray<string>;
+  }>,
 ): ReadonlySet<string> {
-  return new Set(agents.flatMap((agent) => (agent.enabled ? agent.startTags : [])));
+  return new Set(
+    agents.flatMap((agent) => (agent.enabled && agent.archivedAt == null ? agent.startTags : [])),
+  );
 }
