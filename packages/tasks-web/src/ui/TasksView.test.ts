@@ -16,23 +16,20 @@ const selectedDetail = source.slice(
 const mainColumn = selectedDetail.slice(0, selectedDetail.indexOf("<DetailColumn"));
 const sidebar = selectedDetail.slice(selectedDetail.indexOf("<DetailColumn"));
 
-test("source thread is conditionally rendered once in the detail sidebar", () => {
+test("source thread is conditionally rendered once inside Details, with no Active runs or removed rows", () => {
   NodeAssert.doesNotMatch(mainColumn, /Source thread/);
+  NodeAssert.match(mainColumn, /<DetailTitleHeading\b/);
   NodeAssert.equal(sidebar.match(/selectedTask\.sourceThreadId \? \(/g)?.length, 1);
-  NodeAssert.match(
-    sidebar,
-    /\{selectedTask\.sourceThreadId \? \([\s\S]*?<DetailSidebarSection title=\{gt\("Source thread"\)\}>[\s\S]*?<\/DetailSidebarSection>\s*\) : null\}/,
-  );
-  NodeAssert.equal(
-    sidebar.match(/<DetailSidebarSection title=\{gt\("Source thread"\)\}>/g)?.length,
-    1,
-  );
-  NodeAssert.equal(sidebar.match(/title=\{gt\("Source thread"\)\}/g)?.length, 2);
+  NodeAssert.doesNotMatch(sidebar, /<DetailSidebarSection title=\{gt\("Source thread"\)\}>/);
+  NodeAssert.doesNotMatch(sidebar, /<DetailSidebarSection title=\{gt\("Active runs"\)\}/);
+  NodeAssert.doesNotMatch(sidebar, /<DetailSidebarRow[^>]*label=\{gt\("Title"\)\}/);
+  NodeAssert.doesNotMatch(sidebar, /<DetailSidebarRow[^>]*label=\{gt\("For"/);
+  NodeAssert.doesNotMatch(sidebar, /<DetailSidebarRow[^>]*label=\{gt\("ID"\)\}/);
 
   const detailsIndex = sidebar.indexOf('<DetailSidebarSection title={gt("Details")}>');
-  const sourceThreadIndex = sidebar.indexOf('<DetailSidebarSection title={gt("Source thread")}>');
+  const sourceThreadIndex = sidebar.indexOf("<DetailSourceThreadRow");
   const runsIndex = sidebar.indexOf('title={gt("Runs"');
-  NodeAssert.ok(detailsIndex < sourceThreadIndex);
+  NodeAssert.ok(detailsIndex >= 0 && detailsIndex < sourceThreadIndex);
   NodeAssert.ok(sourceThreadIndex < runsIndex);
 });
 
@@ -355,7 +352,7 @@ test("the rendered table preserves global order and exposes accessible isolated 
 test("source thread link preserves its target and open behavior", () => {
   NodeAssert.match(
     sidebar,
-    /<TaskThreadLink\s+environmentId=\{selectedTask\.environmentId\}\s+threadId=\{selectedTask\.sourceThreadId as ThreadId\}\s+title=\{gt\("Source thread"\)\}\s+loadOmitted\s+onOpen=\{props\.onOpenThread\}/,
+    /<DetailSourceThreadRow\s+environmentId=\{selectedTask\.environmentId\}\s+threadId=\{selectedTask\.sourceThreadId as ThreadId\}\s+onOpen=\{props\.onOpenThread\}\s*\/>/,
   );
   NodeAssert.match(sidebar, /className="flex min-w-0 flex-col gap-0\.5"/);
   NodeAssert.match(sidebar, /^<DetailColumn[\s>]/);
