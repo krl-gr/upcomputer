@@ -5592,8 +5592,6 @@
   "82d82cdbe3b0f975": "{size} · Usa {shortcut} para mantener en línea un texto pegado grande.",
   "247cd77b35ddb586": "''{name}'' no se pudo leer como imagen.",
   "7eccb44d5449e777": "''{name}'' es demasiado grande para adjuntarlo, incluso después de comprimirlo.",
-  "1d4059658a0ab500": "¿Quitar {name} del mensaje?\nSe menciona en tu texto; al quitarlo también se quitan todas las referencias.",
-  "86261d5bd0651358": "¿Quitar esta imagen del mensaje?\nSe menciona en tu texto; al quitarla también se quitan todas las referencias.",
   "f70c49e9f30807a3": "El texto pegado es demasiado grande para este mensaje",
   "a70abf17e99c2d6d": "Quita algo de texto o un adjunto y vuelve a pegar.",
   "75bc6a7e61897051": "El texto pegado es demasiado grande para adjuntarlo",
