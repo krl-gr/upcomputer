@@ -16,6 +16,8 @@ import {
   vi,
 } from "vite-plus/test";
 
+import { PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING } from "@t3tools/contracts";
+
 import * as ServerBrowserPage from "./ServerBrowserPage.ts";
 
 const never = () => new Promise<never>(() => {});
@@ -24,6 +26,7 @@ const timedOut = () => Object.assign(new Error("Timeout exceeded"), { name: "Tim
 const failedSnapshot = async (options: {
   readonly evaluate?: () => Promise<unknown>;
   readonly ariaSnapshot?: () => Promise<string>;
+  readonly screenshot?: "stalls" | "fails";
   readonly advanceMs: number;
 }) => {
   vi.useFakeTimers();
@@ -47,7 +50,12 @@ const failedSnapshot = async (options: {
     } as unknown as Page;
     const cdp = {
       send: async (method: string) => {
-        if (method === "Page.captureScreenshot") return { data: "" };
+        if (method === "Page.captureScreenshot") {
+          // Chromium leaves a capture pending while nothing composites, or refuses it.
+          if (options.screenshot === "stalls") return never();
+          if (options.screenshot === "fails") throw new Error("Unable to capture screenshot");
+          return { data: "" };
+        }
         if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "main" } } };
         if (method === "Page.createIsolatedWorld") return { executionContextId: 1 };
         if (method === "Runtime.evaluate") return { result: { value: [] } };
@@ -63,15 +71,46 @@ const failedSnapshot = async (options: {
       actionTimeline: [],
     }).catch((error: unknown) => error);
     await vi.advanceTimersByTimeAsync(options.advanceMs);
-    return (await captured) as ServerBrowserPage.ServerBrowserOperationError;
+    return await captured;
   } finally {
     vi.useRealTimers();
   }
 };
 
+const failedSnapshotError = async (options: Parameters<typeof failedSnapshot>[0]) =>
+  (await failedSnapshot(options)) as ServerBrowserPage.ServerBrowserOperationError;
+
+describe("snapshot without a screenshot", () => {
+  it.each(["stalls", "fails"] as const)(
+    "returns the text and tree without a screenshot when the capture %s",
+    async (screenshot) => {
+      expect(
+        await failedSnapshot({
+          screenshot,
+          evaluate: async () => ({
+            url: "about:blank",
+            title: "Asleep",
+            loading: false,
+            visibleText: "Display is off",
+            interactiveElements: [],
+          }),
+          ariaSnapshot: async () => '- button "Wake" [ref=e1]',
+          advanceMs: 10_000,
+        }),
+      ).toMatchObject({
+        title: "Asleep",
+        visibleText: "Display is off",
+        accessibilityTree: expect.stringMatching(/button "Wake" \[ref=t3-\w+-\w+-e1\]/),
+        screenshot: null,
+        warning: PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING,
+      });
+    },
+  );
+});
+
 describe("snapshot timeout reason for agents", () => {
   it("says the page was too busy, after how long, and what still works", async () => {
-    const error = await failedSnapshot({ evaluate: never, advanceMs: 10_000 });
+    const error = await failedSnapshotError({ evaluate: never, advanceMs: 10_000 });
     expect(error.detail).toEqual({
       timeoutMs: 10_000,
       pendingStages: ["page state"],
@@ -82,7 +121,7 @@ describe("snapshot timeout reason for agents", () => {
 
   it("reports the real elapsed time when a stage gives up before the deadline", async () => {
     // Each attempt's tree read times out after 3 s, so the retry ends the snapshot at 6 s.
-    const error = await failedSnapshot({
+    const error = await failedSnapshotError({
       ariaSnapshot: async () => {
         vi.advanceTimersByTime(3_000);
         throw timedOut();
