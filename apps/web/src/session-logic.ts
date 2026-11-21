@@ -58,6 +58,7 @@ export {
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolFailure,
 } from "@t3tools/client-runtime/work-log/presentation";
+import { nodesKeepTimelineAttempts } from "./timelineAttemptNodes";
 
 export type WorkLogToolLifecycleStatus =
   | "idle"
@@ -961,7 +962,7 @@ function reuseTimelineEntries(
     !shallow(input.anchoredMessages, before.anchoredMessages) ||
     !shallow(input.attachmentUrlById, before.attachmentUrlById) ||
     !shallow(input.attempts, before.attempts) ||
-    !shallow(input.nodes, before.nodes) ||
+    !nodesKeepTimelineAttempts(input.nodes, before.nodes, before.visibleTurnItems) ||
     !samePlanStatuses(input.plans, before.plans) ||
     input.resolve !== before.resolve
   ) {

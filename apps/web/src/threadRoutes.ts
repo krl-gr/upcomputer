@@ -1,6 +1,9 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentThreadState } from "@t3tools/client-runtime/state/threads";
+import type {
+  EnvironmentThreadState,
+  ThreadFamilyRead,
+} from "@t3tools/client-runtime/state/threads";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import type { DraftId } from "./composerDraftStore";
@@ -53,6 +56,18 @@ export function resolveThreadRouteRenderState(input: {
   return projection.thread.deletedAt !== null || projection.thread.archivedAt !== null
     ? "missing"
     : "ready";
+}
+
+/**
+ * While threads are hidden, a thread the shell leaves out and no visible parent vouches for closes,
+ * but only after its family read answers: that read brings in an older settled or task-agent row.
+ */
+export function shouldCloseOffShellThread(input: {
+  bootstrapComplete: boolean;
+  detailLoaded: boolean;
+  familyRead: ThreadFamilyRead;
+}): boolean {
+  return input.bootstrapComplete && input.detailLoaded && input.familyRead !== "pending";
 }
 
 export function buildThreadRouteParams(ref: ScopedThreadRef): {

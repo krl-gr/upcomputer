@@ -62,7 +62,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function taskMetadataLabel(task: Task): string | null {
+export function taskMetadataLabel(task: Pick<Task, "metadata">): string | null {
   if (!isRecord(task.metadata)) return null;
   const source = typeof task.metadata.source === "string" ? task.metadata.source : null;
   const agentName = typeof task.metadata.agentName === "string" ? task.metadata.agentName : null;

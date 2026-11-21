@@ -459,6 +459,10 @@
       "types": "./src/orchestrationV2BoundedSnapshot.ts",
       "import": "./src/orchestrationV2BoundedSnapshot.ts"
     },
+    "./threadHistoryCursor": {
+      "types": "./src/threadHistoryCursor.ts",
+      "import": "./src/threadHistoryCursor.ts"
+    },
     "./orchestrationV2DedupedBodies": {
       "types": "./src/orchestrationV2DedupedBodies.ts",
       "import": "./src/orchestrationV2DedupedBodies.ts"

@@ -54,12 +54,14 @@ function replaceProjectionArrayItem<T>(
   return next;
 }
 
+// Streamed updates land on the newest entities, so search from the end.
 function upsertEntity<T extends { readonly id: unknown }>(
   items: ReadonlyArray<T>,
   item: T,
 ): ReadonlyArray<T> {
-  const index = items.findIndex((candidate) => candidate.id === item.id);
+  const index = items.findLastIndex((candidate) => candidate.id === item.id);
   if (index === -1) return [...items, item];
+  if (items[index] === item) return items;
   const next = [...items];
   next[index] = item;
   return next;

@@ -35,6 +35,7 @@ import {
 import { useRender } from "@base-ui/react/use-render";
 import { type ReactNode, type AnimationEvent, type MouseEvent, type ReactElement } from "react";
 import { cn } from "../lib/utils";
+import { observeVisibleAnimation } from "../lib/visibleAnimation";
 import { revealThreadTerminal } from "../lib/revealThreadTerminal";
 
 import { useEnvironmentQuery } from "../state/query";
@@ -766,6 +767,8 @@ export function ThreadTerminalStatusButton({
         }
       >
         <TerminalIcon
+          ref={observeVisibleAnimation}
+          data-visible-animation=""
           className="size-3.5 motion-safe:animate-status-pulse"
           onAnimationStart={synchronizeTerminalPulse}
         />
@@ -832,6 +835,8 @@ function ThreadStatusLabel({
           }
         >
           <span
+            ref={status.pulse ? observeVisibleAnimation : undefined}
+            data-visible-animation={status.pulse ? "" : undefined}
             className={`size-[9px] rounded-full ${status.dotClass} ${
               status.pulse ? "motion-safe:animate-status-pulse" : ""
             }`}
@@ -854,6 +859,8 @@ function ThreadStatusLabel({
         }
       >
         <span
+          ref={status.pulse ? observeVisibleAnimation : undefined}
+          data-visible-animation={status.pulse ? "" : undefined}
           className={`h-1.5 w-1.5 rounded-full ${status.dotClass} ${
             status.pulse ? "motion-safe:animate-status-pulse" : ""
           }`}
@@ -1004,6 +1011,8 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
             }
           >
             <TerminalIcon
+              ref={terminalStatus.pulse ? observeVisibleAnimation : undefined}
+              data-visible-animation={terminalStatus.pulse ? "" : undefined}
               className={`size-3 ${terminalStatus.pulse ? "motion-safe:animate-status-pulse" : ""}`}
               onAnimationStart={synchronizeTerminalPulse}
             />

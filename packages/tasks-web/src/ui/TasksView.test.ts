@@ -355,7 +355,7 @@ test("the rendered table preserves global order and exposes accessible isolated 
 test("source thread link preserves its target and open behavior", () => {
   NodeAssert.match(
     sidebar,
-    /<TaskThreadLink\s+environmentId=\{selectedTask\.environmentId\}\s+threadId=\{selectedTask\.sourceThreadId as ThreadId\}\s+title=\{gt\("Source thread"\)\}\s+onOpen=\{props\.onOpenThread\}/,
+    /<TaskThreadLink\s+environmentId=\{selectedTask\.environmentId\}\s+threadId=\{selectedTask\.sourceThreadId as ThreadId\}\s+title=\{gt\("Source thread"\)\}\s+loadOmitted\s+onOpen=\{props\.onOpenThread\}/,
   );
   NodeAssert.match(sidebar, /className="flex min-w-0 flex-col gap-0\.5"/);
   NodeAssert.match(sidebar, /^<DetailColumn[\s>]/);

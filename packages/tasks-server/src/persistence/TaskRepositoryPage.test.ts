@@ -84,6 +84,16 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
 
       const items = yield* repository.items({ ids: [TaskId.make("retried")] });
       assert.equal(items.tasks[0]?.latestRunStatus, "completed");
+      assert.isString(items.tasks[0]?.description);
+
+      // Lists whose details read the text leave it out of every row.
+      const slimPage = yield* repository.page({ limit: 10, omitText: true });
+      const slimItems = yield* repository.items({ ids: [TaskId.make("retried")], omitText: true });
+      for (const row of [...slimPage.tasks, ...slimItems.tasks]) {
+        assert.notProperty(row, "description");
+        assert.notProperty(row, "output");
+      }
+      assert.equal(slimItems.tasks[0]?.latestRunStatus, "completed");
     }),
   );
 

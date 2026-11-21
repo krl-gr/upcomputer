@@ -2,9 +2,9 @@ import type { TaskPageCursor, TaskPageResult } from "@t3tools/tasks-contracts/v1
 import { RecentMap, reuseRows } from "./recent.ts";
 import type { TasksStateTarget, ScopedTask } from "./tasksState.ts";
 
-export type ScopedTaskListItem = ScopedTask & {
-  readonly runCounts: TaskPageResult["tasks"][number]["runCounts"];
-};
+/** A list row; its text is absent when the list asked to omit it. */
+export type ScopedTaskListItem = Omit<ScopedTask, "description" | "output"> &
+  Pick<TaskPageResult["tasks"][number], "description" | "output" | "runCounts">;
 export interface TaskPageState {
   readonly tasks: readonly ScopedTaskListItem[];
   readonly statuses: readonly string[];

@@ -26,7 +26,13 @@ import type { ScopedTaskListItem } from "../state/taskPages.ts";
 import type { EnvironmentId, ProjectId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 
 import type { TasksWebRpcClient } from "../rpc/index.ts";
-import type { ScopedTask, ScopedTaskAgent, ScopedTaskAgentRun } from "../state/index.ts";
+import {
+  scopedTaskWithText,
+  type ScopedTask,
+  type ScopedTaskAgent,
+  type ScopedTaskAgentRun,
+  type ScopedTaskRow,
+} from "../state/index.ts";
 import { stackedThreadToast, toastManager } from "../../../../apps/web/src/components/ui/toast.tsx";
 import {
   Select,
@@ -260,7 +266,7 @@ function compareStatuses(left: string, right: string): number {
 }
 
 export function TaskReorderHandle(props: {
-  readonly task: ScopedTask;
+  readonly task: ScopedTaskRow;
   /** Translated by the caller, which has `useGT()`. */
   readonly ariaLabel: string;
   readonly title: string;
@@ -374,7 +380,9 @@ export function TasksView(props: TasksViewProps) {
       props.tasks.find((task) => taskKey(task) === selectedTaskKey) ??
       null)
     : null;
-  const hasSelectedTaskOutput = Boolean(selectedTask?.output?.trim());
+  // List rows can leave out the text; details show it once their own read has it.
+  const selectedTaskText = selectedTask === null ? null : scopedTaskWithText(selectedTask);
+  const hasSelectedTaskOutput = Boolean(selectedTaskText?.output?.trim());
   const projectsByKey = useMemo(
     () => new Map(props.projects.map((project) => [projectKey(project), project] as const)),
     [props.projects],
@@ -620,7 +628,7 @@ export function TasksView(props: TasksViewProps) {
   }, [selectedTaskKey, props.getClient, props.projects]);
 
   const loadTaskRuns = useCallback(
-    (task: ScopedTask, append = false, background = false) => {
+    (task: ScopedTaskRow, append = false, background = false) => {
       const requestId = ++detailRequestRef.current;
       if (!background) setDetailRunsStatus("loading");
       const client = props.getClient(task.environmentId);
@@ -703,8 +711,8 @@ export function TasksView(props: TasksViewProps) {
   loadTaskRunsRef.current = loadTaskRuns;
 
   const openTask = useCallback(
-    (task: ScopedTask, status = ALL_FILTER) => {
-      setFetchedTask(task);
+    (task: ScopedTaskRow, status = ALL_FILTER) => {
+      setFetchedTask(scopedTaskWithText(task));
       setRunFilter(status);
       selectTaskKey(taskKey(task));
     },
@@ -763,7 +771,7 @@ export function TasksView(props: TasksViewProps) {
   }, [selectedTask?.id, selectedTask?.environmentId, props.getClient]);
 
   const updateTaskInline = useCallback(
-    async (task: ScopedTask, field: string, update: InlineTaskUpdate): Promise<boolean> => {
+    async (task: ScopedTaskRow, field: string, update: InlineTaskUpdate): Promise<boolean> => {
       const client = props.getClient(task.environmentId);
       if (!client) return false;
       setUpdatingField(field);
@@ -829,7 +837,7 @@ export function TasksView(props: TasksViewProps) {
   }, [detailRuns, gt, history, props.agents, selectedTask]);
 
   const setTaskArchived = useCallback(
-    async (task: ScopedTask, archived: boolean) => {
+    async (task: ScopedTaskRow, archived: boolean) => {
       const client = props.getClient(task.environmentId);
       if (!client) return;
       setUpdatingField("archive");
@@ -1204,23 +1212,26 @@ export function TasksView(props: TasksViewProps) {
         <div className={detailOuterClass}>
           <div className={detailInnerClass}>
             <main className={stackedDetail ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto"}>
+              {/* Opens once the text arrives, collapsed when the task has output, as before. */}
               <DetailSidebarSection
-                key={`${taskKey(selectedTask)}:description`}
+                key={`${taskKey(selectedTask)}:description:${selectedTaskText === null ? "loading" : "loaded"}`}
                 title={gt("Description")}
-                defaultOpen={!hasSelectedTaskOutput}
+                defaultOpen={selectedTaskText !== null && !hasSelectedTaskOutput}
               >
-                {props.canMutateEnvironment(selectedTask.environmentId) ? (
+                {selectedTaskText === null ? (
+                  <p className="px-3 py-2 text-sm text-muted-foreground">{gt("Loading task…")}</p>
+                ) : props.canMutateEnvironment(selectedTask.environmentId) ? (
                   <DetailDescriptionEditor
                     key={`${taskKey(selectedTask)}:description-editor`}
-                    value={selectedTask.description}
+                    value={selectedTaskText.description}
                     disabled={updatingField === "description"}
                     onSave={(description) =>
                       void updateTaskInline(selectedTask, "description", { description })
                     }
                   />
-                ) : selectedTask.description.trim() ? (
+                ) : selectedTaskText.description.trim() ? (
                   <p className="whitespace-pre-wrap px-3 py-2 text-lg leading-8 text-foreground">
-                    {selectedTask.description}
+                    {selectedTaskText.description}
                   </p>
                 ) : (
                   <p className="px-3 py-2 text-sm text-muted-foreground">{gt("No description.")}</p>
@@ -1233,7 +1244,7 @@ export function TasksView(props: TasksViewProps) {
                   defaultOpen
                 >
                   <TaskOutput
-                    text={selectedTask.output ?? ""}
+                    text={selectedTaskText?.output ?? ""}
                     environmentId={selectedTask.environmentId}
                     cwd={selectedTaskProject?.workspaceRoot}
                     filePanelRef={props.filePanelRef}
@@ -1525,6 +1536,7 @@ export function TasksView(props: TasksViewProps) {
                       environmentId={selectedTask.environmentId}
                       threadId={selectedTask.sourceThreadId as ThreadId}
                       title={gt("Source thread")}
+                      loadOmitted
                       onOpen={props.onOpenThread}
                     />
                   </div>

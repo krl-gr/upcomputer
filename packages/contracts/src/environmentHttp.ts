@@ -733,6 +733,8 @@ const EnvironmentOrchestrationThreadSnapshotParams = Schema.Struct({
 export const EnvironmentOrchestrationShellSnapshotQuery = Schema.Struct({
   omitIdleSubagents: Schema.optionalKey(Schema.String),
   omitOlderSettled: Schema.optionalKey(Schema.String),
+  /** As `omitIdleHidden` on the shell subscription. */
+  omitIdleHidden: Schema.optionalKey(Schema.String),
   /**
    * The cursor of rows the client holds, loaded with the same omissions. The server answers
    * `resumable` instead of a snapshot when the socket can replay from it.

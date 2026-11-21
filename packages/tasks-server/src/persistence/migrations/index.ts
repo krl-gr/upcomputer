@@ -7,6 +7,7 @@ import { BotOneProjectMigration } from "./038_BotOneProject.ts";
 import { TaskListSettingsMigration } from "./039_TaskListSettings.ts";
 import { DropOrphanTaskEventsMigration } from "./040_DropOrphanTaskEvents.ts";
 import { TaskAgentArchiveMigration } from "./041_TaskAgentArchive.ts";
+import { ActiveTaskListIndexMigration } from "./042_ActiveTaskListIndex.ts";
 import { TasksNewestFirstMigration } from "./031_TasksNewestFirst.ts";
 import { BotsMigration } from "./033_Bots.ts";
 import { UpdateDefaultFeedOrderPromptsMigration } from "./030_UpdateDefaultFeedOrderPrompts.ts";
@@ -144,5 +145,6 @@ export const TASK_MIGRATION_CONTRIBUTION = {
     { version: 39, name: "TaskListSettings", run: TaskListSettingsMigration },
     { version: 40, name: "DropOrphanTaskEvents", run: DropOrphanTaskEventsMigration },
     { version: 41, name: "TaskAgentArchive", run: TaskAgentArchiveMigration },
+    { version: 42, name: "ActiveTaskListIndex", run: ActiveTaskListIndexMigration },
   ],
 } as const;

@@ -157,7 +157,7 @@ const assertShellIndexCoversShells = Effect.fnUntraced(function* () {
       | "pinnedAt"
       | "pinOrderKey"
       | "snoozedUntil"
-    >,
+    > & { readonly sidebarHidden?: boolean | undefined },
   ) => ({
     id: row.id,
     projectId: row.projectId,
@@ -167,6 +167,7 @@ const assertShellIndexCoversShells = Effect.fnUntraced(function* () {
     pinnedAt: iso(row.pinnedAt),
     pinOrderKey: row.pinOrderKey ?? null,
     snoozedUntil: iso(row.snoozedUntil),
+    sidebarHidden: row.sidebarHidden === true,
   });
   assert.deepEqual(index.map(trimmed), shells.map(trimmed));
   shells.forEach((shell, position) => {
@@ -3253,6 +3254,7 @@ it.effect("SQL list older settled threads below a cursor", () =>
       readonly subagent?: boolean;
       readonly archived?: boolean;
       readonly snoozedUntilDay?: number;
+      readonly sidebarHidden?: boolean;
     }) =>
       store.apply({
         id: EventId.make(`event:older:${input.name}`),
@@ -3286,9 +3288,11 @@ it.effect("SQL list older settled threads below a cursor", () =>
           snoozedUntil: input.snoozedUntilDay === undefined ? null : at(input.snoozedUntilDay),
           lastVisitedAt: null,
           deletedAt: null,
+          ...(input.sidebarHidden === true ? { sidebarHidden: true } : {}),
         },
       });
     yield* createThread({ name: "a", settledDay: 5 });
+    yield* createThread({ name: "worker", settledDay: null, sidebarHidden: true });
     yield* createThread({ name: "b", settledDay: 4 });
     yield* createThread({ name: "c", settledDay: 4 });
     yield* createThread({ name: "d", settledDay: 3, project: "project:b" });

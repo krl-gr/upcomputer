@@ -717,6 +717,7 @@ it.effect("shell snapshots omit idle children and older settled threads only on 
     ) =>
       ({
         id: ThreadId.make(id),
+        ...(id.startsWith("worker-") ? { sidebarHidden: true } : {}),
         projectId: "project",
         archivedAt: null,
         status: activityRunStatus ?? "completed",
@@ -740,10 +741,13 @@ it.effect("shell snapshots omit idle children and older settled threads only on 
       shell("old", null, null, 30),
       shell("remote-parent", null, null, 40),
       shell("remote-child-parent", "parent", null),
+      shell("worker-idle", null, null),
+      shell("worker-live", null, "running"),
     ];
     const firstSnapshot = (input: {
       readonly omitIdleSubagents?: boolean;
       readonly omitOlderSettled?: boolean;
+      readonly omitIdleHidden?: boolean;
     }) =>
       subscribeOrchestrationV2Shell(input).pipe(
         Effect.flatMap((stream) => stream.pipe(Stream.take(1), Stream.runCollect)),
@@ -757,6 +761,7 @@ it.effect("shell snapshots omit idle children and older settled threads only on 
                 snoozedUntil: null,
                 mayBeLive: thread.activityRunStatus !== null,
                 hasRemoteTasks: thread.id.startsWith("remote-"),
+                sidebarHidden: thread.sidebarHidden === true,
               })),
             ),
           readShellSnapshot: (options?: { readonly threadIds?: ReadonlyArray<string> }) =>
@@ -800,18 +805,51 @@ it.effect("shell snapshots omit idle children and older settled threads only on 
     const withoutChildren = yield* firstSnapshot({ omitIdleSubagents: true });
     assert.deepEqual(
       withoutChildren?.threads.map((thread) => thread.id),
-      ["parent", "live", ...recent, "old", "remote-parent", "remote-child-parent"],
+      [
+        "parent",
+        "live",
+        ...recent,
+        "old",
+        "remote-parent",
+        "remote-child-parent",
+        "worker-idle",
+        "worker-live",
+      ],
     );
     // A linked environment's clients nest its task under its parent, so that parent stays: an
     // older settled thread or an idle subagent.
+    // Older clients read task-agent threads only from the shell, so they keep idle ones.
     const withoutOld = yield* firstSnapshot({ omitIdleSubagents: true, omitOlderSettled: true });
     assert.deepEqual(
       withoutOld?.threads.map((thread) => thread.id),
-      ["parent", "live", ...recent, "remote-parent", "remote-child-parent"],
+      [
+        "parent",
+        "live",
+        ...recent,
+        "remote-parent",
+        "remote-child-parent",
+        "worker-idle",
+        "worker-live",
+      ],
     );
     assert.deepEqual(withoutOld?.olderSettled?.counts, [
       { projectId: ProjectId.make("project"), count: 2 },
     ]);
+    const withoutIdleHidden = yield* firstSnapshot({
+      omitIdleSubagents: true,
+      omitOlderSettled: true,
+      omitIdleHidden: true,
+    });
+    assert.deepEqual(
+      withoutIdleHidden?.threads.map((thread) => thread.id),
+      ["parent", "live", ...recent, "remote-parent", "remote-child-parent", "worker-live"],
+    );
+    // The flag only widens the older-settled trim.
+    const hiddenWithoutOld = yield* firstSnapshot({
+      omitIdleSubagents: true,
+      omitIdleHidden: true,
+    });
+    assert.deepEqual(hiddenWithoutOld?.threads, withoutChildren?.threads);
   }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
 );
 

@@ -264,7 +264,8 @@ export function useTaskPages(
       (lane) =>
         new TaskPageLoader(
           lane.target,
-          lane.search,
+          // Details read a task's text themselves, so the rows go without it.
+          { ...lane.search, omitText: true },
           (state) => {
             if (state.page) recentTaskPages.set(lane.key, state.page);
             setByLane((previous) => ({

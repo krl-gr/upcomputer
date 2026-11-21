@@ -38,6 +38,7 @@ const EMPTY_RESPONDING_REQUEST_IDS: TimelineRowSharedState["respondingRequestIds
 const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
 
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
+import { createTrailingThrottle } from "../../lib/trailingThrottle";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import {
   memo,
@@ -1069,6 +1070,21 @@ const ConversationTimeline = memo(function ConversationTimeline({
     }
     scheduleMinimapRefresh();
   };
+  // Streamed content grows the list every frame, and each read of the remembered position and
+  // the minimap forces a layout; growth takes them at most every 200 ms, scrolling every frame.
+  const latestScroll = useStableCallback(() => handleScroll());
+  const [growthReads] = useState(() => createTrailingThrottle(() => latestScroll(), 200));
+  const [growthMinimapRefresh] = useState(() =>
+    createTrailingThrottle(() => scheduleMinimapRefresh(), 200),
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the growth throttles' pending timers when the timeline unmounts
+  useEffect(
+    () => () => {
+      growthReads.cancel();
+      growthMinimapRefresh.cancel();
+    },
+    [growthReads, growthMinimapRefresh],
+  );
 
   const measureTimelineGutter = (viewportElement: HTMLElement) => {
     const viewportWidth = Math.max(
@@ -1095,7 +1111,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     if (laidOutData === rows) {
       setSettlingListIdentity((current) => (current === listIdentityKey ? null : current));
     }
-    handleScroll();
+    growthReads.run();
   });
   // The content lane only changes width with the viewport or the chat width
   // setting, never with streamed content; measuring per content frame would
@@ -1520,8 +1536,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
               }
               maintainScrollAtEndThreshold={1}
               onScroll={handleScroll}
-              onItemSizeChanged={scheduleMinimapRefresh}
-              onMetricsChange={scheduleMinimapRefresh}
+              onItemSizeChanged={growthMinimapRefresh.run}
+              onMetricsChange={growthMinimapRefresh.run}
               // Keyboard scrolling only moves the focused element; F6 and clicks land here.
               tabIndex={-1}
               data-workspace-focus-default

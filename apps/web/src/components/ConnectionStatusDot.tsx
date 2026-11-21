@@ -1,6 +1,7 @@
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 
 import { cn } from "~/lib/utils";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 
 export function connectionPhaseDotClassName(phase: EnvironmentConnectionPhase): string {
@@ -36,6 +37,8 @@ export function ConnectionStatusDot({
     <>
       {pingClassName ? (
         <span
+          ref={observeVisibleAnimation}
+          data-visible-animation=""
           className={cn(
             "absolute inline-flex h-full w-full motion-safe:animate-status-ping rounded-full",
             pingClassName,

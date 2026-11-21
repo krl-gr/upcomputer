@@ -29,7 +29,7 @@ import {
   captureAssistantTextSelection,
   type AssistantCitationSourceAnchor,
 } from "../../../../apps/web/src/lib/assistantTextSelection.ts";
-import { useThreadShell } from "../../../../apps/web/src/state/entities.ts";
+import { useOmittedThreadShell } from "./useOmittedThreadShell.ts";
 import { TaskFileWindow, type TaskFileWindowProps } from "./TaskFileWindow.tsx";
 import { promptQuotesPassage, taskQuoteTarget } from "./taskQuoteTarget.ts";
 
@@ -141,7 +141,7 @@ function QuotableTaskOutput(props: {
     () => (task.rootThreadId ? scopeThreadRef(environmentId, task.rootThreadId) : null),
     [environmentId, task.rootThreadId],
   );
-  const rootThread = useThreadShell(rootThreadRef);
+  const rootThread = useOmittedThreadShell(rootThreadRef, true);
   const target = taskQuoteTarget({
     besideThreadRef: panelThreadRef,
     environmentId,

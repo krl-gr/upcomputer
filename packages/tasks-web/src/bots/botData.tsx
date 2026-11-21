@@ -24,6 +24,7 @@ import {
   useTasksWebAccess,
 } from "../environmentApi.ts";
 import { isDisconnectError } from "../state/taskPageLoader.ts";
+import { useOmittedThreadShell } from "../ui/useOmittedThreadShell.ts";
 import {
   botChatStatus,
   botStatus,
@@ -374,8 +375,10 @@ export function useBotStatus(environmentId: EnvironmentId, bot: Bot | undefined)
   const localLastVisitedAt = useUiStateStore((state) =>
     chatRef ? state.threadLastVisitedAtById[scopedThreadKey(chatRef)] : undefined,
   );
-  const background = useThreadShell(
+  // A finished run's thread is not in the shell; only a failure reads it, for its error class.
+  const background = useOmittedThreadShell(
     bot?.latestTaskRun ? scopeThreadRef(environmentId, bot.latestTaskRun.threadId) : null,
+    bot?.latestTaskRun?.status === "failed",
   );
   const taskRunRequest = useBotTaskRunRequest(environmentId, bot);
   const lastVisitedAt = thread
