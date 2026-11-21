@@ -53,7 +53,11 @@ export function SidebarSectionHeader(props: {
         <ChevronRightIcon
           aria-hidden
           data-testid="sidebar-section-chevron"
-          className={cn(SIDEBAR_SECTION_CHEVRON_SIZE, "shrink-0", open && "rotate-90")}
+          className={cn(
+            SIDEBAR_SECTION_CHEVRON_SIZE,
+            "shrink-0 transition-transform duration-200 ease-drawer motion-reduce:transition-none",
+            open && "rotate-90",
+          )}
         />
       </button>
       {action}
