@@ -16,6 +16,7 @@ import { useClosedViewStore } from "../closedViewStore";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { environmentCatalog } from "../connection/catalog";
 import { effectiveShortcutsForCommand, resolveShortcutCommand } from "../keybindings";
+import { areIssuesShown } from "../issuesSetting/issuesShown";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
@@ -97,14 +98,18 @@ export function ReopenClosedViewShortcut() {
     const catalog = appAtomRegistry.get(environmentCatalog.catalogValueAtom);
     const drafts = useComposerDraftStore.getState();
     const panelsByThread = useRightPanelStore.getState().byThreadKey;
+    // Hidden Issues views are skipped, not dropped, so turning Issues back on restores them.
+    const issuesShown = areIssuesShown();
     const { drop, restore } = planNextReopen(useClosedViewStore.getState().entries, (entry) => {
       const ref = entry.threadRef;
       const panel = selectThreadRightPanelState(panelsByThread, ref);
+      const issueView =
+        isGlobalIssues(ref) || (entry.kind === "panel-tab" && entry.surface.kind === "issue");
       if (isGlobalPullRequests(ref) || isGlobalIssues(ref)) {
         return {
           environmentKnown: true,
           catalogReady: true,
-          ownerExists: true,
+          ownerExists: issuesShown || !issueView,
           sideChatExists: true,
           shellLive: true,
           panel,
@@ -113,7 +118,9 @@ export function ReopenClosedViewShortcut() {
       return {
         environmentKnown: catalog.entries.has(ref.environmentId),
         catalogReady: catalog.isReady,
-        ownerExists: readThreadShell(ref) !== null || drafts.getDraftThreadByRef(ref) !== null,
+        ownerExists:
+          (issuesShown || !issueView) &&
+          (readThreadShell(ref) !== null || drafts.getDraftThreadByRef(ref) !== null),
         sideChatExists:
           entry.kind !== "panel-tab" ||
           entry.surface.kind !== "side-chat" ||

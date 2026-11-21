@@ -117,6 +117,12 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
   ...(await original()),
   trackRpcRequestSent: () => {},
 }));
+// Upstream's Issues, which the Up.computer product leaves off until a setting turns them on.
+vi.mock(import("~/issuesSetting/issuesShown"), () => ({
+  isIssuesSettingShown: () => false,
+  areIssuesShown: () => true,
+  useIssuesShown: () => true,
+}));
 
 it("opens a linked Linear issue from an inactive thread's sidebar badge", async () => {
   const style = document.createElement("style");

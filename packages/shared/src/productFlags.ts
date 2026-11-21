@@ -63,6 +63,12 @@ export interface ProductFlags {
   readonly mobileApp: boolean;
   /** Upstream's standalone `t3` installer (t3.codes/install.sh), offered where a computer needs the CLI. */
   readonly standaloneCli: boolean;
+  /**
+   * Upstream's Issues: the Issues page and its sidebar and command palette entries, issue panels,
+   * linked issue rows, and issue links opening in the app. Off makes them opt-in: the user turns
+   * them on in Settings, General, "Issues". The server and the agents' issue tools stay.
+   */
+  readonly issues: boolean;
 }
 
 export type ProductFlag = keyof ProductFlags;
@@ -85,6 +91,7 @@ export const UPSTREAM_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   fleetTrackSwitch: true,
   mobileApp: true,
   standaloneCli: true,
+  issues: true,
 });
 
 export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
@@ -105,6 +112,7 @@ export const UPCOMPUTER_PRODUCT_FLAGS: ProductFlags = Object.freeze({
   fleetTrackSwitch: false,
   mobileApp: false,
   standaloneCli: false,
+  issues: false,
 });
 
 /**
@@ -358,6 +366,13 @@ const HIDDEN_PIECES: Readonly<Record<ProductFlag, HiddenPieces>> = {
     rightPanelSurfaces: [],
   },
   standaloneCli: {
+    capabilities: [],
+    keybindingCommands: [],
+    settingsSearchIds: [],
+    rightPanelSurfaces: [],
+  },
+  // A user setting can turn Issues back on, so nothing here hides for good.
+  issues: {
     capabilities: [],
     keybindingCommands: [],
     settingsSearchIds: [],

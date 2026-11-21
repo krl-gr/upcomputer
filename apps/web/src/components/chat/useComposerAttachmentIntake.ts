@@ -9,7 +9,6 @@ import {
 } from "@t3tools/contracts";
 import {
   type ComposerContextReference,
-  collectInlineContextIds,
   stripInlineContextReferences,
 } from "~/lib/composerContextReferences";
 import {
@@ -50,7 +49,6 @@ import {
   inheritComposerImageThumbnail,
   prepareImageForAttachment,
 } from "../../lib/imageCompression";
-import { requestConfirmDialog } from "~/confirmDialog";
 import { toastManager } from "../ui/toast";
 import { type RefObject, useRef } from "react";
 import {
@@ -62,7 +60,7 @@ import {
 
 /**
  * Takes files into the draft: validates and reserves slots, compresses images, inserts
- * their inline chips, folds large pastes into text attachments, and confirms removing a referenced image.
+ * their inline chips, and folds large pastes into text attachments.
  */
 export function useComposerAttachmentIntake(input: {
   readonly activeThreadId: ChatComposerProps["activeThreadId"];
@@ -383,36 +381,7 @@ export function useComposerAttachmentIntake(input: {
         changeQuestionAttachmentPreparation(questionAttachmentTarget, -1);
       return;
     }
-    const image = composerImagesRef.current.find((candidate) => candidate.id === imageId);
-    const referenced = collectInlineContextIds(promptRef.current).includes(
-      image ? imageContextReference(image).contextId : "",
-    );
-    if (!referenced) {
-      removeComposerImageFromDraft(imageId);
-      return;
-    }
-    const confirmation = requestConfirmDialog(
-      image?.name != null
-        ? m(
-            msg(
-              "Remove {name} from the message?\nIt is referenced in your text; removing it also removes every reference.",
-              { name: image.name },
-            ),
-          )
-        : m(
-            msg(
-              "Remove this image from the message?\nIt is referenced in your text; removing it also removes every reference.",
-            ),
-          ),
-      { variant: "destructive" },
-    );
-    if (!confirmation) {
-      removeComposerImageFromDraft(imageId);
-      return;
-    }
-    void confirmation.then((confirmed) => {
-      if (confirmed) removeComposerImageFromDraft(imageId);
-    });
+    removeComposerImageFromDraft(imageId);
   };
 
   const foldPastedText = (

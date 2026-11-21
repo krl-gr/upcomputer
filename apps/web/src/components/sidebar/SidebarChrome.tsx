@@ -16,6 +16,7 @@ import { primaryServerKeybindingsAtom } from "../../state/server";
 import { cn } from "../../lib/utils";
 import { productSurface } from "../../product/productFlags";
 import { useIssuesSupported, usePullRequestsSupported } from "../../state/environments";
+import { useIssuesShown } from "../../issuesSetting/issuesShown";
 import { T3Wordmark } from "../T3Wordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -255,7 +256,8 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const locationPathname = useLocation({ select: (location) => location.pathname });
   const isOnUtilityPage = isSidebarUtilityPage(useShownPathname() ?? locationPathname);
   const pullRequestsSupported = usePullRequestsSupported();
-  const issuesSupported = useIssuesSupported();
+  const issuesShown = useIssuesShown();
+  const issuesSupported = useIssuesSupported() && issuesShown;
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
