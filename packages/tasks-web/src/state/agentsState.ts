@@ -7,11 +7,14 @@ import type {
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import type { TasksWebAccess, TasksWebRpcClient } from "../rpc/index.ts";
+import { agentArchivedAt } from "./agentArchive.ts";
 import { reuseRows, sameEnvironmentStatuses } from "./recent.ts";
 
 export type ScopedTaskAgent = TaskAgent & {
   readonly environmentId: EnvironmentId;
   readonly projectName: string | null;
+  /** Set while the agent is archived: it never starts runs and leaves lists and pickers. */
+  readonly archivedAt?: string | null;
 };
 
 export type ScopedTaskAgentRun = TaskAgentRun & {
@@ -99,6 +102,7 @@ export async function loadAgentsState(
                 agent.projectId === null
                   ? null
                   : (target.projectNameById?.get(agent.projectId) ?? null),
+              archivedAt: agentArchivedAt({ environmentId: target.environmentId, id: agent.id }),
             }))
           : previousAgents;
       const runs =
