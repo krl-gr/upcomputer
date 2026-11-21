@@ -297,8 +297,11 @@ test("runs every preview operation in Chrome against a local page", async (t) =>
   NodeAssert.equal(foreignClose._tag, "PreviewAutomationControlInterruptedError");
   NodeAssert.equal(foreignClose.detail, "agentMismatch");
   NodeAssert.equal(context.pages().length, 2);
+  const isLive = () => host.liveTabs().some((tab) => tab.tabId === newTab.tabId);
+  NodeAssert.ok(isLive());
   NodeAssert.deepEqual(await host.execute(request("close", {}, newTabRequest)), {});
   NodeAssert.equal(context.pages().length, 1);
+  NodeAssert.ok(!isLive());
   NodeAssert.equal(
     (await failure(host.execute(request("close", {}, newTabRequest))))._tag,
     "PreviewAutomationTabNotFoundError",

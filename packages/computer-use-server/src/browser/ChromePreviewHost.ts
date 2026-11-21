@@ -25,6 +25,7 @@ import {
   type PreviewAutomationConsoleEntry,
   type PreviewAutomationEvaluateInput,
   type PreviewAutomationNavigateInput,
+  type PreviewAutomationHostFocus,
   type PreviewAutomationNetworkEntry,
   type PreviewAutomationOpenInput,
   type PreviewAutomationOperation,
@@ -41,6 +42,8 @@ import {
   type PreviewAutomationTypeInput,
   type PreviewAutomationWaitForInput,
   type PreviewViewportSetting,
+  type ThreadId,
+  PreviewTabId,
   PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING,
 } from "@t3tools/contracts";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
@@ -82,8 +85,8 @@ interface LocatorInput {
 }
 
 interface ChromeTab {
-  readonly id: string;
-  readonly threadId: string;
+  readonly id: PreviewTabId;
+  readonly threadId: ThreadId;
   readonly page: Page;
   viewportSetting: PreviewViewportSetting;
   cdp: Promise<CDPSession> | undefined;
@@ -246,6 +249,7 @@ export interface ChromePreviewHostOptions {
 export interface ChromePreviewHost {
   readonly supportedOperations: ReadonlyArray<PreviewAutomationOperation>;
   readonly execute: (request: PreviewAutomationRequest) => Promise<unknown>;
+  readonly liveTabs: () => NonNullable<PreviewAutomationHostFocus["liveTabs"]>;
 }
 
 /**
@@ -258,9 +262,9 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
   const threadTabIds = new Map<string, string>();
   let actionSequence = 0;
 
-  const registerTab = (page: Page, threadId: string): ChromeTab => {
+  const registerTab = (page: Page, threadId: ThreadId): ChromeTab => {
     const tab: ChromeTab = {
-      id: `chrome-${NodeCrypto.randomUUID().slice(0, 8)}`,
+      id: PreviewTabId.make(`chrome-${NodeCrypto.randomUUID().slice(0, 8)}`),
       threadId,
       page,
       viewportSetting: FILL_PREVIEW_VIEWPORT,
@@ -847,7 +851,12 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     }
   };
 
-  return { supportedOperations: CHROME_PREVIEW_HOST_OPERATIONS, execute };
+  const liveTabs = () =>
+    [...tabs.values()]
+      .filter((tab) => !tab.page.isClosed())
+      .map((tab) => ({ threadId: tab.threadId, tabId: tab.id }));
+
+  return { supportedOperations: CHROME_PREVIEW_HOST_OPERATIONS, execute, liveTabs };
 }
 
 /** What this host serves; the server's own browser serves the rest. */
@@ -890,13 +899,23 @@ export const serveChromePreviewHost = Effect.fn("ChromePreviewHost.serve")(funct
           ...fields,
         })
         .pipe(Effect.ignore);
+    // The broker routes a named tab by these, so they are current before the agent sees a reply.
+    const reportLiveTabs = Effect.suspend(() =>
+      broker.focusHost({
+        clientId: CHROME_PREVIEW_HOST_CLIENT_ID,
+        environmentId: input.environmentId,
+        connectionId: event.connectionId,
+        focused: false,
+        liveTabs: input.host.liveTabs(),
+      }),
+    );
     return Effect.tryPromise({
       try: () => input.host.execute(event.request),
       catch: toPreviewAutomationRemoteError,
     }).pipe(
       Effect.matchEffect({
-        onSuccess: (result) => reply({ ok: true, result }),
-        onFailure: (error) => reply({ ok: false, error }),
+        onSuccess: (result) => Effect.andThen(reportLiveTabs, reply({ ok: true, result })),
+        onFailure: (error) => Effect.andThen(reportLiveTabs, reply({ ok: false, error })),
       }),
       Effect.forkScoped,
     );

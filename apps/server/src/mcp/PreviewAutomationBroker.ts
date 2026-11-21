@@ -591,7 +591,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
             (input.tabId === undefined || tab.tabId === input.tabId),
         );
       const claimedConnection = preferredConnection ?? resumedConnection;
-      const connection = claimedConnection
+      const routedConnection = claimedConnection
         ? claimedConnection
         : hasLiveAssignment && supportsOperation(assignedConnection, input.operation)
           ? assignedConnection
@@ -609,12 +609,26 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
                       Number(input.tabId !== undefined && ownsTargetTab(left)) ||
                     Number(right.preferred) - Number(left.preferred) ||
                     Number(ownsTargetTab(right, true)) - Number(ownsTargetTab(left, true)) ||
-                    Number(ownsTargetTab(right)) - Number(ownsTargetTab(left)) ||
+                    // A server host's tabs only route calls that name them.
+                    Number(right.serverHost === undefined && ownsTargetTab(right)) -
+                      Number(left.serverHost === undefined && ownsTargetTab(left)) ||
                     Number(left.serverHost !== undefined) -
                       Number(right.serverHost !== undefined) ||
                     Number(right.focused) - Number(left.focused) ||
                     right.focusOrder - left.focusOrder,
                 )[0];
+      // A named tab another host has goes to that host, and the session stays where it is.
+      const tabOwner =
+        input.tabId === undefined ||
+        (routedConnection !== undefined && ownsTargetTab(routedConnection))
+          ? undefined
+          : Array.from(current.clients.values()).find(
+              (host) =>
+                host.environmentId === input.scope.environmentId &&
+                supportsOperation(host, input.operation) &&
+                ownsTargetTab(host),
+            );
+      const connection = tabOwner ?? routedConnection;
       if (!connection) {
         if (!hasLiveAssignment) assignments.delete(assignmentKey);
         return [undefined, { ...current, assignments }] as const;
@@ -629,14 +643,16 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
           : undefined;
       const previous = onConnection(assigned) ?? onConnection(assigned?.parked);
       const parked = previous === assigned ? assigned?.parked : assigned && withoutParked(assigned);
-      assignments.set(assignmentKey, {
-        clientId: connection.clientId,
-        connectionId: connection.connectionId,
-        queue: connection.queue,
-        ...(previous?.tabId === undefined ? {} : { tabId: previous.tabId }),
-        ...(previous?.tabSequence === undefined ? {} : { tabSequence: previous.tabSequence }),
-        ...(parked === undefined ? {} : { parked }),
-      });
+      if (tabOwner === undefined) {
+        assignments.set(assignmentKey, {
+          clientId: connection.clientId,
+          connectionId: connection.connectionId,
+          queue: connection.queue,
+          ...(previous?.tabId === undefined ? {} : { tabId: previous.tabId }),
+          ...(previous?.tabSequence === undefined ? {} : { tabSequence: previous.tabSequence }),
+          ...(parked === undefined ? {} : { parked }),
+        });
+      }
 
       const requestSequence = current.requestSequence;
       const requestId = `preview-${requestSequence}`;

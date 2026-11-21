@@ -32,7 +32,13 @@ export const layer = McpToolAccess.toLayer(PreviewControlsToolkit, {
       // Tabs of a server-side host, such as the managed Chrome, have no preview session.
       if (session === undefined || session.runtime === "server") {
         const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
-        yield* broker.invoke({ scope, operation: "close", input: {}, tabId: input.tabId });
+        // A tab no host has is already closed, as PreviewManager.close treats it.
+        yield* broker.invoke({ scope, operation: "close", input: {}, tabId: input.tabId }).pipe(
+          Effect.catchTags({
+            PreviewAutomationTabNotFoundError: () => Effect.void,
+            PreviewAutomationNoAvailableHostError: () => Effect.void,
+          }),
+        );
         return {};
       }
       yield* manager
