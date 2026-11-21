@@ -24,6 +24,7 @@ import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../../config.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as AntigravityInstallation from "../AntigravityInstallation.ts";
+import { AntigravityCliKeyring } from "../antigravityUsageLimits.ts";
 import {
   ANTIGRAVITY_AUTH_STDOUT_PREFIX,
   resolveAntigravityInstanceDirectories,
@@ -291,6 +292,8 @@ const layerDeps = ServerConfig.layerTest(process.cwd(), {
     ),
   ),
   Layer.provideMerge(ServerSettings.layerTest()),
+  // A real read would open a macOS keychain prompt on the developer's machine.
+  Layer.provideMerge(Layer.succeed(AntigravityCliKeyring, () => Effect.undefined)),
   Layer.provideMerge(
     Layer.mock(BackgroundPolicy.BackgroundPolicy)({
       shouldRunScopeWork: () => Effect.succeed(false),
