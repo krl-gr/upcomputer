@@ -49,6 +49,8 @@ import {
 } from "../platform/orchestrationCache.ts";
 import * as RpcSession from "../rpc/session.ts";
 import { v2Now, v2Projection, v2ThreadId } from "./orchestrationV2TestFixtures.ts";
+import { threadKey } from "./entities.ts";
+import { holdThreadWindowView } from "./threadWindow.ts";
 import { settledTurnsProjection } from "./threadWindowTestFixtures.ts";
 import { onThreadRequestsResolved, type ThreadRequestsResolved } from "./threadRequests.ts";
 import { EMPTY_THREAD_HISTORY_META } from "./threadHistoryMerge.ts";
@@ -68,6 +70,17 @@ const TARGET = new PrimaryConnectionTarget({
   wsBaseUrl: "wss://environment.example.test",
 });
 const THREAD_ID = v2ThreadId;
+/** A view of the test thread that follows its live end (or reads older rows) for this test. */
+const holdTestThreadView = (following: boolean) =>
+  Effect.acquireRelease(
+    Effect.sync(() =>
+      holdThreadWindowView(
+        threadKey({ environmentId: TARGET.environmentId, threadId: THREAD_ID }),
+        following,
+      ),
+    ),
+    (release) => Effect.sync(release),
+  );
 const CACHED_SNAPSHOT_SEQUENCE = 7;
 const PREPARED: PreparedConnection = {
   environmentId: TARGET.environmentId,
@@ -2426,9 +2439,26 @@ describe("EnvironmentThreads", () => {
           (value) =>
             Option.isSome(value.data) && value.data.value.visibleTurnItems.length === 1_100,
         );
+        // Someone reading older rows holds the window; the next settled run at the end trims.
+        const reading = yield* holdTestThreadView(false);
+        yield* holdTestThreadView(true);
         yield* Queue.offer(harness.inputs, {
           kind: "event",
           sequence: 5,
+          event: {
+            id: EventId.make("event-run-settled-while-reading"),
+            type: "run.updated",
+            threadId: THREAD_ID,
+            occurredAt: v2Now,
+            payload: long.runs.at(-1)!,
+          },
+        });
+        const held = yield* awaitThreadState(harness.observed, (value) => value.sequence === 5);
+        expect(Option.getOrThrow(held.data).visibleTurnItems).toHaveLength(1_100);
+        reading();
+        yield* Queue.offer(harness.inputs, {
+          kind: "event",
+          sequence: 6,
           event: {
             id: EventId.make("event-run-settled"),
             type: "run.updated",
@@ -2477,6 +2507,7 @@ describe("EnvironmentThreads", () => {
         ),
       });
       const long = settledTurnsProjection(BASE_PROJECTION, 550);
+      yield* holdTestThreadView(true);
       yield* Queue.offer(harness.inputs, {
         ...snapshot(long, 4),
         historyCursor: "older",

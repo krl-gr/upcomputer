@@ -33,6 +33,31 @@ const UNFINISHED_RUN_STATUSES: ReadonlySet<OrchestrationV2Run["status"]> = new S
   "waiting",
 ]);
 
+// Thread views report here whether they show the live end with find closed ("following") or
+// older rows the user may be reading. Keyed by `threadKey`; shared by every view in the app.
+const threadWindowViews = new Map<string, { following: number; reading: number }>();
+
+/** Registers a view of the thread at `key`; returns its release. */
+export function holdThreadWindowView(key: string, following: boolean): () => void {
+  const views = threadWindowViews.get(key) ?? { following: 0, reading: 0 };
+  threadWindowViews.set(key, views);
+  const field = following ? "following" : "reading";
+  views[field] += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    views[field] -= 1;
+    if (views.following === 0 && views.reading === 0) threadWindowViews.delete(key);
+  };
+}
+
+/** A trim waits until a view follows the live end and no view shows older rows. */
+export function threadWindowViewsAllowTrim(key: string): boolean {
+  const views = threadWindowViews.get(key);
+  return views !== undefined && views.following > 0 && views.reading === 0;
+}
+
 export function isSettledRunStatus(status: OrchestrationV2Run["status"]): boolean {
   return !UNFINISHED_RUN_STATUSES.has(status);
 }
@@ -53,15 +78,21 @@ function estimateBytes(value: unknown, depth = 0): number {
   return total;
 }
 
-// A kept window starts at a turn, as the server's own windows do: a user message that opens one
-// or a notification.
-function startsTurn(item: OrchestrationV2TurnItem): boolean {
-  return (
-    item.type === "notification" ||
-    (item.type === "user_message" &&
-      item.inputIntent !== "steer" &&
-      item.inputIntent !== "promoted_queued_to_steer")
-  );
+// A kept window starts at a turn, as the server's own windows do (`threadHistoryTurnStarts`): a
+// user message that opens one, or a notification that is its run's first input.
+function turnStarts(
+  rows: ReadonlyArray<OrchestrationV2ProjectedTurnItem>,
+  threadId: OrchestrationV2ThreadProjection["thread"]["id"],
+): ReadonlyArray<boolean> {
+  const startedRuns = new Set<string>();
+  return rows.map(({ item, visibility, sourceThreadId }) => {
+    if (visibility !== "local" || sourceThreadId !== threadId) return false;
+    if (item.type !== "user_message" && item.type !== "notification") return false;
+    const firstInput = item.runId !== null && !startedRuns.has(item.runId);
+    if (item.runId !== null) startedRuns.add(item.runId);
+    if (item.type === "notification") return firstInput;
+    return item.inputIntent !== "steer" && item.inputIntent !== "promoted_queued_to_steer";
+  });
 }
 
 export function exceedsThreadWindow(
@@ -102,11 +133,10 @@ export function trimThreadWindow(
     fits -= 1;
   }
   if (fits === 0) return null;
-  const isTurnStart = (row: OrchestrationV2ProjectedTurnItem) =>
-    row.visibility === "local" && row.sourceThreadId === threadId && startsTurn(row.item);
+  const starts = turnStarts(rows, threadId);
   // Cut at the first turn inside the budget, else at the newest turn before it.
-  let cut = rows.findIndex((row, index) => index >= fits && isTurnStart(row));
-  if (cut === -1) cut = rows.findLastIndex((row, index) => index < fits && isTurnStart(row));
+  let cut = starts.findIndex((start, index) => index >= fits && start);
+  if (cut === -1) cut = starts.findLastIndex((start, index) => index < fits && start);
   if (cut <= 0) return null;
 
   const runs = new Map(projection.runs.map((run) => [run.id, run]));

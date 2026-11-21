@@ -2,7 +2,12 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { v2Projection, v2ThreadId } from "./orchestrationV2TestFixtures.ts";
 import { EMPTY_THREAD_HISTORY_META } from "./threadHistoryMerge.ts";
-import { exceedsThreadWindow, trimThreadWindow } from "./threadWindow.ts";
+import {
+  exceedsThreadWindow,
+  holdThreadWindowView,
+  threadWindowViewsAllowTrim,
+  trimThreadWindow,
+} from "./threadWindow.ts";
 import { settledTurnsProjection } from "./threadWindowTestFixtures.ts";
 
 const thread = (turns: number, options?: Parameters<typeof settledTurnsProjection>[2]) =>
@@ -71,6 +76,41 @@ describe("trimThreadWindow", () => {
     expect(trimmed?.history.latestLocalTurnOrdinal).toBe(10_000_002);
   });
 
+  it("cuts at a notification only when it is its run's first input", () => {
+    // Turn 7's command becomes a notification inside run 7; turn 8 opens with a notification.
+    const base = thread(10);
+    const asNotification = (id: string) =>
+      base.turnItems.map((item) =>
+        item.id === id ? ({ ...item, type: "notification" } as unknown as typeof item) : item,
+      );
+    const withItems = (items: typeof base.turnItems) => ({
+      ...base,
+      turnItems: items,
+      visibleTurnItems: base.visibleTurnItems.map((row, index) => ({
+        ...row,
+        item: items[index]!,
+      })),
+    });
+    const budget = { maxRows: 7, maxBytes: 1_000_000 };
+    const midRun = trimThreadWindow(
+      withItems(asNotification("command-7")),
+      EMPTY_THREAD_HISTORY_META,
+      budget,
+    );
+    expect(midRun?.projection.visibleTurnItems[0]?.sourceItemId).toBe("user-8");
+    const opensRun = trimThreadWindow(
+      withItems(
+        asNotification("command-7").map((item, index) =>
+          item.id === "user-8" ? asNotification("user-8")[index]! : item,
+        ),
+      ),
+      EMPTY_THREAD_HISTORY_META,
+      budget,
+    );
+    expect(opensRun?.projection.visibleTurnItems[0]?.sourceItemId).toBe("user-8");
+    expect(opensRun?.projection.visibleTurnItems[0]?.item.type).toBe("notification");
+  });
+
   it("measures large tool replies against the byte budget", () => {
     const projection = thread(6, { outputBytes: 100_000 });
     expect(exceedsThreadWindow(projection, { maxRows: 1_000, maxBytes: 250_000 })).toBe(true);
@@ -98,5 +138,21 @@ describe("trimThreadWindow", () => {
     expect(
       trimThreadWindow(projection, EMPTY_THREAD_HISTORY_META, { maxRows: 1, maxBytes: 1_000 }),
     ).toBeNull();
+  });
+});
+
+describe("threadWindowViewsAllowTrim", () => {
+  it("trims only while a view follows the live end and none reads older rows", () => {
+    const key = "environment:thread-window-views";
+    expect(threadWindowViewsAllowTrim(key)).toBe(false);
+    const following = holdThreadWindowView(key, true);
+    expect(threadWindowViewsAllowTrim(key)).toBe(true);
+    const reading = holdThreadWindowView(key, false);
+    expect(threadWindowViewsAllowTrim(key)).toBe(false);
+    reading();
+    reading();
+    expect(threadWindowViewsAllowTrim(key)).toBe(true);
+    following();
+    expect(threadWindowViewsAllowTrim(key)).toBe(false);
   });
 });

@@ -62,6 +62,7 @@ import {
   exceedsThreadWindow,
   isSettledRunStatus,
   OPEN_THREAD_WINDOW,
+  threadWindowViewsAllowTrim,
   trimThreadWindow,
 } from "./threadWindow.ts";
 import {
@@ -664,6 +665,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           settlesRun &&
           !result.history.expanded &&
           !result.history.loading &&
+          threadWindowViewsAllowTrim(threadKey({ environmentId, threadId })) &&
           exceedsThreadWindow(result.projection, OPEN_THREAD_WINDOW.trimAbove)
         ) {
           const trimmed = trimThreadWindow(
@@ -1291,6 +1293,7 @@ export * from "./threadCommands.ts";
 export * from "./threadFeedback.ts";
 export * from "./threadDetail.ts";
 export * from "./threadFamilies.ts";
+export { holdThreadWindowView } from "./threadWindow.ts";
 export * from "./olderSettledThreads.ts";
 export * from "./threadShell.ts";
 export * from "./threadState.ts";
