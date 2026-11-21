@@ -64,9 +64,7 @@ function Bots(props: { readonly compact?: boolean; readonly bots?: typeof BOTS }
       >
         <div data-sidebar="sidebar" className="bg-sidebar pb-2">
           <BotsSection
-            lists={[
-              { environmentId: ENVIRONMENT_ID, bots: props.bots ?? BOTS, loaded: true, error: "" },
-            ]}
+            lists={[{ environmentId: ENVIRONMENT_ID, bots: props.bots ?? BOTS, loaded: true }]}
           />
         </div>
       </div>

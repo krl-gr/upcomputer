@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import { DndContext, DragOverlay, pointerWithin } from "@dnd-kit/core";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useGT } from "gt-react";
+import { msg, useGT } from "gt-react";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
 import {
@@ -15,6 +15,7 @@ import {
   useEnvironments,
   usePrimaryEnvironmentId,
 } from "../../../../../apps/web/src/state/environments.ts";
+import { useHeldClientNotices } from "../../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
 import { usePlannerAvailability } from "../../environmentApi.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
 import { FLOATING_ACTIONS_CLEARANCE_CLASS } from "../../ui/FloatingActions.tsx";
@@ -67,6 +68,20 @@ function AutomationsBody(props: {
   const snapshot = usePlannerSnapshot(store);
   const openWindows = usePlannerWindows(windows);
   const automations = useAutomations(automationStore);
+  useHeldClientNotices(
+    automations.error
+      ? [
+          {
+            id: "automations:list",
+            environmentId,
+            severity: "error",
+            title: msg("Automations didn't load on {computer}"),
+            message: msg("The list shows what it had before."),
+            detail: automations.error,
+          },
+        ]
+      : [],
+  );
   const [preferences] = usePlannerPreferences();
   const dnd = usePlannerDnd({
     store,
@@ -251,7 +266,7 @@ export function AutomationsView(props: {
         ) : gate === "offline" || environmentId === null || windows === null ? (
           <Notice>
             {gt(
-              "The environment with Tasks is not reachable right now. Automations open when it connects.",
+              "The computer with your tasks isn't reachable right now. Automations open when it connects.",
             )}
           </Notice>
         ) : availability === "unavailable" ? (

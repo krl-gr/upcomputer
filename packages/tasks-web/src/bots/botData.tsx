@@ -16,6 +16,7 @@ import { appAtomRegistry } from "../../../../apps/web/src/rpc/atomRegistry.ts";
 import { resolveThreadLastVisitedAt } from "../../../../apps/web/src/components/Sidebar.logic.ts";
 import { useUiStateStore } from "../../../../apps/web/src/uiStateStore.ts";
 import { ConfigurableBotCharacter } from "../../../../apps/web/src/components/bot-character-configurable/ConfigurableBotCharacter.tsx";
+import { holdClientNotice } from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
 import {
   readTasksWebAccess,
   readTasksWebClient,
@@ -34,8 +35,8 @@ import {
 interface BotList {
   readonly bots: ReadonlyArray<Bot>;
   readonly loaded: boolean;
-  /** Empty, or English from `msg()` that the component shows through `useMessages()`. */
-  readonly error: string;
+  /** The last load failed; Notifications says so. */
+  readonly failed: boolean;
   /** The environment's server predates bots: it has no Bots section and no error. */
   readonly unsupported: boolean;
 }
@@ -53,9 +54,11 @@ interface BotListStore {
   fetching: boolean;
   again: boolean;
   stopChanges: (() => void) | undefined;
+  /** Holds the Notifications card while the list fails to load. */
+  releaseNotice: (() => void) | undefined;
 }
 
-const EMPTY: BotList = { bots: [], loaded: false, error: "", unsupported: false };
+const EMPTY: BotList = { bots: [], loaded: false, failed: false, unsupported: false };
 const stores = new Map<EnvironmentId, BotListStore>();
 
 type GT = ReturnType<typeof useGT>;
@@ -95,10 +98,16 @@ function storeFor(environmentId: EnvironmentId) {
       fetching: false,
       again: false,
       stopChanges: undefined,
+      releaseNotice: undefined,
     };
     stores.set(environmentId, store);
   }
   return store;
+}
+
+function releaseNotice(store: BotListStore) {
+  store.releaseNotice?.();
+  store.releaseNotice = undefined;
 }
 
 function publish(store: BotListStore, list: BotList) {
@@ -115,14 +124,31 @@ async function refresh(environmentId: EnvironmentId, store: BotListStore) {
   store.fetching = true;
   try {
     const bots = await readTasksWebClient(environmentId).bots.list({});
-    publish(store, { bots, loaded: true, error: "", unsupported: false });
+    releaseNotice(store);
+    publish(store, { bots, loaded: true, failed: false, unsupported: false });
   } catch (cause) {
-    publish(
-      store,
-      isUnknownMethodError(cause)
-        ? { ...EMPTY, loaded: true, unsupported: true }
-        : { ...store.list, error: msg("Couldn't load bots.") },
-    );
+    if (isUnknownMethodError(cause)) {
+      releaseNotice(store);
+      publish(store, { ...EMPTY, loaded: true, unsupported: true });
+    } else {
+      // A view that went away since the request no longer shows the list.
+      if (store.listeners.size > 0) {
+        const previous = store.releaseNotice;
+        store.releaseNotice = holdClientNotice(
+          {
+            id: "bots:list",
+            environmentId,
+            severity: "error",
+            title: msg("Bots didn't load on {computer}"),
+            message: msg("The list shows what it had before."),
+            detail: describeError(cause).detail ?? String(cause),
+          },
+          () => void refresh(environmentId, store),
+        );
+        previous?.();
+      }
+      publish(store, { ...store.list, failed: true });
+    }
   } finally {
     store.fetching = false;
   }
@@ -175,6 +201,7 @@ function subscribeBots(environmentId: EnvironmentId, listener: () => void) {
     if (store.listeners.size === 0) {
       store.stopChanges?.();
       store.stopChanges = undefined;
+      releaseNotice(store);
     }
   };
 }
@@ -203,7 +230,6 @@ export interface BotSectionList {
   readonly bots: ReadonlyArray<Bot>;
   /** False while its first load failed: `bots` is then empty, not the computer's bots. */
   readonly loaded: boolean;
-  readonly error: string;
 }
 
 /**
@@ -249,7 +275,7 @@ export function useBotSectionLists(
         if (!readTasksWebAccess(environmentId).canReadAgents) return [];
         const store = storeFor(environmentId);
         const { list } = store;
-        return !list.unsupported && (list.loaded || list.error !== "")
+        return !list.unsupported && (list.loaded || list.failed)
           ? [`${environmentId}\t${store.version}`]
           : [];
       })
@@ -260,8 +286,8 @@ export function useBotSectionLists(
       shown
         ? shown.split("\n").map((entry) => {
             const environmentId = entry.slice(0, entry.lastIndexOf("\t")) as EnvironmentId;
-            const { bots, loaded, error } = storeFor(environmentId).list;
-            return { environmentId, bots, loaded, error };
+            const { bots, loaded } = storeFor(environmentId).list;
+            return { environmentId, bots, loaded };
           })
         : [],
     [shown],

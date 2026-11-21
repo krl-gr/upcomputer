@@ -295,7 +295,6 @@ function TablePanel(props: {
       {...(props.selectedTaskKey === undefined
         ? {}
         : { initialSelectedTaskKey: props.selectedTaskKey })}
-      {...(pages.errorMessage === undefined ? {} : { errorMessage: pages.errorMessage })}
       canMutateEnvironment={data.canMutateTasks}
       getClient={data.getClient}
       onReload={pages.reload}

@@ -88,7 +88,6 @@ export interface AgentsViewProps {
   readonly tasks: readonly ScopedTask[];
   readonly runs: readonly ScopedTaskAgentRun[];
   readonly status: "loading" | "ready" | "error" | "offline";
-  readonly errorMessage?: string;
   readonly initialSelectedAgentKey?: string;
   readonly canMutateEnvironment: (environmentId: EnvironmentId) => boolean;
   readonly providerCatalogByEnvironment: ReadonlyMap<
@@ -411,7 +410,6 @@ export function AgentsView(props: AgentsViewProps) {
     props.providerCatalogByEnvironment,
     selectedProject,
   ]);
-  const hasReadOnlyProjects = mutableProjects.length < props.projects.length;
   const statusOptions = useMemo(
     () =>
       uniqueStatuses([...TASK_STATUSES, ...props.agents.flatMap((agent) => agent.startStatuses)]),
@@ -1368,33 +1366,22 @@ export function AgentsView(props: AgentsViewProps) {
         </div>
       ) : (
         <div className="flex w-full min-w-0 flex-col gap-5 py-6">
-          {hasReadOnlyProjects ? (
-            <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-              {gt(
-                "Some projects are read-only or do not currently have an available default provider and model. Existing workers remain readable, while invalid creation controls stay hidden.",
-              )}
-            </div>
-          ) : null}
-          {props.status === "error" ? (
-            <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-              {gt("Up.computer couldn't load your workers. {reason}", {
-                reason: props.errorMessage ?? gt("Try again."),
-              })}
-              <button type="button" className="ml-3 underline" onClick={props.onReload}>
-                {gt("Retry")}
-              </button>
-            </div>
-          ) : props.status === "offline" ? (
-            <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-              {gt(
-                "The environment with Tasks is not reachable right now. Workers show when it connects.",
-              )}
-            </div>
-          ) : null}
-          {props.status === "error" ? null : listedAgents.length === 0 ? (
+          {listedAgents.length === 0 ? (
             // Blank while the list loads: it arrives within a moment of the page,
             // and a loading text would only flash before it.
-            props.status === "loading" || props.status === "offline" ? null : (
+            props.status === "loading" ? null : props.status === "offline" ? (
+              <ListEmptyState
+                title={gt("Workers unavailable")}
+                hint={gt(
+                  "The computer with your workers isn't reachable right now. Workers show when it connects.",
+                )}
+              />
+            ) : props.status === "error" ? (
+              <ListEmptyState
+                title={gt("Workers didn't load")}
+                hint={gt("Notifications has the details.")}
+              />
+            ) : (
               <ListEmptyState
                 title={gt("No workers yet")}
                 hint={gt(

@@ -35,7 +35,11 @@ vi.mock("../environmentApi.ts", () => {
   };
 });
 
+import { readClientNotices } from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
 import { useBotSectionLists } from "./botData.tsx";
+
+const botNotices = (environmentId: EnvironmentId) =>
+  readClientNotices().filter((notice) => notice.environmentId === environmentId);
 
 // An older server's RPC layer dies on a method it does not know; the defect reaches the
 // client as this string.
@@ -58,32 +62,38 @@ afterEach(() => {
 });
 
 describe("Bots section lists", () => {
-  it("leaves out a computer whose server predates bots, without an error", async () => {
+  it("leaves out a computer whose server predates bots, with no notice", async () => {
     const here = EnvironmentId.make("sections-here");
     const older = EnvironmentId.make("sections-older-mac");
     servers.lists.set(here, () => Promise.resolve([]));
     servers.lists.set(older, unknownMethod);
     const { seen, view } = await render([here, older]);
-    expect(seen.at(-1)).toEqual([{ environmentId: here, bots: [], loaded: true, error: "" }]);
+    expect(seen.at(-1)).toEqual([{ environmentId: here, bots: [], loaded: true }]);
+    expect(botNotices(older)).toEqual([]);
     view.unmount();
   });
 
-  it("keeps a computer with its error when a server with bots fails", async () => {
+  it("keeps a failing computer and says so in Notifications until a load works", async () => {
     const failing = EnvironmentId.make("sections-failing");
     servers.lists.set(failing, () => Promise.reject(new Error("The database is locked")));
     const { seen, view } = await render([failing]);
-    expect(seen.at(-1)).toEqual([
-      { environmentId: failing, bots: [], loaded: false, error: "Couldn't load bots." },
-    ]);
+    expect(seen.at(-1)).toEqual([{ environmentId: failing, bots: [], loaded: false }]);
+    const [notice] = botNotices(failing);
+    expect(notice).toMatchObject({ id: "bots:list", detail: "The database is locked" });
+    servers.lists.set(failing, () => Promise.resolve([]));
+    await act(async () => notice?.retry?.());
+    expect(seen.at(-1)).toEqual([{ environmentId: failing, bots: [], loaded: true }]);
+    expect(botNotices(failing)).toEqual([]);
     view.unmount();
   });
 
-  it("keeps the last list without an error while the live-update stream reconnects", async () => {
+  it("keeps the last list with no notice while the live-update stream reconnects", async () => {
     const here = EnvironmentId.make("sections-reconnecting");
     servers.lists.set(here, () => Promise.resolve([]));
     const { seen, view } = await render([here]);
     await act(async () => servers.dropStream?.());
-    expect(seen.at(-1)).toEqual([{ environmentId: here, bots: [], loaded: true, error: "" }]);
+    expect(seen.at(-1)).toEqual([{ environmentId: here, bots: [], loaded: true }]);
+    expect(botNotices(here)).toEqual([]);
     view.unmount();
   });
 
@@ -104,8 +114,8 @@ describe("Bots section lists", () => {
     servers.lists.set(other, () => Promise.resolve([atlas]));
     const { seen, view } = await render([here, other]);
     expect(seen.at(-1)).toEqual([
-      { environmentId: here, bots: [nova], loaded: true, error: "" },
-      { environmentId: other, bots: [atlas], loaded: true, error: "" },
+      { environmentId: here, bots: [nova], loaded: true },
+      { environmentId: other, bots: [atlas], loaded: true },
     ]);
     view.unmount();
   });

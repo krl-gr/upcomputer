@@ -75,7 +75,6 @@ export default function AgentsRoute() {
       runs={data.agents.runs}
       status={data.agentsStatus}
       {...(selectedAgentKey === undefined ? {} : { initialSelectedAgentKey: selectedAgentKey })}
-      {...(data.agentsErrorMessage === undefined ? {} : { errorMessage: data.agentsErrorMessage })}
       canMutateEnvironment={data.canMutateAgents}
       providerCatalogByEnvironment={providerCatalogByEnvironment}
       getClient={data.getClient}

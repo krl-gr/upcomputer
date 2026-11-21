@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { msg } from "gt-react";
+import type { EnvironmentId } from "@t3tools/contracts";
+import {
+  type ClientNoticeInput,
+  useHeldClientNotices,
+} from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
 import { compareScopedTaskOrder, type TasksStateTarget } from "../state/tasksState.ts";
 import { TaskPageLoader, type TaskPageLoadState } from "../state/taskPageLoader.ts";
 import {
@@ -355,6 +361,31 @@ export function useTaskPages(
     ],
     initialWaitOver,
   });
+  const reload = useCallback(() => {
+    for (const { loader } of countLoaders.current.values()) loader.refresh();
+    for (const { loader } of loaders.current.values()) loader.refresh();
+  }, []);
+  // A failed load is a Notifications card per computer; a disconnected one waits for its computer.
+  const failures = new Map<EnvironmentId, string>();
+  const laneLoads = [
+    ...countLanes.map((lane) => ({ lane, state: byCountLane[lane.key] })),
+    ...lanes.map((lane) => ({ lane, state: byLane[lane.key] })),
+  ];
+  for (const { lane, state } of laneLoads) {
+    if (state?.error !== undefined && !state.disconnected)
+      failures.set(lane.target.environmentId, state.error);
+  }
+  useHeldClientNotices(
+    [...failures].map(([environmentId, detail]): ClientNoticeInput => ({
+      id: "tasks:list",
+      environmentId,
+      severity: "error",
+      title: msg("Tasks didn't load on {computer}"),
+      message: msg("The list shows what it had before."),
+      detail,
+    })),
+    reload,
+  );
   return {
     tasks: taskCache.current,
     statuses: [
@@ -378,10 +409,7 @@ export function useTaskPages(
     errorMessage,
     status,
     offlineEnvironmentIds,
-    reload: useCallback(() => {
-      for (const { loader } of countLoaders.current.values()) loader.refresh();
-      for (const { loader } of loaders.current.values()) loader.refresh();
-    }, []),
+    reload,
     loadMore: useCallback(() => {
       for (const { lane, loader } of loaders.current.values())
         if (lane.group === undefined) loader.loadMore();

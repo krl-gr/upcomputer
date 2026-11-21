@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { DndContext, DragOverlay, pointerWithin } from "@dnd-kit/core";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useGT } from "gt-react";
+import { msg, useGT } from "gt-react";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
+import { useHeldClientNotices } from "../../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
 import {
   Select,
   SelectItem,
@@ -87,6 +88,20 @@ function PlannerBody(props: {
   const windows = windowStoreFor(props.environmentId, props.panel ? "panel" : "page");
   usePlannerLive(store);
   const snapshot = usePlannerSnapshot(store);
+  useHeldClientNotices(
+    snapshot.rangeError
+      ? [
+          {
+            id: "planner:week",
+            environmentId: props.environmentId,
+            severity: "error",
+            title: msg("The planner didn't load on {computer}"),
+            message: msg("The week shows what it had before."),
+            detail: snapshot.rangeError,
+          },
+        ]
+      : [],
+  );
   const openWindows = usePlannerWindows(windows);
   const [preferences, updatePreferences] = usePlannerPreferences();
   const [viewState, updateViewState] = usePlannerViewState();
@@ -263,11 +278,6 @@ function PlannerBody(props: {
   );
   const weekContent = (
     <div className="flex h-full min-h-0 flex-col">
-      {snapshot.rangeError ? (
-        <p className="border-b px-3 py-1.5 text-xs text-destructive-foreground">
-          {snapshot.rangeError}
-        </p>
-      ) : null}
       <div className="min-h-0 flex-1">
         {preferences.weekViewMode === "calendar" ? (
           <WeekCalendar
@@ -593,7 +603,7 @@ export function PlannerView(props: {
         ) : gate === "offline" || environmentId === null ? (
           <Notice>
             {gt(
-              "The environment with Tasks is not reachable right now. The planner opens when it connects.",
+              "The computer with your tasks isn't reachable right now. The planner opens when it connects.",
             )}
           </Notice>
         ) : availability === "unavailable" ? (
