@@ -7,6 +7,7 @@ import type { ExperimentalWebRightPanelSurfaceProps } from "../../../../apps/web
 import { deriveProviderInstanceEntries } from "../../../../apps/web/src/providerInstances.ts";
 import { useEnvironmentProviders } from "../../../../apps/web/src/state/environments.ts";
 import { useRightPanelStore } from "../../../../apps/web/src/rightPanelStore.ts";
+import { useHiddenRightPanelSurfaces } from "../../../../apps/web/src/product/rightPanelSurfaceVisibility.ts";
 
 import {
   type PlannerKind,
@@ -98,8 +99,9 @@ export default function TasksPanel(props: ExperimentalWebRightPanelSurfaceProps)
 /** Which list a launcher entry of its own opens: one view, with no switches. */
 type TasksPanelEntry = "my-tasks" | "worker-tasks" | "automations" | "routines";
 
-/** The surface id `feature.tsx` gives My tasks, where "Open in planner" goes. */
+/** The surface ids `feature.tsx` gives My tasks and the combined Tasks tab. */
 const MY_TASKS_SURFACE_ID = "tasks.mine";
+const TASKS_SURFACE_ID = "tasks";
 
 /**
  * One Tasks view as its own right-panel surface: the list without the
@@ -116,22 +118,33 @@ function TasksEntryPanel(
     [],
   );
   const [, setPlannerEnvironment] = useStoredPlannerEnvironment();
+  const [, setStoredView] = useStoredTasksView();
+  const { hidden } = useHiddenRightPanelSurfaces();
   const panelRef = useMemo(
     () => scopeThreadRef(props.environmentId, props.threadId),
     [props.environmentId, props.threadId],
   );
   const { entry } = props;
   // The task's window opens in the panel's planner: here in My tasks or My routines, or in
-  // the My tasks tab, which opens beside this one, from Worker tasks or Automations.
+  // the My tasks tab, which opens beside this one, from Worker tasks or Automations. With
+  // My tasks switched off in Settings, the combined Tasks tab takes it, on its planner.
+  const plannerSurfaceId =
+    hidden.includes(MY_TASKS_SURFACE_ID) && !hidden.includes(TASKS_SURFACE_ID)
+      ? TASKS_SURFACE_ID
+      : MY_TASKS_SURFACE_ID;
   const openInPlanner = useCallback(
     (environmentId: EnvironmentId, taskId: string) => {
       setPlannerEnvironment(environmentId);
       windowStoreFor(environmentId, "panel").openDetail(taskId);
       setSelectedTaskKey(undefined);
-      if (entry === "worker-tasks" || entry === "automations")
-        useRightPanelStore.getState().openFeature(panelRef, MY_TASKS_SURFACE_ID);
+      if (entry !== "worker-tasks" && entry !== "automations") return;
+      if (plannerSurfaceId === TASKS_SURFACE_ID) {
+        setPanelTaskKey(panelRef, undefined);
+        setStoredView("planner");
+      }
+      useRightPanelStore.getState().openFeature(panelRef, plannerSurfaceId);
     },
-    [entry, panelRef, setPlannerEnvironment],
+    [entry, panelRef, plannerSurfaceId, setPlannerEnvironment, setStoredView],
   );
   if (props.entry === "worker-tasks" || selectedTaskKey !== undefined)
     return (
