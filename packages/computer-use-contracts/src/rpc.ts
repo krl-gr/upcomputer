@@ -5,10 +5,20 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 
 export const COMPUTER_USE_RPC_NAMESPACE = "upcomputer.computer-use.v1" as const;
 
+/**
+ * Which browser agents use: Automatic gives workers and delegated runs Chrome
+ * and chats the built-in browser.
+ */
+export const BROWSER_FOR_AGENTS = ["automatic", "chrome", "builtin"] as const;
+export const BrowserForAgents = Schema.Literals(BROWSER_FOR_AGENTS);
+export type BrowserForAgents = typeof BrowserForAgents.Type;
+
 export const BrowserUseSnapshot = Schema.Struct({
   status: Schema.Literals(["closed", "open"]),
-  /** Run the preview_* browser tools in Chrome even while the desktop app is open. */
+  /** True for Always Chrome; kept for clients from before `browserForAgents`. */
   alwaysUseChrome: Schema.Boolean,
+  /** Older servers leave it out; their `alwaysUseChrome` is the whole setting. */
+  browserForAgents: Schema.optional(BrowserForAgents),
   profilePath: Schema.String,
   /** False when no Chrome or Edge is installed; older servers leave it out. */
   installed: Schema.optional(Schema.Boolean),
@@ -64,7 +74,11 @@ export type ComputerUseStateSnapshot = typeof ComputerUseStateSnapshot.Type;
 
 const EmptyInput = Schema.Struct({});
 export const BrowserOpenInput = Schema.Struct({ url: Schema.optional(Schema.String) });
-export const BrowserSettingsInput = Schema.Struct({ alwaysUseChrome: Schema.Boolean });
+/** Clients from before the choice send `alwaysUseChrome` only. */
+export const BrowserSettingsInput = Schema.Struct({
+  alwaysUseChrome: Schema.optional(Schema.Boolean),
+  browserForAgents: Schema.optional(BrowserForAgents),
+});
 export const ComputerUseSettingsUpdateInput = Schema.Struct({
   settings: ComputerUseSettingsInput,
 });

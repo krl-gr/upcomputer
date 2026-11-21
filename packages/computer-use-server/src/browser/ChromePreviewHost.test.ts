@@ -31,9 +31,15 @@ import type { ServerConfig } from "../../../../apps/server/src/config.ts";
 import * as PreviewAutomationBroker from "../../../../apps/server/src/mcp/PreviewAutomationBroker.ts";
 import { computerUseSettingsPath } from "../settings/ComputerUseSettingsFile.ts";
 import { createBrowserAutomationService } from "./BrowserAutomationService.ts";
-import { readBrowserUseSettings } from "./BrowserUseSettings.ts";
+import {
+  browserUseSettingsSection,
+  DEFAULT_BROWSER_FOR_AGENTS,
+  readBrowserUseSettings,
+} from "./BrowserUseSettings.ts";
+import type { BrowserForAgents } from "@t3tools/computer-use-contracts/rpc";
 import {
   CHROME_TAB_IDLE_MS,
+  chromeForAgents,
   chromePreference,
   chromeTabCleanup,
   createChromePreviewHost,
@@ -659,16 +665,50 @@ test("Chrome claims a thread's new tabs while it starts, and its own tabs' calls
   NodeAssert.equal(await claims("snapshot"), false);
 });
 
-test("the Always use Chrome preference is read from its own file, then from a V1 settings.json", async () => {
+test("Browser for agents is read from its own file, then from a V1 settings.json, and keeps an old Always use Chrome", async () => {
   const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "browser-use-settings-"));
   onTestFinished(() => NodeFS.rmSync(directory, { recursive: true, force: true }));
   const settingsPath = NodePath.join(directory, "settings.json");
+  const read = async () => (await readBrowserUseSettings(settingsPath)).browserForAgents;
 
-  NodeAssert.deepEqual(await readBrowserUseSettings(settingsPath), { alwaysUseChrome: false });
+  NodeAssert.equal(await read(), DEFAULT_BROWSER_FOR_AGENTS);
   NodeFS.writeFileSync(settingsPath, JSON.stringify({ browser: { alwaysUseChrome: true } }));
-  NodeAssert.deepEqual(await readBrowserUseSettings(settingsPath), { alwaysUseChrome: true });
-  NodeFS.writeFileSync(computerUseSettingsPath(settingsPath), "{ not json");
-  NodeAssert.deepEqual(await readBrowserUseSettings(settingsPath), { alwaysUseChrome: false });
+  NodeAssert.equal(await read(), "chrome");
+  const own = computerUseSettingsPath(settingsPath);
+  NodeFS.writeFileSync(own, JSON.stringify({ browser: { alwaysUseChrome: false } }));
+  NodeAssert.equal(await read(), "builtin");
+  NodeFS.writeFileSync(own, JSON.stringify({ browser: browserUseSettingsSection("automatic") }));
+  NodeAssert.equal(await read(), "automatic");
+  NodeFS.writeFileSync(own, "{ not json");
+  NodeAssert.equal(await read(), DEFAULT_BROWSER_FOR_AGENTS);
+});
+
+test("Automatic gives workers and delegated runs Chrome, and chats the built-in browser", async () => {
+  let choice: BrowserForAgents = "automatic";
+  const wantsChrome = chromeForAgents({
+    browserForAgents: async () => choice,
+    isWorker: async (threadId) => threadId === "worker",
+  });
+  const scope = (threadId: string, subagent?: boolean) => ({
+    environmentId: EnvironmentId.make("environment-1"),
+    requestNamespace: "session-1",
+    thread: {
+      threadId: ThreadId.make(threadId),
+      providerSessionId: "session-1",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      ...(subagent === undefined ? {} : { subagent }),
+    },
+    client: undefined,
+    capabilities: new Set(["preview"] as const),
+    issuedAt: 0,
+  });
+  NodeAssert.equal(await wantsChrome(scope("worker")), true);
+  NodeAssert.equal(await wantsChrome(scope("delegated", true)), true);
+  NodeAssert.equal(await wantsChrome(scope("chat")), false);
+  choice = "chrome";
+  NodeAssert.equal(await wantsChrome(scope("chat")), true);
+  choice = "builtin";
+  NodeAssert.equal(await wantsChrome(scope("worker")), false);
 });
 
 test("agents reach Chrome through the preview broker unless a desktop app serves them", async (t) => {
@@ -769,7 +809,7 @@ test("agents reach Chrome through the preview broker unless a desktop app serves
       });
       NodeAssert.equal(stayed.tabId, opened.tabId);
 
-      // "Always use Chrome" moves every call to Chrome.
+      // "Always Chrome" moves every call to Chrome.
       alwaysUseChrome = true;
       const preferred = yield* broker.invoke<PreviewAutomationStatus>({
         scope: laterSession,

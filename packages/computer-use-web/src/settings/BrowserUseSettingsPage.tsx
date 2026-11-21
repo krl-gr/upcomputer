@@ -1,10 +1,19 @@
-import type { ComputerUseStateSnapshot } from "@t3tools/computer-use-contracts/rpc";
+import type {
+  BrowserForAgents,
+  ComputerUseStateSnapshot,
+} from "@t3tools/computer-use-contracts/rpc";
 import { Globe2Icon, RotateCcwIcon, SquareIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { T, useGT } from "gt-react";
 
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
-import { Switch } from "../../../../apps/web/src/components/ui/switch.tsx";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "../../../../apps/web/src/components/ui/select.tsx";
 import { Textarea } from "../../../../apps/web/src/components/ui/textarea.tsx";
 import {
   SettingsPageContainer,
@@ -56,6 +65,28 @@ function BrowserUseSettingsPage() {
 
   const browser = snapshot?.browser;
   const unavailable = !api;
+  const browserForAgents: BrowserForAgents =
+    browser?.browserForAgents ?? (browser?.alwaysUseChrome ? "chrome" : "builtin");
+  const choices: Record<BrowserForAgents, { label: string; description: string }> = {
+    automatic: {
+      label: gt("Automatic"),
+      description: gt(
+        "Workers and delegated tasks use Chrome, so they keep working while the screen is off or locked. In chats, agents use the built-in browser, where you can watch, take over, record and pick elements.",
+      ),
+    },
+    chrome: {
+      label: gt("Always Chrome"),
+      description: gt(
+        "Every agent uses Chrome, including in chats. Use it for sites that reject embedded browsers, such as Google sign-in or passkeys. Chrome tabs do not appear in the browser panel.",
+      ),
+    },
+    builtin: {
+      label: gt("Always built-in browser"),
+      description: gt(
+        "Agents use the desktop app's browser. On Windows, background work can stall while the screen is off.",
+      ),
+    },
+  };
   const chromeUnavailable =
     browser?.installed === false
       ? gt("Chrome or Edge is not installed, so agents use the built-in browser.")
@@ -68,26 +99,36 @@ function BrowserUseSettingsPage() {
     <SettingsPageContainer>
       <SettingsSection title={gt("Browser Use")} hideTitle>
         <SettingsRow
-          title={gt("Always use Chrome")}
-          description={
-            <T>
-              Agents use the desktop app's built-in browser while it is open, and Chrome otherwise.
-              Turn this on for sites that reject embedded browsers, such as Google sign-in or
-              passkeys.
-            </T>
-          }
+          title={gt("Browser for agents")}
+          description={choices[browserForAgents].description}
           status={chromeUnavailable}
           control={
-            <Switch
-              checked={browser?.alwaysUseChrome ?? false}
+            <Select
+              value={browserForAgents}
               disabled={unavailable || busyAction !== undefined || !snapshot}
-              aria-label={gt("Always use Chrome")}
-              onCheckedChange={(checked) =>
-                void runAction("host", () =>
-                  api!.updateBrowserSettings({ alwaysUseChrome: Boolean(checked) }),
-                )
-              }
-            />
+              onValueChange={(value) => {
+                if (value === "automatic" || value === "chrome" || value === "builtin") {
+                  void runAction("host", () =>
+                    api!.updateBrowserSettings({ browserForAgents: value }),
+                  );
+                }
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-48"
+                aria-label={gt("Browser for agents")}
+              >
+                <SelectValue>{choices[browserForAgents].label}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {(["automatic", "chrome", "builtin"] as const).map((choice) => (
+                  <SelectItem hideIndicator key={choice} value={choice}>
+                    {choices[choice].label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           }
         />
 

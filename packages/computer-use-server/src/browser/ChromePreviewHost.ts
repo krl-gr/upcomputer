@@ -72,6 +72,7 @@ import type { PreviewAutomationServerHost } from "../../../../apps/server/src/mc
 import * as ServerBrowserPage from "../../../../apps/server/src/preview/ServerBrowserPage.ts";
 import { BrowserAutomationService } from "./BrowserAutomationService.ts";
 import { readBrowserUseSettings } from "./BrowserUseSettings.ts";
+import type { BrowserForAgents } from "@t3tools/computer-use-contracts/rpc";
 
 /** How a failed request is reported to the broker, with the tags desktop hosts use. */
 export type PreviewAutomationRemoteError = NonNullable<PreviewAutomationResponse["error"]>;
@@ -1177,9 +1178,7 @@ export const serveChromePreviewHost = Effect.fn("ChromePreviewHost.serve")(funct
 export const chromePreference =
   (input: {
     readonly host: Pick<ChromePreviewHost, "liveTabs">;
-    readonly wantsChrome: (
-      scope: Parameters<PreviewAutomationServerHost["preferred"]>[0]["scope"],
-    ) => Promise<boolean>;
+    readonly wantsChrome: (scope: PreviewScope) => Promise<boolean>;
     readonly ensureAvailable: () => Promise<boolean>;
   }): PreviewAutomationServerHost["preferred"] =>
   ({ scope, operation }) =>
@@ -1188,6 +1187,24 @@ export const chromePreference =
       if (operation === "open") return input.ensureAvailable();
       return input.host.liveTabs().some((tab) => tab.threadId === scope.thread.threadId);
     });
+
+type PreviewScope = Parameters<PreviewAutomationServerHost["preferred"]>[0]["scope"];
+
+/**
+ * Whether "Browser for agents" gives a caller Chrome. Automatic gives it to
+ * workers and delegated runs, which run unattended and keep working in Chrome
+ * while the screen is off; chats keep the built-in browser the user watches.
+ */
+export const chromeForAgents =
+  (input: {
+    readonly browserForAgents: () => Promise<BrowserForAgents>;
+    readonly isWorker: (threadId: ThreadId) => Promise<boolean>;
+  }) =>
+  async (scope: PreviewScope): Promise<boolean> => {
+    const choice = await input.browserForAgents();
+    if (choice !== "automatic") return choice === "chrome";
+    return scope.thread.subagent === true || input.isWorker(scope.thread.threadId);
+  };
 
 /**
  * The managed Chrome as a server-side preview host: upstream's environment
@@ -1205,12 +1222,17 @@ export const ChromePreviewHostLive = Layer.effectDiscard(
       NodeFSP.rm(downloadsDir, { recursive: true, force: true }).catch(() => undefined),
     );
     const host = createChromePreviewHost({ getContext: browser.context, downloadsDir });
+    const threads = yield* ThreadManagementService;
+    const workers = workerThreads(threads);
     const preferred = chromePreference({
       host,
-      wantsChrome: () =>
-        readBrowserUseSettings(serverConfig.settingsPath).then(
-          (settings) => settings.alwaysUseChrome,
-        ),
+      wantsChrome: chromeForAgents({
+        browserForAgents: () =>
+          readBrowserUseSettings(serverConfig.settingsPath).then(
+            (settings) => settings.browserForAgents,
+          ),
+        isWorker: workers.isWorker,
+      }),
       ensureAvailable: browser.ensureAvailable,
     });
     yield* forkParked(
@@ -1222,8 +1244,6 @@ export const ChromePreviewHostLive = Layer.effectDiscard(
     yield* forkParked(
       Effect.promise(() => host.closeIdleTabs()).pipe(Effect.repeat(Schedule.spaced("1 minute"))),
     );
-    const threads = yield* ThreadManagementService;
-    const workers = workerThreads(threads);
     yield* forkParked(
       Stream.runForEach(
         threads.streamDomainEvents,
