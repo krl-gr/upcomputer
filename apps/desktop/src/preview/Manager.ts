@@ -71,6 +71,7 @@ import {
   PREVIEW_ANNOTATION_VOICE_EVENT_CHANNEL,
   PREVIEW_PICTURE_IN_PICTURE_FRAME_CHANNEL,
 } from "../ipc/channels.ts";
+import { setFrameCaptureThrottling } from "./BackgroundThrottlingHolds.ts";
 import * as DesktopBrowserHost from "./DesktopBrowserHost.ts";
 import * as PreviewPasskeys from "./Passkeys.ts";
 import * as BrowserSession from "./BrowserSession.ts";
@@ -702,7 +703,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   ) {
     if (window.isDestroyed()) return;
     yield* attempt({ operation: "frameCapture.setBackgroundThrottling" }, () =>
-      window.webContents.setBackgroundThrottling(enabled),
+      setFrameCaptureThrottling(window.webContents, enabled),
     );
   });
   const setFrameCaptureBackgroundThrottling = Effect.fnUntraced(function* (enabled: boolean) {
@@ -720,7 +721,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         operation: "frameCapture.setBackgroundThrottling",
         webContentsId: wc.id,
       },
-      () => wc.setBackgroundThrottling(enabled),
+      () => setFrameCaptureThrottling(wc, enabled),
     );
   });
   const restoreFrameCaptureWebContentsBackgroundThrottling = Effect.fnUntraced(function* (

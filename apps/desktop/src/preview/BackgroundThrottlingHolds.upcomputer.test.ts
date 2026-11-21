@@ -1,7 +1,7 @@
 import * as NodeEvents from "node:events";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { keepDrivenGuestPainting } from "./BackgroundThrottlingHolds.ts";
+import { keepDrivenGuestPainting, setFrameCaptureThrottling } from "./BackgroundThrottlingHolds.ts";
 
 let nextId = 1;
 
@@ -73,5 +73,28 @@ describe("keepDrivenGuestPainting", () => {
     keepDrivenGuestPainting(guest.guest, false, "win32");
     expect(host.calls).toEqual([[false], [true]]);
     expect(guest.calls).toEqual([[false]]);
+  });
+
+  it("leaves frame capture's throttling off until both it and the hold end, in either order", () => {
+    const host = makeContents();
+    const guest = makeContents({ host: host.contents });
+
+    keepDrivenGuestPainting(guest.guest, true, "win32");
+    setFrameCaptureThrottling(guest.contents, false);
+    setFrameCaptureThrottling(host.contents, false);
+    keepDrivenGuestPainting(guest.guest, false, "win32");
+    expect(guest.calls).toEqual([[false], [false]]);
+    expect(host.calls).toEqual([[false], [false]]);
+    setFrameCaptureThrottling(guest.contents, true);
+    setFrameCaptureThrottling(host.contents, true);
+    expect(guest.calls).toEqual([[false], [false], [true]]);
+    expect(host.calls).toEqual([[false], [false], [true]]);
+
+    keepDrivenGuestPainting(guest.guest, true, "win32");
+    setFrameCaptureThrottling(guest.contents, false);
+    setFrameCaptureThrottling(guest.contents, true);
+    expect(guest.calls.slice(3)).toEqual([[false], [false]]);
+    keepDrivenGuestPainting(guest.guest, false, "win32");
+    expect(guest.calls.slice(3)).toEqual([[false], [false], [true]]);
   });
 });
