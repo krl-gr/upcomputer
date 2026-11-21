@@ -2,16 +2,26 @@ import type { PreparedConnection } from "@t3tools/client-runtime/connection";
 import { EnvironmentId, ProjectId, ThreadId, type AssetResource } from "@t3tools/contracts";
 import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
 import { TaskOutput } from "@t3tools/tasks-web";
+import { readPanelTaskKey, setPanelTaskKey } from "@t3tools/tasks-web/openTask";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { act, render } from "../../test/render";
+import { AssistantCitationEmbed } from "../components/chat/AssistantCitationChip";
 import { AssistantMessageMarkdown } from "../components/chat/AssistantMessageMarkdown";
 import type { ChatComposerHandle } from "../components/chat/ChatComposer";
 import { ComposerHandleContext } from "../composerHandleContext";
 import { findAssistantCitationSourceAnchor } from "../lib/assistantTextSelection";
-import { useRightPanelStore } from "../rightPanelStore";
+import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
 
 const IMAGE_URL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
@@ -240,4 +250,64 @@ describe("task output", () => {
     );
     await expect.element(screen.getByRole("button", { name: /^Cite in/ })).not.toBeInTheDocument();
   });
+
+  it("opens a quoted task beside the chat it is quoted in, and on the Tasks page elsewhere", async () => {
+    setup();
+    const chatRef = { environmentId, threadId: ThreadId.make("quoting-chat") };
+    await using _panel = {
+      [Symbol.asyncDispose]: async () => {
+        setPanelTaskKey(chatRef, undefined);
+        useRightPanelStore.getState().close(chatRef);
+        localStorage.removeItem("t3code:right-panel-state:v2");
+      },
+    };
+    const quote = (
+      <AssistantCitationEmbed
+        citation={{
+          version: 1,
+          environmentId,
+          taskId: "task-1",
+          taskTitle: "Undo notice",
+          text: "A. Tile",
+          start: 0,
+          end: 7,
+          prefix: "",
+          suffix: "",
+        }}
+        leading
+        trailing
+      />
+    );
+    const quoteLink = { name: "Go to quoted task output: A. Tile" };
+
+    await using chat = await renderRouted(quote, `/${environmentId}/${chatRef.threadId}`);
+    await userEvent.click(chat.screen.getByRole("link", quoteLink));
+    expect(chat.router.state.location.pathname).toBe(`/${environmentId}/${chatRef.threadId}`);
+    expect(
+      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, chatRef),
+    ).toEqual(expect.objectContaining({ kind: "feature", featureSurfaceId: "tasks" }));
+    expect(readPanelTaskKey(chatRef)).toBe(`${environmentId}:task-1`);
+
+    await using settings = await renderRouted(quote, "/settings");
+    await userEvent.click(settings.screen.getByRole("link", quoteLink));
+    await vi.waitFor(() => expect(settings.router.state.location.pathname).toBe("/tasks"));
+    expect(settings.router.state.location.search).toEqual({ task: `${environmentId}:task-1` });
+  });
 });
+
+// The test router has no chat route, and a chat is what a quoted task opens beside.
+async function renderRouted(ui: React.ReactNode, path: string) {
+  const rootRoute = createRootRoute({ component: Outlet });
+  const page = () => ui;
+  const router = createRouter({
+    routeTree: rootRoute.addChildren(
+      ["$environmentId/$threadId", "settings", "tasks"].map((routePath) =>
+        createRoute({ getParentRoute: () => rootRoute, path: routePath, component: page }),
+      ),
+    ),
+    history: createMemoryHistory({ initialEntries: [path] }),
+  });
+  const screen = await render(<RouterProvider router={router} />, { router: false });
+  await expect.element(screen.getByRole("link")).toBeInTheDocument();
+  return { screen, router, [Symbol.asyncDispose]: () => screen[Symbol.asyncDispose]() };
+}
