@@ -19,8 +19,6 @@ const buttonVariants = cva(
         default: "h-9 px-[calc(--spacing(3)-1px)] sm:h-8",
         icon: "size-9 sm:size-8",
         "icon-floating":
-          "size-12 [&_svg:not([class*='size-'])]:size-5 sm:[&_svg:not([class*='size-'])]:size-5",
-        "icon-floating-sm":
           "size-10 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4.5",
         "icon-lg": "size-10 sm:size-9",
         "icon-micro":

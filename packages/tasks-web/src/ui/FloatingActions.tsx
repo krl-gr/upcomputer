@@ -2,9 +2,9 @@ import { createContext, use, type ReactNode } from "react";
 
 /**
  * Bottom padding for a list under `FloatingActions`, so its last row scrolls
- * clear of the buttons: their 12px offset, the 48px main button and a 20px gap.
+ * clear of the buttons: their 12px offset, the 40px buttons and a 20px gap.
  */
-export const FLOATING_ACTIONS_CLEARANCE_CLASS = "pb-20";
+export const FLOATING_ACTIONS_CLEARANCE_CLASS = "pb-18";
 
 const FloatingActionsContext = createContext(false);
 

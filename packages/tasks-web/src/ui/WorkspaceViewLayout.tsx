@@ -43,7 +43,7 @@ function HeaderAction(props: { readonly action: WorkspaceViewAction }) {
   );
 }
 
-/** The view's action over a headerless list: the large round button in the corner. */
+/** The view's action over a headerless list: the round button in the corner. */
 function FloatingMainAction(props: { readonly action: WorkspaceViewAction }) {
   const { action } = props;
   return (

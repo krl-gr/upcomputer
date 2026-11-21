@@ -122,13 +122,13 @@ export function ListActions(props: ListActionsProps) {
   // Over a headerless list the buttons are round, and New comes last, in the corner.
   const floating = useFloatingActions();
   const variant = floating ? "floating" : "outline";
-  const size = floating ? "icon-floating-sm" : "icon-sm";
+  const size = floating ? "icon-floating" : "icon-sm";
   const create = (
     <IconAction
       label={kind === "routine" ? gt("New routine") : gt("New task")}
       track={kind === "routine" ? "planner.create_routine" : "planner.create_task"}
       variant={variant}
-      size={floating ? "icon-floating" : size}
+      size={size}
       onClick={() => windows.openCreate(kind === "routine" ? { kind } : {})}
     >
       <PlusIcon />

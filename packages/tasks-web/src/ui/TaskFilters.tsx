@@ -201,7 +201,7 @@ export function TaskFiltersButton(
         render={
           <Button
             variant={floating ? "floating" : "outline"}
-            size={floating ? "icon-floating-sm" : count > 0 ? "sm" : "icon-sm"}
+            size={floating ? "icon-floating" : count > 0 ? "sm" : "icon-sm"}
             aria-label={count > 0 ? gt("Filters, {count} applied", { count }) : gt("Filters")}
             data-task-filters-button=""
           />
