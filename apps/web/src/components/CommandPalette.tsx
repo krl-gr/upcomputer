@@ -189,6 +189,7 @@ import {
   resolveProductThreadReferenceCopyTarget,
 } from "../product/productFlags";
 import { useSendFeedbackPaletteItem } from "../sendFeedback/useSendFeedbackPaletteItem";
+import { useProductPanelSurfacePaletteItems } from "../product/useProductPanelSurfacePaletteItems";
 import { useThreadProjectMovePaletteItem } from "../threadProjectMove/useThreadProjectMovePaletteItem";
 import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
@@ -522,6 +523,7 @@ function OpenCommandPaletteDialog(props: {
     activeThread ? scopeThreadRef(activeThread.environmentId, activeThread.id) : null,
   );
   const sendFeedbackItem = useSendFeedbackPaletteItem();
+  const panelSurfaceItems = useProductPanelSurfacePaletteItems();
   const paletteRouteTarget = useThreadRouteTarget();
   const projects = useProjects();
   const referenceThreadRef =
@@ -1423,6 +1425,7 @@ function OpenCommandPaletteDialog(props: {
   }
 
   if (sendFeedbackItem) actionItems.push(sendFeedbackItem);
+  actionItems.push(...panelSurfaceItems);
 
   if (activeThreadKey !== null && supportsThreadFind) {
     actionItems.push({

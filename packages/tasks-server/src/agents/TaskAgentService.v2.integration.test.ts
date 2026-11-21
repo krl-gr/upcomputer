@@ -1782,6 +1782,8 @@ it.live("a chat creates a task through MCP tools and, waking off, hears back as 
         status: "To Do",
         audience: "agent",
         sourceThreadId: "thread:task-agents-v2:parent",
+        // The stored fields below come only with the whole task.
+        verbose: true,
       });
       assert.isFalse(created.isError, textOf(created));
       const createdTask = JSON.parse(textOf(created)).task;

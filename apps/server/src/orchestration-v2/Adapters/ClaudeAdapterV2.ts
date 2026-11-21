@@ -4711,6 +4711,46 @@ const CLAUDE_USAGE_LIMIT_TEXT =
   "Claude usage limit reached. Switch to another model or provider to keep working now.";
 const CLAUDE_SIGNED_OUT_TEXT =
   "Claude Code is signed out. Sign in again in Settings, then send the message again.";
+const CLAUDE_NO_CREDIT_TEXT =
+  'The Claude account in use has no credit ("Credit balance is too low"). Add credit to that account, or sign in with a Claude subscription in Settings and remove any ANTHROPIC_API_KEY that overrides it. Then send the message again.';
+const CLAUDE_INVALID_API_KEY_TEXT =
+  "Anthropic rejected the API key Claude Code is using. Fix or remove ANTHROPIC_API_KEY (or your API key helper) so Claude Code uses your subscription login, then send the message again.";
+
+/**
+ * Account and billing failures the CLI labels on its synthetic error message.
+ * Their HTTP status (often 400) says nothing about the request itself.
+ */
+function claudeAccountFailure(
+  error: SDKAssistantMessage["error"],
+  cliText: string,
+): { readonly message: string; readonly code: string } | undefined {
+  const reason = cliText.replaceAll(" · ", ". ").replace(/[.\s]+$/u, "");
+  const refused = (fallback: string) =>
+    `Anthropic refused the Claude account in use: ${reason.length > 0 ? reason : fallback}.`;
+  switch (error) {
+    case "billing_error":
+      return { message: CLAUDE_NO_CREDIT_TEXT, code: "billing_error" };
+    case "account_on_hold":
+      return { message: refused("the account is on hold"), code: error };
+    case "oauth_org_not_allowed":
+      return {
+        message: refused("the organization does not allow subscription sign-in for Claude Code"),
+        code: error,
+      };
+    case "verification_required":
+      return { message: refused("the organization must be verified first"), code: error };
+    case "authentication_failed":
+      return /^Invalid API key\b/u.test(cliText)
+        ? { message: CLAUDE_INVALID_API_KEY_TEXT, code: "invalid_api_key" }
+        : undefined;
+    case "invalid_request":
+      return /disabled organization|organization has been disabled/iu.test(cliText)
+        ? { message: refused("the organization is disabled"), code: "organization_disabled" }
+        : undefined;
+    default:
+      return undefined;
+  }
+}
 
 function terminalResultError(
   reason: SDKResultMessage["terminal_reason"],
@@ -4957,7 +4997,7 @@ function providerFailureFromResult(
   receivedAt: DateTime.Utc,
   failureHint?: string,
   usageLimited = false,
-  extra?: { readonly detail?: string | undefined; readonly authFailed?: boolean },
+  extra?: { readonly detail?: string | undefined; readonly permissionCode?: string | undefined },
 ): OrchestrationV2ProviderFailure | null {
   const gatewayResetAt =
     failureHint === undefined &&
@@ -5002,7 +5042,7 @@ function providerFailureFromResult(
       ? CLAUDE_USAGE_LIMIT_TEXT
       : (unsupportedVersion ??
         terminalResultError(message.terminal_reason, failureHint, apiErrorStatus));
-  const authFailed = extra?.authFailed === true;
+  const permissionCode = extra?.permissionCode;
   if (message.subtype !== "success") {
     const native = message.errors.join("\n");
     return makeProviderFailure({
@@ -5012,8 +5052,8 @@ function providerFailureFromResult(
         (listedError === undefined
           ? undefined
           : `Claude stopped before finishing: ${listedError.replace(/[.\s]+$/u, "")}. Send the message again.`),
-      code: authFailed ? "authentication_failed" : message.subtype,
-      class: authFailed ? "permission_error" : failureClass,
+      code: permissionCode ?? message.subtype,
+      class: permissionCode === undefined ? failureClass : "permission_error",
       detail: extra?.detail ?? (native.length > 0 ? native : undefined),
     });
   }
@@ -5046,12 +5086,12 @@ function providerFailureFromResult(
       (listedError === undefined
         ? claudeRejectedText(message.result)
         : `Claude stopped before finishing: ${listedError.replace(/[.\s]+$/u, "")}. Send the message again.`),
-    code: authFailed
-      ? "authentication_failed"
-      : apiErrorStatus === null
+    code:
+      permissionCode ??
+      (apiErrorStatus === null
         ? (message.terminal_reason ?? "sdk_result_error")
-        : `api_error_${apiErrorStatus}`,
-    class: authFailed ? "permission_error" : failureClass,
+        : `api_error_${apiErrorStatus}`),
+    class: permissionCode === undefined ? failureClass : "permission_error",
     retryable: apiErrorStatus === 429 || apiErrorStatus === 529 ? true : null,
     resetAt: resetAt ?? null,
     detail: extra?.detail ?? listedError ?? message.result,
@@ -5299,6 +5339,7 @@ interface ActiveClaudeTurnContext {
   readonly ignoredTaskIds: Set<string>;
   readonly announcedUsageLimits: Set<string>;
   authenticationFailureMessage: string | undefined;
+  accountFailure: ReturnType<typeof claudeAccountFailure>;
   readonly rejectedRateLimitTypes: Set<string>;
   readonly rateLimitResetTimes: Map<string, string | null>;
   latestAssistantRateLimit: {
@@ -11273,6 +11314,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   };
                 }
               }
+              context.accountFailure ??= claudeAccountFailure(
+                message.error,
+                textFromClaudeContent(message.message.content).trim(),
+              );
               if (message.error === "authentication_failed") {
                 context.authenticationFailureMessage = claudeSignedOutMessage({
                   configDir: adapterOptions.environment.CLAUDE_CONFIG_DIR,
@@ -12246,7 +12291,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (!isClaudeProviderContinuationTurn(context.input)) {
               yield* markAbsorbedWake(liveQuery.nativeThreadId);
             }
+            const accountFailure = context.accountFailure;
             const usageLimited =
+              accountFailure === undefined &&
               context.authenticationFailureMessage === undefined &&
               (context.rejectedRateLimitTypes.size > 0 ||
                 context.latestAssistantRateLimit !== null) &&
@@ -12279,13 +12326,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               endpointHost === undefined
                 ? undefined
                 : `The custom API endpoint ${endpointHost} reported Claude Code ${rewrittenVersion}, but this session runs Claude Code ${liveQuery.claudeCodeVersion}. Running claude update will not fix this; the endpoint or a proxy behind it rewrote the version.`;
-            const failureHint = permissionDenied
-              ? claudeRejectedText(message.result)
-              : authFailed
-                ? CLAUDE_SIGNED_OUT_TEXT
-                : usageLimited
-                  ? CLAUDE_USAGE_LIMIT_TEXT
-                  : rewrittenVersionError;
+            const failureHint =
+              accountFailure?.message ??
+              (permissionDenied
+                ? claudeRejectedText(message.result)
+                : authFailed
+                  ? CLAUDE_SIGNED_OUT_TEXT
+                  : usageLimited
+                    ? CLAUDE_USAGE_LIMIT_TEXT
+                    : rewrittenVersionError);
             // Usage-limited /compact reports success; fail it so queued messages wait for the limit to clear.
             const limitedCompaction =
               usageLimited && message.subtype === "success" && message.local_command === "compact"
@@ -12305,10 +12354,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     failureHint,
                     usageLimited,
                     {
-                      authFailed,
-                      detail: permissionDenied
-                        ? message.result
-                        : context.authenticationFailureMessage,
+                      permissionCode:
+                        accountFailure?.code ?? (authFailed ? "authentication_failed" : undefined),
+                      // The result, the default detail, carries the account failure's CLI text.
+                      detail:
+                        accountFailure !== undefined
+                          ? undefined
+                          : permissionDenied
+                            ? message.result
+                            : context.authenticationFailureMessage,
                     },
                   );
             const resetTimes = Array.from(context.rateLimitResetTimes.values());
@@ -13704,6 +13758,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ignoredTaskIds: new Set(),
               announcedUsageLimits: new Set(),
               authenticationFailureMessage: undefined,
+              accountFailure: undefined,
               rejectedRateLimitTypes: new Set(),
               rateLimitResetTimes: new Map(),
               latestAssistantRateLimit: null,

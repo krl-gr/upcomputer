@@ -12,8 +12,17 @@ import { useLocalStorage } from "../../../../apps/web/src/hooks/useLocalStorage.
 export const PAGES_PROJECT_STORAGE_KEY = "upcomputer:pages:project";
 const PagesProjectKey = Schema.NullOr(Schema.String);
 
-export function usePagesProjectKey() {
-  return useLocalStorage(PAGES_PROJECT_STORAGE_KEY, null, PagesProjectKey);
+/**
+ * A list with filters of its own, such as the right panel's Worker tasks entry,
+ * which keeps them apart from the Tasks page's. Part of storage keys: never rename one.
+ */
+export type TaskFiltersScope = "panel.workers";
+
+const scopedKey = (key: string, scope: TaskFiltersScope | undefined) =>
+  scope === undefined ? key : `${key}:${scope}`;
+
+export function usePagesProjectKey(scope?: TaskFiltersScope) {
+  return useLocalStorage(scopedKey(PAGES_PROJECT_STORAGE_KEY, scope), null, PagesProjectKey);
 }
 
 /** "No restriction" value of the Tasks status and last-run dropdowns. */
@@ -74,9 +83,9 @@ export function appliedTaskFilterCount(filters: TasksPageFilters, projectChosen:
   ].filter(Boolean).length;
 }
 
-export function useTasksPageFilters() {
+export function useTasksPageFilters(scope?: TaskFiltersScope) {
   return useLocalStorage(
-    TASKS_PAGE_FILTERS_STORAGE_KEY,
+    scopedKey(TASKS_PAGE_FILTERS_STORAGE_KEY, scope),
     DEFAULT_TASKS_PAGE_FILTERS,
     TasksPageFilters,
   );

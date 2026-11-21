@@ -113,7 +113,10 @@ import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { withoutHiddenProductSurfaces } from "~/product/productFlags";
-import { productRightPanelSurface, productRightPanelSurfaces } from "~/product/ProductSlots";
+import {
+  productRightPanelSurface,
+  useShownProductRightPanelSurfaces,
+} from "~/product/ProductSlots";
 import { observeResize } from "~/lib/observeResize";
 import { surfaceShortcutKey } from "~/lib/surfaceShortcutKey";
 
@@ -232,11 +235,12 @@ interface FeatureSurfaceAction {
 
 /** Launcher entries for the product features' surfaces, after core's. */
 function featureSurfaceActions(
+  surfaces: ReturnType<typeof useShownProductRightPanelSurfaces>,
   onAdd: ((featureSurfaceId: string) => void) | undefined,
   translate: (label: string) => string,
 ): FeatureSurfaceAction[] {
   if (!onAdd) return [];
-  return productRightPanelSurfaces().map((surface) => ({
+  return surfaces.map((surface) => ({
     label: translate(surface.label),
     icon: surface.icon,
     shortcut: surface.shortcut,
@@ -1213,7 +1217,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     });
   };
 
-  const featureActions = featureSurfaceActions(props.onAddFeatureSurface, messages);
+  const featureActions = featureSurfaceActions(
+    useShownProductRightPanelSurfaces(),
+    props.onAddFeatureSurface,
+    messages,
+  );
   const coreAddSurfaceActions = withoutHiddenProductSurfaces([
     {
       label: msg("Browser"),

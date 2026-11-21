@@ -25,6 +25,7 @@ import {
   type PreviewAutomationConsoleEntry,
   type PreviewAutomationEvaluateInput,
   type PreviewAutomationNavigateInput,
+  type PreviewAutomationHostFocus,
   type PreviewAutomationNetworkEntry,
   type PreviewAutomationOpenInput,
   type PreviewAutomationOperation,
@@ -41,6 +42,9 @@ import {
   type PreviewAutomationTypeInput,
   type PreviewAutomationWaitForInput,
   type PreviewViewportSetting,
+  type ThreadId,
+  PreviewTabId,
+  PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING,
 } from "@t3tools/contracts";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import { resolvePreviewViewport } from "@t3tools/shared/previewViewport";
@@ -68,6 +72,8 @@ const LOCATOR_ACTION_TIMEOUT_MS = 5_000;
 /** Leaves time to reply before the broker gives up on the request. */
 const BROKER_REPLY_MARGIN_MS = 500;
 const WAIT_FOR_POLL_INTERVAL_MS = 100;
+/** A page that cannot paint never answers a capture; the snapshot answers with its text instead. */
+const SNAPSHOT_SCREENSHOT_TIMEOUT_MS = 5_000;
 const INVALID_SELECTOR_PATTERN =
   /strict mode violation|while parsing|unexpected token|unknown engine|not a valid selector/iu;
 
@@ -79,7 +85,8 @@ interface LocatorInput {
 }
 
 interface ChromeTab {
-  readonly id: string;
+  readonly id: PreviewTabId;
+  readonly threadId: ThreadId;
   readonly page: Page;
   viewportSetting: PreviewViewportSetting;
   cdp: Promise<CDPSession> | undefined;
@@ -208,6 +215,19 @@ const isEditableTextTarget = (element: EditableCandidate): boolean => {
   );
 };
 
+interface FocusCandidate {
+  readonly focus?: () => void;
+  readonly getRootNode: () => { readonly activeElement?: unknown };
+  readonly contains: (other: unknown) => boolean;
+}
+
+// Runs in the page. A key meant for a target that cannot take focus would go elsewhere.
+const focusPressTarget = (element: FocusCandidate): boolean => {
+  element.focus?.();
+  const active = element.getRootNode().activeElement;
+  return active != null && (active === element || element.contains(active));
+};
+
 interface ScrollTarget {
   readonly scrollBy: (options: { left: number; top: number; behavior: "instant" }) => void;
 }
@@ -229,6 +249,7 @@ export interface ChromePreviewHostOptions {
 export interface ChromePreviewHost {
   readonly supportedOperations: ReadonlyArray<PreviewAutomationOperation>;
   readonly execute: (request: PreviewAutomationRequest) => Promise<unknown>;
+  readonly liveTabs: () => NonNullable<PreviewAutomationHostFocus["liveTabs"]>;
 }
 
 /**
@@ -241,9 +262,10 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
   const threadTabIds = new Map<string, string>();
   let actionSequence = 0;
 
-  const registerTab = (page: Page): ChromeTab => {
+  const registerTab = (page: Page, threadId: ThreadId): ChromeTab => {
     const tab: ChromeTab = {
-      id: `chrome-${NodeCrypto.randomUUID().slice(0, 8)}`,
+      id: PreviewTabId.make(`chrome-${NodeCrypto.randomUUID().slice(0, 8)}`),
+      threadId,
       page,
       viewportSetting: FILL_PREVIEW_VIEWPORT,
       cdp: undefined,
@@ -424,7 +446,8 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
   const open = async (request: PreviewAutomationRequest): Promise<PreviewAutomationStatus> => {
     const input = request.input as PreviewAutomationOpenInput;
     const existing = (input.reuseExistingTab ?? true) ? currentTab(request) : undefined;
-    const tab = existing ?? registerTab(await (await options.getContext()).newPage());
+    const tab =
+      existing ?? registerTab(await (await options.getContext()).newPage(), request.threadId);
     threadTabIds.set(request.threadId, tab.id);
     if (input.url !== undefined) {
       await navigate(tab, resolveUrl(input.url), "load", replyBudgetMs(request));
@@ -459,7 +482,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
 
   const captureScreenshot = async (
     tab: ChromeTab,
-  ): Promise<PreviewAutomationSnapshot["screenshot"]> => {
+  ): Promise<NonNullable<PreviewAutomationSnapshot["screenshot"]>> => {
     const cdp = await cdpSession(tab);
     const page = (await evaluateInPage(
       tab,
@@ -498,7 +521,22 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     return { mimeType: "image/png", ...screenshot };
   };
 
-  const snapshot = async (tab: ChromeTab): Promise<PreviewAutomationSnapshot> => {
+  /** Undefined when the capture fails or misses its deadline. */
+  const screenshotWithin = async (tab: ChromeTab, ms: number) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), ms);
+    });
+    return Promise.race([captureScreenshot(tab).catch(() => undefined), late]).finally(() =>
+      clearTimeout(timer),
+    );
+  };
+
+  const snapshot = async (
+    tab: ChromeTab,
+    request: PreviewAutomationRequest,
+  ): Promise<PreviewAutomationSnapshot> => {
+    const deadline = Date.now() + replyBudgetMs(request);
     const cdp = await cdpSession(tab);
     await cdp.send("Accessibility.enable");
     const page = (await evaluateInPage(tab, PREVIEW_AUTOMATION_PAGE_SNAPSHOT_EXPRESSION, {
@@ -509,14 +547,19 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       "url" | "title" | "loading" | "visibleText" | "interactiveElements"
     >;
     const accessibilityTree = await cdp.send("Accessibility.getFullAXTree");
-    const screenshot = await captureScreenshot(tab);
+    const screenshot = await screenshotWithin(
+      tab,
+      Math.max(1, Math.min(SNAPSHOT_SCREENSHOT_TIMEOUT_MS, deadline - Date.now())),
+    );
     return {
       ...page,
       accessibilityTree,
       consoleEntries: [...tab.consoleEntries],
       networkEntries: [...tab.networkEntries],
       actionTimeline: [...tab.actionTimeline],
-      screenshot,
+      ...(screenshot === undefined
+        ? { screenshot: null, warning: PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING }
+        : { screenshot }),
     };
   };
 
@@ -594,6 +637,31 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     } catch (cause) {
       throw locatorFailure(cause, input);
     }
+  };
+
+  const press = async (
+    tab: ChromeTab,
+    request: PreviewAutomationRequest,
+    input: PreviewAutomationPressInput,
+  ): Promise<void> => {
+    const locator = automationLocator(input);
+    if (locator !== null) {
+      const focused = await tab.page
+        .locator(locator)
+        .evaluate(focusPressTarget, undefined, {
+          timeout: locatorTimeoutMs(request, input.timeoutMs),
+        })
+        .catch((cause: unknown) => {
+          throw locatorFailure(cause, input);
+        });
+      if (!focused) {
+        throw hostError(
+          "PreviewAutomationExecutionError",
+          "The press target cannot take focus, so no key was pressed.",
+        );
+      }
+    }
+    await tab.page.keyboard.press([...(input.modifiers ?? []), input.key].join("+"));
   };
 
   const scroll = async (
@@ -675,6 +743,28 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     );
   };
 
+  const close = async (request: PreviewAutomationRequest): Promise<Record<string, never>> => {
+    const tab = requireTab(request);
+    if (tab.threadId !== request.threadId) {
+      throw hostError(
+        "PreviewAutomationControlInterruptedError",
+        "Only the thread that opened this Chrome tab can close it.",
+        "agentMismatch",
+      );
+    }
+    try {
+      await tab.page.close();
+    } catch (cause) {
+      throw hostError(
+        "PreviewAutomationExecutionError",
+        `Chrome could not close tab ${tab.id}: ${errorMessage(cause)}`,
+      );
+    }
+    tabs.delete(tab.id);
+    if (threadTabIds.get(request.threadId) === tab.id) threadTabIds.delete(request.threadId);
+    return {};
+  };
+
   const execute = async (request: PreviewAutomationRequest): Promise<unknown> => {
     switch (request.operation) {
       case "status": {
@@ -692,6 +782,8 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       }
       case "open":
         return open(request);
+      case "close":
+        return close(request);
       case "navigate": {
         const tab = requireTab(request);
         const input = request.input as PreviewAutomationNavigateInput;
@@ -718,7 +810,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       }
       case "snapshot": {
         const tab = requireTab(request);
-        return withAction(tab, "snapshot", () => snapshot(tab));
+        return withAction(tab, "snapshot", () => snapshot(tab, request));
       }
       case "click": {
         const tab = requireTab(request);
@@ -733,9 +825,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       case "press": {
         const tab = requireTab(request);
         const input = request.input as PreviewAutomationPressInput;
-        return withAction(tab, "press", () =>
-          tab.page.keyboard.press([...(input.modifiers ?? []), input.key].join("+")),
-        );
+        return withAction(tab, "press", () => press(tab, request, input));
       }
       case "scroll": {
         const tab = requireTab(request);
@@ -761,7 +851,12 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     }
   };
 
-  return { supportedOperations: CHROME_PREVIEW_HOST_OPERATIONS, execute };
+  const liveTabs = () =>
+    [...tabs.values()]
+      .filter((tab) => !tab.page.isClosed())
+      .map((tab) => ({ threadId: tab.threadId, tabId: tab.id }));
+
+  return { supportedOperations: CHROME_PREVIEW_HOST_OPERATIONS, execute, liveTabs };
 }
 
 /** What this host serves; the server's own browser serves the rest. */
@@ -769,6 +864,7 @@ const CHROME_PREVIEW_HOST_OPERATIONS = [
   ...PREVIEW_AUTOMATION_V1_OPERATIONS,
   "resize",
   "setColorScheme",
+  "close",
 ] as const;
 
 export const CHROME_PREVIEW_HOST_CLIENT_ID = "upcomputer-chrome";
@@ -803,13 +899,23 @@ export const serveChromePreviewHost = Effect.fn("ChromePreviewHost.serve")(funct
           ...fields,
         })
         .pipe(Effect.ignore);
+    // The broker routes a named tab by these, so they are current before the agent sees a reply.
+    const reportLiveTabs = Effect.suspend(() =>
+      broker.focusHost({
+        clientId: CHROME_PREVIEW_HOST_CLIENT_ID,
+        environmentId: input.environmentId,
+        connectionId: event.connectionId,
+        focused: false,
+        liveTabs: input.host.liveTabs(),
+      }),
+    );
     return Effect.tryPromise({
       try: () => input.host.execute(event.request),
       catch: toPreviewAutomationRemoteError,
     }).pipe(
       Effect.matchEffect({
-        onSuccess: (result) => reply({ ok: true, result }),
-        onFailure: (error) => reply({ ok: false, error }),
+        onSuccess: (result) => Effect.andThen(reportLiveTabs, reply({ ok: true, result })),
+        onFailure: (error) => Effect.andThen(reportLiveTabs, reply({ ok: false, error })),
       }),
       Effect.forkScoped,
     );

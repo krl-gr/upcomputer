@@ -51,6 +51,7 @@ import {
 } from "./DetailSidebar.tsx";
 import { toastAudienceMoved } from "../planner/ui/audienceMoved.ts";
 import { WorkspaceViewLayout } from "./WorkspaceViewLayout.tsx";
+import { FLOATING_ACTIONS_CLEARANCE_CLASS } from "./FloatingActions.tsx";
 import { SHOW_MANUAL_CREATE_ACTIONS } from "./manualCreation.ts";
 import {
   orderedProjectFilterKeys,
@@ -202,6 +203,8 @@ export interface TasksViewProps {
   readonly onOpenInPlanner?: (environmentId: EnvironmentId, taskId: string) => void;
   /** `panel` fits a right-panel surface: cards, filters behind a button, stacked details. */
   readonly layout?: "page" | "panel";
+  /** The panel's Worker tasks entry: no list header, the filter and + float over the list. */
+  readonly floatingControls?: boolean;
   /** The thread beside a right-panel surface, whose panel opens the output's file links. */
   readonly filePanelRef?: ScopedThreadRef;
 }
@@ -1122,6 +1125,7 @@ export function TasksView(props: TasksViewProps) {
   return (
     <WorkspaceViewLayout
       variant={props.layout}
+      floatingControls={props.floatingControls === true}
       {...(selectedTask
         ? {}
         : createModeOpen
@@ -1197,7 +1201,7 @@ export function TasksView(props: TasksViewProps) {
           <>
             {cards ? (
               // A margin, not a spacer, pushes it right: a spacer adds a gap the phone header lacks.
-              <div className="ms-auto shrink-0">
+              <div className="ms-auto flex shrink-0">
                 <TaskFiltersButton
                   filters={filters}
                   onFiltersChange={onFiltersChange}
@@ -1798,7 +1802,13 @@ export function TasksView(props: TasksViewProps) {
                 : `flex w-full min-w-0 flex-col ${panel ? "gap-3 py-3" : "gap-5 py-6"}`
             }
           >
-            <div className={cards ? `flex min-h-full flex-col ${LIST_CLASS}` : "contents"}>
+            <div
+              className={
+                cards
+                  ? `flex min-h-full flex-col ${LIST_CLASS} ${props.floatingControls ? FLOATING_ACTIONS_CLEARANCE_CLASS : ""}`
+                  : "contents"
+              }
+            >
               <div
                 className={
                   cards

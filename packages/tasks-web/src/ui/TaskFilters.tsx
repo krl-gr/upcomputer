@@ -24,6 +24,7 @@ import {
   appliedTaskFilterCount,
   type TasksPageFilters,
 } from "./pageFilters.ts";
+import { useFloatingActions } from "./FloatingActions.tsx";
 import { TagFilterCombobox } from "./TagFilterCombobox.tsx";
 
 interface TaskFilterSelectsProps {
@@ -193,20 +194,28 @@ export function TaskFiltersButton(
 ) {
   const gt = useGT();
   const count = appliedTaskFilterCount(props.filters, props.projectChosen);
+  const floating = useFloatingActions();
   return (
     <Popover>
       <PopoverTrigger
         render={
           <Button
-            variant="outline"
-            size={count > 0 ? "sm" : "icon-sm"}
+            variant={floating ? "floating" : "outline"}
+            size={floating ? "icon-floating" : count > 0 ? "sm" : "icon-sm"}
             aria-label={count > 0 ? gt("Filters, {count} applied", { count }) : gt("Filters")}
             data-task-filters-button=""
           />
         }
       >
         <ListFilterIcon />
-        {count > 0 ? <span className="text-muted-foreground tabular-nums">{count}</span> : null}
+        {count === 0 ? null : floating ? (
+          // A round button has no room beside its icon: the count sits on its edge.
+          <span className="absolute -top-1 -right-1 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-primary px-1 text-[11px] leading-none font-medium text-primary-foreground tabular-nums">
+            {count}
+          </span>
+        ) : (
+          <span className="text-muted-foreground tabular-nums">{count}</span>
+        )}
       </PopoverTrigger>
       <PopoverPopup align="end" padding="compact">
         <div className="flex w-56 flex-col gap-3 py-1">

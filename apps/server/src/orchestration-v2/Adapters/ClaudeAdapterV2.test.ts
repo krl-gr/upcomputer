@@ -3679,9 +3679,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly uuid: string;
     readonly error:
       | "authentication_failed"
+      | "account_on_hold"
+      | "billing_error"
       | "invalid_request"
+      | "oauth_org_not_allowed"
       | "rate_limit"
       | "server_error"
+      | "verification_required"
       | undefined;
     readonly text?: string;
     readonly parentToolUseId?: string | null;
@@ -9160,6 +9164,110 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       );
       assert.equal(terminal.failure.detail, cliText);
       assert.equal(terminal.failure.code, "api_error_403");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  // Texts and labels as Claude CLI 2.1.322 writes them on its synthetic error message.
+  it.effect.each([
+    {
+      name: "no credit",
+      error: "billing_error" as const,
+      text: "Credit balance is too low",
+      expected:
+        'The Claude account in use has no credit ("Credit balance is too low"). Add credit to that account, or sign in with a Claude subscription in Settings and remove any ANTHROPIC_API_KEY that overrides it. Then send the message again.',
+      code: "billing_error",
+    },
+    {
+      name: "an invalid API key",
+      error: "authentication_failed" as const,
+      apiErrorStatus: 401,
+      text: "Invalid API key \u00b7 Fix external API key",
+      expected:
+        "Anthropic rejected the API key Claude Code is using. Fix or remove ANTHROPIC_API_KEY (or your API key helper) so Claude Code uses your subscription login, then send the message again.",
+      code: "invalid_api_key",
+    },
+    {
+      name: "a disabled organization",
+      error: "invalid_request" as const,
+      text: "Your ANTHROPIC_API_KEY belongs to a disabled organization \u00b7 Update or unset the environment variable",
+      expected:
+        "Anthropic refused the Claude account in use: Your ANTHROPIC_API_KEY belongs to a disabled organization. Update or unset the environment variable.",
+      code: "organization_disabled",
+    },
+    {
+      name: "an organization without subscription access",
+      error: "oauth_org_not_allowed" as const,
+      apiErrorStatus: 403,
+      text: "Your organization has disabled Claude subscription access for Claude Code \u00b7 Use an Anthropic API key instead, or ask your admin to enable access",
+      expected:
+        "Anthropic refused the Claude account in use: Your organization has disabled Claude subscription access for Claude Code. Use an Anthropic API key instead, or ask your admin to enable access.",
+      code: "oauth_org_not_allowed",
+    },
+    {
+      name: "an account on hold",
+      error: "account_on_hold" as const,
+      apiErrorStatus: 403,
+      text: "Your account is on hold and can't sign in to Claude Code. View details or appeal: https://claude.ai/appeal",
+      expected:
+        "Anthropic refused the Claude account in use: Your account is on hold and can't sign in to Claude Code. View details or appeal: https://claude.ai/appeal.",
+      code: "account_on_hold",
+    },
+    {
+      name: "verification required, with no CLI text",
+      error: "verification_required" as const,
+      apiErrorStatus: 403,
+      text: "",
+      expected:
+        "Anthropic refused the Claude account in use: the organization must be verified first.",
+      code: "verification_required",
+    },
+  ])("names the account failure for $name instead of the request", (input) =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      const now = yield* DateTime.now;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now,
+          attemptId: RunAttemptId.make("attempt-claude-account-failure"),
+          text: "Continue.",
+          attachments: [],
+        }),
+      );
+      yield* Queue.offerAll(harness.sdkMessages, [
+        makeAssistantErrorFrame({
+          uuid: "00000000-0000-4000-8000-000000000610",
+          error: input.error,
+          text: input.text,
+        }),
+        makeResultFrame({
+          uuid: "00000000-0000-4000-8000-000000000611",
+          result: input.text,
+          isError: true,
+          apiErrorStatus: input.apiErrorStatus ?? 400,
+          terminalReason: "api_error",
+        }),
+      ]);
+
+      const terminal = yield* Queue.take(harness.terminalReceipts);
+      assert.equal(terminal.status, "failed");
+      if (terminal.status !== "failed") return;
+      assert.equal(terminal.failure.message, input.expected);
+      // An empty CLI text leaves no detail.
+      assert.equal(terminal.failure.detail ?? "", input.text);
+      assert.equal(terminal.failure.code, input.code);
+      // Sending again fails the same way, so automatic restarts skip it.
+      assert.equal(terminal.failure.class, "permission_error");
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
