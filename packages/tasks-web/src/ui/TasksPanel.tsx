@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -6,8 +6,11 @@ import type { ExperimentalWebRightPanelSurfaceProps } from "../../../../apps/web
 
 import { deriveProviderInstanceEntries } from "../../../../apps/web/src/providerInstances.ts";
 import { useEnvironmentProviders } from "../../../../apps/web/src/state/environments.ts";
+import { useRightPanelStore } from "../../../../apps/web/src/rightPanelStore.ts";
+import { useHiddenRightPanelSurfaces } from "../../../../apps/web/src/product/rightPanelSurfaceVisibility.ts";
 
 import {
+  type PlannerKind,
   useStoredPlannerEnvironment,
   useStoredTableSection,
   useStoredTasksView,
@@ -22,7 +25,7 @@ import { TableSectionSwitch } from "./TableSectionSwitch.tsx";
 import { useTaskList } from "./useTaskList.ts";
 import { TasksView } from "./TasksView.tsx";
 import { useTasksWorkspaceData } from "./useWorkspaceData.ts";
-import { useTasksPageFilters } from "./pageFilters.ts";
+import { type TaskFiltersScope, useTasksPageFilters } from "./pageFilters.ts";
 import { usePagesProjectFilter } from "./usePagesProjectFilter.ts";
 import { ProjectFilterSelect } from "./ProjectFilterSelect.tsx";
 
@@ -93,8 +96,105 @@ export default function TasksPanel(props: ExperimentalWebRightPanelSurfaceProps)
   );
 }
 
+/** Which list a launcher entry of its own opens: one view, with no switches. */
+type TasksPanelEntry = "my-tasks" | "worker-tasks" | "automations" | "routines";
+
+/** The surface ids `feature.tsx` gives My tasks and the combined Tasks tab. */
+const MY_TASKS_SURFACE_ID = "tasks.mine";
+const TASKS_SURFACE_ID = "tasks";
+
+/**
+ * One Tasks view as its own right-panel surface: the list without the
+ * switches' header, its buttons floating over it. A task opened from the
+ * person's lists or from an automation shows its details here, with Back.
+ */
+function TasksEntryPanel(
+  props: ExperimentalWebRightPanelSurfaceProps & { readonly entry: TasksPanelEntry },
+) {
+  const [selectedTaskKey, setSelectedTaskKey] = useState<string | undefined>(undefined);
+  const openTask = useCallback(
+    (environmentId: EnvironmentId, taskId: string) =>
+      setSelectedTaskKey(taskKey({ environmentId, id: taskId })),
+    [],
+  );
+  const [, setPlannerEnvironment] = useStoredPlannerEnvironment();
+  const [, setStoredView] = useStoredTasksView();
+  const { hidden } = useHiddenRightPanelSurfaces();
+  const panelRef = useMemo(
+    () => scopeThreadRef(props.environmentId, props.threadId),
+    [props.environmentId, props.threadId],
+  );
+  const { entry } = props;
+  // The task's window opens in the panel's planner: here in My tasks or My routines, or in
+  // the My tasks tab, which opens beside this one, from Worker tasks or Automations. With
+  // My tasks switched off in Settings, the combined Tasks tab takes it, on its planner.
+  const plannerSurfaceId =
+    hidden.includes(MY_TASKS_SURFACE_ID) && !hidden.includes(TASKS_SURFACE_ID)
+      ? TASKS_SURFACE_ID
+      : MY_TASKS_SURFACE_ID;
+  const openInPlanner = useCallback(
+    (environmentId: EnvironmentId, taskId: string) => {
+      setPlannerEnvironment(environmentId);
+      windowStoreFor(environmentId, "panel").openDetail(taskId);
+      setSelectedTaskKey(undefined);
+      if (entry !== "worker-tasks" && entry !== "automations") return;
+      if (plannerSurfaceId === TASKS_SURFACE_ID) {
+        setPanelTaskKey(panelRef, undefined);
+        setStoredView("planner");
+      }
+      useRightPanelStore.getState().openFeature(panelRef, plannerSurfaceId);
+    },
+    [entry, panelRef, plannerSurfaceId, setPlannerEnvironment, setStoredView],
+  );
+  if (props.entry === "worker-tasks" || selectedTaskKey !== undefined)
+    return (
+      <TablePanel
+        viewSwitch={null}
+        floatingControls
+        filtersScope="panel.workers"
+        filePanelRef={panelRef}
+        selectedTaskKey={selectedTaskKey}
+        onSelectedTaskKeyChange={setSelectedTaskKey}
+        onOpenInPlanner={openInPlanner}
+      />
+    );
+  if (props.entry === "automations")
+    return (
+      <AutomationsPanel
+        viewSwitch={null}
+        floatingControls
+        onOpenTask={openTask}
+        onOpenInPlanner={openInPlanner}
+      />
+    );
+  return (
+    <PlannerPanel
+      viewSwitch={null}
+      fixedKind={props.entry === "routines" ? "routine" : "task"}
+      onOpenTask={openTask}
+    />
+  );
+}
+
+export function MyTasksPanel(props: ExperimentalWebRightPanelSurfaceProps) {
+  return <TasksEntryPanel {...props} entry="my-tasks" />;
+}
+
+export function WorkerTasksPanel(props: ExperimentalWebRightPanelSurfaceProps) {
+  return <TasksEntryPanel {...props} entry="worker-tasks" />;
+}
+
+export function AutomationsEntryPanel(props: ExperimentalWebRightPanelSurfaceProps) {
+  return <TasksEntryPanel {...props} entry="automations" />;
+}
+
+export function RoutinesPanel(props: ExperimentalWebRightPanelSurfaceProps) {
+  return <TasksEntryPanel {...props} entry="routines" />;
+}
+
 function AutomationsPanel(props: {
   readonly viewSwitch: ReactNode;
+  readonly floatingControls?: boolean;
   readonly onOpenTask: (environmentId: EnvironmentId, taskId: string) => void;
   readonly onOpenInPlanner: (environmentId: EnvironmentId, taskId: string) => void;
 }) {
@@ -102,6 +202,7 @@ function AutomationsPanel(props: {
   return (
     <AutomationsView
       panel
+      floatingControls={props.floatingControls === true}
       viewSwitch={props.viewSwitch}
       projects={data.projects}
       taskTargets={data.taskTargets}
@@ -115,7 +216,8 @@ function AutomationsPanel(props: {
 
 function PlannerPanel(props: {
   readonly viewSwitch: ReactNode;
-  readonly onShowTable: () => void;
+  readonly fixedKind?: PlannerKind;
+  readonly onShowTable?: () => void;
   readonly onOpenTask: (environmentId: EnvironmentId, taskId: string) => void;
 }) {
   const data = useTasksWorkspaceData(false);
@@ -126,7 +228,8 @@ function PlannerPanel(props: {
       projects={data.projects}
       taskTargets={data.taskTargets}
       agents={data.agents.agents}
-      onShowTable={props.onShowTable}
+      {...(props.fixedKind === undefined ? {} : { fixedKind: props.fixedKind })}
+      {...(props.onShowTable === undefined ? {} : { onShowTable: props.onShowTable })}
       onOpenTask={props.onOpenTask}
       onNavigateBack={() => undefined}
     />
@@ -135,6 +238,9 @@ function PlannerPanel(props: {
 
 function TablePanel(props: {
   readonly viewSwitch: ReactNode;
+  readonly floatingControls?: boolean;
+  /** Filters of the panel entry's own, apart from the Tasks page's. */
+  readonly filtersScope?: TaskFiltersScope;
   readonly filePanelRef: ScopedThreadRef;
   readonly selectedTaskKey: string | undefined;
   readonly onSelectedTaskKeyChange: (taskKey: string | undefined) => void;
@@ -143,8 +249,8 @@ function TablePanel(props: {
   const navigate = useNavigate();
   const data = useTasksWorkspaceData(false);
   const providersByEnvironment = useEnvironmentProviders();
-  const { projectFilter, projectGroups, setProjectKey } = usePagesProjectFilter();
-  const [filters, setFilters] = useTasksPageFilters();
+  const { projectFilter, projectGroups, setProjectKey } = usePagesProjectFilter(props.filtersScope);
+  const [filters, setFilters] = useTasksPageFilters(props.filtersScope);
   const { pages, grouping } = useTaskList(data.taskTargets, projectFilter, filters);
   const providerEntriesByEnvironment = useMemo(
     () =>
@@ -160,6 +266,7 @@ function TablePanel(props: {
   return (
     <TasksView
       layout="panel"
+      floatingControls={props.floatingControls === true}
       filePanelRef={props.filePanelRef}
       projects={data.projects}
       tasks={pages.tasks}

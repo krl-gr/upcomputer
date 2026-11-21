@@ -26,8 +26,11 @@ const STACKED_HEIGHTS: Record<StackedWeek, string> = {
  * and the list.
  */
 export function PlannerLayout(props: {
-  readonly listHeader: ReactNode;
+  /** null where a panel entry shows the list without a header. */
+  readonly listHeader: ReactNode | null;
   readonly list: ReactNode;
+  /** Over the list pane, such as the headerless list's floating buttons. */
+  readonly listOverlay?: ReactNode;
   readonly weekHeader: ReactNode;
   readonly week: ReactNode;
   readonly listWidth: number;
@@ -43,7 +46,7 @@ export function PlannerLayout(props: {
   // toggle (and the macOS traffic lights), so the column grows to keep its controls.
   const clearsSidebar = useSidebar().state === "collapsed" && props.titleBar;
   const container = useRef<HTMLDivElement>(null);
-  const listPane = useRef<HTMLDivElement>(null);
+  const listHeaderRow = useRef<HTMLDivElement>(null);
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const [stacked, setStacked] = useState<StackedWeek>("split");
   const [dragHeight, setDragHeight] = useState<number | null>(null);
@@ -67,6 +70,7 @@ export function PlannerLayout(props: {
         >
           {props.listHeader}
           <div className="relative min-h-0 flex-1">{props.list}</div>
+          {props.listOverlay}
           {props.weekHidden ? null : (
             <div
               className="absolute top-0 -right-1 z-20 h-full w-2 cursor-ew-resize touch-none"
@@ -136,7 +140,7 @@ export function PlannerLayout(props: {
               const target = event.currentTarget;
               target.setPointerCapture(event.pointerId);
               const top = container.current?.getBoundingClientRect().top ?? 0;
-              const listHeader = listPane.current?.firstElementChild?.clientHeight ?? 0;
+              const listHeader = listHeaderRow.current?.clientHeight ?? 0;
               const room = (container.current?.clientHeight ?? 1) - listHeader;
               let height = 0;
               const move = (moveEvent: PointerEvent) => {
@@ -156,8 +160,10 @@ export function PlannerLayout(props: {
             }}
           />
         </div>
-        <div ref={listPane} className="relative flex min-h-0 flex-1 flex-col border-t">
-          {props.listHeader}
+        <div className="relative flex min-h-0 flex-1 flex-col border-t">
+          <div ref={listHeaderRow} className="shrink-0">
+            {props.listHeader}
+          </div>
           <div
             className={cn(
               "relative min-h-0 flex-1",
@@ -166,6 +172,7 @@ export function PlannerLayout(props: {
           >
             {props.list}
           </div>
+          {props.listOverlay}
         </div>
       </div>
     </div>

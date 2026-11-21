@@ -387,6 +387,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["sidebar threads compact detailed rows cards density"],
   },
   {
+    id: "panel-menu-tasks",
+    title: msg("Tasks in the panel menu"),
+    to: "/settings/appearance",
+    searchTerms: [
+      msg("right panel menu tasks my tasks worker tasks automations my routines show hide"),
+    ],
+  },
+  {
     id: "thread-details-items",
     title: msg("Thread details"),
     to: "/settings/appearance",

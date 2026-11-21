@@ -38,6 +38,7 @@ import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
 import { TypographySection } from "./TypographySettings";
 import { ThreadListSettingsRow } from "../../sidebarThreadRow/ThreadListSettingsRow";
 import { ThreadDetailsItemsRow } from "./ThreadDetailsItemsRow";
+import { RightPanelSurfacesSettingsSection } from "../../product/RightPanelSurfacesSettingsSection";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: msg("Artwork"),
@@ -524,6 +525,8 @@ export function AppearanceSettingsPanel() {
           />
         </AdvancedSettings>
       </SettingsSection>
+
+      <RightPanelSurfacesSettingsSection />
 
       <TypographySection />
     </SettingsPageContainer>

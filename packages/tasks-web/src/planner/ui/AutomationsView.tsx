@@ -17,6 +17,7 @@ import {
 } from "../../../../../apps/web/src/state/environments.ts";
 import { usePlannerAvailability } from "../../environmentApi.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
+import { FLOATING_ACTIONS_CLEARANCE_CLASS } from "../../ui/FloatingActions.tsx";
 import { agentTriggerTags } from "../../ui/pageFilters.ts";
 import type { HandOffAgent } from "../logic/handOff.ts";
 import type { TasksWebProject } from "../../ui/shared.ts";
@@ -50,6 +51,7 @@ const NO_SELECTION: WeekSelection = { active: false, ids: new Set() };
 function AutomationsBody(props: {
   readonly environmentId: EnvironmentId;
   readonly panel: boolean;
+  readonly floatingControls: boolean;
   readonly windows: WindowStore;
   readonly projects: readonly PlannerProject[];
   readonly triggerTags: ReadonlySet<string>;
@@ -110,7 +112,9 @@ function AutomationsBody(props: {
   return (
     <PlannerContext value={context}>
       <DndContext sensors={dnd.sensors} collisionDetection={pointerWithin} {...dnd.handlers}>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          className={`min-h-0 flex-1 overflow-y-auto ${props.floatingControls ? FLOATING_ACTIONS_CLEARANCE_CLASS : ""}`}
+        >
           <AutomationList snapshot={automations} indicator={dnd.indicators.automation} />
         </div>
         <DragOverlay dropAnimation={dnd.dropAnimation}>
@@ -147,6 +151,8 @@ export function AutomationsView(props: {
   readonly onOpenInPlanner: (environmentId: EnvironmentId, taskId: string) => void;
   readonly onNavigateBack: () => void;
   readonly panel?: boolean;
+  /** The panel's Automations entry: no header, New automation floats over the list. */
+  readonly floatingControls?: boolean;
 }) {
   const gt = useGT();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -191,10 +197,34 @@ export function AutomationsView(props: {
     environmentId === null
       ? null
       : windowStoreFor(environmentId, props.panel ? "automations-panel" : "automations-page");
+  const floatingControls = props.floatingControls === true;
+  const environmentSelect =
+    environmentOptions.length > 1 && environmentId ? (
+      <Select
+        value={environmentId}
+        onValueChange={(value) => {
+          if (value) setStoredEnvironment(value);
+        }}
+      >
+        <SelectTrigger className="w-44 shrink-0" size="sm" aria-label={gt("Environment")}>
+          <SelectValue>
+            {environmentOptions.find((option) => option.id === environmentId)?.label}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectPopup>
+          {environmentOptions.map((option) => (
+            <SelectItem key={option.id} value={option.id}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+    ) : null;
   return (
     <WorkspaceViewLayout
       variant={props.panel ? "panel" : "page"}
       switches={props.viewSwitch}
+      floatingControls={floatingControls}
       action={
         ready && windows
           ? {
@@ -206,28 +236,8 @@ export function AutomationsView(props: {
       }
       toolbar={
         <>
-          <span className="min-w-0 flex-1" />
-          {environmentOptions.length > 1 && environmentId ? (
-            <Select
-              value={environmentId}
-              onValueChange={(value) => {
-                if (value) setStoredEnvironment(value);
-              }}
-            >
-              <SelectTrigger className="w-44 shrink-0" size="sm" aria-label={gt("Environment")}>
-                <SelectValue>
-                  {environmentOptions.find((option) => option.id === environmentId)?.label}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                {environmentOptions.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          ) : null}
+          {floatingControls ? null : <span className="min-w-0 flex-1" />}
+          {environmentSelect}
         </>
       }
       navigateOnEscape={false}
@@ -251,6 +261,7 @@ export function AutomationsView(props: {
             key={environmentId}
             environmentId={environmentId}
             panel={props.panel === true}
+            floatingControls={floatingControls}
             windows={windows}
             projects={projects}
             triggerTags={triggerTags}

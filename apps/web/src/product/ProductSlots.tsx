@@ -12,6 +12,7 @@ import {
 } from "../adaptiveSidebar/adaptiveSidebar";
 import { cn } from "../lib/utils";
 import { WEB_PRODUCT } from "./productEntry";
+import { useHiddenRightPanelSurfaces } from "./rightPanelSurfaceVisibility";
 import type {
   ExperimentalWebRightPanelSurfaceContribution,
   ExperimentalWebRightPanelSurfaceProps,
@@ -228,6 +229,12 @@ export function ProductSettingsPage(props: { readonly pathname: string }) {
 /** Feature surfaces the right panel beside a thread offers after core's. */
 export function productRightPanelSurfaces(): ReadonlyArray<ExperimentalWebRightPanelSurfaceContribution> {
   return WEB_PRODUCT.rightPanelSurfaces;
+}
+
+/** The same, without the ones the person turned off in Settings. */
+export function useShownProductRightPanelSurfaces(): ReadonlyArray<ExperimentalWebRightPanelSurfaceContribution> {
+  const { hidden } = useHiddenRightPanelSurfaces();
+  return WEB_PRODUCT.rightPanelSurfaces.filter((surface) => !hidden.includes(surface.id));
 }
 
 export function productRightPanelSurface(
