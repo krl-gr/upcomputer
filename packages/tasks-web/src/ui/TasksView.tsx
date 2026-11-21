@@ -502,13 +502,20 @@ export function TasksView(props: TasksViewProps) {
   const showStatusColumn = !grouped;
   const environmentCount = new Set(props.tasks.map(({ environmentId }) => environmentId)).size;
 
+  const [groupRowLimits, setGroupRowLimits] = useState<Readonly<Record<string, number>>>({});
+
   const persistVisibleMove = useCallback(
     async (task: ScopedTaskListItem, directionOrTarget: "up" | "down" | ScopedTaskListItem) => {
       if (reorderInFlightRef.current || !props.canMutateEnvironment(task.environmentId)) return;
       const result = planVisibleTaskMove({
         tasks: optimisticTasks,
-        // In a grouped list a task moves among its own group's tasks only.
-        visibleTasks: grouped ? tasksOfGroup(filteredTasks, task.status) : filteredTasks,
+        // In a grouped list a task moves among its own group's shown tasks only.
+        visibleTasks: grouped
+          ? tasksOfGroup(filteredTasks, task.status).slice(
+              0,
+              groupRowLimits[statusGroupKey(task.status)] ?? GROUP_FIRST_ROWS,
+            )
+          : filteredTasks,
         task,
         directionOrTarget,
       });
@@ -546,7 +553,7 @@ export function TasksView(props: TasksViewProps) {
         reorderInFlightRef.current = false;
       }
     },
-    [filteredTasks, gt, grouped, optimisticTasks, props],
+    [filteredTasks, gt, grouped, groupRowLimits, optimisticTasks, props],
   );
 
   const dropOn = (task: ScopedTaskListItem) => {
@@ -1083,7 +1090,6 @@ export function TasksView(props: TasksViewProps) {
     settleArrivals(group.tasks.map(taskKey));
     grouping?.onSettingsChange({ statusGroupOpen: { [group.key]: open } });
   };
-  const [groupRowLimits, setGroupRowLimits] = useState<Readonly<Record<string, number>>>({});
   const groupRows = (group: TaskStatusGroup<ScopedTaskListItem>) =>
     group.tasks.slice(0, groupRowLimits[group.key] ?? GROUP_FIRST_ROWS);
   // The group's next rows, loading the server's next page when the loaded rows run out.
