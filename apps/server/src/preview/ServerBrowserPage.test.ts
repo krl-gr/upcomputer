@@ -1,4 +1,7 @@
-import { PreviewAutomationEvaluateInput } from "@t3tools/contracts";
+import {
+  PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING,
+  PreviewAutomationEvaluateInput,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import {
   chromium,
@@ -45,6 +48,7 @@ describe("snapshot deadline diagnostics", () => {
   const never = () => new Promise<never>(() => {});
   const stalledSnapshot = async (options: {
     readonly stalled?: "metrics";
+    readonly screenshot?: "stalls" | "fails";
     readonly page?: Partial<Record<keyof Page, unknown>>;
     readonly advanceMs: number;
   }) => {
@@ -69,7 +73,12 @@ describe("snapshot deadline diagnostics", () => {
       const cdp = {
         send: async (method: string) => {
           if (options.stalled === "metrics") return never();
-          if (method === "Page.captureScreenshot") return { data: "" };
+          if (method === "Page.captureScreenshot") {
+            // Chromium leaves a capture pending while nothing composites, or refuses it.
+            if (options.screenshot === "stalls") return never();
+            if (options.screenshot === "fails") throw new Error("Unable to capture screenshot");
+            return { data: "" };
+          }
           if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "main" } } };
           if (method === "Page.createIsolatedWorld") return { executionContextId: 1 };
           if (method === "Runtime.evaluate") return { result: { value: [] } };
@@ -129,6 +138,34 @@ describe("snapshot deadline diagnostics", () => {
       }),
     ).toMatchObject({ detail: { timeoutMs: 10_000, pendingStages: ["page state"] } });
   });
+
+  it.each(["stalls", "fails"] as const)(
+    "returns the text and tree without a screenshot when the capture %s",
+    async (screenshot) => {
+      expect(
+        await stalledSnapshot({
+          screenshot,
+          page: {
+            evaluate: async () => ({
+              url: "about:blank",
+              title: "Asleep",
+              loading: false,
+              visibleText: "Display is off",
+              interactiveElements: [],
+            }),
+            ariaSnapshot: async () => '- button "Wake" [ref=e1]',
+          },
+          advanceMs: 10_000,
+        }),
+      ).toMatchObject({
+        title: "Asleep",
+        visibleText: "Display is off",
+        accessibilityTree: expect.stringMatching(/button "Wake" \[ref=t3-\w+-\w+-e1\]/),
+        screenshot: null,
+        warning: PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING,
+      });
+    },
+  );
 
   it.each(["elementHandle", "contentFrame"] as const)(
     "identifies stalled iframe %s lookup",
@@ -645,7 +682,7 @@ describe("server browser snapshot screenshot", () => {
       [0.85, 0.75],
     ];
     const pixels = (await page.evaluate(`(async () => {
-      const bytes = Uint8Array.from(atob(${JSON.stringify(screenshot.data)}), (char) => char.charCodeAt(0));
+      const bytes = Uint8Array.from(atob(${JSON.stringify(screenshot?.data)}), (char) => char.charCodeAt(0));
       const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
       const canvas = document.createElement("canvas");
       canvas.width = bitmap.width;
@@ -665,7 +702,7 @@ describe("server browser snapshot screenshot", () => {
     const { screenshot, pixels } = await screenshotOf(halves("backdrop-filter: blur(4px);"));
 
     expect({
-      size: [screenshot.width, screenshot.height],
+      size: [screenshot?.width, screenshot?.height],
       colors: pixels.map(colorOf),
     }).toEqual({ size: [1280, 800], colors: ["blue", "red", "red"] });
   });
@@ -675,7 +712,7 @@ describe("server browser snapshot screenshot", () => {
     const metadata = await ServerBrowserPage.snapshotMetadata(input);
 
     expect({
-      size: [screenshot.width, screenshot.height],
+      size: [screenshot?.width, screenshot?.height],
       fullSize: [fullScreenshot?.width, fullScreenshot?.height],
       metadataSize: metadata.screenshot,
       colors: pixels.map(colorOf),
@@ -734,7 +771,7 @@ describe("server browser snapshot screenshot", () => {
       actionTimeline: [],
     });
 
-    expect([screenshot.width, screenshot.height]).toEqual([1280, 800]);
+    expect([screenshot?.width, screenshot?.height]).toEqual([1280, 800]);
   });
 });
 

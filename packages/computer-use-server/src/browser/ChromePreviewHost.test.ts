@@ -10,6 +10,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   EnvironmentId,
+  PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING,
   PreviewAutomationSnapshot,
   ProviderInstanceId,
   ThreadId,
@@ -21,7 +22,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { chromium, type Browser, type BrowserContext } from "playwright-core";
+import { chromium, type Browser, type BrowserContext, type CDPSession } from "playwright-core";
 import { afterAll, beforeAll, onTestFinished, test, type TestContext } from "vite-plus/test";
 
 import type { ServerConfig } from "../../../../apps/server/src/config.ts";
@@ -349,11 +350,11 @@ test("snapshots follow the desktop host's contract", async (t) => {
     ],
   );
   NodeAssert.ok(Array.isArray((snapshot.accessibilityTree as { nodes?: unknown }).nodes));
-  const png = Buffer.from(snapshot.screenshot.data, "base64");
+  const png = Buffer.from(snapshot.screenshot!.data, "base64");
   NodeAssert.equal(png.subarray(1, 4).toString("ascii"), "PNG");
   NodeAssert.deepEqual(
     { width: png.readUInt32BE(16), height: png.readUInt32BE(20) },
-    { width: snapshot.screenshot.width, height: snapshot.screenshot.height },
+    { width: snapshot.screenshot!.width, height: snapshot.screenshot!.height },
   );
 });
 
@@ -373,10 +374,33 @@ test("snapshot screenshots are scaled to the desktop host's maximum width", asyn
     await host.execute(request("scroll", { deltaY: 1200 }));
     const snapshot = (await host.execute(request("snapshot"))) as PreviewAutomationSnapshot;
     NodeAssert.deepEqual(
-      { width: snapshot.screenshot.width, height: snapshot.screenshot.height },
+      { width: snapshot.screenshot!.width, height: snapshot.screenshot!.height },
       expected,
     );
   }
+});
+
+test("a snapshot whose screenshot fails still returns the page text and tree", async (t) => {
+  const context = await openContext(t);
+  if (!context) return;
+  const newCDPSession = context.newCDPSession.bind(context);
+  context.newCDPSession = async (page) => {
+    const session = await newCDPSession(page);
+    const send = session.send.bind(session);
+    // What Chromium answers when the display is asleep and nothing composites.
+    session.send = ((method: string, params?: object) =>
+      method === "Page.captureScreenshot"
+        ? Promise.reject(new Error("Protocol error: Unable to capture screenshot"))
+        : send(method as never, params as never)) as CDPSession["send"];
+    return session;
+  };
+  const host = createChromePreviewHost({ getContext: async () => context });
+  await host.execute(request("open", { url: `localhost:${port}` }));
+  const snapshot = (await host.execute(request("snapshot"))) as PreviewAutomationSnapshot;
+  NodeAssert.equal(snapshot.title, "Chrome host fixture");
+  NodeAssert.ok(Array.isArray((snapshot.accessibilityTree as { nodes?: unknown }).nodes));
+  NodeAssert.equal(snapshot.screenshot, null);
+  NodeAssert.equal(snapshot.warning, PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING);
 });
 
 test("the Always use Chrome preference is read from its own file, then from a V1 settings.json", async () => {

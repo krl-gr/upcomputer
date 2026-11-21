@@ -886,6 +886,25 @@ it.effect("bounds large ARIA trees without dropping every server locator", () =>
   ).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("returns a snapshot without a screenshot as text, even when an image is asked for", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const warning = "The page could not be painted in time.";
+      yield* serveSnapshots("mcp-unpainted-client", {
+        ...snapshotResult,
+        accessibilityTree: '- button "Save" [ref=t3-snapshot-e1]',
+        screenshot: null,
+        warning,
+      });
+      const result = yield* callSnapshot({ includeImage: true, save: true });
+      expect(result.isError).toBe(false);
+      expect(result.structuredContent).toMatchObject({ screenshot: null, warning });
+      expect(result.structuredContent).not.toHaveProperty("screenshotPath");
+      expect(result.content.map((content) => content.type)).toEqual(["text", "text"]);
+    }),
+  ).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("keeps the snapshot text under the agent's output ceiling", () =>
   Effect.scoped(
     Effect.gen(function* () {

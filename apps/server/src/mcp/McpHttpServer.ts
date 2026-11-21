@@ -713,20 +713,25 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
                   readonly data?: string;
                   readonly width: number;
                   readonly height: number;
-                };
+                } | null;
                 readonly fullScreenshot?: { readonly data: string };
               };
               const { screenshot, fullScreenshot, ...page } = snapshot;
               const includeImage = payload?.includeImage === true;
               const needsPixels = payload?.save === true || includeImage;
-              if (needsPixels && (screenshot.mimeType !== "image/png" || !screenshot.data)) {
+              // A null screenshot means the page could not paint; its `warning` says so.
+              if (
+                needsPixels &&
+                screenshot !== null &&
+                (screenshot.mimeType !== "image/png" || !screenshot.data)
+              ) {
                 return yield* new OrchestratorMcpFailure({
                   code: "invalid_request",
                   message: "Preview snapshot did not contain requested PNG pixels.",
                 });
               }
               const png =
-                needsPixels && screenshot.data
+                needsPixels && screenshot?.data
                   ? new Uint8Array(Buffer.from(screenshot.data, "base64"))
                   : undefined;
               const screenshotPath =
@@ -752,7 +757,7 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
               }
               const metadata = {
                 ...page,
-                screenshot: {
+                screenshot: screenshot && {
                   mimeType: "image/png" as const,
                   width: screenshot.width,
                   height: screenshot.height,

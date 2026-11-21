@@ -2,6 +2,7 @@
 
 import {
   type BrowserRecordingFrameRate,
+  PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   type PreviewAutomationClickInput,
   type PreviewAutomationConsoleEntry,
@@ -253,6 +254,9 @@ const withoutTreeDataPayloads = (tree: string) =>
 // The broker waits 15s for the host; a snapshot, retry included, answers well before.
 const SNAPSHOT_TIMEOUT_MS = 10_000;
 const FRAME_ANSWER_MS = 1_000;
+// A page that cannot paint (a sleeping display) never answers a capture; its text still can.
+const SNAPSHOT_SCREENSHOT_MS = 5_000;
+const SCREENSHOT_REPLY_MARGIN_MS = 1_000;
 
 // Include password and CSS-masked text in open shadow roots, normalized like accessible text.
 const DOTTED_SCRIPT = `(() => {
@@ -314,11 +318,11 @@ const VALUE_TOO_LONG = "A password field holds a value too long to hide, so no s
 /** Reuse one CDP session per out-of-process frame across snapshots. */
 const frameSessions = new WeakMap<Frame, Promise<CDPSession>>();
 
-/** Returns undefined on failure or frame timeout. */
-const answered = <A>(promise: Promise<A>) => {
+/** Returns undefined on failure or after `ms`. */
+const answered = <A>(promise: Promise<A>, ms = FRAME_ANSWER_MS) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<undefined>((resolve) => {
-    timer = setTimeout(() => resolve(undefined), FRAME_ANSWER_MS);
+    timer = setTimeout(() => resolve(undefined), ms);
   });
   return Promise.race([promise.catch(() => undefined), late]).finally(() => clearTimeout(timer));
 };
@@ -694,17 +698,19 @@ const capture = async (
   const { readers, read } = await track("frames", () => openReaders(input.page, input.cdp));
   const before = await track("frames", () => read());
   // Bracket the tree with value reads to detect changes; await tree completion before retrying failed captures.
-  const pageAndScreenshot = Promise.all([
-    track(
-      "page state",
-      () =>
-        input.page.evaluate(SNAPSHOT_SCRIPT) as Promise<
-          Pick<
-            PreviewAutomationSnapshot,
-            "url" | "title" | "loading" | "visibleText" | "interactiveElements"
-          >
-        >,
-    ),
+  const pageData = track(
+    "page state",
+    () =>
+      input.page.evaluate(SNAPSHOT_SCRIPT) as Promise<
+        Pick<
+          PreviewAutomationSnapshot,
+          "url" | "title" | "loading" | "visibleText" | "interactiveElements"
+        >
+      >,
+  );
+  void pageData.catch(constVoid);
+  // Undefined on a failed or late capture, early enough that the text still answers in time.
+  const screenshot = answered(
     // A cheap real frame still sizes the screenshot; computing it from metrics drifted from the PNG.
     track("screenshot", () =>
       metadataOnly
@@ -721,8 +727,11 @@ const capture = async (
               : { data: full, full: undefined },
           ),
     ),
-  ]);
-  void pageAndScreenshot.catch(constVoid);
+    Math.max(
+      1,
+      Math.min(SNAPSHOT_SCREENSHOT_MS, deadline - Date.now() - SCREENSHOT_REPLY_MARGIN_MS),
+    ),
+  );
   // Leaves time for the second read; a frame that never loads holds the tree until then.
   const tree = await track("accessibility tree", () =>
     input.page.ariaSnapshot({
@@ -748,7 +757,8 @@ const capture = async (
     void iframe.dispose().catch(constVoid);
     if (frame && unread.includes(frame)) throw frameUnanswered();
   }
-  const [page, { full, data }] = await pageAndScreenshot;
+  const page = await pageData;
+  const pixels = await screenshot;
   if (state.generation !== generation) throw pageChanged();
   const mask = (text: string) => (dotted ? text.replace(dotted, MASKED_VALUE) : text);
   // Redacted before the cut, so a payload crossing it can't leave its start showing, and before
@@ -770,11 +780,17 @@ const capture = async (
     consoleEntries: [...input.consoleEntries],
     networkEntries: [...input.networkEntries],
     actionTimeline: [...input.actionTimeline],
-    // Reports the size the PNG path would have shrunk to.
-    screenshot: metadataOnly
-      ? scaledSize(jpegSize(data), scale)
-      : { mimeType: "image/png" as const, data, ...pngSize(data) },
-    ...(full !== undefined ? { fullScreenshot: { data: full, ...pngSize(full) } } : {}),
+    ...(pixels === undefined
+      ? { screenshot: null, warning: PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING }
+      : {
+          // Reports the size the PNG path would have shrunk to.
+          screenshot: metadataOnly
+            ? scaledSize(jpegSize(pixels.data), scale)
+            : { mimeType: "image/png" as const, data: pixels.data, ...pngSize(pixels.data) },
+          ...(pixels.full !== undefined
+            ? { fullScreenshot: { data: pixels.full, ...pngSize(pixels.full) } }
+            : {}),
+        }),
   };
 };
 

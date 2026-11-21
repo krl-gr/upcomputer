@@ -556,18 +556,25 @@ export const PreviewAutomationSnapshot = Schema.Struct({
   consoleEntries: Schema.Array(PreviewAutomationConsoleEntry),
   networkEntries: Schema.Array(PreviewAutomationNetworkEntry),
   actionTimeline: Schema.Array(PreviewAutomationActionEvent),
-  screenshot: Schema.Struct({
-    mimeType: Schema.Literal("image/png"),
-    data: Schema.String,
-    width: Schema.Int,
-    height: Schema.Int,
-  }),
+  /** Null when the page could not paint in time; `warning` then says so. */
+  screenshot: Schema.NullOr(
+    Schema.Struct({
+      mimeType: Schema.Literal("image/png"),
+      data: Schema.String,
+      width: Schema.Int,
+      height: Schema.Int,
+    }),
+  ),
+  warning: Schema.optional(Schema.String),
   /** The capture before `screenshot` was capped for the agent, when requested and larger. */
   fullScreenshot: Schema.optional(
     Schema.Struct({ data: Schema.String, width: Schema.Int, height: Schema.Int }),
   ),
 });
 export type PreviewAutomationSnapshot = typeof PreviewAutomationSnapshot.Type;
+
+export const PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING =
+  "The page could not be painted in time, so this snapshot has no screenshot. Its text, accessibility tree and refs are still valid.";
 
 // pixelsRequired is false when the caller discards the screenshot; hosts that ignore it still return a PNG.
 export const PreviewAutomationSnapshotInput = Schema.Struct({
@@ -578,7 +585,7 @@ export type PreviewAutomationSnapshotInput = typeof PreviewAutomationSnapshotInp
 
 export const PreviewAutomationSnapshotMetadata = Schema.Struct({
   ...PreviewAutomationSnapshot.fields,
-  screenshot: Schema.Struct({ width: Schema.Int, height: Schema.Int }),
+  screenshot: Schema.NullOr(Schema.Struct({ width: Schema.Int, height: Schema.Int })),
 });
 export type PreviewAutomationSnapshotMetadata = typeof PreviewAutomationSnapshotMetadata.Type;
 

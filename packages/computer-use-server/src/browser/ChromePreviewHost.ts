@@ -41,6 +41,7 @@ import {
   type PreviewAutomationTypeInput,
   type PreviewAutomationWaitForInput,
   type PreviewViewportSetting,
+  PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING,
 } from "@t3tools/contracts";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import { resolvePreviewViewport } from "@t3tools/shared/previewViewport";
@@ -68,6 +69,8 @@ const LOCATOR_ACTION_TIMEOUT_MS = 5_000;
 /** Leaves time to reply before the broker gives up on the request. */
 const BROKER_REPLY_MARGIN_MS = 500;
 const WAIT_FOR_POLL_INTERVAL_MS = 100;
+/** A page that cannot paint never answers a capture; the snapshot answers with its text instead. */
+const SNAPSHOT_SCREENSHOT_TIMEOUT_MS = 5_000;
 const INVALID_SELECTOR_PATTERN =
   /strict mode violation|while parsing|unexpected token|unknown engine|not a valid selector/iu;
 
@@ -462,7 +465,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
 
   const captureScreenshot = async (
     tab: ChromeTab,
-  ): Promise<PreviewAutomationSnapshot["screenshot"]> => {
+  ): Promise<NonNullable<PreviewAutomationSnapshot["screenshot"]>> => {
     const cdp = await cdpSession(tab);
     const page = (await evaluateInPage(
       tab,
@@ -501,7 +504,22 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     return { mimeType: "image/png", ...screenshot };
   };
 
-  const snapshot = async (tab: ChromeTab): Promise<PreviewAutomationSnapshot> => {
+  /** Undefined when the capture fails or misses its deadline. */
+  const screenshotWithin = async (tab: ChromeTab, ms: number) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), ms);
+    });
+    return Promise.race([captureScreenshot(tab).catch(() => undefined), late]).finally(() =>
+      clearTimeout(timer),
+    );
+  };
+
+  const snapshot = async (
+    tab: ChromeTab,
+    request: PreviewAutomationRequest,
+  ): Promise<PreviewAutomationSnapshot> => {
+    const deadline = Date.now() + replyBudgetMs(request);
     const cdp = await cdpSession(tab);
     await cdp.send("Accessibility.enable");
     const page = (await evaluateInPage(tab, PREVIEW_AUTOMATION_PAGE_SNAPSHOT_EXPRESSION, {
@@ -512,14 +530,19 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       "url" | "title" | "loading" | "visibleText" | "interactiveElements"
     >;
     const accessibilityTree = await cdp.send("Accessibility.getFullAXTree");
-    const screenshot = await captureScreenshot(tab);
+    const screenshot = await screenshotWithin(
+      tab,
+      Math.max(1, Math.min(SNAPSHOT_SCREENSHOT_TIMEOUT_MS, deadline - Date.now())),
+    );
     return {
       ...page,
       accessibilityTree,
       consoleEntries: [...tab.consoleEntries],
       networkEntries: [...tab.networkEntries],
       actionTimeline: [...tab.actionTimeline],
-      screenshot,
+      ...(screenshot === undefined
+        ? { screenshot: null, warning: PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING }
+        : { screenshot }),
     };
   };
 
@@ -745,7 +768,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       }
       case "snapshot": {
         const tab = requireTab(request);
-        return withAction(tab, "snapshot", () => snapshot(tab));
+        return withAction(tab, "snapshot", () => snapshot(tab, request));
       }
       case "click": {
         const tab = requireTab(request);
