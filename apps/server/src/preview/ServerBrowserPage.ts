@@ -1098,7 +1098,46 @@ export const setInputFiles = async (page: Page, input: PreviewAutomationUploadIn
 };
 
 export const press = async (page: Page, input: PreviewAutomationPressInput) => {
+  const locator = targetLocator(page, input);
+  if (locator !== null) await focusTarget(locator, input, input.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   await page.keyboard.press([...(input.modifiers ?? []), input.key].join("+"));
+};
+
+/** Without this check a key meant for a missing or unfocusable target goes to whatever has focus. */
+const focusTarget = async (
+  locator: Locator,
+  input: { readonly locator?: string | undefined; readonly selector?: string | undefined },
+  timeout: number,
+) => {
+  const selector = JSON.stringify(input.locator ?? input.selector);
+  const target =
+    selector.length > MAX_TARGET_CHARS ? `${selector.slice(0, MAX_TARGET_CHARS)}...` : selector;
+  const focused = await locator
+    .evaluate(
+      (element) => {
+        (element as unknown as { readonly focus?: () => void }).focus?.();
+        const root = element.getRootNode() as { readonly activeElement?: typeof element | null };
+        const active = root.activeElement;
+        return active != null && (active === element || element.contains(active));
+      },
+      undefined,
+      { timeout },
+    )
+    .catch(async (cause: unknown) => {
+      if (!(cause instanceof Error && cause.name === "TimeoutError")) throw cause;
+      if ((await locator.count().catch(() => 1)) > 0) throw cause;
+      throw new ServerBrowserOperationError({
+        tag: "PreviewAutomationExecutionError",
+        message: `No element matches ${target}, so no key was pressed. Take a fresh snapshot and use its locator.`,
+        cause,
+      });
+    });
+  if (!focused) {
+    throw new ServerBrowserOperationError({
+      tag: "PreviewAutomationExecutionError",
+      message: `${target} cannot take focus, so no key was pressed.`,
+    });
+  }
 };
 
 export const scroll = async (page: Page, input: PreviewAutomationScrollInput) => {

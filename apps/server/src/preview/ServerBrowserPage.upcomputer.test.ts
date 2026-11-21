@@ -1,5 +1,20 @@
-import type { CDPSession, Page } from "playwright-core";
-import { describe, expect, it, vi } from "vite-plus/test";
+import {
+  chromium,
+  type Browser,
+  type BrowserContext,
+  type CDPSession,
+  type Page,
+} from "playwright-core";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
 import * as ServerBrowserPage from "./ServerBrowserPage.ts";
 
@@ -81,5 +96,48 @@ describe("snapshot timeout reason for agents", () => {
     expect((error.detail as { reason: string }).reason).toMatch(
       /^The page was too busy to answer, so the snapshot stopped after 6\.0 s\. preview_evaluate /,
     );
+  });
+});
+
+describe("server browser key press", () => {
+  let browser: Browser;
+  let context: BrowserContext;
+  let page: Page;
+
+  beforeAll(async () => {
+    browser = await chromium.launch({ headless: true });
+  });
+  afterAll(async () => {
+    await browser?.close();
+  });
+  beforeEach(async () => {
+    context = await browser.newContext();
+    page = await context.newPage();
+    await page.setContent(
+      `<textarea id="text">hello</textarea><input id="other" value="other" /><p id="plain">plain</p>
+       <script>document.getElementById("text").setSelectionRange(5, 5)</script>`,
+    );
+    await page.focus("#other");
+  });
+  afterEach(async () => {
+    await context.close();
+  });
+
+  const value = (selector: string) => page.locator(selector).inputValue();
+
+  it("sends the key to its target instead of the field that has focus", async () => {
+    await ServerBrowserPage.press(page, { selector: "#text", key: "Backspace" });
+    expect(await value("#text")).toBe("hell");
+    expect(await value("#other")).toBe("other");
+  });
+
+  it.each([
+    { selector: "#missing", error: 'No element matches "#missing", so no key was pressed.' },
+    { selector: "#plain", error: '"#plain" cannot take focus, so no key was pressed.' },
+  ])("presses nothing when $selector cannot take the key", async ({ selector, error }) => {
+    await expect(
+      ServerBrowserPage.press(page, { selector, key: "Backspace", timeoutMs: 500 }),
+    ).rejects.toThrow(error);
+    expect(await value("#other")).toBe("other");
   });
 });

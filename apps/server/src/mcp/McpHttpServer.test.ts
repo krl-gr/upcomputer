@@ -646,6 +646,9 @@ it.effect("checks each preview_act action against that action's own input", () =
 
       yield* callTool("preview_act", { action: "type", selector: "#name", text: "Ada" });
       expect(inputs.at(-2)).toEqual({ selector: "#name", text: "Ada" });
+
+      yield* callTool("preview_act", { action: "press", selector: "#name", key: "Backspace" });
+      expect(inputs.at(-2)).toEqual({ selector: "#name", key: "Backspace" });
     }),
   ).pipe(Effect.provide(layerTest)),
 );

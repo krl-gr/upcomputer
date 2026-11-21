@@ -1,5 +1,7 @@
 // CDP input follows shared window focus; send directly to unfocused guests to avoid typing into the app.
 
+import { KEY_NO_EFFECT_MESSAGE, keyHadEffect, watchKeyEffect } from "./GuestKeyEffect.ts";
+
 const FOCUS_ROUTED_INPUT = new Set([
   "Input.insertText",
   "Input.dispatchKeyEvent",
@@ -200,6 +202,7 @@ export const sendPageCommand = async (
       await webContents.insertText(typeof params["text"] === "string" ? params["text"] : "");
       return {};
     case "Input.dispatchKeyEvent": {
+      const watched = await watchKeyEffect(debuggee, FOCUSED_DOCUMENT, params);
       for (const event of toKeyboardInputEvents(params)) webContents.sendInputEvent(event);
       const commands = Array.isArray(params["commands"])
         ? params["commands"].filter((command) => EDITING_COMMANDS.has(command))
@@ -209,6 +212,13 @@ export const sendPageCommand = async (
         debuggee,
         `(() => { const doc = ${FOCUSED_DOCUMENT}; for (const name of ${JSON.stringify(commands)}) doc?.execCommand(name); return 0; })()`,
       );
+      if (watched && !(await keyHadEffect(debuggee))) {
+        // The caller drops its key up after this error, so release the key here.
+        for (const event of toKeyboardInputEvents({ ...params, type: "keyUp" })) {
+          webContents.sendInputEvent(event);
+        }
+        throw new Error(KEY_NO_EFFECT_MESSAGE);
+      }
       return {};
     }
     default:

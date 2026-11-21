@@ -212,6 +212,19 @@ const isEditableTextTarget = (element: EditableCandidate): boolean => {
   );
 };
 
+interface FocusCandidate {
+  readonly focus?: () => void;
+  readonly getRootNode: () => { readonly activeElement?: unknown };
+  readonly contains: (other: unknown) => boolean;
+}
+
+// Runs in the page. A key meant for a target that cannot take focus would go elsewhere.
+const focusPressTarget = (element: FocusCandidate): boolean => {
+  element.focus?.();
+  const active = element.getRootNode().activeElement;
+  return active != null && (active === element || element.contains(active));
+};
+
 interface ScrollTarget {
   readonly scrollBy: (options: { left: number; top: number; behavior: "instant" }) => void;
 }
@@ -622,6 +635,31 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     }
   };
 
+  const press = async (
+    tab: ChromeTab,
+    request: PreviewAutomationRequest,
+    input: PreviewAutomationPressInput,
+  ): Promise<void> => {
+    const locator = automationLocator(input);
+    if (locator !== null) {
+      const focused = await tab.page
+        .locator(locator)
+        .evaluate(focusPressTarget, undefined, {
+          timeout: locatorTimeoutMs(request, input.timeoutMs),
+        })
+        .catch((cause: unknown) => {
+          throw locatorFailure(cause, input);
+        });
+      if (!focused) {
+        throw hostError(
+          "PreviewAutomationExecutionError",
+          "The press target cannot take focus, so no key was pressed.",
+        );
+      }
+    }
+    await tab.page.keyboard.press([...(input.modifiers ?? []), input.key].join("+"));
+  };
+
   const scroll = async (
     tab: ChromeTab,
     request: PreviewAutomationRequest,
@@ -783,9 +821,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       case "press": {
         const tab = requireTab(request);
         const input = request.input as PreviewAutomationPressInput;
-        return withAction(tab, "press", () =>
-          tab.page.keyboard.press([...(input.modifiers ?? []), input.key].join("+")),
-        );
+        return withAction(tab, "press", () => press(tab, request, input));
       }
       case "scroll": {
         const tab = requireTab(request);

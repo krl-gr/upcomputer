@@ -406,7 +406,16 @@ export const PreviewAutomationPressInput = Schema.Struct({
   ...PreviewAutomationTabTargetFields,
   key: Schema.String.check(Schema.isTrimmed()).check(Schema.isNonEmpty()),
   modifiers: Schema.optional(Schema.Array(Schema.Literals(["Alt", "Control", "Meta", "Shift"]))),
-});
+  selector: Schema.optional(LegacySelector),
+  locator: Schema.optional(Locator),
+  timeoutMs: OptionalTimeoutMs,
+}).check(
+  Schema.makeFilter(
+    (input) =>
+      !(input.selector !== undefined && input.locator !== undefined) ||
+      "Provide at most one of selector or locator.",
+  ),
+);
 export type PreviewAutomationPressInput = typeof PreviewAutomationPressInput.Type;
 
 export const PreviewAutomationScrollInput = Schema.Struct({

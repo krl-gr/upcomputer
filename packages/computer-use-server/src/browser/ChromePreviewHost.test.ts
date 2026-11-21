@@ -180,6 +180,21 @@ test("runs every preview operation in Chrome against a local page", async (t) =>
   NodeAssert.equal(await evaluate("document.querySelector('#message').value"), "replaced");
   await host.execute(request("press", { key: "!" }));
   NodeAssert.equal(await evaluate("document.querySelector('#message').value"), "replaced!");
+  // The key goes to its target, not to the field that still has focus.
+  await host.execute(request("press", { selector: "#fixed", key: "Backspace" }));
+  NodeAssert.equal(await evaluate("document.activeElement.id"), "fixed");
+  NodeAssert.equal(await evaluate("document.querySelector('#message').value"), "replaced!");
+  const pressMissing = await failure(
+    host.execute(request("press", { selector: "#nowhere", key: "Enter" }, { timeoutMs: 2_000 })),
+  );
+  NodeAssert.equal(pressMissing._tag, "PreviewAutomationTargetNotFoundError");
+  NodeAssert.deepEqual(
+    await failure(host.execute(request("press", { selector: "#status", key: "Enter" }))),
+    {
+      _tag: "PreviewAutomationExecutionError",
+      message: "The press target cannot take focus, so no key was pressed.",
+    },
+  );
 
   NodeAssert.deepEqual(
     await failure(host.execute(request("type", { selector: "#fixed", text: "x" }))),
