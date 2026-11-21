@@ -5595,8 +5595,6 @@
   "82d82cdbe3b0f975": "{size} · Use {shortcut} para manter uma colagem grande no texto.",
   "247cd77b35ddb586": "Não foi possível ler ''{name}'' como imagem.",
   "7eccb44d5449e777": "''{name}'' é grande demais para anexar, mesmo após a compressão.",
-  "1d4059658a0ab500": "Remover {name} da mensagem?\nEle é referenciado no seu texto; removê-lo também remove todas as referências.",
-  "86261d5bd0651358": "Remover esta imagem da mensagem?\nEla é referenciada no seu texto; removê-la também remove todas as referências.",
   "f70c49e9f30807a3": "O texto colado é grande demais para esta mensagem",
   "a70abf17e99c2d6d": "Remova parte do texto ou um anexo e cole novamente.",
   "75bc6a7e61897051": "O texto colado é grande demais para anexar",

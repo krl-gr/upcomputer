@@ -5598,8 +5598,6 @@
   "82d82cdbe3b0f975": "{size} · Mit {shortcut} bleibt großer eingefügter Text im Text.",
   "247cd77b35ddb586": "„{name}“ konnte nicht als Bild gelesen werden.",
   "7eccb44d5449e777": "„{name}“ ist zu groß zum Anhängen, selbst nach der Komprimierung.",
-  "1d4059658a0ab500": "{name} aus der Nachricht entfernen?\nEs wird in deinem Text referenziert; beim Entfernen werden auch alle Referenzen entfernt.",
-  "86261d5bd0651358": "Dieses Bild aus der Nachricht entfernen?\nEs wird in deinem Text referenziert; beim Entfernen werden auch alle Referenzen entfernt.",
   "f70c49e9f30807a3": "Der eingefügte Text ist zu groß für diese Nachricht",
   "a70abf17e99c2d6d": "Entferne etwas Text oder einen Anhang und füge dann erneut ein.",
   "75bc6a7e61897051": "Der eingefügte Text ist zu groß zum Anhängen",
