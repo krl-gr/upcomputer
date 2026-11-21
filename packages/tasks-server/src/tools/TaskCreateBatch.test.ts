@@ -805,5 +805,11 @@ it.effect("an archived agent leaves agent_search and agent_get, and unarchives a
     assert.isNull(unarchived.agent.archivedAt);
     assert.isFalse(unarchived.agent.enabled, "comes back paused, as it was archived");
     assert.deepStrictEqual(yield* searched({}), [id]);
+
+    // A bot's agent has no Unarchive in the app, so the tool refuses to archive it.
+    yield* call("agent_update", { id, startTags: [`bot:${id}`] });
+    const bot = yield* call("agent_update", { id, archived: true });
+    assert.isTrue(bot.isError);
+    assert.deepStrictEqual(yield* searched({}), [id]);
   }).pipe(Effect.provide(layer));
 });
