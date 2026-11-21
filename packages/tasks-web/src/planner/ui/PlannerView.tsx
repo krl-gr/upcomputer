@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
-import { DndContext, DragOverlay, pointerWithin } from "@dnd-kit/core";
+import { createPortal } from "react-dom";
+import { DndContext, DragOverlay } from "@dnd-kit/core";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { msg, useGT } from "gt-react";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
@@ -73,6 +74,7 @@ function PlannerBody(props: {
   readonly headerless: boolean;
   /** List left and week right: the planner's own width, measured by `PlannerView`. */
   readonly wide: boolean;
+  readonly plannerRoot: HTMLElement | null;
   readonly projects: readonly PlannerProject[];
   readonly viewSwitch: ReactNode;
   readonly environments: readonly PlannerEnvironmentOption[];
@@ -158,6 +160,10 @@ function PlannerBody(props: {
   );
 
   const exitWeekSelection = useCallback(() => setWeekSelection(NO_SELECTION), []);
+  const composerDrag = useMemo(
+    () => (props.panel ? { environmentId: props.environmentId } : undefined),
+    [props.environmentId, props.panel],
+  );
   const dnd = usePlannerDnd({
     store,
     tasks: snapshot.view.tasks,
@@ -169,6 +175,8 @@ function PlannerBody(props: {
     selection: weekSelection,
     onBlockMoved: exitWeekSelection,
     slotHeight: preferences.slotHeight,
+    plannerRoot: props.plannerRoot,
+    composerDrag,
   });
 
   const handlers = useMemo<EntryCardHandlers>(
@@ -315,7 +323,11 @@ function PlannerBody(props: {
   };
   return (
     <PlannerContext value={context}>
-      <DndContext sensors={dnd.sensors} collisionDetection={pointerWithin} {...dnd.handlers}>
+      <DndContext
+        sensors={dnd.sensors}
+        collisionDetection={dnd.collisionDetection}
+        {...dnd.handlers}
+      >
         <PlannerLayout
           wide={wide}
           titleBar={!props.panel}
@@ -400,17 +412,22 @@ function PlannerBody(props: {
             />
           }
         />
-        <DragOverlay dropAnimation={dnd.dropAnimation}>
-          {dnd.active?.kind === "task" ? (
-            <TaskDragPreview task={dnd.active.task} />
-          ) : dnd.active?.kind === "entry" ? (
-            <EntryDragPreview
-              entry={dnd.active.entry}
-              task={snapshot.view.tasks.get(dnd.active.entry.taskId)}
-              count={dnd.active.count}
-            />
-          ) : null}
-        </DragOverlay>
+        {(() => {
+          const overlay = (
+            <DragOverlay dropAnimation={dnd.dropAnimation} className="pointer-events-none">
+              {dnd.active?.kind === "task" ? (
+                <TaskDragPreview task={dnd.active.task} />
+              ) : dnd.active?.kind === "entry" ? (
+                <EntryDragPreview
+                  entry={dnd.active.entry}
+                  task={snapshot.view.tasks.get(dnd.active.entry.taskId)}
+                  count={dnd.active.count}
+                />
+              ) : null}
+            </DragOverlay>
+          );
+          return typeof document === "undefined" ? overlay : createPortal(overlay, document.body);
+        })()}
       </DndContext>
       <PlannerWindows
         windows={openWindows}
@@ -629,6 +646,7 @@ export function PlannerView(props: {
                 panel={props.panel === true}
                 headerless={headerless}
                 wide={plannerIsWide(plannerWidth)}
+                plannerRoot={plannerElement}
                 projects={plannerProjects}
                 viewSwitch={props.viewSwitch}
                 environments={environmentOptions}

@@ -3,6 +3,7 @@ import { FolderIcon, InboxIcon } from "lucide-react";
 import { useGT, useMessages } from "gt-react";
 
 import { ProjectFavicon } from "../../../../apps/web/src/components/ProjectFavicon.tsx";
+import { setComposerTaskDragData } from "../../../../apps/web/src/components/chat/composerTaskDrag.ts";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import {
   Select,
@@ -122,6 +123,8 @@ export function AgentTaskCard(props: {
   readonly dragged: boolean;
   /** The whole card drags into the list order, as a planner row does; its controls do not start a drag. */
   readonly reorderable: boolean;
+  /** Allows dragging the card into a chat composer as a quote even when reordering is disabled. */
+  readonly quoteDraggable?: boolean;
   readonly onDragStart: () => void;
   readonly onDragEnd: () => void;
   readonly onMove: (direction: "up" | "down") => void;
@@ -148,7 +151,7 @@ export function AgentTaskCard(props: {
         props.dragged ? ROW_DRAGGING_CLASS : ROW_HOVER_CLASS,
       )}
       data-task-card=""
-      draggable={props.reorderable}
+      draggable={props.reorderable || props.quoteDraggable === true}
       onPointerDown={(event) => {
         dragFromControl.current = (event.target as Element).closest("[data-prevent-drag]") !== null;
       }}
@@ -157,12 +160,21 @@ export function AgentTaskCard(props: {
           event.preventDefault();
           return;
         }
-        props.onDragStart();
+        setComposerTaskDragData(event.dataTransfer, {
+          environmentId: task.environmentId,
+          taskId: task.id,
+          title: task.title,
+          kind: task.kind,
+        });
+        if (props.reorderable) props.onDragStart();
         event.dataTransfer.effectAllowed = "move";
       }}
       onDragEnd={props.onDragEnd}
-      onDragOver={(event) => event.preventDefault()}
+      onDragOver={(event) => {
+        if (props.reorderable) event.preventDefault();
+      }}
       onDrop={(event) => {
+        if (!props.reorderable) return;
         event.preventDefault();
         props.onDrop();
       }}

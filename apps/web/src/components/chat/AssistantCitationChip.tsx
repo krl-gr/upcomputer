@@ -68,6 +68,12 @@ function useCitationSourceLinkProps(citation: AssistantCitation) {
 
 const flat = (text: string) => text.replace(/\s+/g, " ");
 
+const isTitleOnlyTaskCitation = (citation: AssistantCitation): boolean =>
+  isTaskOutputCitation(citation) &&
+  citation.prefix === "" &&
+  citation.suffix === "" &&
+  flat(citation.text) === flat(citation.taskTitle);
+
 /**
  * The card a response shows as inside a message. Clicking it goes to the source; a comment follows
  * as text. `leading` and `trailing` say it starts or ends its block, which already has spacing.
@@ -88,7 +94,7 @@ function ResponseCard({
   cardCopyMarkdown?: string;
   label: string;
   title?: string | undefined;
-  preview: ReactNode;
+  preview: ReactNode | null;
   comment?: string | undefined;
   leading: boolean;
   trailing: boolean;
@@ -115,9 +121,11 @@ function ResponseCard({
             {title}
           </span>
         ) : null}
-        <span className="line-clamp-2" dir={textDirection(citation.text)}>
-          {preview}
-        </span>
+        {preview !== null ? (
+          <span className="line-clamp-2" dir={textDirection(citation.text)}>
+            {preview}
+          </span>
+        ) : null}
       </Link>
       {comment ? (
         <span className="mt-1.5 block whitespace-pre-wrap" dir={textDirection(comment)}>
@@ -140,6 +148,7 @@ export function AssistantCitationEmbed({
 }) {
   const gt = useGT();
   const wholeResponse = citation.prefix === "" && citation.suffix === "";
+  const titleOnlyTask = isTitleOnlyTaskCitation(citation);
   const { comment, ...quoted } = citation;
   return (
     <ResponseCard
@@ -147,9 +156,11 @@ export function AssistantCitationEmbed({
       copyMarkdown={serializeAssistantCitation(citation)}
       cardCopyMarkdown={serializeAssistantCitation(quoted)}
       label={
-        isTaskOutputCitation(citation)
-          ? gt("Go to quoted task output: {label}", { label: assistantCitationLabel(quoted) })
-          : gt("Go to quoted response: {label}", { label: assistantCitationLabel(quoted) })
+        titleOnlyTask
+          ? gt("Go to quoted task: {label}", { label: assistantCitationLabel(quoted) })
+          : isTaskOutputCitation(citation)
+            ? gt("Go to quoted task output: {label}", { label: assistantCitationLabel(quoted) })
+            : gt("Go to quoted response: {label}", { label: assistantCitationLabel(quoted) })
       }
       title={
         isTaskOutputCitation(citation)
@@ -160,7 +171,7 @@ export function AssistantCitationEmbed({
       leading={leading}
       trailing={trailing}
       preview={
-        wholeResponse ? (
+        titleOnlyTask ? null : wholeResponse ? (
           flat(citation.text)
         ) : (
           <>
@@ -285,9 +296,11 @@ export function AssistantCitationChip({
       {...sourceLinkProps}
       className="inline-flex min-w-0 items-center gap-[0.2em] self-baseline text-inherit no-underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-current rounded-sm"
       aria-label={
-        isTaskOutputCitation(citation)
-          ? gt("View cited task output: {label}", { label })
-          : gt("View cited assistant text: {label}", { label })
+        isTitleOnlyTaskCitation(citation)
+          ? gt("View cited task: {label}", { label })
+          : isTaskOutputCitation(citation)
+            ? gt("View cited task output: {label}", { label })
+            : gt("View cited assistant text: {label}", { label })
       }
     >
       <QuoteIcon aria-hidden="true" />
