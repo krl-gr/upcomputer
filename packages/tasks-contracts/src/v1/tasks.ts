@@ -344,10 +344,14 @@ export type TaskPageCursor = typeof TaskPageCursor.Type;
 export const TASK_LAST_RUN_NONE = "none";
 /** Only tasks whose latest run (latest start) has this raw status, or `none`: never ran. */
 const TaskLastRunFilter = Schema.optional(TrimmedNonEmptyString);
+/** Lists that read a task's text from its own detail read leave it out of every row. */
+const TaskListOmitText = Schema.optional(Schema.Boolean);
+
 export const TaskPageInput = Schema.Struct({
   ...TaskListFilterFields,
   lastRun: TaskLastRunFilter,
   cursor: Schema.optional(TaskPageCursor),
+  omitText: TaskListOmitText,
 });
 export type TaskPageInput = typeof TaskPageInput.Type;
 
@@ -398,6 +402,9 @@ export type TaskRunCount = typeof TaskRunCount.Type;
 export const TaskListItem = withClosedAtAlias(
   Schema.Struct({
     ...Task.fields,
+    /** Absent when the request set `omitText`. */
+    description: Schema.optional(Task.fields.description),
+    output: Schema.optional(Task.fields.output),
     runCounts: Schema.Array(TaskRunCount),
     /** Raw status of the task's latest run (latest start); null without runs. Absent from older servers. */
     latestRunStatus: Schema.optional(Schema.NullOr(Schema.String)),
@@ -412,6 +419,7 @@ export type TaskPageResult = typeof TaskPageResult.Type;
 
 export const TaskListItemsInput = Schema.Struct({
   ids: Schema.Array(TaskId).check(Schema.isMaxLength(500)),
+  omitText: TaskListOmitText,
 });
 export type TaskListItemsInput = typeof TaskListItemsInput.Type;
 export const TaskListItemsResult = Schema.Struct({ tasks: Schema.Array(TaskListItem) });

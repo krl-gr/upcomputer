@@ -2156,12 +2156,20 @@ const makeTaskRepository = Effect.gen(function* () {
     }));
   });
 
+  // About 10 KB of a worker task's row is its description and output, which only details show.
+  const listRowsText = <
+    Row extends { readonly description: string; readonly output: string | null },
+  >(
+    rows: ReadonlyArray<Row>,
+    omitText: boolean | undefined,
+  ) => (omitText === true ? rows.map(({ description: _, output: __, ...row }) => row) : rows);
+
   const items: TaskRepositoryShape["items"] = (input) =>
     sql
       .withTransaction(
         Effect.gen(function* () {
           const rows = yield* taskRowsByIds({ idsJson: JSON.stringify(input.ids) });
-          return { tasks: yield* decorateTaskRows(rows) };
+          return { tasks: listRowsText(yield* decorateTaskRows(rows), input.omitText) };
         }),
       )
       .pipe(
@@ -2210,7 +2218,7 @@ const makeTaskRepository = Effect.gen(function* () {
             limit: limit + 1,
           });
           const visible = rows.slice(0, limit);
-          const tasks = yield* decorateTaskRows(visible);
+          const tasks = listRowsText(yield* decorateTaskRows(visible), input.omitText);
           // Status facets follow the project, archive, audience and kind filters
           // only, never the selected or excluded statuses or the page cursor.
           const filters = listFilters(input);

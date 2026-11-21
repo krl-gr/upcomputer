@@ -25,7 +25,7 @@ import {
 } from "@t3tools/tasks-contracts/v1";
 
 import type { TasksWebRpcClient } from "../rpc/index.ts";
-import type { ScopedTask, ScopedTaskAgent, ScopedTaskAgentRun } from "../state/index.ts";
+import type { ScopedTaskAgent, ScopedTaskAgentRun, ScopedTaskRow } from "../state/index.ts";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
 import type { AppModelOption } from "../../../../apps/web/src/modelSelection.ts";
 import { ProviderModelPicker } from "../../../../apps/web/src/components/chat/ProviderModelPicker.tsx";
@@ -90,7 +90,7 @@ export interface AgentsViewProps {
   /** Every project, for the project icon of agents whose project has no default model. */
   readonly allProjects?: readonly TasksWebProject[];
   readonly agents: readonly ScopedTaskAgent[];
-  readonly tasks: readonly ScopedTask[];
+  readonly tasks: readonly ScopedTaskRow[];
   readonly runs: readonly ScopedTaskAgentRun[];
   readonly status: "loading" | "ready" | "error" | "offline";
   readonly initialSelectedAgentKey?: string;
@@ -448,7 +448,7 @@ export function AgentsView(props: AgentsViewProps) {
   );
   const agentRuns = editingAgent ? detailRuns : [];
   const agentTasks = useMemo(() => {
-    const result = new Map<string, { task: ScopedTask | null; runs: ScopedTaskAgentRun[] }>();
+    const result = new Map<string, { task: ScopedTaskRow | null; runs: ScopedTaskAgentRun[] }>();
     for (const run of agentRuns) {
       const key = `${run.environmentId}:${run.taskId}`;
       const existing = result.get(key);
