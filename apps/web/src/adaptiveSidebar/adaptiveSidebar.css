@@ -229,9 +229,12 @@
   display: none;
 }
 
-/* The footer stacks its buttons; its notices need the full width. */
+/*
+ * The footer stacks its buttons in reverse, so Settings ends the column at the bottom and the
+ * bell starts it; its notices need the full width.
+ */
 [data-sidebar-compact="true"] [data-app-sidebar] [data-sidebar="footer"] [data-sidebar="menu"] {
-  flex-direction: column;
+  flex-direction: column-reverse;
   align-items: center;
 }
 [data-sidebar-compact="true"]

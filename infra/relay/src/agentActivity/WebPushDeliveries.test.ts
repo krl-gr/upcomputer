@@ -138,6 +138,7 @@ function harness(configuration: RelayConfiguration.RelayConfiguration["Service"]
       listForUser: () => Effect.succeed([]),
       findActiveManagedForEnvironment: () => Effect.succeed([]),
       setHoldWebhooksWhileOffline: () => Effect.void,
+      updateLiveActivityPreference: () => Effect.die("unexpected Live Activity preference update"),
       revokeForUser: () => Effect.succeed(false),
       getForUser: (input) =>
         Effect.sync(() =>

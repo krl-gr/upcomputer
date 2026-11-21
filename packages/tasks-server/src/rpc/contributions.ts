@@ -27,7 +27,11 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 
 import { defineNamespacedRpcContribution } from "../../../../apps/server/src/extensionApi.ts";
-import { releasedRunId, TaskAgentService } from "../agents/TaskAgentService.ts";
+import {
+  nextAgentArchivedAt,
+  releasedRunId,
+  TaskAgentService,
+} from "../agents/TaskAgentService.ts";
 import { makeFirstUseRecorder } from "../telemetry/firstUse.ts";
 import {
   armAutomationSchedule,
@@ -433,6 +437,11 @@ const TASK_AGENTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                 config: input.config,
                 createdAt: Option.isSome(existing) ? existing.value.createdAt : timestamp,
                 updatedAt: timestamp,
+                archivedAt: nextAgentArchivedAt(
+                  Option.isSome(existing) ? existing.value.archivedAt : null,
+                  input.archived,
+                  timestamp,
+                ),
               });
               yield* taskAgents.scheduleAgentChanged({ agent, reason: "upserted" });
               if (Option.isSome(existing) && existing.value.name !== agent.name)

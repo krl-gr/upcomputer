@@ -51,6 +51,7 @@ import {
 } from "./DetailSidebar.tsx";
 import { toastAudienceMoved } from "../planner/ui/audienceMoved.ts";
 import { WorkspaceViewLayout } from "./WorkspaceViewLayout.tsx";
+import { FLOATING_ACTIONS_CLEARANCE_CLASS } from "./FloatingActions.tsx";
 import { SHOW_MANUAL_CREATE_ACTIONS } from "./manualCreation.ts";
 import {
   orderedProjectFilterKeys,
@@ -67,7 +68,7 @@ import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { AgentTaskCard } from "./AgentTaskCard.tsx";
 import { TaskFilterRow, TaskFiltersButton } from "./TaskFilters.tsx";
 import {
-  TaskGroupMore,
+  TaskGroupShowMore,
   TaskStatusCardGroup,
   TaskStatusGroupsProvider,
   TaskStatusTableGroup,
@@ -75,8 +76,10 @@ import {
 import {
   mergedGroupOrder,
   sameStatusGroup,
+  statusGroupKey,
   taskStatusGroups,
   tasksOfGroup,
+  type TaskStatusGroup,
 } from "./taskStatusGroups.ts";
 import type { TasksViewGrouping } from "./useTaskList.ts";
 import { taskListLayout, type TaskListLayout } from "./taskListLayout.ts";
@@ -103,6 +106,11 @@ import { useTaskArrivals } from "./taskArrivals.ts";
 import "./taskArrival.css";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import { useComputerName } from "../../../../apps/web/src/sidebarComputers/useSidebarComputers.ts";
+
+/** Rows a status group shows at first, and how many more each "Show more" adds. */
+const GROUP_FIRST_ROWS = 20;
+const GROUP_MORE_ROWS = 50;
+const LIST_ONLY: ReadonlySet<string> = new Set([""]);
 
 /** The canonical statuses in workflow order, with Restore's status next to To Do. */
 const STATUS_ORDER = TASK_STATUSES.flatMap((status) =>
@@ -195,6 +203,8 @@ export interface TasksViewProps {
   readonly onOpenInPlanner?: (environmentId: EnvironmentId, taskId: string) => void;
   /** `panel` fits a right-panel surface: cards, filters behind a button, stacked details. */
   readonly layout?: "page" | "panel";
+  /** The panel's Worker tasks entry: no list header, the filter and + float over the list. */
+  readonly floatingControls?: boolean;
   /** The thread beside a right-panel surface, whose panel opens the output's file links. */
   readonly filePanelRef?: ScopedThreadRef;
 }
@@ -452,10 +462,24 @@ export function TasksView(props: TasksViewProps) {
       }),
     [filteredTasks, grouped, grouping, props.statuses, statusFilter],
   );
-  const groupsLoading = [...(grouping?.paging.values() ?? [])].some((paging) => paging.loading);
+  // Open groups whose rows are loaded: only a task that shows up in one of these is new.
+  const readyGroups = useMemo(
+    () =>
+      grouped
+        ? new Set(
+            groups
+              .filter((group) => group.open && grouping?.paging.get(group.key)?.loading !== true)
+              .map((group) => group.key),
+          )
+        : LIST_ONLY,
+    [grouped, grouping?.paging, groups],
+  );
   // The loaded rows, not the optimistic copy, which trails a page by a render.
-  const { arrivals, settle: settleArrival } = useTaskArrivals(
-    props.tasks.map(taskKey),
+  const { arrivals, settle: settleArrivals } = useTaskArrivals(
+    props.tasks.map((task) => ({
+      key: taskKey(task),
+      group: grouped ? statusGroupKey(task.status) : "",
+    })),
     // A computer going offline or coming back resets the baseline, so its rows don't replay as new.
     JSON.stringify([
       projectFilter?.key ?? null,
@@ -464,8 +488,8 @@ export function TasksView(props: TasksViewProps) {
       grouped,
     ]),
     props.status === "ready",
-    // A group's first page, as it opens, brings old tasks too.
-    props.loadingMore || groupsLoading,
+    props.loadingMore,
+    readyGroups,
   );
   const triggerTags = useMemo(() => agentTriggerTags(props.agents), [props.agents]);
   const tagOptions = useMemo(
@@ -481,13 +505,20 @@ export function TasksView(props: TasksViewProps) {
   const showStatusColumn = !grouped;
   const environmentCount = new Set(props.tasks.map(({ environmentId }) => environmentId)).size;
 
+  const [groupRowLimits, setGroupRowLimits] = useState<Readonly<Record<string, number>>>({});
+
   const persistVisibleMove = useCallback(
     async (task: ScopedTaskListItem, directionOrTarget: "up" | "down" | ScopedTaskListItem) => {
       if (reorderInFlightRef.current || !props.canMutateEnvironment(task.environmentId)) return;
       const result = planVisibleTaskMove({
         tasks: optimisticTasks,
-        // In a grouped list a task moves among its own group's tasks only.
-        visibleTasks: grouped ? tasksOfGroup(filteredTasks, task.status) : filteredTasks,
+        // In a grouped list a task moves among its own group's shown tasks only.
+        visibleTasks: grouped
+          ? tasksOfGroup(filteredTasks, task.status).slice(
+              0,
+              groupRowLimits[statusGroupKey(task.status)] ?? GROUP_FIRST_ROWS,
+            )
+          : filteredTasks,
         task,
         directionOrTarget,
       });
@@ -525,7 +556,7 @@ export function TasksView(props: TasksViewProps) {
         reorderInFlightRef.current = false;
       }
     },
-    [filteredTasks, gt, grouped, optimisticTasks, props],
+    [filteredTasks, gt, grouped, groupRowLimits, optimisticTasks, props],
   );
 
   const dropOn = (task: ScopedTaskListItem) => {
@@ -933,7 +964,7 @@ export function TasksView(props: TasksViewProps) {
       className="grid"
       data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
       onAnimationEnd={(event) => {
-        if (event.animationName === "task-arrival-tint") settleArrival(taskKey(task));
+        if (event.animationName === "task-arrival-tint") settleArrivals([taskKey(task)]);
       }}
     >
       <div className="min-h-0 overflow-hidden">
@@ -986,7 +1017,7 @@ export function TasksView(props: TasksViewProps) {
         key={taskKey(task)}
         data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
         onAnimationEnd={(event) => {
-          if (event.animationName === "task-arrival-tint") settleArrival(taskKey(task));
+          if (event.animationName === "task-arrival-tint") settleArrivals([taskKey(task)]);
         }}
         className={`cursor-pointer border-b border-border transition-colors hover:bg-muted/20 ${
           draggedTaskKey === taskKey(task) ? "opacity-50" : ""
@@ -1057,19 +1088,29 @@ export function TasksView(props: TasksViewProps) {
           grouping.onSettingsChange({ groupByStatus }),
       }
     : {};
-  const setGroupOpen = (key: string, open: boolean) =>
-    grouping?.onSettingsChange({ statusGroupOpen: { [key]: open } });
-  // The end of an open group with more on the server: its next page loads when this scrolls into view.
-  const groupMore = (key: string, loaded: number, row: boolean) => {
-    const paging = grouping?.paging.get(key);
-    if (!grouping || !paging?.hasMore) return null;
+  // A highlight cut short by closing its group does not play again when the group opens.
+  const setGroupOpen = (group: TaskStatusGroup<ScopedTaskListItem>, open: boolean) => {
+    settleArrivals(group.tasks.map(taskKey));
+    grouping?.onSettingsChange({ statusGroupOpen: { [group.key]: open } });
+  };
+  const groupRows = (group: TaskStatusGroup<ScopedTaskListItem>) =>
+    group.tasks.slice(0, groupRowLimits[group.key] ?? GROUP_FIRST_ROWS);
+  // The group's next rows, loading the server's next page when the loaded rows run out.
+  const groupShowMore = (group: TaskStatusGroup<ScopedTaskListItem>, row: boolean) => {
+    const limit = groupRowLimits[group.key] ?? GROUP_FIRST_ROWS;
+    const paging = grouping?.paging.get(group.key);
+    const hidden = Math.max(group.count, group.tasks.length) - limit;
+    if (!grouping || hidden <= 0 || (group.tasks.length <= limit && !paging?.hasMore)) return null;
     return (
-      <TaskGroupMore
-        // A new observer per page, so a short page that leaves the end in view loads the next one.
-        key={`more:${loaded}`}
+      <TaskGroupShowMore
         row={row}
         columnCount={showProjectColumn ? 5 : 4}
-        onVisible={() => grouping.onLoadGroup(key)}
+        hidden={hidden}
+        onShowMore={() => {
+          const next = limit + GROUP_MORE_ROWS;
+          setGroupRowLimits((limits) => ({ ...limits, [group.key]: next }));
+          if (group.tasks.length < next && paging?.hasMore) grouping.onLoadGroup(group.key);
+        }}
       />
     );
   };
@@ -1084,6 +1125,7 @@ export function TasksView(props: TasksViewProps) {
   return (
     <WorkspaceViewLayout
       variant={props.layout}
+      floatingControls={props.floatingControls === true}
       {...(selectedTask
         ? {}
         : createModeOpen
@@ -1159,7 +1201,7 @@ export function TasksView(props: TasksViewProps) {
           <>
             {cards ? (
               // A margin, not a spacer, pushes it right: a spacer adds a gap the phone header lacks.
-              <div className="ms-auto shrink-0">
+              <div className="ms-auto flex shrink-0">
                 <TaskFiltersButton
                   filters={filters}
                   onFiltersChange={onFiltersChange}
@@ -1760,7 +1802,13 @@ export function TasksView(props: TasksViewProps) {
                 : `flex w-full min-w-0 flex-col ${panel ? "gap-3 py-3" : "gap-5 py-6"}`
             }
           >
-            <div className={cards ? `flex min-h-full flex-col ${LIST_CLASS}` : "contents"}>
+            <div
+              className={
+                cards
+                  ? `flex min-h-full flex-col ${LIST_CLASS} ${props.floatingControls ? FLOATING_ACTIONS_CLEARANCE_CLASS : ""}`
+                  : "contents"
+              }
+            >
               <div
                 className={
                   cards
@@ -1839,10 +1887,10 @@ export function TasksView(props: TasksViewProps) {
                         <TaskStatusCardGroup
                           key={group.key}
                           group={group}
-                          onOpenChange={(open) => setGroupOpen(group.key, open)}
+                          onOpenChange={(open) => setGroupOpen(group, open)}
                         >
-                          {group.tasks.map(renderCard)}
-                          {groupMore(group.key, group.tasks.length, false)}
+                          {groupRows(group).map(renderCard)}
+                          {groupShowMore(group, false)}
                         </TaskStatusCardGroup>
                       ))}
                     </div>
@@ -1856,10 +1904,10 @@ export function TasksView(props: TasksViewProps) {
                             key={group.key}
                             group={group}
                             columnCount={showProjectColumn ? 5 : 4}
-                            onOpenChange={(open) => setGroupOpen(group.key, open)}
+                            onOpenChange={(open) => setGroupOpen(group, open)}
                           >
-                            {group.tasks.map(renderRow)}
-                            {groupMore(group.key, group.tasks.length, true)}
+                            {groupRows(group).map(renderRow)}
+                            {groupShowMore(group, true)}
                           </TaskStatusTableGroup>
                         ))}
                       </table>

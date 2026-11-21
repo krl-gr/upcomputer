@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 
 import type { ViewProjectFilter } from "./projectFilter.ts";
-import { usePagesProjectKey } from "./pageFilters.ts";
+import { type TaskFiltersScope, usePagesProjectKey } from "./pageFilters.ts";
 import { useSidebarProjectSnapshots } from "./useWorkspaceData.ts";
 
 /**
@@ -11,8 +11,8 @@ import { useSidebarProjectSnapshots } from "./useWorkspaceData.ts";
  * or its member projects change (the snapshots are recomputed whenever any
  * project changes, which would otherwise restart queries).
  */
-export function usePagesProjectFilter() {
-  const [projectKey, setProjectKey] = usePagesProjectKey();
+export function usePagesProjectFilter(scope?: TaskFiltersScope) {
+  const [projectKey, setProjectKey] = usePagesProjectKey(scope);
   const projectGroups = useSidebarProjectSnapshots();
   const snapshot =
     projectKey === null ? undefined : projectGroups.find((item) => item.projectKey === projectKey);

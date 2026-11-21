@@ -1,4 +1,14 @@
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import type {
+  AssistantCitation,
+  EnvironmentId,
+  ScopedThreadRef,
+  ThreadId,
+} from "@t3tools/contracts";
+import {
+  collectAssistantCitations,
+  serializeAssistantCitation,
+  withAssistantCitationComment,
+} from "@t3tools/shared/assistantCitations";
 
 /** Where a quote from a task's output goes. */
 export type TaskQuoteTarget =
@@ -28,13 +38,10 @@ export function taskQuoteTarget(input: {
   return { kind: "new-chat" };
 }
 
-export function taskQuoteDestinationLabel(target: TaskQuoteTarget): string {
-  switch (target.kind) {
-    case "beside":
-      return "Cite in chat";
-    case "root":
-      return `Cite in "${target.title}"`;
-    case "new-chat":
-      return "Cite in a new chat";
-  }
+/** Whether `prompt` already quotes the passage `citation` quotes, whatever its comment says. */
+export function promptQuotesPassage(prompt: string, citation: AssistantCitation): boolean {
+  const passage = (quoted: AssistantCitation) =>
+    serializeAssistantCitation(withAssistantCitationComment(quoted, ""));
+  const wanted = passage(citation);
+  return collectAssistantCitations(prompt).some((match) => passage(match.citation) === wanted);
 }

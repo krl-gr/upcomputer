@@ -10,6 +10,9 @@ the top:
 - **Workers** is a table of the tasks for workers, and their automations.
 
 The **Tasks** panel on the right of a chat (shortcut `K`) shows the same tasks next to your work.
+The panel menu also opens one view at a time, without the switches: **My tasks** (`Y`), **Worker
+tasks** (`W`), **Automations** (`A`) and **My routines** (`R`). Worker tasks keeps its own
+filters. Turn any of these five entries off in **Settings > Appearance > Tasks in the panel menu**.
 
 ## Create a task
 

@@ -1,6 +1,6 @@
-import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, OrchestrationV2NotificationSource } from "@t3tools/contracts";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
+import { useOpenTask } from "@t3tools/tasks-web/openTask";
 import { useGT } from "gt-react";
 import { ChevronRightIcon, CircleCheckIcon } from "lucide-react";
 
@@ -10,7 +10,7 @@ type TaskRunsSource = Extract<OrchestrationV2NotificationSource, { kind: "task_a
 
 /**
  * The card a chat shows when its tasks finished without needing its agent: each task with
- * its status then, opening it on the Tasks page.
+ * its status then, opening it in the chat's Tasks panel.
  */
 export function TaskRunsNotificationCard(props: {
   readonly environmentId: EnvironmentId;
@@ -19,7 +19,7 @@ export function TaskRunsNotificationCard(props: {
   readonly timestampFormat: TimestampFormat;
 }) {
   const gt = useGT();
-  const navigate = useNavigate();
+  const openTask = useOpenTask();
   const count = props.tasks.length;
   return (
     <div
@@ -41,12 +41,7 @@ export function TaskRunsNotificationCard(props: {
             <button
               type="button"
               aria-label={gt("Open task {title}", { title: task.title })}
-              onClick={() =>
-                void navigate({
-                  to: "/tasks",
-                  search: { task: `${props.environmentId}:${task.id}` },
-                } as never)
-              }
+              onClick={() => openTask.open(props.environmentId, task.id)}
               className="group/task flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm py-1 ps-6 pe-0.5 text-left transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
             >
               <span className="min-w-0 flex-1 truncate text-2xs text-foreground">{task.title}</span>

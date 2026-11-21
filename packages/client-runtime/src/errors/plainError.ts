@@ -1,4 +1,6 @@
 import * as Cause from "effect/Cause";
+import { mFallback, msg } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 
 import { isTransportConnectionErrorMessage } from "./transport.ts";
 
@@ -127,7 +129,11 @@ function capitalize(text: string): string {
  * One sentence for a failed action: the reason when it is known, then what to
  * do. `action` reads after "Up.computer couldn't", e.g. "rename this thread".
  */
-export function plainErrorSentence(error: unknown, action?: string): string {
+export function plainErrorSentence(
+  error: unknown,
+  action?: string,
+  resolve: MFunctionType = mFallback,
+): string {
   const { reason, kind } = describeError(error);
   const lead =
     action === undefined
@@ -137,12 +143,23 @@ export function plainErrorSentence(error: unknown, action?: string): string {
       : `Up.computer couldn't ${action}${reason === undefined ? "" : `: ${reason}`}`;
   switch (kind) {
     case "disconnected":
-      return `${lead}. Reconnect, then try again.`;
+      return resolve(msg("{lead}. Reconnect, then try again.", { lead }));
     case "permission":
-      return `${lead}. Pair this device again with full access in Settings, Connections.`;
+      return resolve(
+        msg("{lead}. Pair this device again with full access in Settings, Connections.", { lead }),
+      );
     case "developer-tools":
-      return `${lead}. Install them by running xcode-select --install in Terminal, then try again.`;
+      return resolve(
+        msg("{lead}. Install them by running {command} in Terminal, then try again.", {
+          lead,
+          command: "xcode-select --install",
+        }),
+      );
     default:
-      return `${lead}. Try again, and if it keeps failing, check that your computer is connected.`;
+      return resolve(
+        msg("{lead}. Try again, and if it keeps failing, check that your computer is connected.", {
+          lead,
+        }),
+      );
   }
 }

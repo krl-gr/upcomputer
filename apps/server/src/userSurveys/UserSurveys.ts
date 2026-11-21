@@ -1,9 +1,12 @@
 import {
+  type UserFeedback,
+  UserFeedbackError,
   type UserSurveyAnswer,
   type UserSurveyReport,
   UserSurveyError,
   type UserSurveyState,
 } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import type { UpcomputerBuildKind } from "@t3tools/shared/upcomputerIdentity";
 import * as Clock from "effect/Clock";
@@ -60,6 +63,8 @@ export class UserSurveys extends Context.Service<
     /** The survey to offer now, if this computer qualifies. */
     readonly current: Effect.Effect<UserSurveyState>;
     readonly report: (report: UserSurveyReport) => Effect.Effect<void, UserSurveyError>;
+    /** Feedback from the notifications popover, sent at once like a survey answer. */
+    readonly sendFeedback: (feedback: UserFeedback) => Effect.Effect<void, UserFeedbackError>;
   }
 >()("t3/userSurveys/UserSurveys") {}
 
@@ -71,9 +76,11 @@ const make = Effect.fn("UserSurveys.make")(function* (buildKind: UpcomputerBuild
   const { stateDir } = yield* ServerConfig.ServerConfig;
   const sqlContext = yield* Effect.context<SqlClient.SqlClient>();
   // An administrator who turned analytics off for the organization gets no surveys either.
-  const available =
-    ManagedPolicy.deniedBy(yield* ManagedPolicy.ManagedPolicy, "telemetry") === undefined &&
-    surveyBuildAllowed(buildKind ?? (yield* AnalyticsService.serverBuildKind));
+  const policyAllows =
+    ManagedPolicy.deniedBy(yield* ManagedPolicy.ManagedPolicy, "telemetry") === undefined;
+  const buildAllowed = surveyBuildAllowed(buildKind ?? (yield* AnalyticsService.serverBuildKind));
+  const available = policyAllows && buildAllowed;
+  const kernelRelease = yield* HostProcess.KernelRelease;
   const survey = FEEDBACK_SURVEY;
   const handledPath = path.join(stateDir, HANDLED_FILE);
   const writeContext = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
@@ -218,7 +225,37 @@ const make = Effect.fn("UserSurveys.make")(function* (buildKind: UpcomputerBuild
     },
   );
 
-  return UserSurveys.of({ current, report });
+  // Like an answer sent with Send, it goes out with analytics off too. Without system info
+  // it goes anonymously, so it carries none of the app details identified events add.
+  const sendFeedback: UserSurveys["Service"]["sendFeedback"] = Effect.fn(
+    "UserSurveys.sendFeedback",
+  )(function* (feedback) {
+    if (!policyAllows) return yield* new UserFeedbackError({ reason: "unavailable" });
+    if (!buildAllowed) {
+      yield* Effect.logInfo("Feedback is not sent from development builds");
+      return;
+    }
+    const { systemInfo } = feedback;
+    const sent = yield* analytics.sendNow(
+      "feedback sent",
+      {
+        feedback: feedback.text,
+        ...(feedback.email === undefined ? {} : { email: feedback.email }),
+        ...(systemInfo === undefined
+          ? {}
+          : {
+              appVersion: systemInfo.appVersion,
+              system: systemInfo.system,
+              kernelRelease,
+              providers: systemInfo.providers,
+            }),
+      },
+      { anonymous: systemInfo === undefined },
+    );
+    if (!sent) return yield* new UserFeedbackError({ reason: "send-failed" });
+  });
+
+  return UserSurveys.of({ current, report, sendFeedback });
 });
 
 export const layer = Layer.effect(UserSurveys, make(undefined));

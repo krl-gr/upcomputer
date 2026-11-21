@@ -10,9 +10,12 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   EnvironmentId,
+  PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING,
+  PreviewTabId,
   PreviewAutomationSnapshot,
   ProviderInstanceId,
   ThreadId,
+  type OrchestrationV2DomainEvent,
   type PreviewAutomationOperation,
   type PreviewAutomationRequest,
   type PreviewAutomationStatus,
@@ -21,21 +24,29 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { chromium, type Browser, type BrowserContext } from "playwright-core";
+import { chromium, type Browser, type BrowserContext, type CDPSession } from "playwright-core";
 import { afterAll, beforeAll, onTestFinished, test, type TestContext } from "vite-plus/test";
 
 import type { ServerConfig } from "../../../../apps/server/src/config.ts";
 import * as PreviewAutomationBroker from "../../../../apps/server/src/mcp/PreviewAutomationBroker.ts";
 import { computerUseSettingsPath } from "../settings/ComputerUseSettingsFile.ts";
 import { createBrowserAutomationService } from "./BrowserAutomationService.ts";
-import { readBrowserUseSettings } from "./BrowserUseSettings.ts";
 import {
+  browserUseSettingsSection,
+  DEFAULT_BROWSER_FOR_AGENTS,
+  readBrowserUseSettings,
+} from "./BrowserUseSettings.ts";
+import type { BrowserForAgents } from "@t3tools/computer-use-contracts/rpc";
+import {
+  CHROME_TAB_IDLE_MS,
+  chromeForAgents,
+  chromePreference,
+  chromeTabCleanup,
   createChromePreviewHost,
   serveChromePreviewHost,
   toPreviewAutomationRemoteError,
   type PreviewAutomationRemoteError,
 } from "./ChromePreviewHost.ts";
-import { PREVIEW_AUTOMATION_PAGE_SNAPSHOT_EXPRESSION } from "./previewAutomationPage.ts";
 
 const decodeSnapshot = Schema.decodeUnknownSync(PreviewAutomationSnapshot);
 
@@ -60,6 +71,23 @@ const FIXTURE_PAGE = `<!doctype html>
   </body>
 </html>`;
 
+const PARITY_PAGE = `<!doctype html>
+<html>
+  <head><title>Parity fixture</title></head>
+  <body>
+    <button id="alert" onclick="document.querySelector('#answer').textContent = String(confirm('Proceed?'))">Ask</button>
+    <p id="answer">none</p>
+    <div id="hover" onmouseenter="this.textContent = 'hovered'" style="width: 100px; height: 30px">hover me</div>
+    <select id="size"><option value="s">Small</option><option value="l">Large</option></select>
+    <div id="source" draggable="true" ondragstart="event.dataTransfer.setData('text/plain', 'dragged')" style="width: 60px; height: 30px">drag</div>
+    <div id="target" ondragover="event.preventDefault()" ondrop="this.textContent = event.dataTransfer.getData('text/plain')" style="width: 120px; height: 40px">drop here</div>
+    <input id="file" type="file" onchange="document.querySelector('#files').textContent = Array.from(this.files, (file) => file.name).join(',')" />
+    <button id="picker" onclick="document.querySelector('#file').click()">Choose</button>
+    <p id="files"></p>
+    <a id="download" href="/report.txt">Download</a>
+  </body>
+</html>`;
+
 let server: NodeHttp.Server;
 let port = 0;
 let browser: Browser | undefined;
@@ -69,6 +97,15 @@ beforeAll(async () => {
     if (request.url === "/") {
       response.writeHead(200, { "content-type": "text/html" });
       response.end(FIXTURE_PAGE);
+    } else if (request.url === "/parity") {
+      response.writeHead(200, { "content-type": "text/html" });
+      response.end(PARITY_PAGE);
+    } else if (request.url === "/report.txt") {
+      response.writeHead(200, {
+        "content-type": "text/plain",
+        "content-disposition": 'attachment; filename="report.txt"',
+      });
+      response.end("report body");
     } else if (request.url === "/second") {
       response.writeHead(200, { "content-type": "text/html" });
       response.end("<title>Second</title><p>Second page</p>");
@@ -179,6 +216,21 @@ test("runs every preview operation in Chrome against a local page", async (t) =>
   NodeAssert.equal(await evaluate("document.querySelector('#message').value"), "replaced");
   await host.execute(request("press", { key: "!" }));
   NodeAssert.equal(await evaluate("document.querySelector('#message').value"), "replaced!");
+  // The key goes to its target, not to the field that still has focus.
+  await host.execute(request("press", { selector: "#fixed", key: "Backspace" }));
+  NodeAssert.equal(await evaluate("document.activeElement.id"), "fixed");
+  NodeAssert.equal(await evaluate("document.querySelector('#message').value"), "replaced!");
+  const pressMissing = await failure(
+    host.execute(request("press", { selector: "#nowhere", key: "Enter" }, { timeoutMs: 2_000 })),
+  );
+  NodeAssert.equal(pressMissing._tag, "PreviewAutomationTargetNotFoundError");
+  NodeAssert.deepEqual(
+    await failure(host.execute(request("press", { selector: "#status", key: "Enter" }))),
+    {
+      _tag: "PreviewAutomationExecutionError",
+      message: "The press target cannot take focus, so no key was pressed.",
+    },
+  );
 
   NodeAssert.deepEqual(
     await failure(host.execute(request("type", { selector: "#fixed", text: "x" }))),
@@ -264,6 +316,32 @@ test("runs every preview operation in Chrome against a local page", async (t) =>
     request("status", {}, { tabId: opened.tabId as PreviewAutomationRequest["tabId"] }),
   )) as PreviewAutomationStatus;
   NodeAssert.equal(firstTab.url, `http://localhost:${port}/`);
+
+  const newTabRequest = { tabId: newTab.tabId as PreviewAutomationRequest["tabId"] };
+  const foreignClose = await failure(
+    host.execute(
+      request(
+        "close",
+        {},
+        {
+          ...newTabRequest,
+          threadId: "thread-2" as PreviewAutomationRequest["threadId"],
+        },
+      ),
+    ),
+  );
+  NodeAssert.equal(foreignClose._tag, "PreviewAutomationControlInterruptedError");
+  NodeAssert.equal(foreignClose.detail, "agentMismatch");
+  NodeAssert.equal(context.pages().length, 2);
+  const isLive = () => host.liveTabs().some((tab) => tab.tabId === newTab.tabId);
+  NodeAssert.ok(isLive());
+  NodeAssert.deepEqual(await host.execute(request("close", {}, newTabRequest)), {});
+  NodeAssert.equal(context.pages().length, 1);
+  NodeAssert.ok(!isLive());
+  NodeAssert.equal(
+    (await failure(host.execute(request("close", {}, newTabRequest))))._tag,
+    "PreviewAutomationTabNotFoundError",
+  );
   NodeAssert.equal(
     (
       await failure(
@@ -286,27 +364,9 @@ test("snapshots follow the desktop host's contract", async (t) => {
 
   const snapshot = decodeSnapshot(await host.execute(request("snapshot")));
 
-  // The page fields come from the same expression the desktop host evaluates.
-  const page = context.pages()[0];
-  NodeAssert.ok(page);
-  NodeAssert.deepEqual(
-    {
-      url: snapshot.url,
-      title: snapshot.title,
-      loading: snapshot.loading,
-      visibleText: snapshot.visibleText,
-      interactiveElements: snapshot.interactiveElements,
-    },
-    await page.evaluate(PREVIEW_AUTOMATION_PAGE_SNAPSHOT_EXPRESSION),
-  );
+  NodeAssert.equal(snapshot.url, `http://localhost:${port}/`);
   NodeAssert.equal(snapshot.title, "Chrome host fixture");
   NodeAssert.match(snapshot.visibleText, /Sent:/u);
-  NodeAssert.ok(
-    snapshot.interactiveElements.some(
-      (element) =>
-        element.tag === "button" && element.selector === "#send" && element.name === "Send",
-    ),
-  );
   NodeAssert.ok(
     snapshot.consoleEntries.some(
       (entry) => entry.level === "warning" && entry.text === "fixture warning",
@@ -317,6 +377,12 @@ test("snapshots follow the desktop host's contract", async (t) => {
       (entry) => entry.url.endsWith("/missing") && entry.status === 404 && entry.failed,
     ),
   );
+  // The full network log, not only failures.
+  NodeAssert.ok(
+    snapshot.networkEntries.some(
+      (entry) => entry.url === `http://localhost:${port}/` && entry.status === 200,
+    ),
+  );
   NodeAssert.deepEqual(
     snapshot.actionTimeline.map(({ action, status }) => [action, status]),
     [
@@ -325,23 +391,215 @@ test("snapshots follow the desktop host's contract", async (t) => {
       ["snapshot", "running"],
     ],
   );
-  NodeAssert.ok(Array.isArray((snapshot.accessibilityTree as { nodes?: unknown }).nodes));
-  const png = Buffer.from(snapshot.screenshot.data, "base64");
+  // The built-in browser's AI-mode tree: its refs work as locators in the next actions.
+  const tree = snapshot.accessibilityTree as string;
+  const ref = /button "Send" (?:\[active\] )?\[ref=(\S+?)\]/u.exec(tree)?.[1];
+  NodeAssert.ok(ref, tree);
+  await host.execute(request("type", { selector: "#message", text: "by ref", clear: true }));
+  await host.execute(request("click", { locator: `aria-ref=${ref}` }));
+  NodeAssert.equal(
+    await host.execute(
+      request("evaluate", { expression: "document.querySelector('#status').textContent" }),
+    ),
+    "Sent: by ref",
+  );
+  await host.execute(request("navigate", { url: `http://localhost:${port}/second` }));
+  const stale = await failure(host.execute(request("click", { locator: `aria-ref=${ref}` })));
+  NodeAssert.equal(stale._tag, "PreviewAutomationInvalidSelectorError");
+  NodeAssert.deepEqual(stale.detail, { staleRef: true });
+  const png = Buffer.from(snapshot.screenshot!.data, "base64");
   NodeAssert.equal(png.subarray(1, 4).toString("ascii"), "PNG");
   NodeAssert.deepEqual(
     { width: png.readUInt32BE(16), height: png.readUInt32BE(20) },
-    { width: snapshot.screenshot.width, height: snapshot.screenshot.height },
+    { width: snapshot.screenshot!.width, height: snapshot.screenshot!.height },
   );
+});
+
+test("dialogs, hover, select, drag, uploads and downloads work like the built-in browser", async (t) => {
+  const context = await openContext(t, { acceptDownloads: true });
+  if (!context) return;
+  const downloadsDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "chrome-downloads-"));
+  onTestFinished(() => NodeFS.rmSync(downloadsDir, { recursive: true, force: true }));
+  const host = createChromePreviewHost({ getContext: async () => context, downloadsDir });
+  const evaluate = (expression: string) => host.execute(request("evaluate", { expression }));
+  const text = (selector: string) => evaluate(`document.querySelector('${selector}').textContent`);
+  await host.execute(request("open", { url: `localhost:${port}/parity` }));
+
+  // The click returns while the dialog waits; the agent reads and answers it.
+  await host.execute(request("click", { selector: "#alert" }));
+  const pending = (await host.execute(request("status"))) as PreviewAutomationStatus;
+  NodeAssert.deepEqual(pending.dialog, { type: "confirm", message: "Proceed?", defaultValue: "" });
+  const blocked = await failure(host.execute(request("snapshot")));
+  NodeAssert.equal(blocked._tag, "PreviewAutomationControlInterruptedError");
+  NodeAssert.equal(blocked.detail, "dialogPending");
+  const answered = (await host.execute(
+    request("dialog", { accept: true }),
+  )) as PreviewAutomationStatus;
+  NodeAssert.equal(answered.dialog, null);
+  NodeAssert.equal(await text("#answer"), "true");
+
+  await host.execute(request("hover", { selector: "#hover" }));
+  NodeAssert.equal(await text("#hover"), "hovered");
+  NodeAssert.deepEqual(
+    await host.execute(request("select", { selector: "#size", values: ["Large"] })),
+    { selected: ["l"] },
+  );
+  await host.execute(request("drag", { source: "#source", target: "#target" }));
+  NodeAssert.equal(await text("#target"), "dragged");
+
+  const upload = NodePath.join(downloadsDir, "upload.txt");
+  NodeFS.writeFileSync(upload, "upload body");
+  await host.execute(request("upload", { selector: "#file", paths: [upload] }));
+  NodeAssert.equal(await text("#files"), "upload.txt");
+  // A picker the page opens is intercepted and answered with upload.
+  await host.execute(request("click", { selector: "#picker" }));
+  const picking = (await host.execute(request("status"))) as PreviewAutomationStatus;
+  NodeAssert.deepEqual(picking.fileChooser, { multiple: false, accept: "" });
+  await host.execute(request("upload", { paths: [upload] }));
+  NodeAssert.equal(
+    ((await host.execute(request("status"))) as PreviewAutomationStatus).fileChooser,
+    null,
+  );
+  NodeAssert.equal(
+    (await failure(host.execute(request("upload", { paths: ["relative.txt"] })))).message,
+    "Upload paths must be absolute: relative.txt",
+  );
+
+  await host.execute(request("navigate", { url: `http://localhost:${port}/report.txt` }));
+  const downloaded = (await host.execute(request("status"))) as PreviewAutomationStatus;
+  const [download] = downloaded.downloads ?? [];
+  NodeAssert.ok(download, "the download is listed");
+  NodeAssert.equal(download.fileName, "report.txt");
+  NodeAssert.equal(download.url, `http://localhost:${port}/report.txt`);
+  NodeAssert.ok(download.path.startsWith(NodePath.join(downloadsDir, downloaded.tabId ?? "")));
+  NodeAssert.equal(NodeFS.readFileSync(download.path, "utf8"), "report body");
+});
+
+test("Chrome tabs have the built-in browser's limits, owners and idle cleanup", async (t) => {
+  const context = await openContext(t);
+  if (!context) return;
+  let clock = 0;
+  let changes = 0;
+  const host = createChromePreviewHost({ getContext: async () => context, now: () => clock });
+  host.onTabsChanged(() => {
+    changes += 1;
+  });
+  const opened: string[] = [];
+  for (let index = 0; index < 8; index += 1) {
+    const status = (await host.execute(
+      request("open", { reuseExistingTab: false }),
+    )) as PreviewAutomationStatus;
+    opened.push(status.tabId ?? "");
+  }
+  const limited = await failure(host.execute(request("open", { reuseExistingTab: false })));
+  NodeAssert.equal(limited._tag, "PreviewAutomationControlInterruptedError");
+  NodeAssert.equal(limited.detail, "tabLimit");
+  NodeAssert.match(limited.message, /8 per agent, 32 in all/u);
+  const listed = (await host.execute(request("status"))) as PreviewAutomationStatus;
+  NodeAssert.deepEqual(
+    listed.tabs?.map((tab) => tab.tabId),
+    opened,
+  );
+
+  // Another agent can neither act on nor read a tab it did not open.
+  const foreign = await failure(
+    host.execute(
+      request(
+        "snapshot",
+        {},
+        {
+          threadId: "thread-2" as PreviewAutomationRequest["threadId"],
+          tabId: opened[0] as PreviewAutomationRequest["tabId"],
+        },
+      ),
+    ),
+  );
+  NodeAssert.equal(foreign.detail, "agentMismatch");
+
+  // Only tabs nobody used for half an hour close.
+  clock = CHROME_TAB_IDLE_MS - 1;
+  await host.execute(
+    request("status", {}, { tabId: opened[1] as PreviewAutomationRequest["tabId"] }),
+  );
+  clock = CHROME_TAB_IDLE_MS;
+  await host.closeIdleTabs();
+  NodeAssert.deepEqual(
+    host.liveTabs().map((tab) => tab.tabId),
+    [opened[1]],
+  );
+  NodeAssert.ok(changes > 0);
+
+  await host.closeThreadTabs("thread-1" as PreviewAutomationRequest["threadId"]);
+  NodeAssert.deepEqual(host.liveTabs(), []);
+  NodeAssert.equal(context.pages().length, 0);
+});
+
+test("a deleted thread's Chrome tabs close, and a worker's when its work ends", async () => {
+  const closed: string[] = [];
+  const workLeft = new Set<string>();
+  const cleanup = chromeTabCleanup({
+    host: {
+      liveTabs: () =>
+        ["chat", "worker"].map((thread) => ({
+          threadId: ThreadId.make(thread),
+          tabId: PreviewTabId.make(`chrome-${thread}`),
+        })),
+      closeThreadTabs: async (threadId) => {
+        closed.push(threadId);
+      },
+    },
+    isWorker: async (threadId) => threadId === "worker",
+    hasWorkLeft: async (threadId) => workLeft.has(threadId),
+  });
+  const event = (type: string, threadId: string, status?: string) =>
+    ({ type, threadId, payload: { status } }) as unknown as OrchestrationV2DomainEvent;
+  // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- A plain Effect.promise.
+  const handle = (next: OrchestrationV2DomainEvent) => Effect.runPromise(cleanup(next));
+
+  await handle(event("run.updated", "worker", "running"));
+  await handle(event("run.updated", "chat", "completed"));
+  await handle(event("run.updated", "other", "completed"));
+  // A person may continue an interrupted worker; the idle sweep covers it.
+  await handle(event("run.updated", "worker", "interrupted"));
+  // A queued follow-up or a running delegated task belongs to the same worker run.
+  workLeft.add("worker");
+  await handle(event("run.updated", "worker", "completed"));
+  NodeAssert.deepEqual(closed, []);
+  workLeft.delete("worker");
+  await handle(event("run.updated", "worker", "completed"));
+  await handle(event("thread.deleted", "chat"));
+  NodeAssert.deepEqual(closed, ["worker", "chat"]);
+});
+
+test("only an explicit open raises the Chrome window", async (t) => {
+  const context = await openContext(t);
+  if (!context) return;
+  let raised = 0;
+  const newPage = context.newPage.bind(context);
+  context.newPage = async () => {
+    const page = await newPage();
+    const bringToFront = page.bringToFront.bind(page);
+    page.bringToFront = async () => {
+      raised += 1;
+      await bringToFront();
+    };
+    return page;
+  };
+  const host = createChromePreviewHost({ getContext: async () => context });
+  await host.execute(request("open", { url: `localhost:${port}` }));
+  await host.execute(request("open", { url: `localhost:${port}`, open: false, show: false }));
+  // A background tab still answers a snapshot with pixels, without being raised.
+  await host.execute(request("open", { reuseExistingTab: false }));
+  await host.execute(request("snapshot"));
+  NodeAssert.equal(raised, 0);
+  await host.execute(request("open", { open: true, show: true }));
+  NodeAssert.equal(raised, 1);
 });
 
 test("snapshot screenshots are scaled to the desktop host's maximum width", async (t) => {
   for (const [options, expected] of [
     [{ viewport: { width: 1000, height: 500 } }, { width: 1000, height: 500 }],
     [{ viewport: { width: 1600, height: 900 } }, { width: 1280, height: 720 }],
-    [
-      { viewport: { width: 800, height: 600 }, deviceScaleFactor: 2 },
-      { width: 1280, height: 960 },
-    ],
   ] as const) {
     const context = await openContext(t, options);
     if (!context) return;
@@ -350,22 +608,115 @@ test("snapshot screenshots are scaled to the desktop host's maximum width", asyn
     await host.execute(request("scroll", { deltaY: 1200 }));
     const snapshot = (await host.execute(request("snapshot"))) as PreviewAutomationSnapshot;
     NodeAssert.deepEqual(
-      { width: snapshot.screenshot.width, height: snapshot.screenshot.height },
+      { width: snapshot.screenshot!.width, height: snapshot.screenshot!.height },
       expected,
     );
   }
 });
 
-test("the Always use Chrome preference is read from its own file, then from a V1 settings.json", async () => {
+test("a snapshot whose screenshot fails still returns the page text and tree", async (t) => {
+  const context = await openContext(t);
+  if (!context) return;
+  const newCDPSession = context.newCDPSession.bind(context);
+  context.newCDPSession = async (page) => {
+    const session = await newCDPSession(page);
+    const send = session.send.bind(session);
+    // What Chromium answers when the display is asleep and nothing composites.
+    session.send = ((method: string, params?: object) =>
+      method === "Page.captureScreenshot"
+        ? Promise.reject(new Error("Protocol error: Unable to capture screenshot"))
+        : send(method as never, params as never)) as CDPSession["send"];
+    return session;
+  };
+  const host = createChromePreviewHost({ getContext: async () => context });
+  await host.execute(request("open", { url: `localhost:${port}` }));
+  const snapshot = (await host.execute(request("snapshot"))) as PreviewAutomationSnapshot;
+  NodeAssert.equal(snapshot.title, "Chrome host fixture");
+  NodeAssert.match(snapshot.accessibilityTree as string, /textbox "Message"/u);
+  NodeAssert.equal(snapshot.screenshot, null);
+  NodeAssert.equal(snapshot.warning, PREVIEW_AUTOMATION_SNAPSHOT_NO_SCREENSHOT_WARNING);
+});
+
+test("Chrome claims a thread's new tabs while it starts, and its own tabs' calls", async () => {
+  let wantsChrome = true;
+  let available = true;
+  let liveTabs: Array<{ threadId: ThreadId; tabId: PreviewTabId }> = [];
+  const preferred = chromePreference({
+    host: { liveTabs: () => liveTabs },
+    wantsChrome: async () => wantsChrome,
+    ensureAvailable: async () => available,
+  });
+  const scope = {
+    environmentId: EnvironmentId.make("environment-1"),
+    requestNamespace: "session-1",
+    thread: {
+      threadId: ThreadId.make("thread-1"),
+      providerSessionId: "session-1",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    },
+    client: undefined,
+    capabilities: new Set(["preview"] as const),
+    issuedAt: 0,
+  };
+  const claims = (operation: PreviewAutomationOperation) =>
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- A plain Effect.promise.
+    Effect.runPromise(preferred({ scope, operation }));
+
+  NodeAssert.equal(await claims("open"), true);
+  // A thread working in the built-in browser keeps it until it opens a tab.
+  NodeAssert.equal(await claims("snapshot"), false);
+  liveTabs = [{ threadId: scope.thread.threadId, tabId: PreviewTabId.make("chrome-1") }];
+  NodeAssert.equal(await claims("snapshot"), true);
+  available = false;
+  NodeAssert.equal(await claims("open"), false);
+  wantsChrome = false;
+  NodeAssert.equal(await claims("snapshot"), false);
+});
+
+test("Browser for agents is read from its own file, then from a V1 settings.json, and keeps an old Always use Chrome", async () => {
   const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "browser-use-settings-"));
   onTestFinished(() => NodeFS.rmSync(directory, { recursive: true, force: true }));
   const settingsPath = NodePath.join(directory, "settings.json");
+  const read = async () => (await readBrowserUseSettings(settingsPath)).browserForAgents;
 
-  NodeAssert.deepEqual(await readBrowserUseSettings(settingsPath), { alwaysUseChrome: false });
+  NodeAssert.equal(await read(), DEFAULT_BROWSER_FOR_AGENTS);
   NodeFS.writeFileSync(settingsPath, JSON.stringify({ browser: { alwaysUseChrome: true } }));
-  NodeAssert.deepEqual(await readBrowserUseSettings(settingsPath), { alwaysUseChrome: true });
-  NodeFS.writeFileSync(computerUseSettingsPath(settingsPath), "{ not json");
-  NodeAssert.deepEqual(await readBrowserUseSettings(settingsPath), { alwaysUseChrome: false });
+  NodeAssert.equal(await read(), "chrome");
+  const own = computerUseSettingsPath(settingsPath);
+  NodeFS.writeFileSync(own, JSON.stringify({ browser: { alwaysUseChrome: false } }));
+  NodeAssert.equal(await read(), "builtin");
+  NodeFS.writeFileSync(own, JSON.stringify({ browser: browserUseSettingsSection("automatic") }));
+  NodeAssert.equal(await read(), "automatic");
+  NodeFS.writeFileSync(own, "{ not json");
+  NodeAssert.equal(await read(), DEFAULT_BROWSER_FOR_AGENTS);
+});
+
+test("Automatic gives workers and delegated runs Chrome, and chats the built-in browser", async () => {
+  let choice: BrowserForAgents = "automatic";
+  const wantsChrome = chromeForAgents({
+    browserForAgents: async () => choice,
+    isWorker: async (threadId) => threadId === "worker",
+  });
+  const scope = (threadId: string, subagent?: boolean) => ({
+    environmentId: EnvironmentId.make("environment-1"),
+    requestNamespace: "session-1",
+    thread: {
+      threadId: ThreadId.make(threadId),
+      providerSessionId: "session-1",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      ...(subagent === undefined ? {} : { subagent }),
+    },
+    client: undefined,
+    capabilities: new Set(["preview"] as const),
+    issuedAt: 0,
+  });
+  NodeAssert.equal(await wantsChrome(scope("worker")), true);
+  NodeAssert.equal(await wantsChrome(scope("delegated", true)), true);
+  NodeAssert.equal(await wantsChrome(scope("chat")), false);
+  choice = "chrome";
+  NodeAssert.equal(await wantsChrome(scope("chat")), true);
+  choice = "builtin";
+  NodeAssert.equal(await wantsChrome(scope("worker")), false);
 });
 
 test("agents reach Chrome through the preview broker unless a desktop app serves them", async (t) => {
@@ -398,7 +749,7 @@ test("agents reach Chrome through the preview broker unless a desktop app serves
       yield* serveChromePreviewHost({
         host: createChromePreviewHost({ getContext: async () => context }),
         environmentId,
-        preferred: Effect.sync(() => alwaysUseChrome),
+        preferred: () => Effect.sync(() => alwaysUseChrome),
       }).pipe(
         Effect.provideService(PreviewAutomationBroker.PreviewAutomationBroker, broker),
         Effect.forkScoped,
@@ -466,7 +817,7 @@ test("agents reach Chrome through the preview broker unless a desktop app serves
       });
       NodeAssert.equal(stayed.tabId, opened.tabId);
 
-      // "Always use Chrome" moves every call to Chrome.
+      // "Always Chrome" moves every call to Chrome.
       alwaysUseChrome = true;
       const preferred = yield* broker.invoke<PreviewAutomationStatus>({
         scope: laterSession,

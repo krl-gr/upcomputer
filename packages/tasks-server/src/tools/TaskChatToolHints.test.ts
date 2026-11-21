@@ -71,6 +71,7 @@ it.layer(TestLayer)("Task tool hints", (it) => {
         config: { role: "developer", modelSelection, instructions: "Work." },
         createdAt: timestamp,
         updatedAt: timestamp,
+        archivedAt: null,
       });
       const runThread = ThreadId.make("thread-run");
       yield* repository.createAgentRun({

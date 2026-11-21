@@ -71,6 +71,18 @@ const dateTime = {
   description: "ISO 8601 date-time with offset, e.g. 2026-10-02T09:00:00Z. null clears it.",
 } as const;
 
+const verboseTask = {
+  type: "boolean",
+  description: "true: reply with the whole task, as task_get returns it.",
+} as const;
+const verboseAgent = {
+  type: "boolean",
+  description: "true: reply with the whole agent, instructions included, as agent_get returns it.",
+} as const;
+/** What the short reply of task_update and task_create holds, for their descriptions. */
+const SHORT_TASK_REPLY =
+  "the task's id, title, status, audience, kind, tags, notBefore and updatedAt, and for description and output only their length (and output's first line)";
+
 /** One task of task_create; required unless the call passes a tasks list. */
 const taskCreateFields = {
   id,
@@ -215,11 +227,12 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     type: "function",
     mutation: "write",
     name: "task_create",
-    description: `Create one task, or several in one call, in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay. Every task needs an audience: person when the user asks for a task for themselves (it goes to their planner; without a resolved project, to the Inbox project), agent when an agent should do it (the agents' table). To create more than one task, pass them all as tasks (up to ${TASK_CREATE_BATCH_LIMIT}) in one call, in the order they should run, each with its own fields; projectId and workspaceRoot stay at the top level. A list is created all or nothing, and an invalid item is named by its index. New tasks go to the top of the global order and agents' queues run from the bottom, so a list runs in the order given: its first task ends up lowest. One task returns the task; a list returns each task's id, rank, title, status, audience, tags and notBefore. Both say where the tasks show (shownIn): check it matches what the user asked for.`,
+    description: `Create one task, or several in one call, in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay. Every task needs an audience: person when the user asks for a task for themselves (it goes to their planner; without a resolved project, to the Inbox project), agent when an agent should do it (the agents' table). To create more than one task, pass them all as tasks (up to ${TASK_CREATE_BATCH_LIMIT}) in one call, in the order they should run, each with its own fields; projectId and workspaceRoot stay at the top level. A list is created all or nothing, and an invalid item is named by its index. New tasks go to the top of the global order and agents' queues run from the bottom, so a list runs in the order given: its first task ends up lowest. One task returns ${SHORT_TASK_REPLY}, or the whole task with verbose: true; a list returns each task's id, rank, title, status, audience, tags and notBefore. Both say where the tasks show (shownIn): check it matches what the user asked for.`,
     inputSchema: object({
       projectId: id,
       workspaceRoot: id,
       ...taskCreateFields,
+      verbose: verboseTask,
       tasks: {
         type: "array",
         minItems: 1,
@@ -232,8 +245,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     type: "function",
     mutation: "write",
     name: "task_update",
-    description:
-      "Update task fields, status, output, and tags without changing its global rank. Status, tag, notBefore and audience changes can start agents (see task_context triggerRules); setting audience to agent hands a person task to agents. Status changes are recorded in the task's history. This tool does not archive: no status archives a task, and archiving goes through task_archive and task_unarchive.",
+    description: `Update task fields, status, output, and tags without changing its global rank. Status, tag, notBefore and audience changes can start agents (see task_context triggerRules); setting audience to agent hands a person task to agents. Status changes are recorded in the task's history. This tool does not archive: no status archives a task, and archiving goes through task_archive and task_unarchive. Replies with a short confirmation, not the task: ${SHORT_TASK_REPLY}, changed (the fields this call changed, including ones the server set) and the new values of the short ones among them. For the whole task, pass verbose: true or call task_get.`,
     inputSchema: object(
       {
         id,
@@ -247,6 +259,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         tags,
         notBefore: dateTime,
         audience: updateAudience,
+        verbose: verboseTask,
       },
       ["id"],
     ),
@@ -256,8 +269,8 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "task_reorder",
     description:
-      "Move one task in this environment's global order using semantic neighbors. Agents' queues run from the bottom, so a task moved lower runs sooner. The task and neighbors must belong to the same environment; omit afterTaskId at the top or beforeTaskId at the bottom.",
-    inputSchema: object({ id, beforeTaskId: id, afterTaskId: id }, ["id"]),
+      "Move one task in this environment's global order using semantic neighbors. Agents' queues run from the bottom, so a task moved lower runs sooner. The task and neighbors must belong to the same environment; omit afterTaskId at the top or beforeTaskId at the bottom. Replies with the task's id, title, status and new rank, or the whole task with verbose: true.",
+    inputSchema: object({ id, beforeTaskId: id, afterTaskId: id, verbose: verboseTask }, ["id"]),
   },
   {
     type: "function",
@@ -373,17 +386,20 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     type: "function",
     mutation: "read",
     name: "agent_get",
-    description: "Load one task-agent definition.",
-    inputSchema: object({ id }, ["id"]),
+    description:
+      "Load one task-agent definition. An archived agent loads only with includeArchived: true; read one only when the user asks about it.",
+    inputSchema: object({ id, includeArchived: { type: "boolean" } }, ["id"]),
   },
   {
     type: "function",
     mutation: "read",
     name: "agent_search",
-    description: "Search task-agent definitions.",
+    description:
+      "Search task-agent definitions. Archived agents, which the user keeps only to look back at past work, are left out unless includeArchived is true; pass it only when the user asks about them.",
     inputSchema: object({
       projectId: { type: ["string", "null"] },
       enabled: { type: "boolean" },
+      includeArchived: { type: "boolean" },
       limit: { type: "number" },
     }),
   },
@@ -392,7 +408,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "agent_create",
     description:
-      'Create a task-agent definition (users see task agents as workers). Call task_context with include ["agentCreation", "providers"] first and follow its agentCreation guidance and triggerRules.',
+      'Create a task-agent definition (users see task agents as workers). Call task_context with include ["agentCreation", "providers"] first and follow its agentCreation guidance and triggerRules. Replies with the agent without its instructions text, only their length; verbose: true returns the whole agent.',
     inputSchema: object(
       {
         id,
@@ -416,6 +432,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         tools: tags,
         skills: tags,
         instructions: id,
+        verbose: verboseAgent,
       },
       ["name"],
     ),
@@ -425,7 +442,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "agent_update",
     description:
-      'Update a task-agent definition. To change its model or instructions, call task_context with include ["agentCreation", "providers"] first.',
+      'Update a task-agent definition. To change its model or instructions, call task_context with include ["agentCreation", "providers"] first. Replies with the agent without its instructions text (only their length when they changed) and changed, the fields this call changed; verbose: true returns the whole agent.',
     inputSchema: object(
       {
         id,
@@ -447,6 +464,12 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         tools: tags,
         skills: tags,
         instructions: id,
+        archived: {
+          type: "boolean",
+          description:
+            "true archives the agent: it never starts runs and leaves agent lists, and keeps its enabled state, runs and tasks. false unarchives it in that state; an enabled agent then starts on its matching tasks. Only when the user asks.",
+        },
+        verbose: verboseAgent,
       },
       ["id"],
     ),

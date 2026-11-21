@@ -165,6 +165,11 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
     path: /^apps\/server\/src\/orchestration-v2\/Adapters\/CodexAdapterV2\.test\.ts$/,
     line: /clientInfo: \{ name: "T3 Code"|userAgent: "T3 Code\//,
   },
+  // `codex exec` sends the same name as its originator.
+  {
+    path: /^apps\/server\/src\/textGeneration\/CodexTextGeneration\.test\.ts$/,
+    line: /requireOriginator: "T3 Code"/,
+  },
   // Muse MSP `initialize` clientInfo, which the Muse replay fixtures pin, and
   // the replay helper that renames upstream's product in those fixtures.
   {
@@ -189,6 +194,13 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
   { path: /^apps\/desktop\/src\/wsl\/DesktopWslBackend\.ts$/, line: /npx t3@latest/ },
   // Comments in the shell script the SSH tunnel runs on the remote host.
   { path: /^packages\/ssh\/src\/tunnel\.ts$/, line: /^#/ },
+  // The upstream recording's sender note, which the replay test rewrites to ours.
+  {
+    path: /^apps\/server\/src\/mcp\/OrchestratorMcpToolkit\.integration\.test\.ts$/,
+    line: /^\s*"\[T3 Code: the agent in T3 thread ",$/,
+  },
+  // What the remote host's own `t3` binary prints in the tunnel tests; it is upstream's command there.
+  { path: /^packages\/ssh\/src\/tunnel\.test\.ts$/, line: /"host t3 serve\\n"/ },
   // Its headings are the anchors clients link to (T3_CONNECT_TROUBLESHOOTING_SECTIONS in
   // packages/contracts/src/environmentHttp.ts), so they keep upstream's wording.
   { path: /^docs\/user\/t3-connect-troubleshooting\.md$/, line: /^#{2,3} / },
@@ -407,8 +419,8 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   },
   {
     path: "apps/server/src/cli/up.ts",
-    requires: ['Command.make("remote", {', 'resolveHostCliCommand("remote", '],
-    forbids: ['Command.make("up", {', 'resolveHostCliCommand("up", '],
+    requires: ['Command.make("remote", {', 'command("remote")'],
+    forbids: ['Command.make("up", {', 'command("up")'],
   },
   { path: "scripts/lib/public-config.ts", requires: ["applyUpcomputerEnvAliases("] },
   // Links that send users to a repository: stars, issues and help must reach ours.
@@ -447,7 +459,7 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
     requires: [
       "https://raw.githubusercontent.com/krl-gr/upcomputer/main/.github/triage/PLAYBOOK.md",
       "core-v",
-      "--repo krl-gr/upcomputer",
+      "repos/krl-gr/upcomputer --jq .node_id",
       "https://github.com/krl-gr/upcomputer/issues/new?template=via-triage.yml",
     ],
     forbids: ["pingdotgg/t3code", "app.t3.codes", "npx t3"],

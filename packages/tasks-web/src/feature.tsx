@@ -1,5 +1,12 @@
 import { lazy, Suspense } from "react";
-import { BotIcon, ListTodoIcon, MessageSquareTextIcon } from "lucide-react";
+import {
+  BotIcon,
+  CalendarClockIcon,
+  ListTodoIcon,
+  MessageSquareTextIcon,
+  RepeatIcon,
+  UserIcon,
+} from "lucide-react";
 import { msg } from "gt-react";
 
 // The pure host module, not the web extension API: the product entry imports
@@ -125,9 +132,49 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
     {
       id: "tasks",
       label: msg("Tasks"),
+      description: msg("Every view in one tab, with its switches on top."),
       shortcut: "K",
       icon: ListTodoIcon,
       load: () => import("./ui/TasksPanel.tsx"),
+    },
+    // One entry per Tasks view, each without the switches' header. Letters free of core's.
+    {
+      id: "tasks.mine",
+      label: msg("My tasks"),
+      description: msg("Your own tasks, with the week on top."),
+      shortcut: "Y",
+      icon: UserIcon,
+      load: () =>
+        import("./ui/TasksPanel.tsx").then((module) => ({ default: module.MyTasksPanel })),
+    },
+    {
+      id: "tasks.workers",
+      label: msg("Worker tasks"),
+      description: msg("The tasks your workers do."),
+      shortcut: "W",
+      icon: BotIcon,
+      load: () =>
+        import("./ui/TasksPanel.tsx").then((module) => ({ default: module.WorkerTasksPanel })),
+    },
+    {
+      id: "tasks.automations",
+      label: msg("Automations"),
+      description: msg("Work your workers start on a schedule."),
+      shortcut: "A",
+      icon: CalendarClockIcon,
+      load: () =>
+        import("./ui/TasksPanel.tsx").then((module) => ({
+          default: module.AutomationsEntryPanel,
+        })),
+    },
+    {
+      id: "tasks.routines",
+      label: msg("My routines"),
+      description: msg("Your own repeating habits and chores, with the week on top."),
+      shortcut: "R",
+      icon: RepeatIcon,
+      load: () =>
+        import("./ui/TasksPanel.tsx").then((module) => ({ default: module.RoutinesPanel })),
     },
   ],
   routes: [

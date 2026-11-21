@@ -8,6 +8,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpBody, HttpClient, HttpRouter } from "effect/http";
 
+import * as GitManager from "../git/GitManager.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import { ServerProduct, composeExperimentalServerFeatures } from "../product/ServerProduct.ts";
@@ -46,10 +47,14 @@ const listToolsAsAgent = Effect.gen(function* () {
       Layer.mergeAll(
         McpToolAccessTestkit.liveThreadsLayer,
         Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(GitManager.GitManager)({}),
         Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
         Layer.mock(PullRequestService.PullRequestService)({}),
         Layer.mock(Orchestrator.OrchestratorV2)({}),
-        Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+        // The auth middleware reads the thread's forge on every request.
+        Layer.mock(ProjectionStore.ProjectionStoreV2)({
+          getThreadShell: () => Effect.succeed(null),
+        }),
         NodeServices.layer,
         NodeCrypto.layer,
       ),

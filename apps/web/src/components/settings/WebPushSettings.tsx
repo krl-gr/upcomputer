@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import { useEffect, useState } from "react";
-import { useGT, useMessages } from "gt-react";
+import { useGT } from "gt-react";
 
 import {
   disableWebPush,
@@ -15,7 +15,7 @@ import {
 import { isElectron } from "../../env";
 import { Button } from "../ui/button";
 import { SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 
 /** Agent alerts on this browser while Up.computer is closed. Builds without a VAPID key hide it. */
 export function WebPushSettings() {
@@ -26,7 +26,7 @@ export function WebPushSettings() {
 
 function WebPushSettingsRow({ vapidPublicKey }: { readonly vapidPublicKey: string }) {
   const gt = useGT();
-  const m = useMessages();
+  const searchableSetting = useSearchableSetting();
   const session = useAtomValue(managedRelaySessionAtom);
   const accountId = session?.accountId ?? null;
   const environment = readWebPushEnvironment(isElectron);
@@ -105,7 +105,6 @@ function WebPushSettingsRow({ vapidPublicKey }: { readonly vapidPublicKey: strin
   return (
     <SettingsRow
       {...setting}
-      title={m(setting.title)}
       description={description}
       control={
         support === "supported" ? (

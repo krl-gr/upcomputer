@@ -7,10 +7,13 @@ carry the same identity and opt-out as server events. Client-use events require 
 authenticated connection, so visiting the hosted app without connecting does not
 count as product use.
 
-Survey answers are the one exception to opt-out: a person who presses Send chose to
+Survey answers and feedback are the exceptions to opt-out: a person who presses Send chose to
 send them. [UserSurveys](../../apps/server/src/userSurveys/UserSurveys.ts) sends them with
 `AnalyticsService.sendNow`, which with analytics off sends only the answers under a one-off
-random `distinct_id` and creates no install identity. That entry also carries
+random `distinct_id` and creates no install identity. Feedback sent without "Include app
+version and system info" goes that way with analytics on too (`anonymous`), so it carries none
+of the app details identified events add; dev and local test builds do not send feedback at
+all. That entry also carries
 `$ip: "127.0.0.1"` and `$geoip_disable: true`: PostHog's ingestion replaces a missing or empty
 `$ip` with the request's address, so `null` would not keep it out. Shown, dismissed and the
 partial responses follow opt-out: the card's answer, and the answers so far each time a step

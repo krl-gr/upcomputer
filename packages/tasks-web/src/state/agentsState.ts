@@ -87,7 +87,8 @@ export async function loadAgentsState(
         ];
       }
       const [agentsResult, runsResult] = await Promise.allSettled([
-        target.client.agents.search(target.agentSearch ?? { limit: 200 }),
+        // Archived workers too: the Workers page lists them, and runs keep their names.
+        target.client.agents.search(target.agentSearch ?? { limit: 200, includeArchived: true }),
         target.client.agents.searchRuns(target.runSearch ?? { limit: 500 }),
       ]);
       const agents =

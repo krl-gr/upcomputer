@@ -62,6 +62,12 @@ export function useEnvironmentProviders() {
   return useAtomValue(environmentPresentations.providersByEnvironmentAtom);
 }
 
+export function readEnvironmentProviders(environmentId: EnvironmentId) {
+  return appAtomRegistry
+    .get(environmentPresentations.providersByEnvironmentAtom)
+    .get(environmentId);
+}
+
 export function usePrimaryEnvironmentId(): EnvironmentId | null {
   return useAtomValue(primaryEnvironmentIdAtom);
 }
@@ -109,6 +115,10 @@ export function usePullRequestsSupported() {
     useAtomValue(environmentSummaries.pullRequestsSupportedAtom) &&
     isProductFeatureShown("pullRequests")
   );
+}
+
+export function useIssuesSupported() {
+  return useAtomValue(environmentSummaries.issuesSupportedAtom);
 }
 
 export function useEnvironmentMachines() {

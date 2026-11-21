@@ -14,7 +14,7 @@ export * from "./product/RpcContribution.ts";
 export * from "./product/ServerProduct.ts";
 export type { AnyProviderDriver, ProviderDriver } from "@t3tools/provider-core/server/driver";
 export type { BuiltInDriversEnv } from "./provider/builtInDrivers.ts";
-export { McpInvocationContext } from "./mcp/McpInvocationContext.ts";
+export { McpInvocationContext, hiddenFromOutsideClients } from "./mcp/McpInvocationContext.ts";
 export * as McpToolAccess from "./mcp/McpToolAccess.ts";
 export { resultToolkitRegistration } from "./mcp/McpHttpServer.ts";
 export { PreviewAutomationBroker } from "./mcp/PreviewAutomationBroker.ts";

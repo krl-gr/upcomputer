@@ -137,7 +137,15 @@ async function copyPopup(popup: HTMLElement, cell: HTMLElement) {
   await Promise.all(
     popup
       .getAnimations({ subtree: true })
-      .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+      .filter(
+        (animation) =>
+          animation.effect?.getComputedTiming().endTime !== Infinity &&
+          // The feedback hint's loop runs about 12s; the capture does not wait for it.
+          !(
+            animation.effect instanceof KeyframeEffect &&
+            animation.effect.target?.closest("[data-sfh]")
+          ),
+      )
       // A transition its element cancels rejects; the popup is settled either way.
       .map((animation) => animation.finished.catch(() => undefined)),
   );

@@ -1,3 +1,4 @@
+import type { ContextMenuSource } from "@t3tools/contracts";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
@@ -13,6 +14,7 @@ import {
 
 import { resolveSidebarRowAccessibility } from "../components/Sidebar.logic";
 import type { ComposerThreadDraftState, DraftId, DraftSessionState } from "../composerDraftStore";
+import { contextMenuSourceOf } from "../contextMenuSource";
 import { cn } from "../lib/utils";
 import { SIDEBAR_LIST_ROW_SPACING } from "../sidebarMetrics/sidebarMetrics";
 import {
@@ -63,7 +65,11 @@ export const SidebarCompactDraftRow = memo(function SidebarCompactDraftRow(props
   readonly projectDisplayName: string | null;
   readonly isActive: boolean;
   readonly onNavigate: (draftId: DraftId) => void;
-  readonly onContextMenu: (draftId: DraftId, position: { x: number; y: number }) => void;
+  readonly onContextMenu: (
+    draftId: DraftId,
+    position: { x: number; y: number },
+    source: ContextMenuSource,
+  ) => void;
 }) {
   const { draftId, onContextMenu, onNavigate } = props;
   const gt = useGT();
@@ -96,14 +102,14 @@ export const SidebarCompactDraftRow = memo(function SidebarCompactDraftRow(props
     event.stopPropagation();
     const rect = event.currentTarget.getBoundingClientRect();
     setMenuOpen(true);
-    onContextMenu(draftId, { x: rect.left, y: rect.bottom + 4 });
+    onContextMenu(draftId, { x: rect.left, y: rect.bottom + 4 }, contextMenuSourceOf(event));
   };
   const handleKeyDown = (event: ReactKeyboardEvent) => {
     if ((event.target as HTMLElement).closest("button")) return;
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
       event.preventDefault();
       const rect = event.currentTarget.getBoundingClientRect();
-      onContextMenu(draftId, { x: rect.left, y: rect.bottom });
+      onContextMenu(draftId, { x: rect.left, y: rect.bottom }, "keyboard");
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       onNavigate(draftId);
@@ -130,7 +136,11 @@ export const SidebarCompactDraftRow = memo(function SidebarCompactDraftRow(props
         onClick={() => onNavigate(draftId)}
         onContextMenu={(event) => {
           event.preventDefault();
-          onContextMenu(draftId, { x: event.clientX, y: event.clientY });
+          onContextMenu(
+            draftId,
+            { x: event.clientX, y: event.clientY },
+            contextMenuSourceOf(event),
+          );
         }}
         onKeyDown={handleKeyDown}
       >

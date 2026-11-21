@@ -97,7 +97,8 @@ export const TASKS_RPC_CAPABILITY = {
   version: TASKS_RPC_CONTRACT_VERSION,
 } as const;
 
-export const TASK_AGENTS_RPC_CONTRACT_VERSION = 4 as const;
+/** 5: agent archive (archivedAt, includeArchived on search, archived on upsert). */
+export const TASK_AGENTS_RPC_CONTRACT_VERSION = 5 as const;
 export const TASK_AGENTS_RPC_NAMESPACE = "upcomputer.task-agents.v1" as const;
 export const TASK_AGENTS_RPC_CAPABILITY_ID = "upcomputer.task-agents.rpc.v1" as const;
 export const TASK_AGENTS_RPC_CAPABILITY = {

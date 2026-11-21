@@ -325,12 +325,14 @@ export function useTaskPages(
       if (lane.group === undefined) for (const task of state.page?.tasks ?? []) add(task.status, 1);
   }
   const groupPaging = new Map<string, TaskStatusGroupPaging>();
-  for (const { lane, state } of laneStates) {
+  // A lane the effect has not started yet is loading too: its rows may come from a cache at once.
+  for (const lane of lanes) {
     if (lane.group === undefined) continue;
+    const state = byLane[lane.key];
     const current = groupPaging.get(lane.group);
     groupPaging.set(lane.group, {
-      hasMore: (current?.hasMore ?? false) || state.page?.nextCursor != null,
-      loading: (current?.loading ?? false) || state.initialLoading || state.loadingMore,
+      hasMore: (current?.hasMore ?? false) || state?.page?.nextCursor != null,
+      loading: (current?.loading ?? false) || !state || state.initialLoading || state.loadingMore,
     });
   }
   const listStates = laneStates.filter(({ lane }) => lane.group === undefined);
