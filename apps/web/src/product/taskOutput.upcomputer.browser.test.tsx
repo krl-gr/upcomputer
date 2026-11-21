@@ -19,6 +19,7 @@ import { act, render } from "../../test/render";
 import { AssistantCitationEmbed } from "../components/chat/AssistantCitationChip";
 import { AssistantMessageMarkdown } from "../components/chat/AssistantMessageMarkdown";
 import type { ChatComposerHandle } from "../components/chat/ChatComposer";
+import { COMPOSER_DRAFT_STORAGE_KEY, useComposerDraftStore } from "../composerDraftStore";
 import { ComposerHandleContext } from "../composerHandleContext";
 import { findAssistantCitationSourceAnchor } from "../lib/assistantTextSelection";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
@@ -106,6 +107,17 @@ vi.mock(import("~/state/use-atom-query-runner"), async (original) => {
       family === filesystemEnvironment.getMetadata
         ? fileExists
         : (actual.useAtomQueryRunner as (...args: unknown[]) => unknown)(family, ...rest)) as never,
+  };
+});
+// The chat a task's chain started from, as this client knows it.
+vi.mock(import("~/state/entities"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    useThreadShell: ((ref: { readonly threadId: string } | null) =>
+      ref?.threadId === "root-chat"
+        ? { title: "Sidebar polish", deletedAt: null }
+        : actual.useThreadShell(ref as never)) as never,
   };
 });
 vi.mock(import("~/remoteOpen"), async (original) => ({
@@ -202,35 +214,28 @@ describe("task output", () => {
     );
   });
 
-  it("drops a whole list item into the composer beside it in one click, with no comment box", async () => {
+  it('replies "ok" to a whole list item in the composer beside it in one click, once', async () => {
     setup();
-    const insertTextAtEnd = vi.fn<ChatComposerHandle["insertTextAtEnd"]>(() => true);
+    let prompt = "";
+    const insertTextAtEnd = vi.fn<ChatComposerHandle["insertTextAtEnd"]>((text) => {
+      prompt += text;
+      return true;
+    });
     const citeAssistantText = vi.fn<ChatComposerHandle["citeAssistantText"]>(() => true);
-    const composer = { current: { insertTextAtEnd, citeAssistantText } as never };
+    const readSnapshot = () => ({ value: prompt, cursor: 0, expandedCursor: 0, contextIds: [] });
+    const composer = { current: { insertTextAtEnd, citeAssistantText, readSnapshot } as never };
     await using screen = await render(
       <ComposerHandleContext value={composer}>
         <TaskOutput
-          text={[
-            "Pick one:",
-            "",
-            "- A. Tile (recommended)",
-            "  - Undo stays inline",
-            "- B. Banner",
-          ].join("\n")}
+          text={LIST}
           environmentId={environmentId}
           cwd="/repo"
           filePanelRef={panelRef}
-          quoteSource={{
-            id: "task-1",
-            title: "Undo notice",
-            projectId: ProjectId.make("project-1"),
-            rootThreadId: null,
-          }}
+          quoteSource={quoteSource(null)}
         />
       </ComposerHandleContext>,
     );
-    await userEvent.hover(screen.getByRole("listitem").first(), { position: { x: 8, y: 8 } });
-    await userEvent.click(screen.getByRole("button", { name: "Cite in chat: this part" }));
+    await replyOkTwice(screen, 'Reply "ok" in chat');
 
     expect(citeAssistantText).not.toHaveBeenCalled();
     expect(insertTextAtEnd).toHaveBeenCalledTimes(1);
@@ -243,12 +248,40 @@ describe("task output", () => {
         taskId: "task-1",
         taskTitle: "Undo notice",
         text: "A. Tile (recommended)\nUndo stays inline",
+        comment: "ok",
       }),
     ]);
     expect(findAssistantCitationSourceAnchor(document, citations[0]!)?.range.toString()).toMatch(
       /^A\. Tile \(recommended\)\s+Undo stays inline$/,
     );
-    await expect.element(screen.getByRole("button", { name: /^Cite in/ })).not.toBeInTheDocument();
+  });
+
+  it('replies "ok" in the chat the task started from, once, and opens that chat', async () => {
+    setup();
+    const rootRef = { environmentId, threadId: ThreadId.make("root-chat") };
+    const onOpenThread = vi.fn();
+    await using _draft = {
+      [Symbol.asyncDispose]: async () => {
+        useComposerDraftStore.getState().clearDraftThread(rootRef);
+        localStorage.removeItem(COMPOSER_DRAFT_STORAGE_KEY);
+      },
+    };
+    await using screen = await render(
+      <TaskOutput
+        text={LIST}
+        environmentId={environmentId}
+        cwd="/repo"
+        quoteSource={quoteSource(rootRef.threadId)}
+        onOpenThread={onOpenThread}
+      />,
+    );
+    await replyOkTwice(screen, 'Reply "ok" in "Sidebar polish"');
+
+    const prompt = useComposerDraftStore.getState().getComposerDraft(rootRef)?.prompt ?? "";
+    expect(collectAssistantCitations(prompt).map(({ citation }) => citation)).toEqual([
+      expect.objectContaining({ taskId: "task-1", comment: "ok" }),
+    ]);
+    expect(onOpenThread).toHaveBeenCalledWith(environmentId, rootRef.threadId);
   });
 
   it("opens a quoted task beside the chat it is quoted in, and on the Tasks page elsewhere", async () => {
@@ -310,4 +343,27 @@ async function renderRouted(ui: React.ReactNode, path: string) {
   const screen = await render(<RouterProvider router={router} />, { router: false });
   await expect.element(screen.getByRole("link")).toBeInTheDocument();
   return { screen, router, [Symbol.asyncDispose]: () => screen[Symbol.asyncDispose]() };
+}
+
+const LIST = [
+  "Pick one:",
+  "",
+  "- A. Tile (recommended)",
+  "  - Undo stays inline",
+  "- B. Banner",
+].join("\n");
+
+const quoteSource = (rootThreadId: ThreadId | null) => ({
+  id: "task-1",
+  title: "Undo notice",
+  projectId: ProjectId.make("project-1"),
+  rootThreadId,
+});
+
+async function replyOkTwice(screen: Awaited<ReturnType<typeof render>>, label: string) {
+  for (let click = 0; click < 2; click++) {
+    await userEvent.hover(screen.getByRole("listitem").first(), { position: { x: 8, y: 8 } });
+    await userEvent.click(screen.getByRole("button", { name: label }));
+    await expect.element(screen.getByRole("button", { name: label })).not.toBeInTheDocument();
+  }
 }
