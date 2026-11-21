@@ -26,7 +26,6 @@ import {
 
 import type { TasksWebRpcClient } from "../rpc/index.ts";
 import type { ScopedTask, ScopedTaskAgent, ScopedTaskAgentRun } from "../state/index.ts";
-import { isAgentArchived, setAgentArchived } from "../state/agentArchive.ts";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
 import type { AppModelOption } from "../../../../apps/web/src/modelSelection.ts";
 import { ProviderModelPicker } from "../../../../apps/web/src/components/chat/ProviderModelPicker.tsx";
@@ -187,6 +186,20 @@ function agentForm(agent: ScopedTaskAgent): AgentFormState {
     modelOptions: agent.config.modelSelection.options,
     runtimeMode: agent.config.runtimeMode ?? "full-access",
     interactionMode: agent.config.interactionMode ?? "default",
+  };
+}
+
+/** The worker as it is saved now; an upsert takes the whole definition. */
+function agentUpsertInput(agent: ScopedTaskAgent) {
+  return {
+    id: agent.id,
+    projectId: agent.projectId,
+    name: agent.name,
+    enabled: agent.enabled,
+    startStatuses: [...agent.startStatuses],
+    startTags: [...agent.startTags],
+    startRunStatuses: [...agent.startRunStatuses],
+    config: agent.config,
   };
 }
 
@@ -351,11 +364,11 @@ export function AgentsView(props: AgentsViewProps) {
   // Bots have their own sidebar section and settings page. Deep links still
   // resolve against `props.agents`.
   const listedAgents = useMemo(
-    () => props.agents.filter((agent) => !isBotAgent(agent) && !isAgentArchived(agent)),
+    () => props.agents.filter((agent) => !isBotAgent(agent) && agent.archivedAt === null),
     [props.agents],
   );
   const archivedAgents = useMemo(
-    () => props.agents.filter((agent) => !isBotAgent(agent) && isAgentArchived(agent)),
+    () => props.agents.filter((agent) => !isBotAgent(agent) && agent.archivedAt !== null),
     [props.agents],
   );
   const [archivedOpen, setArchivedOpen] = useState(false);
@@ -708,16 +721,7 @@ export function AgentsView(props: AgentsViewProps) {
       if (!client) return;
       try {
         await enqueueMutation(agent.id, async () => {
-          await client.agents.upsert({
-            id: agent.id,
-            projectId: agent.projectId,
-            name: agent.name,
-            enabled: !agent.enabled,
-            startStatuses: [...agent.startStatuses],
-            startTags: [...agent.startTags],
-            startRunStatuses: [...agent.startRunStatuses],
-            config: agent.config,
-          });
+          await client.agents.upsert({ ...agentUpsertInput(agent), enabled: !agent.enabled });
         });
         props.onReload();
       } catch (error) {
@@ -735,12 +739,22 @@ export function AgentsView(props: AgentsViewProps) {
 
   const setArchived = useCallback(
     async (agent: ScopedTaskAgent, archived: boolean) => {
+      const client = props.getClient(agent.environmentId);
+      if (!client) return;
       try {
-        await enqueueMutation(agent.id, () => setAgentArchived(agent, archived));
+        await enqueueMutation(agent.id, async () => {
+          await client.agents.upsert({ ...agentUpsertInput(agent), archived });
+        });
         toastManager.add({
           type: "success",
           title: archived ? gt("Worker archived") : gt("Worker unarchived"),
-          description: agent.name,
+          // An unarchived worker that is switched on starts on its matching tasks at once.
+          description:
+            !archived && agent.enabled
+              ? gt("{name} is switched on and may start on matching tasks right away.", {
+                  name: agent.name,
+                })
+              : agent.name,
         });
         props.onReload();
       } catch (error) {
@@ -755,7 +769,7 @@ export function AgentsView(props: AgentsViewProps) {
     },
     [enqueueMutation, gt, props],
   );
-  const editingAgentArchived = editingAgent !== null && isAgentArchived(editingAgent);
+  const editingAgentArchived = editingAgent !== null && editingAgent.archivedAt !== null;
 
   const renderRow = (agent: ScopedTaskAgent) => {
     const editable = props.canMutateEnvironment(agent.environmentId);
@@ -792,7 +806,7 @@ export function AgentsView(props: AgentsViewProps) {
         onToggleEnabled={() => {
           void toggleEnabled(agent);
         }}
-        {...(isAgentArchived(agent)
+        {...(agent.archivedAt !== null
           ? {
               unarchive: {
                 label: gt("Unarchive", { $context: "button that unarchives a worker" }),

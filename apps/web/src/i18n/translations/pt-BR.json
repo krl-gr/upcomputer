@@ -1412,6 +1412,7 @@
   "801ada64890e3808": "Falha ao criar o worker",
   "3a0ee56adf31a750": "Worker arquivado",
   "298a54909ddfc851": "Worker desarquivado",
+  "336d39e0e9a34d0e": "{name} está ligado e pode começar agora mesmo as tarefas correspondentes.",
   "36b2332a62f6a612": "Falha ao arquivar o worker",
   "1b5ed2aff5319851": "Falha ao desarquivar o worker",
   "46aae4a2027332a1": "Qualquer status",

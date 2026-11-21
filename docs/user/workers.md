@@ -18,6 +18,11 @@ How chats set up workers follows **Settings → Instructions → Worker creation
 To remove a worker, ask a chat to delete it. To stop it for a while, click **Pause** on its row, or
 turn off **Enabled** in its details, and **Resume** it later.
 
+A worker you no longer use but want to look back at can be archived: click **Archive** in its
+details. It never starts, chats stop offering it, and it moves to the collapsed **Archived** group
+at the end of the list, with its runs and tasks kept. **Unarchive** brings it back paused or on, as
+it was.
+
 ## What a worker has
 
 - **Instructions**: what it does and how. Edit them in the worker's details.
