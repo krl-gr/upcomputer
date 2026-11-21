@@ -123,7 +123,7 @@ function useBackgroundNotices() {
       const detail = stopped ? connectionErrorText(connection, m) : null;
       return [
         {
-          id: `client:${environmentId}:computer:unreachable`,
+          id: `client:${environmentId}:computer:${stopped ? "blocked" : "unreachable"}`,
           area: "app",
           severity: stopped ? "error" : "warning",
           title: stopped
