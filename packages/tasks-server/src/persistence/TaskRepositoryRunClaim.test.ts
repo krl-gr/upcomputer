@@ -33,6 +33,7 @@ const agent = (id: string) => ({
   config: { role: "developer", modelSelection, instructions: "Test" },
   createdAt: timestamp,
   updatedAt: timestamp,
+  archivedAt: null,
 });
 
 const run = (id: string, taskId: TaskId, agentId: string, completedAt: string | null = null) => ({

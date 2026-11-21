@@ -217,8 +217,8 @@ export function TaskStatusGroupsProvider(props: {
   );
 }
 
-/** The one addition to the sidebar's header: how many tasks the group holds, in the title's grey. */
-function GroupCount(props: { readonly count: number }) {
+/** The one addition to the sidebar's header: how many rows the group holds, in the title's grey. */
+export function GroupCount(props: { readonly count: number }) {
   return (
     <span className={cn("shrink-0 text-sm tabular-nums", SIDEBAR_DIM_TEXT)} data-group-count="">
       {props.count}

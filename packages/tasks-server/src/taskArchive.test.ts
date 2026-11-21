@@ -573,6 +573,7 @@ const agent = (id: string, startTag: string, runtimeMode: "approval-required" | 
   config: { role: id, modelSelection, instructions: "Work.", runtimeMode },
   createdAt: timestamp,
   updatedAt: timestamp,
+  archivedAt: null,
 });
 
 it.effect("an agent cannot unarchive a task to start an agent broader than itself", () => {

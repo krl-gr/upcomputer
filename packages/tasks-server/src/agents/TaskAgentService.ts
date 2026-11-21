@@ -214,6 +214,24 @@ function startsOnStatus(agent: Pick<TaskAgent, "startStatuses">, status: string)
   return agent.startStatuses.some((startStatus) => sameTaskStatus(startStatus, status));
 }
 
+/** An archived agent never starts or continues runs, whatever its `enabled` says. */
+export function agentWorks(agent: TaskAgent): boolean {
+  return agent.enabled && agent.archivedAt === null;
+}
+
+/**
+ * The archive time after an upsert: `archived` absent keeps the current state, and
+ * archiving an archived agent keeps its original time.
+ */
+export function nextAgentArchivedAt(
+  current: string | null,
+  archived: boolean | undefined,
+  timestamp: string,
+): string | null {
+  if (archived === undefined) return current;
+  return archived ? (current ?? timestamp) : null;
+}
+
 /**
  * Task-state part of an agent's trigger. Whether a matching agent actually
  * starts also depends on its previous runs (see `startAgent`).
@@ -227,7 +245,7 @@ export function startsForTask(agent: TaskAgent, task: Task, nowMs: number): bool
   )
     return false;
   if (!agentMayTakeTask(agent, task)) return false;
-  if (!agent.enabled || (agent.projectId !== null && agent.projectId !== task.projectId)) {
+  if (!agentWorks(agent) || (agent.projectId !== null && agent.projectId !== task.projectId)) {
     return false;
   }
   if (task.archivedAt !== null) return false;
@@ -253,7 +271,9 @@ export function noMatchingAgentReason(
     return null;
   }
   if (task.notBefore !== null && Date.parse(task.notBefore) > nowMs) return null;
-  const onStatus = agents.filter((agent) => agent.enabled && startsOnStatus(agent, task.status));
+  const onStatus = agents.filter(
+    (agent) => agentWorks(agent) && startsOnStatus(agent, task.status),
+  );
   if (onStatus.length === 0) return null;
   if (agents.some((agent) => startsForTask(agent, task, nowMs))) return null;
   return `No enabled worker starts on "${task.status}" with these tags, so this task will wait. Pick a worker, or change the status or tags.`;
@@ -265,7 +285,7 @@ export function noMatchingAgentReason(
  * change underneath it, for example when several agents work on one task.
  */
 export function continuesTaskAgentRun(agent: TaskAgent, task: Task): boolean {
-  return agent.enabled && task.archivedAt === null;
+  return agentWorks(agent) && task.archivedAt === null;
 }
 
 type StopReason =
@@ -276,6 +296,7 @@ type StopReason =
   | "task-archived"
   | "task-deleted"
   | "agent-disabled"
+  | "agent-archived"
   | "agent-deleted";
 
 const STOP_REASON_CODES = {
@@ -286,6 +307,7 @@ const STOP_REASON_CODES = {
   "task-archived": "task_archived",
   "task-deleted": "task_deleted",
   "agent-disabled": "agent_disabled",
+  "agent-archived": "agent_archived",
   "agent-deleted": "agent_deleted",
 } as const satisfies Record<StopReason, AgentRunReasonCode>;
 
@@ -293,6 +315,7 @@ const STOP_REASON_CODES = {
 function endingStopReason(agent: TaskAgent | null, task: Task | null): StopReason | null {
   if (task === null) return "task-deleted";
   if (agent === null) return "agent-deleted";
+  if (agent.archivedAt !== null) return "agent-archived";
   if (!agent.enabled) return "agent-disabled";
   return continuesTaskAgentRun(agent, task) ? null : "task-archived";
 }
@@ -1328,7 +1351,7 @@ const make = Effect.gen(function* () {
         }),
       { discard: true, concurrency: 1 },
     );
-    if (reason === "deleted" || !agent.enabled) return;
+    if (reason === "deleted" || !agentWorks(agent)) return;
     yield* Effect.forEach(
       yield* repository.listTriggerCandidates(),
       (task) => startMatchingAgents([agent], task),
@@ -1338,7 +1361,7 @@ const make = Effect.gen(function* () {
 
   const recover = Effect.gen(function* () {
     yield* reconcileActiveRuns;
-    const agents = (yield* repository.listAllAgents()).filter((agent) => agent.enabled);
+    const agents = (yield* repository.listAllAgents()).filter(agentWorks);
     yield* Effect.forEach(
       yield* repository.listTriggerCandidates(),
       (task) => startMatchingAgents(agents, task),
@@ -1391,6 +1414,10 @@ const make = Effect.gen(function* () {
         const agentOption = yield* repository.getAgentById({ id: run.agentId });
         if (Option.isNone(agentOption)) return refuse(`Agent '${run.agentId}' was not found.`);
         const agent = agentOption.value;
+        if (agent.archivedAt !== null)
+          return refuse(
+            `Agent '${agent.name}' (${agent.id}) is archived. Unarchive it before messaging its runs.`,
+          );
         if (!agent.enabled)
           return refuse(
             `Agent '${agent.name}' (${agent.id}) is disabled. Enable it before messaging its runs.`,

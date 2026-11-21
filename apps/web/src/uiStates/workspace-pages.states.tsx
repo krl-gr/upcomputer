@@ -93,6 +93,7 @@ function agent(index: number, name: string, enabled: boolean, tags: string[]) {
     },
     createdAt: "2026-11-09T00:00:00.000Z",
     updatedAt: "2026-11-09T00:00:00.000Z",
+    archivedAt: null,
   } as unknown as AgentsViewProps["agents"][number];
 }
 

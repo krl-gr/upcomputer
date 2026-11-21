@@ -386,17 +386,20 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     type: "function",
     mutation: "read",
     name: "agent_get",
-    description: "Load one task-agent definition.",
-    inputSchema: object({ id }, ["id"]),
+    description:
+      "Load one task-agent definition. An archived agent loads only with includeArchived: true; read one only when the user asks about it.",
+    inputSchema: object({ id, includeArchived: { type: "boolean" } }, ["id"]),
   },
   {
     type: "function",
     mutation: "read",
     name: "agent_search",
-    description: "Search task-agent definitions.",
+    description:
+      "Search task-agent definitions. Archived agents, which the user keeps only to look back at past work, are left out unless includeArchived is true; pass it only when the user asks about them.",
     inputSchema: object({
       projectId: { type: ["string", "null"] },
       enabled: { type: "boolean" },
+      includeArchived: { type: "boolean" },
       limit: { type: "number" },
     }),
   },
@@ -461,6 +464,11 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         tools: tags,
         skills: tags,
         instructions: id,
+        archived: {
+          type: "boolean",
+          description:
+            "true archives the agent: it never starts runs and leaves agent lists, and keeps its enabled state, runs and tasks. false unarchives it in that state; an enabled agent then starts on its matching tasks. Only when the user asks.",
+        },
         verbose: verboseAgent,
       },
       ["id"],
