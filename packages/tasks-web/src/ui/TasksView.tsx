@@ -75,8 +75,10 @@ import {
 import {
   mergedGroupOrder,
   sameStatusGroup,
+  statusGroupKey,
   taskStatusGroups,
   tasksOfGroup,
+  type TaskStatusGroup,
 } from "./taskStatusGroups.ts";
 import type { TasksViewGrouping } from "./useTaskList.ts";
 import { taskListLayout, type TaskListLayout } from "./taskListLayout.ts";
@@ -103,6 +105,8 @@ import { useTaskArrivals } from "./taskArrivals.ts";
 import "./taskArrival.css";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import { useComputerName } from "../../../../apps/web/src/sidebarComputers/useSidebarComputers.ts";
+
+const LIST_ONLY: ReadonlySet<string> = new Set([""]);
 
 /** The canonical statuses in workflow order, with Restore's status next to To Do. */
 const STATUS_ORDER = TASK_STATUSES.flatMap((status) =>
@@ -452,10 +456,24 @@ export function TasksView(props: TasksViewProps) {
       }),
     [filteredTasks, grouped, grouping, props.statuses, statusFilter],
   );
-  const groupsLoading = [...(grouping?.paging.values() ?? [])].some((paging) => paging.loading);
+  // Open groups whose rows are loaded: only a task that shows up in one of these is new.
+  const readyGroups = useMemo(
+    () =>
+      grouped
+        ? new Set(
+            groups
+              .filter((group) => group.open && grouping?.paging.get(group.key)?.loading !== true)
+              .map((group) => group.key),
+          )
+        : LIST_ONLY,
+    [grouped, grouping?.paging, groups],
+  );
   // The loaded rows, not the optimistic copy, which trails a page by a render.
-  const { arrivals, settle: settleArrival } = useTaskArrivals(
-    props.tasks.map(taskKey),
+  const { arrivals, settle: settleArrivals } = useTaskArrivals(
+    props.tasks.map((task) => ({
+      key: taskKey(task),
+      group: grouped ? statusGroupKey(task.status) : "",
+    })),
     // A computer going offline or coming back resets the baseline, so its rows don't replay as new.
     JSON.stringify([
       projectFilter?.key ?? null,
@@ -464,8 +482,8 @@ export function TasksView(props: TasksViewProps) {
       grouped,
     ]),
     props.status === "ready",
-    // A group's first page, as it opens, brings old tasks too.
-    props.loadingMore || groupsLoading,
+    props.loadingMore,
+    readyGroups,
   );
   const triggerTags = useMemo(() => agentTriggerTags(props.agents), [props.agents]);
   const tagOptions = useMemo(
@@ -933,7 +951,7 @@ export function TasksView(props: TasksViewProps) {
       className="grid"
       data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
       onAnimationEnd={(event) => {
-        if (event.animationName === "task-arrival-tint") settleArrival(taskKey(task));
+        if (event.animationName === "task-arrival-tint") settleArrivals([taskKey(task)]);
       }}
     >
       <div className="min-h-0 overflow-hidden">
@@ -986,7 +1004,7 @@ export function TasksView(props: TasksViewProps) {
         key={taskKey(task)}
         data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
         onAnimationEnd={(event) => {
-          if (event.animationName === "task-arrival-tint") settleArrival(taskKey(task));
+          if (event.animationName === "task-arrival-tint") settleArrivals([taskKey(task)]);
         }}
         className={`cursor-pointer border-b border-border transition-colors hover:bg-muted/20 ${
           draggedTaskKey === taskKey(task) ? "opacity-50" : ""
@@ -1057,8 +1075,11 @@ export function TasksView(props: TasksViewProps) {
           grouping.onSettingsChange({ groupByStatus }),
       }
     : {};
-  const setGroupOpen = (key: string, open: boolean) =>
-    grouping?.onSettingsChange({ statusGroupOpen: { [key]: open } });
+  // A highlight cut short by closing its group does not play again when the group opens.
+  const setGroupOpen = (group: TaskStatusGroup<ScopedTaskListItem>, open: boolean) => {
+    settleArrivals(group.tasks.map(taskKey));
+    grouping?.onSettingsChange({ statusGroupOpen: { [group.key]: open } });
+  };
   // The end of an open group with more on the server: its next page loads when this scrolls into view.
   const groupMore = (key: string, loaded: number, row: boolean) => {
     const paging = grouping?.paging.get(key);
@@ -1839,7 +1860,7 @@ export function TasksView(props: TasksViewProps) {
                         <TaskStatusCardGroup
                           key={group.key}
                           group={group}
-                          onOpenChange={(open) => setGroupOpen(group.key, open)}
+                          onOpenChange={(open) => setGroupOpen(group, open)}
                         >
                           {group.tasks.map(renderCard)}
                           {groupMore(group.key, group.tasks.length, false)}
@@ -1856,7 +1877,7 @@ export function TasksView(props: TasksViewProps) {
                             key={group.key}
                             group={group}
                             columnCount={showProjectColumn ? 5 : 4}
-                            onOpenChange={(open) => setGroupOpen(group.key, open)}
+                            onOpenChange={(open) => setGroupOpen(group, open)}
                           >
                             {group.tasks.map(renderRow)}
                             {groupMore(group.key, group.tasks.length, true)}
