@@ -165,15 +165,16 @@ export function AgentTaskCard(props: {
           taskId: task.id,
           title: task.title,
           kind: task.kind,
-          projectId: task.projectId,
-          projectName: props.project?.name ?? task.projectName,
         });
         if (props.reorderable) props.onDragStart();
         event.dataTransfer.effectAllowed = "move";
       }}
       onDragEnd={props.onDragEnd}
-      onDragOver={(event) => event.preventDefault()}
+      onDragOver={(event) => {
+        if (props.reorderable) event.preventDefault();
+      }}
       onDrop={(event) => {
+        if (!props.reorderable) return;
         event.preventDefault();
         props.onDrop();
       }}

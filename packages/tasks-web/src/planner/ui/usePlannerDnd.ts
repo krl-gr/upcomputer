@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   defaultDropAnimation,
   KeyboardSensor,
   MouseSensor,
+  pointerWithin,
   TouchSensor,
   useSensor,
   useSensors,
   type Active,
+  type CollisionDetection,
   type DragEndEvent,
   type DragMoveEvent,
   type DragStartEvent,
@@ -71,7 +73,70 @@ type Plan =
 
 export interface PlannerComposerDragContext {
   readonly environmentId: EnvironmentId;
-  readonly projectNameById: ReadonlyMap<string, string>;
+}
+
+interface RectBounds {
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+  readonly bottom: number;
+}
+
+function pointInsideBounds(
+  point: { readonly x: number; readonly y: number },
+  bounds: RectBounds,
+): boolean {
+  return (
+    point.x >= bounds.left &&
+    point.x <= bounds.right &&
+    point.y >= bounds.top &&
+    point.y <= bounds.bottom
+  );
+}
+
+function isPointClippedByScrollAncestors(
+  node: HTMLElement | null,
+  boundaryNode: HTMLElement | null,
+  point: { readonly x: number; readonly y: number },
+): boolean {
+  if (!node || typeof getComputedStyle !== "function") return false;
+  for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+    const style = getComputedStyle(parent);
+    if (
+      /auto|scroll|hidden|clip/.test(style.overflowX) ||
+      /auto|scroll|hidden|clip/.test(style.overflowY)
+    ) {
+      if (!pointInsideBounds(point, parent.getBoundingClientRect())) return true;
+    }
+    if (parent === boundaryNode) break;
+  }
+  return false;
+}
+
+/**
+ * Clips `pointerWithin` to the planner root and scroll containers so scrolled-off
+ * week columns extending past the panel edge never hijack drops aimed at the composer.
+ */
+export function makePlannerCollisionDetection(
+  getBoundary: () => { readonly node: HTMLElement | null; readonly rect: RectBounds } | null,
+): CollisionDetection {
+  return (args) => {
+    const point = args.pointerCoordinates;
+    const boundary = getBoundary();
+    if (point && boundary && !pointInsideBounds(point, boundary.rect)) return [];
+    const collisions = pointerWithin(args);
+    if (!point || collisions.length === 0) return collisions;
+    return collisions.filter((collision) => {
+      const container = collision.data?.droppableContainer as
+        | { readonly node?: { readonly current: HTMLElement | null } }
+        | undefined;
+      return !isPointClippedByScrollAncestors(
+        container?.node?.current ?? null,
+        boundary?.node ?? null,
+        point,
+      );
+    });
+  };
 }
 
 /** Resolves the unique tasks carried by a planner drag for quoting in a chat composer. */
@@ -89,8 +154,6 @@ export function resolvePlannerComposerTasks(
           taskId: task.id,
           title: task.title,
           kind: task.kind,
-          projectId: task.projectId,
-          projectName: context.projectNameById.get(task.projectId) ?? null,
         })
       : null;
   if (source.kind === "task") {
@@ -148,6 +211,8 @@ export function usePlannerDnd(input: {
   readonly selection: WeekSelection;
   readonly onBlockMoved: () => void;
   readonly slotHeight: number;
+  /** Clips planner droppable hit-testing so scrolled columns cannot swallow outside drops. */
+  readonly plannerRoot?: HTMLElement | null;
   /** Set in the right panel so dragging a task or day entry onto the composer quotes it. */
   readonly composerDrag?: PlannerComposerDragContext | undefined;
 }) {
@@ -162,6 +227,7 @@ export function usePlannerDnd(input: {
   const [dropAnimation, setDropAnimation] = useState<DropAnimation | null>(defaultDropAnimation);
   const drag = useRef<{
     source: Source;
+    isPointerDrag: boolean;
     startX: number | null;
     startY: number;
     grabOffsetY: number;
@@ -169,6 +235,15 @@ export function usePlannerDnd(input: {
     pointerY: number | null;
     stopTracking: () => void;
   } | null>(null);
+
+  const plannerRoot = input.plannerRoot ?? null;
+  const collisionDetection = useCallback<CollisionDetection>(
+    (args) =>
+      makePlannerCollisionDetection(() =>
+        plannerRoot ? { node: plannerRoot, rect: plannerRoot.getBoundingClientRect() } : null,
+      )(args),
+    [plannerRoot],
+  );
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases window drag listeners and composer highlight if unmounted mid-drag
   useEffect(
@@ -184,6 +259,7 @@ export function usePlannerDnd(input: {
     current: NonNullable<typeof drag.current>,
     delta: { readonly x: number; readonly y: number },
   ): { readonly x: number; readonly y: number } | null => {
+    if (!current.isPointerDrag) return null;
     if (current.pointerX !== null && current.pointerY !== null) {
       return { x: current.pointerX, y: current.pointerY };
     }
@@ -312,6 +388,7 @@ export function usePlannerDnd(input: {
     const source = sourceOf(event.active);
     if (!source) return;
     const start = clientPoint(event.activatorEvent);
+    const isPointerDrag = start !== null;
     const startY = start?.y ?? 0;
     const card =
       source.kind === "entry" && String(event.active.id).startsWith("calendar-entry:")
@@ -324,16 +401,20 @@ export function usePlannerDnd(input: {
         drag.current.pointerY = point.y;
       }
     };
-    window.addEventListener("pointermove", track, { capture: true, passive: true });
-    window.addEventListener("touchmove", track, { capture: true, passive: true });
+    if (isPointerDrag) {
+      window.addEventListener("pointermove", track, { capture: true, passive: true });
+      window.addEventListener("touchmove", track, { capture: true, passive: true });
+    }
     drag.current = {
       source,
+      isPointerDrag,
       startX: start?.x ?? null,
       startY,
       grabOffsetY: card ? startY - card.getBoundingClientRect().top : 0,
       pointerX: null,
       pointerY: null,
       stopTracking: () => {
+        if (!isPointerDrag) return;
         window.removeEventListener("pointermove", track, { capture: true });
         window.removeEventListener("touchmove", track, { capture: true });
       },
@@ -468,6 +549,7 @@ export function usePlannerDnd(input: {
 
   return {
     sensors,
+    collisionDetection,
     active,
     indicators,
     dropAnimation,

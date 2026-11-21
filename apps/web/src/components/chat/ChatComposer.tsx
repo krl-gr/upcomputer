@@ -96,6 +96,7 @@ import {
   makeComposerMentionDragHandlers,
 } from "./composerMentionDrag";
 import {
+  type ComposerTaskDragData,
   composerTaskDropTargetProps,
   formatComposerTaskQuote,
   useComposerTaskDrop,
@@ -3016,6 +3017,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       description: gt("The composer is busy; try again once it is ready."),
     });
   };
+  const insertTaskQuotesAtEnd = (tasks: ReadonlyArray<ComposerTaskDragData>): boolean => {
+    if (isLiteralPendingAnswer || tasks.length === 0) return false;
+    const quotes = tasks.map(formatComposerTaskQuote);
+    if (quotes.some((quote) => quote === null)) return false;
+    return insertComposerTextAtEndStable(quotes.join(""), {
+      ensureLeadingBoundary: true,
+    });
+  };
   // Capture drops before the editor; mention handlers own native propagation and moves.
   const composerMentionDragHandlers = makeComposerMentionDragHandlers({
     insertMentionAtEnd: (text) =>
@@ -3031,20 +3040,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
       return inserted;
     },
-    insertTaskAtEnd: (task) =>
-      insertComposerTextAtEndStable(formatComposerTaskQuote(task), {
-        ensureLeadingBoundary: true,
-      }),
+    insertTaskAtEnd: (task) => insertTaskQuotesAtEnd([task]),
     setDragActive: setIsDragOverComposer,
     onInsertRejected: onComposerDropInsertRejected,
   });
 
   useComposerTaskDrop(composerFormRef, {
     onDragOver: setIsDragOverComposer,
-    onDropTasks: (tasks) =>
-      insertComposerTextAtEndStable(tasks.map(formatComposerTaskQuote).join(""), {
-        ensureLeadingBoundary: true,
-      }),
+    onDropTasks: insertTaskQuotesAtEnd,
     onInsertRejected: onComposerDropInsertRejected,
   });
 

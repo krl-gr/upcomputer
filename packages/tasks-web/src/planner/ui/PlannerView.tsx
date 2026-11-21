@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { DndContext, DragOverlay, pointerWithin } from "@dnd-kit/core";
+import { DndContext, DragOverlay } from "@dnd-kit/core";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { msg, useGT } from "gt-react";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
@@ -74,6 +74,7 @@ function PlannerBody(props: {
   readonly headerless: boolean;
   /** List left and week right: the planner's own width, measured by `PlannerView`. */
   readonly wide: boolean;
+  readonly plannerRoot: HTMLElement | null;
   readonly projects: readonly PlannerProject[];
   readonly viewSwitch: ReactNode;
   readonly environments: readonly PlannerEnvironmentOption[];
@@ -160,14 +161,8 @@ function PlannerBody(props: {
 
   const exitWeekSelection = useCallback(() => setWeekSelection(NO_SELECTION), []);
   const composerDrag = useMemo(
-    () =>
-      props.panel
-        ? {
-            environmentId: props.environmentId,
-            projectNameById: new Map(props.projects.map((project) => [project.id, project.name])),
-          }
-        : undefined,
-    [props.environmentId, props.panel, props.projects],
+    () => (props.panel ? { environmentId: props.environmentId } : undefined),
+    [props.environmentId, props.panel],
   );
   const dnd = usePlannerDnd({
     store,
@@ -180,6 +175,7 @@ function PlannerBody(props: {
     selection: weekSelection,
     onBlockMoved: exitWeekSelection,
     slotHeight: preferences.slotHeight,
+    plannerRoot: props.plannerRoot,
     composerDrag,
   });
 
@@ -327,7 +323,11 @@ function PlannerBody(props: {
   };
   return (
     <PlannerContext value={context}>
-      <DndContext sensors={dnd.sensors} collisionDetection={pointerWithin} {...dnd.handlers}>
+      <DndContext
+        sensors={dnd.sensors}
+        collisionDetection={dnd.collisionDetection}
+        {...dnd.handlers}
+      >
         <PlannerLayout
           wide={wide}
           titleBar={!props.panel}
@@ -646,6 +646,7 @@ export function PlannerView(props: {
                 panel={props.panel === true}
                 headerless={headerless}
                 wide={plannerIsWide(plannerWidth)}
+                plannerRoot={plannerElement}
                 projects={plannerProjects}
                 viewSwitch={props.viewSwitch}
                 environments={environmentOptions}

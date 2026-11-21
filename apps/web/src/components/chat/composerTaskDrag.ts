@@ -1,11 +1,12 @@
 import {
+  ASSISTANT_CITATION_MAX_ID_LENGTH,
   ASSISTANT_CITATION_MAX_TEXT_LENGTH,
   ASSISTANT_CITATION_TASK_TITLE_LENGTH,
   EnvironmentId,
-  ProjectId,
-  type TaskOutputCitation,
+  TaskOutputCitation,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
+import { splitsSurrogatePair } from "@t3tools/shared/assistantCitations";
 import { TaskId, TaskKind } from "@t3tools/tasks-contracts/v1";
 import { Option, Schema } from "effect";
 import { type RefObject, useEffect, useEffectEvent } from "react";
@@ -15,17 +16,19 @@ import { isInsideRestingComposerControlScope } from "./composerEventScope";
 
 export const COMPOSER_TASK_DRAG_TYPE = "application/x-t3code-task";
 
+const TASK_CITATION_MAX_ID_LENGTH = 512;
+
 export const ComposerTaskDragData = Schema.Struct({
-  environmentId: EnvironmentId,
-  taskId: TaskId,
+  environmentId: EnvironmentId.check(Schema.isMaxLength(ASSISTANT_CITATION_MAX_ID_LENGTH)),
+  taskId: TaskId.check(Schema.isMaxLength(TASK_CITATION_MAX_ID_LENGTH)),
   title: TrimmedNonEmptyString,
   kind: TaskKind,
-  projectId: Schema.NullOr(ProjectId),
-  projectName: Schema.NullOr(Schema.String),
 });
 export type ComposerTaskDragData = typeof ComposerTaskDragData.Type;
 
 const TaskDragPayload = Schema.fromJsonString(ComposerTaskDragData);
+const decodeTaskDragData = Schema.decodeOption(ComposerTaskDragData);
+const decodeTaskOutputCitation = Schema.decodeOption(TaskOutputCitation);
 
 export const encodeTaskDragPayload = Schema.encodeSync(TaskDragPayload);
 export const decodeTaskDragPayload = Schema.decodeUnknownOption(TaskDragPayload);
@@ -35,8 +38,12 @@ export interface ComposerTaskDragInput {
   readonly taskId: TaskId;
   readonly title: string;
   readonly kind: TaskKind;
-  readonly projectId: ProjectId | null;
-  readonly projectName: string | null;
+}
+
+function clipPreservingSurrogatePair(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  const end = splitsSurrogatePair(value, maxLength) ? maxLength - 1 : maxLength;
+  return value.slice(0, end);
 }
 
 export function buildComposerTaskDragData(
@@ -44,14 +51,14 @@ export function buildComposerTaskDragData(
 ): ComposerTaskDragData | null {
   const title = input.title.trim();
   if (title.length === 0) return null;
-  return {
-    environmentId: input.environmentId,
-    taskId: input.taskId,
-    title: TrimmedNonEmptyString.make(title),
-    kind: input.kind,
-    projectId: input.projectId,
-    projectName: input.projectName,
-  };
+  return Option.getOrNull(
+    decodeTaskDragData({
+      environmentId: input.environmentId,
+      taskId: input.taskId,
+      title,
+      kind: input.kind,
+    }),
+  );
 }
 
 export function setComposerTaskDragData(
@@ -65,24 +72,27 @@ export function setComposerTaskDragData(
   return true;
 }
 
-export function taskDragCitation(task: ComposerTaskDragData): TaskOutputCitation {
+export function taskDragCitation(task: ComposerTaskDragData): TaskOutputCitation | null {
   const title = task.title.trim();
-  const text = title.slice(0, ASSISTANT_CITATION_MAX_TEXT_LENGTH);
-  return {
-    version: 1,
-    environmentId: task.environmentId,
-    taskId: task.taskId,
-    taskTitle: title.slice(0, ASSISTANT_CITATION_TASK_TITLE_LENGTH),
-    text,
-    start: 0,
-    end: text.length,
-    prefix: "",
-    suffix: "",
-  };
+  const text = clipPreservingSurrogatePair(title, ASSISTANT_CITATION_MAX_TEXT_LENGTH);
+  return Option.getOrNull(
+    decodeTaskOutputCitation({
+      version: 1,
+      environmentId: task.environmentId,
+      taskId: task.taskId,
+      taskTitle: clipPreservingSurrogatePair(title, ASSISTANT_CITATION_TASK_TITLE_LENGTH),
+      text,
+      start: 0,
+      end: text.length,
+      prefix: "",
+      suffix: "",
+    }),
+  );
 }
 
-export function formatComposerTaskQuote(task: ComposerTaskDragData): string {
-  return formatAssistantCitationForComposer(taskDragCitation(task));
+export function formatComposerTaskQuote(task: ComposerTaskDragData): string | null {
+  const citation = taskDragCitation(task);
+  return citation ? formatAssistantCitationForComposer(citation) : null;
 }
 
 const COMPOSER_TASK_DROP_EVENT = "t3-composer-task-drop";
@@ -105,8 +115,10 @@ function findComposerTaskDropTarget(point: { x: number; y: number }): HTMLElemen
         );
   for (const element of hit) {
     if (element.closest(`[${COMPOSER_TASK_DRAG_OVERLAY_ATTRIBUTE}]`) !== null) continue;
+    if (element.closest("[inert]") !== null) return null;
     if (isInsideRestingComposerControlScope(element)) return null;
-    return element.closest<HTMLElement>(`[${DROP_TARGET_ATTRIBUTE}]`);
+    const target = element.closest<HTMLElement>(`[${DROP_TARGET_ATTRIBUTE}]`);
+    return target && target.closest("[inert]") === null ? target : null;
   }
   return null;
 }

@@ -154,8 +154,6 @@ it("the card body drags and opens the task; its controls do neither", async () =
     taskId: "task-1",
     title: "Tidy the backlog",
     kind: "task",
-    projectId: "project-1",
-    projectName: "Project",
   });
   await act(async () =>
     card().props.onClick({ target: target(false), currentTarget: { contains: () => true } }),
@@ -163,7 +161,7 @@ it("the card body drags and opens the task; its controls do neither", async () =
   expect(handlers.onOpen).toHaveBeenCalledTimes(1);
 });
 
-it("read-only panel cards still attach the quote drag payload without starting reorder", async () => {
+it("read-only panel cards still attach the quote drag payload without accepting reorder drops", async () => {
   await render(task(), { reorderable: false, quoteDraggable: true });
   expect(card().props.draggable).toBe(true);
   const data = new Map<string, string>();
@@ -178,4 +176,13 @@ it("read-only panel cards still attach the quote drag payload without starting r
   expect(Option.getOrNull(decodeTaskDragPayload(data.get(COMPOSER_TASK_DRAG_TYPE)))?.taskId).toBe(
     "task-1",
   );
+
+  const dragOverEvent = { preventDefault: vi.fn() };
+  card().props.onDragOver(dragOverEvent);
+  expect(dragOverEvent.preventDefault).not.toHaveBeenCalled();
+
+  const dropEvent = { preventDefault: vi.fn() };
+  card().props.onDrop(dropEvent);
+  expect(dropEvent.preventDefault).not.toHaveBeenCalled();
+  expect(handlers.onDrop).not.toHaveBeenCalled();
 });
