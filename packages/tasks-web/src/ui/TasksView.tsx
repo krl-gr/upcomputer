@@ -105,7 +105,6 @@ import { ListEmptyState } from "./ListEmptyState.tsx";
 import { useTaskArrivals } from "./taskArrivals.ts";
 import "./taskArrival.css";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
-import { useComputerName } from "../../../../apps/web/src/sidebarComputers/useSidebarComputers.ts";
 
 /** Rows a status group shows at first, and how many more each "Show more" adds. */
 const GROUP_FIRST_ROWS = 20;
@@ -136,31 +135,9 @@ const AUDIENCE_LABELS: Record<TaskAudience, string> = {
   person: msg("Me", { $context: "the person themselves, as who does a task" }),
 };
 const TASKS_OFFLINE_TEXT = msg(
-  "The environment with Tasks is not reachable right now. Tasks show when it connects.",
+  "The computer with your tasks isn't reachable right now. Tasks show when it connects.",
 );
 const TABLE_CLASS = "w-full min-w-[920px] border-collapse text-left text-sm";
-const OFFLINE_NOTE_CLASS =
-  "rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground";
-
-function OfflineComputerNote(props: {
-  readonly environmentId: EnvironmentId;
-  readonly showsRows: boolean;
-}) {
-  const gt = useGT();
-  const name = useComputerName(props.environmentId);
-  return (
-    <div className={OFFLINE_NOTE_CLASS}>
-      {props.showsRows
-        ? name
-          ? gt("{name} is not connected. Its tasks may be out of date.", { name })
-          : gt("A computer is not connected. Its tasks may be out of date.")
-        : name
-          ? gt("Tasks from {name} will show when it reconnects.", { name })
-          : gt("Tasks from a computer that is not connected will show when it reconnects.")}
-    </div>
-  );
-}
-
 export interface TasksViewProps {
   readonly projects: readonly TasksWebProject[];
   readonly tasks: readonly ScopedTaskListItem[];
@@ -189,8 +166,7 @@ export interface TasksViewProps {
     readonly ProviderInstanceEntry[]
   >;
   readonly status: "loading" | "ready" | "error" | "offline";
-  readonly errorMessage?: string;
-  /** Environments that are not connected while others answered: each gets a quiet note. */
+  /** Environments that are not connected while others answered. */
   readonly offlineEnvironmentIds?: readonly EnvironmentId[];
   readonly initialSelectedTaskKey?: string;
   readonly canMutateEnvironment: (environmentId: EnvironmentId) => boolean;
@@ -428,7 +404,6 @@ export function TasksView(props: TasksViewProps) {
   const mutableProjects = props.projects.filter((project) =>
     props.canMutateEnvironment(project.environmentId),
   );
-  const hasReadOnlyProjects = mutableProjects.length < props.projects.length;
   const projectOptions = useMemo(() => pickerProjects(mutableProjects), [mutableProjects]);
   const selectedProjectOption = useMemo(
     () => (selectedProject ? pickerProjectFor(projectOptions, selectedProject) : undefined),
@@ -628,21 +603,15 @@ export function TasksView(props: TasksViewProps) {
               )?.name ?? null,
           });
         },
-        () => {
-          if (!cancelled && request === current) setDetailError(msg("Could not refresh task."));
-        },
+        // A failed refresh keeps what the details show, or "Loading task…"; the next change retries.
+        () => undefined,
       );
     };
-    const unsubscribe = client.tasks.subscribe(
-      (event) => {
-        if (event.kind !== "sync" && !event.taskIds.includes(TaskId.make(id))) return;
-        clearTimeout(timer);
-        timer = setTimeout(refresh, 150);
-      },
-      () => {
-        if (!cancelled) setDetailError(msg("Task updates are temporarily unavailable."));
-      },
-    );
+    const unsubscribe = client.tasks.subscribe((event) => {
+      if (event.kind !== "sync" && !event.taskIds.includes(TaskId.make(id))) return;
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 150);
+    });
     const foreground = () => {
       if (document.visibilityState === "visible") refresh();
     };
@@ -1617,11 +1586,6 @@ export function TasksView(props: TasksViewProps) {
                     </button>
                   </div>
                 ) : null}
-                {detailRunsStatus === "error" ? (
-                  <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-                    {gt("Could not refresh this task's worker runs. Showing cached results.")}
-                  </div>
-                ) : null}
                 {detailRunsStatus === "loading" && taskThreads.length === 0 ? (
                   <div className="px-2 py-5 text-sm text-muted-foreground">
                     {gt("Loading worker runs...")}
@@ -1823,45 +1787,22 @@ export function TasksView(props: TasksViewProps) {
                     )}
                   </div>
                 ) : null}
-                {hasReadOnlyProjects ? (
-                  <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-                    {gt(
-                      "Existing tasks from unavailable or expired extensions remain readable. Mutation controls are hidden for those environments.",
-                    )}
-                  </div>
-                ) : null}
                 {selectedTaskKey ? (
                   <p className="text-sm text-muted-foreground">
                     {m(detailError) ?? gt("Loading task…")}
                   </p>
                 ) : null}
-                {props.status === "error" ? (
-                  <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-                    {gt("Up.computer couldn't load your tasks. {reason}", {
-                      reason: props.errorMessage ?? gt("Try again."),
-                    })}
-                    <button type="button" className="ml-3 underline" onClick={props.onReload}>
-                      {gt("Retry")}
-                    </button>
-                  </div>
-                ) : props.status === "offline" && props.tasks.length > 0 ? (
-                  <div className={OFFLINE_NOTE_CLASS}>{m(TASKS_OFFLINE_TEXT)}</div>
-                ) : null}
-                {props.status === "offline"
-                  ? null
-                  : props.offlineEnvironmentIds?.map((environmentId) => (
-                      <OfflineComputerNote
-                        key={environmentId}
-                        environmentId={environmentId}
-                        showsRows={props.tasks.some((task) => task.environmentId === environmentId)}
-                      />
-                    ))}
               </div>
 
               {listEmpty ? (
                 // Blank while the list loads: it arrives within a moment.
                 props.status === "loading" ? null : props.status === "offline" ? (
                   <ListEmptyState title={gt("Tasks unavailable")} hint={m(TASKS_OFFLINE_TEXT)} />
+                ) : props.status === "error" ? (
+                  <ListEmptyState
+                    title={gt("Tasks didn't load")}
+                    hint={gt("Notifications has the details.")}
+                  />
                 ) : filtersNarrow ? (
                   <ListEmptyState title={gt("No tasks match the current filters")} />
                 ) : (

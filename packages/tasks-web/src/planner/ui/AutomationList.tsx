@@ -38,12 +38,14 @@ export function AutomationList(props: {
     <div
       className={cn("mx-auto w-full max-w-3xl py-2", rows.length === 0 && "flex h-full flex-col")}
     >
-      {props.snapshot.error ? (
-        <p className="px-6 py-2 text-sm text-destructive-foreground">{props.snapshot.error}</p>
-      ) : null}
       {rows.length === 0 ? (
         // Blank while the first page loads; it arrives within a moment.
-        props.snapshot.status === "loading" ? null : (
+        props.snapshot.status === "loading" ? null : props.snapshot.error ? (
+          <ListEmptyState
+            title={gt("Automations didn't load")}
+            hint={gt("Notifications has the details.")}
+          />
+        ) : (
           <ListEmptyState
             title={gt("No automations yet")}
             hint={gt("An automation creates a task for workers on a schedule. Click + to add one.")}

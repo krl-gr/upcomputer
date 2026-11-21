@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { msg } from "gt-react";
 import { sameTaskTargets } from "../state/taskPages.ts";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
@@ -33,6 +34,7 @@ import {
 } from "../../../../apps/web/src/sidebarComputers/sidebarComputerSelection.ts";
 import { filterIdsToComputerScope } from "../../../../apps/web/src/sidebarComputers/sidebarComputers.logic.ts";
 import { usePrimarySettings } from "../../../../apps/web/src/hooks/useSettings.ts";
+import { useHeldClientNotices } from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
 import {
   getProjectOrderKey,
   selectProjectGroupingSettings,
@@ -296,6 +298,23 @@ export function useTasksWorkspaceData(loadLegacyTasks = true): TasksWorkspaceDat
     states: Object.values(agents.byEnvironment),
     initialWaitOver,
   });
+  useHeldClientNotices(
+    Object.entries(agents.byEnvironment).flatMap(([environmentId, state]) =>
+      state.status === "error"
+        ? [
+            {
+              id: "workers:list",
+              environmentId: environmentId as EnvironmentId,
+              severity: "error" as const,
+              title: msg("Workers didn't load on {computer}"),
+              message: msg("The list shows what it had before."),
+              detail: state.message,
+            },
+          ]
+        : [],
+    ),
+    reload,
+  );
 
   return {
     taskTargets,

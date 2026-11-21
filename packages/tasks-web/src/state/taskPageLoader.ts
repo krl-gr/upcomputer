@@ -1,6 +1,7 @@
 import { EnvironmentRpcUnavailableError, isRpcClientError } from "@t3tools/client-runtime/rpc";
 import type { TaskChange, TaskId, TaskPageInput } from "@t3tools/tasks-contracts/v1";
 import * as Schema from "effect/Schema";
+import { TaskChangeStreamEnded } from "../rpc/taskChanges.ts";
 import type { TasksStateTarget } from "./tasksState.ts";
 import { mergeTaskPage, reuseTaskPage, type TaskPageState } from "./taskPages.ts";
 
@@ -14,6 +15,11 @@ export interface TaskPageLoadState {
 }
 
 const isEnvironmentRpcUnavailable = Schema.is(EnvironmentRpcUnavailableError);
+const isTaskChangeStreamEnded = Schema.is(TaskChangeStreamEnded);
+
+/** The computer went away: an unreachable environment, a dying socket, or an ended change stream. */
+export const isDisconnectError = (error: unknown) =>
+  isEnvironmentRpcUnavailable(error) || isRpcClientError(error) || isTaskChangeStreamEnded(error);
 
 /** A serialized, event-driven request lane for one environment/query.
  * A Load more click is queued, never dropped because a background read is busy.
@@ -84,7 +90,7 @@ export class TaskPageLoader {
       initialLoading: false,
       error: error instanceof Error ? error.message : "Task updates are temporarily unavailable.",
       // A request cut off by a dying socket fails as a transport error, not as unavailable.
-      disconnected: isEnvironmentRpcUnavailable(error) || isRpcClientError(error),
+      disconnected: isDisconnectError(error),
     });
   }
 

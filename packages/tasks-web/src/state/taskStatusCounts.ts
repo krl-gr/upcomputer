@@ -1,12 +1,11 @@
-import { EnvironmentRpcUnavailableError, isRpcClientError } from "@t3tools/client-runtime/rpc";
 import type {
   TaskChange,
   TaskStatusCount,
   TaskStatusCountsInput,
 } from "@t3tools/tasks-contracts/v1";
-import * as Schema from "effect/Schema";
 
 import { RecentMap } from "./recent.ts";
+import { isDisconnectError } from "./taskPageLoader.ts";
 import type { TasksStateTarget } from "./tasksState.ts";
 
 export interface TaskStatusCountsState {
@@ -15,8 +14,6 @@ export interface TaskStatusCountsState {
   readonly error: string | undefined;
   readonly disconnected: boolean;
 }
-
-const isEnvironmentRpcUnavailable = Schema.is(EnvironmentRpcUnavailableError);
 
 /** The last counts of recent count lanes, by lane key, so a remounted list shows its groups at once. */
 export const recentStatusCounts = new RecentMap<string, readonly TaskStatusCount[]>(24);
@@ -82,7 +79,7 @@ export class TaskStatusCountsLoader {
     this.emit({
       initialLoading: false,
       error: error instanceof Error ? error.message : "Task counts are temporarily unavailable.",
-      disconnected: isEnvironmentRpcUnavailable(error) || isRpcClientError(error),
+      disconnected: isDisconnectError(error),
     });
   }
 

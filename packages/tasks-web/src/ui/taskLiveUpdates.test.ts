@@ -349,6 +349,17 @@ test("a request cut off by a dying socket counts as a disconnected computer", as
   await until(() => h.latest()?.disconnected === true);
 });
 
+test("a change stream that ends before its first event counts as a disconnected computer", async (context) => {
+  const h = harness();
+  context.onTestFinished(() => h.loader.dispose());
+  const off = createTaskChangeSubscription(() => Promise.resolve(), 60_000)(
+    (change) => h.loader.change(change),
+    (error) => h.loader.fail(error),
+  );
+  context.onTestFinished(off);
+  await until(() => h.latest()?.disconnected === true);
+});
+
 test("a real failure is not taken for a disconnected computer", async (context) => {
   const h = harness();
   context.onTestFinished(() => h.loader.dispose());

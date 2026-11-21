@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { msg } from "gt-react";
+import {
+  type ClientNoticeInput,
+  useHeldClientNotices,
+} from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
 import { compareScopedTaskOrder, type TasksStateTarget } from "../state/tasksState.ts";
 import { TaskPageLoader, type TaskPageLoadState } from "../state/taskPageLoader.ts";
 import {
@@ -337,7 +342,8 @@ export function useTaskPages(
   }
   const listStates = laneStates.filter(({ lane }) => lane.group === undefined);
 
-  const { status, errorMessage, offlineEnvironmentIds } = resolveTaskPagesStatus({
+  // A failed load is a Notifications card per computer.
+  const { status, failures, offlineEnvironmentIds } = resolveTaskPagesStatus({
     lanes: [
       // A lane's counts speak for it while its groups load; a lane without counts speaks by its rows.
       ...countLanes
@@ -345,16 +351,33 @@ export function useTaskPages(
         .map((lane) => ({
           environmentId: lane.target.environmentId,
           accessPending: lane.target.access.availability === "loading",
+          accessUnavailable: lane.target.access.availability === "unavailable",
           state: byCountLane[lane.key],
         })),
       ...lanes.map((lane) => ({
         environmentId: lane.target.environmentId,
         accessPending: lane.target.access.availability === "loading",
+        accessUnavailable: lane.target.access.availability === "unavailable",
         state: byLane[lane.key],
       })),
     ],
     initialWaitOver,
   });
+  const reload = useCallback(() => {
+    for (const { loader } of countLoaders.current.values()) loader.refresh();
+    for (const { loader } of loaders.current.values()) loader.refresh();
+  }, []);
+  useHeldClientNotices(
+    [...failures].map(([environmentId, detail]): ClientNoticeInput => ({
+      id: "tasks:list",
+      environmentId,
+      severity: "error",
+      title: msg("Tasks didn't load on {computer}"),
+      message: msg("The list shows what it had before."),
+      detail,
+    })),
+    reload,
+  );
   return {
     tasks: taskCache.current,
     statuses: [
@@ -375,13 +398,9 @@ export function useTaskPages(
     }, []),
     hasMore: listStates.some(({ state }) => state.page?.nextCursor != null),
     loadingMore: listStates.some(({ state }) => state.loadingMore),
-    errorMessage,
     status,
     offlineEnvironmentIds,
-    reload: useCallback(() => {
-      for (const { loader } of countLoaders.current.values()) loader.refresh();
-      for (const { loader } of loaders.current.values()) loader.refresh();
-    }, []),
+    reload,
     loadMore: useCallback(() => {
       for (const { lane, loader } of loaders.current.values())
         if (lane.group === undefined) loader.loadMore();

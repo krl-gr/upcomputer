@@ -8,6 +8,7 @@ import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import type { TasksWebAccess, TasksWebRpcClient } from "../rpc/index.ts";
 import { reuseRows, sameEnvironmentStatuses } from "./recent.ts";
+import { isDisconnectError } from "./taskPageLoader.ts";
 
 export type ScopedTaskAgent = TaskAgent & {
   readonly environmentId: EnvironmentId;
@@ -112,6 +113,10 @@ export async function loadAgentsState(
       // Runs alone would show "No agents yet" for a list that failed to load.
       if (agentsResult.status === "fulfilled") {
         return [target.environmentId, { status: "ready", agents, runs }];
+      }
+      // A computer that went away waits like one still probed; its reconnect loads it again.
+      if (isDisconnectError(agentsResult.reason)) {
+        return [target.environmentId, { status: "loading", agents, runs }];
       }
       return [
         target.environmentId,

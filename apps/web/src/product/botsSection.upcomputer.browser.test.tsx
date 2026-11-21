@@ -46,9 +46,7 @@ function Sidebar(props: { readonly environmentId: EnvironmentId; readonly compac
         style={props.compact ? { width: SIDEBAR_COMPACT_WIDTH } : undefined}
       >
         <div data-sidebar="sidebar" className="bg-sidebar">
-          <BotsSection
-            lists={[{ environmentId: props.environmentId, bots: BOTS, loaded: true, error: "" }]}
-          />
+          <BotsSection lists={[{ environmentId: props.environmentId, bots: BOTS, loaded: true }]} />
         </div>
       </div>
     </SidebarProvider>
@@ -97,9 +95,7 @@ function PhoneSidebar(props: { readonly environmentId: EnvironmentId }) {
       <PhoneShell />
       <SidebarSheet>
         <ProductSidebarNavigation />
-        <BotsSection
-          lists={[{ environmentId: props.environmentId, bots: BOTS, loaded: true, error: "" }]}
-        />
+        <BotsSection lists={[{ environmentId: props.environmentId, bots: BOTS, loaded: true }]} />
       </SidebarSheet>
     </SidebarProvider>
   );

@@ -77,7 +77,11 @@ export function resolveSidebarListVisibility(input: {
   };
 }
 
-/** UpComputer: what to say instead of an empty claim while environments have not sent data. */
+/**
+ * UpComputer: what to say instead of an empty claim while environments have not sent data.
+ * With `unreachableInNotifications`, a card there says a computer can't be reached, so this
+ * only says what it waits for.
+ */
 export function describeWorkspaceWaiting(
   waitingOn: ReadonlyArray<{
     readonly label: string;
@@ -85,8 +89,11 @@ export function describeWorkspaceWaiting(
     readonly unreachable: boolean;
   }>,
   gt: ReturnType<typeof useGT>,
+  unreachableInNotifications = false,
 ): { readonly text: string; readonly unreachable: boolean } {
-  const unreachable = waitingOn.filter((environment) => environment.unreachable);
+  const unreachable = unreachableInNotifications
+    ? []
+    : waitingOn.filter((environment) => environment.unreachable);
   const [firstUnreachable] = unreachable;
   if (firstUnreachable !== undefined) {
     return {
