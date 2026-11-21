@@ -60,6 +60,17 @@ not to keep your IP address or work out your location from it. Close the card to
 survey; it does not come back. A managed policy that turns usage data off also turns
 surveys off.
 
+## Send feedback
+
+To report a bug or share an idea, open the notifications button and choose **Send feedback**
+at the bottom, or search for it in the command palette. Only what you write is sent, with two
+optional extras: **Include app version and system info** (on by default) adds the app version,
+your operating system and the names of your connected providers, and **You can email me about
+this** adds your email. Chats, files, paths and tokens are never included. Feedback is sent when
+you press **Send**, also with product events off; then it goes out the same way as survey
+answers, under a random identifier. Without system info it always goes out that way. A managed
+policy that turns usage data off also turns feedback off.
+
 ## Mark a team or test device
 
 If you work on Up.computer or test it, open **Settings > General > Diagnostics**, select the

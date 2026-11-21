@@ -1424,7 +1424,9 @@ function OpenCommandPaletteDialog(props: {
   }
 
   // The form lives in the notifications popover, which only our sidebar has.
-  if (productSurface("sidebarNotifications") === "upcomputer") actionItems.push(sendFeedbackItem);
+  if (sendFeedbackItem && productSurface("sidebarNotifications") === "upcomputer") {
+    actionItems.push(sendFeedbackItem);
+  }
 
   if (activeThreadKey !== null && supportsThreadFind) {
     actionItems.push({

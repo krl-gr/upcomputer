@@ -1,3 +1,4 @@
+import type { UserFeedbackSystemInfo } from "@t3tools/contracts";
 import { T, useGT } from "gt-react";
 import { ArrowLeftIcon, CheckIcon, ChevronDownIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -13,12 +14,7 @@ import {
   SurveyThanksMark,
   type UserSurveyStatus,
 } from "../userSurvey/surveyParts";
-import {
-  canSendFeedback,
-  type FeedbackDraft,
-  feedbackEmail,
-  type FeedbackSystemInfo,
-} from "./sendFeedback.logic";
+import { canSendFeedback, type FeedbackDraft, feedbackEmail } from "./sendFeedback.logic";
 
 const THANKS_MS = 2200;
 
@@ -61,7 +57,7 @@ function FeedbackCheck({
   );
 }
 
-function IncludedInfo({ info }: { readonly info: FeedbackSystemInfo }) {
+function IncludedInfo({ info }: { readonly info: UserFeedbackSystemInfo }) {
   const gt = useGT();
   const rows = [
     { label: gt("App version"), value: info.appVersion },
@@ -105,7 +101,7 @@ export function SendFeedbackForm({
   readonly draft: FeedbackDraft;
   readonly status: UserSurveyStatus;
   readonly accountEmail: string | null;
-  readonly systemInfo: FeedbackSystemInfo;
+  readonly systemInfo: UserFeedbackSystemInfo;
   readonly onDraftChange: (draft: FeedbackDraft) => void;
   readonly onSubmit: () => void;
   readonly onBack: () => void;

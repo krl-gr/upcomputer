@@ -15,7 +15,7 @@ import {
   ServerIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { Fragment, memo, type ReactNode, useState } from "react";
+import { Fragment, memo, type ReactNode, useEffect, useEffectEvent, useState } from "react";
 import { T, useGT } from "gt-react";
 
 import {
@@ -30,7 +30,7 @@ import { UpdateEverythingDialog } from "../components/sidebar/UpdateEverythingDi
 import { dismissSettledUpdateRunMachines } from "../components/sidebar/updateEverythingRun";
 import { InlineButton } from "../components/ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
-import { SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
+import { SidebarMenuButton, SidebarMenuItem, useSidebar } from "../components/ui/sidebar";
 import { Spinner } from "../components/ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -58,8 +58,9 @@ import {
 import { type SidebarUpdates, useSidebarUpdates } from "./useSidebarUpdates";
 import { useSidebarFooterTooltipSide } from "../adaptiveSidebar/adaptiveSidebar";
 import { BadgedIcon } from "../badgedIcon/BadgedIcon";
+import { WithConnectAccountEmail } from "../sendFeedback/ConnectAccountEmail";
 import { SendFeedbackForm } from "../sendFeedback/SendFeedbackForm";
-import { useSendFeedbackRequests } from "../sendFeedback/sendFeedbackStore";
+import { onSendFeedbackRequest } from "../sendFeedback/sendFeedbackStore";
 import { useSendFeedback, useSendFeedbackForm } from "../sendFeedback/useSendFeedback";
 import { SurveyAction, SurveyAutoHeight, useSurveyForm } from "../userSurvey/surveyParts";
 import { UserSurveyCard } from "../userSurvey/UserSurveyCard";
@@ -115,16 +116,18 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
     userSurvey?.partial ?? null,
   );
   const feedbackSource = useSendFeedback();
-  const feedback = useSendFeedbackForm(feedbackSource.submit);
+  const feedback = useSendFeedbackForm(feedbackSource);
   const [view, setView] = useState<"list" | "feedback">("list");
-  // The command palette asks for the form: a new request opens the popover on it.
-  const feedbackRequests = useSendFeedbackRequests();
-  const [seenFeedbackRequests, setSeenFeedbackRequests] = useState(feedbackRequests);
-  if (feedbackRequests !== seenFeedbackRequests) {
-    setSeenFeedbackRequests(feedbackRequests);
+  const sidebar = useSidebar();
+  const openFeedbackForm = useEffectEvent(() => {
+    if (!feedbackSource.available) return;
+    if (sidebar.isMobile) sidebar.setOpenMobile(true);
+    else if (!sidebar.open) sidebar.setOpen(true);
     setView("feedback");
     setOpen(true);
-  }
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the command palette asks for the form from outside this tree
+  useEffect(() => onSendFeedbackRequest(openFeedbackForm), []);
   const showList = () => {
     setView("list");
     if (feedback.status.kind === "sent") feedback.reset();
@@ -190,16 +193,20 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
           >
             <SurveyAutoHeight>
               {view === "feedback" ? (
-                <SendFeedbackForm
-                  draft={feedback.draft}
-                  status={feedback.status}
-                  accountEmail={feedbackSource.accountEmail}
-                  systemInfo={feedbackSource.systemInfo}
-                  onDraftChange={feedback.setDraft}
-                  onSubmit={feedback.submit}
-                  onBack={showList}
-                  onDone={showList}
-                />
+                <WithConnectAccountEmail>
+                  {(accountEmail) => (
+                    <SendFeedbackForm
+                      draft={feedback.draft}
+                      status={feedback.status}
+                      accountEmail={accountEmail}
+                      systemInfo={feedbackSource.systemInfo}
+                      onDraftChange={feedback.setDraft}
+                      onSubmit={() => feedback.submit(accountEmail)}
+                      onBack={showList}
+                      onDone={showList}
+                    />
+                  )}
+                </WithConnectAccountEmail>
               ) : (
                 <NotificationsPanel
                   updates={updates}
@@ -223,7 +230,7 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
                     ) : null
                   }
                   onClose={() => setOpen(false)}
-                  onSendFeedback={() => setView("feedback")}
+                  onSendFeedback={feedbackSource.available ? () => setView("feedback") : null}
                 />
               )}
             </SurveyAutoHeight>
@@ -334,8 +341,8 @@ function NotificationsPanel({
   /** The survey the server offers, as its card; it ranks with the notices. */
   readonly surveyCard: ReactNode;
   readonly onClose: () => void;
-  /** Turns the popover to the feedback form. */
-  readonly onSendFeedback: () => void;
+  /** Turns the popover to the feedback form; null when this client may not send feedback. */
+  readonly onSendFeedback: (() => void) | null;
 }) {
   const gt = useGT();
   const navigate = useNavigate();
@@ -588,17 +595,19 @@ function NotificationsPanel({
           ))}
         </ol>
       )}
-      <div className="mt-2 flex border-t border-foreground/7 pt-1.5">
-        <SurveyAction
-          size="sm"
-          tone="quiet"
-          data-track="notifications.send-feedback"
-          onClick={onSendFeedback}
-        >
-          <MessageSquareTextIcon aria-hidden />
-          <T>Send feedback</T>
-        </SurveyAction>
-      </div>
+      {onSendFeedback ? (
+        <div className="mt-2 flex border-t border-foreground/7 pt-1.5">
+          <SurveyAction
+            size="sm"
+            tone="quiet"
+            data-track="notifications.send-feedback"
+            onClick={onSendFeedback}
+          >
+            <MessageSquareTextIcon aria-hidden />
+            <T>Send feedback</T>
+          </SurveyAction>
+        </div>
+      ) : null}
     </div>
   );
 }

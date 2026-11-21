@@ -1,3 +1,5 @@
+import type { UserFeedback, UserFeedbackSystemInfo } from "@t3tools/contracts";
+
 export interface FeedbackDraft {
   readonly text: string;
   readonly includeSystemInfo: boolean;
@@ -13,15 +15,6 @@ export const EMPTY_FEEDBACK_DRAFT: FeedbackDraft = {
   email: null,
 };
 
-/** What "Include app version and system info" adds, as its disclosure lists it. */
-export interface FeedbackSystemInfo {
-  readonly appVersion: string;
-  /** The operating system and its version; null when the server did not say. */
-  readonly system: string | null;
-  /** Names of the connected providers. */
-  readonly providers: ReadonlyArray<string>;
-}
-
 /** The email the field shows: what was typed, else the Connect account's. */
 export function feedbackEmail(draft: FeedbackDraft, accountEmail: string | null): string {
   return draft.email ?? accountEmail ?? "";
@@ -29,4 +22,18 @@ export function feedbackEmail(draft: FeedbackDraft, accountEmail: string | null)
 
 export function canSendFeedback(draft: FeedbackDraft): boolean {
   return draft.text.trim().length > 0;
+}
+
+/** What Send sends: the email and the system info only when their boxes are checked. */
+export function feedbackPayload(
+  draft: FeedbackDraft,
+  accountEmail: string | null,
+  systemInfo: UserFeedbackSystemInfo,
+): UserFeedback {
+  const email = draft.canEmail ? feedbackEmail(draft, accountEmail).trim() : "";
+  return {
+    text: draft.text.trim(),
+    ...(email === "" ? {} : { email }),
+    ...(draft.includeSystemInfo ? { systemInfo } : {}),
+  };
 }
