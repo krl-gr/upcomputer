@@ -41,8 +41,8 @@ export function TaskThreadLink(props: TaskThreadLinkProps) {
     [props.environmentId, props.threadId],
   );
   const thread = useOmittedThreadShell(threadRef, props.loadOmitted === true);
-  const available = thread?.deletedAt == null;
   const unavailable = thread?.deletedAt != null;
+  const available = !unavailable;
   const runStatusPresentation = taskRunPresentation(
     props.runStatus,
     thread?.hasPendingApprovals ?? false,
@@ -83,7 +83,7 @@ export function TaskThreadLink(props: TaskThreadLinkProps) {
         ) : null}
       </span>
       <span className={cn("ml-auto shrink-0 pl-2 text-right", MUTED_TEXT_CLASS, LABEL_TEXT_CLASS)}>
-        {unavailable ? gt("Unavailable") : available ? timeLabel : gt("Loading…")}
+        {unavailable ? gt("Unavailable") : timeLabel}
       </span>
     </button>
   );

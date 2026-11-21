@@ -1212,10 +1212,11 @@ export function TasksView(props: TasksViewProps) {
         <div className={detailOuterClass}>
           <div className={detailInnerClass}>
             <main className={stackedDetail ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto"}>
+              {/* Opens once the text arrives, collapsed when the task has output, as before. */}
               <DetailSidebarSection
-                key={`${taskKey(selectedTask)}:description`}
+                key={`${taskKey(selectedTask)}:description:${selectedTaskText === null ? "loading" : "loaded"}`}
                 title={gt("Description")}
-                defaultOpen={!hasSelectedTaskOutput}
+                defaultOpen={selectedTaskText !== null && !hasSelectedTaskOutput}
               >
                 {selectedTaskText === null ? (
                   <p className="px-3 py-2 text-sm text-muted-foreground">{gt("Loading task…")}</p>

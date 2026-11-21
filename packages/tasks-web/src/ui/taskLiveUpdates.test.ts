@@ -33,7 +33,7 @@ const row = (id: string, title = id) =>
   }) as unknown as TaskPageResult["tasks"][number];
 const page = (ids = ["a", "b"], more = true): TaskPageResult => ({
   tasks: ids.map((id) => row(id)),
-  statuses: ["Backlog"],
+  statuses: ["Backlog", "Done", "To Do"],
   nextCursor: more ? { rank: "0000000000000001" as never, id: ids.at(-1)! as TaskId } : null,
 });
 async function until(predicate: () => boolean) {
@@ -115,7 +115,7 @@ test("a status lane reloads only for list changes of tasks that are or can be in
   context.onTestFinished(() => h.loader.dispose());
   h.loader.change(sync);
   await until(() => !!h.latest()?.page);
-  const statuses: Record<string, string> = { done: "Done", todo: "to do" };
+  const statuses: Record<string, string> = { done: "Done", todo: "to do", blocked: "Blocked" };
   h.rows(async (ids) => ({
     tasks: ids.map((id) => ({ ...row(id), status: statuses[id] ?? "Backlog" })),
   }));
@@ -132,6 +132,10 @@ test("a status lane reloads only for list changes of tasks that are or can be in
   h.loader.change(changed(["a"], true));
   await until(() => h.requests.length === 3);
   NodeAssert.equal(h.itemRequests.length, 2);
+  // A status the page does not list yet reloads it for the status filter.
+  h.loader.change(changed(["blocked"], true));
+  await until(() => h.requests.length === 4);
+  NodeAssert.equal(h.itemRequests.length, 3);
   NodeAssert.ok(h.requests.every((request) => request.omitText === true));
 });
 

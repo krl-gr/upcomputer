@@ -123,7 +123,8 @@ export class TaskPageLoader {
 
   /**
    * Whether tasks that moved can change this status lane: one it holds can leave or reorder,
-   * and one it does not hold can enter only with the lane's status.
+   * and one it does not hold can enter only with the lane's status. A status the page does not
+   * list yet reloads too, since the page's `statuses` feed the status filter.
    */
   private async laneMoved(previous: TaskPageState, ids: ReadonlySet<TaskId>): Promise<boolean> {
     const status = this.query.status?.toLowerCase();
@@ -135,7 +136,13 @@ export class TaskPageLoader {
         omitText: true,
       });
       if (this.disposed) throw new Error("Disposed task query");
-      if (tasks.some((task) => task.status.toLowerCase() === status)) return true;
+      if (
+        tasks.some(
+          (task) =>
+            task.status.toLowerCase() === status || !previous.statuses.includes(task.status),
+        )
+      )
+        return true;
     }
     return false;
   }
