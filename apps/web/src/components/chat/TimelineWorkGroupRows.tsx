@@ -565,10 +565,13 @@ function LiveActivityContent({
           className={cn(
             "block truncate",
             highlighted && "text-foreground",
-            active && "live-tool-shine",
+            active && "relative motion-safe:text-secondary-label",
           )}
         >
           {label}
+          {active ? (
+            <ActivityShimmerOverlay className="truncate">{label}</ActivityShimmerOverlay>
+          ) : null}
         </span>
       }
       trailing={

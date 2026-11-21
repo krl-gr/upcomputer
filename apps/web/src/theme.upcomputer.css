@@ -116,16 +116,13 @@ html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"] [dat
   }
 }
 
-/* V1's `.upcomputer-sidebar-glass`, on the same element. The filter is kept for
- * V1 parity only: it cannot sample the native material behind the transparent
- * page, so the material alone does the blur, and in a vibrant window the filter
- * changes no pixel. */
+/* V1's `.upcomputer-sidebar-glass`, on the same element, without its backdrop
+ * filter: that cannot sample the native material behind the transparent page,
+ * so it changed no pixel and only re-ran on every repaint of the sidebar. */
 html.electron[data-upcomputer-sidebar-vibrancy][data-theme-id="upcomputer"]
   [data-app-sidebar]
   [data-slot="sidebar-inner"] {
   background-color: rgb(255 255 255 / 25%);
-  -webkit-backdrop-filter: blur(28px) saturate(1.25);
-  backdrop-filter: blur(28px) saturate(1.25);
 
   @variant dark {
     background-color: color-mix(in srgb, var(--background) 34%, transparent);
@@ -201,4 +198,10 @@ html[data-theme-id="upcomputer"]
   [data-slot="toggle-group"][data-variant^="segmented"]
   > [data-pressed]:not(:focus-visible) {
   box-shadow: none;
+}
+
+/* Status pulses and pings run only while on screen and the window is visible.
+ * Components that carry the attribute register with observeVisibleAnimation. */
+[data-visible-animation] {
+  animation-play-state: var(--visible-animation-state, paused);
 }
