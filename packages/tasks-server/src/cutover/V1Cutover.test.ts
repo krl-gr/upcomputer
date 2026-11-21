@@ -114,6 +114,7 @@ it.layer(TestLayer)("runTaskV1Cutover", (it) => {
         },
         createdAt: timestamp,
         updatedAt: timestamp,
+        archivedAt: null,
       });
       yield* repository.createAgentRun({
         id: runId,

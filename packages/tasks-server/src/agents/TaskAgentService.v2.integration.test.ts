@@ -413,6 +413,7 @@ const agent: TaskAgent = {
   },
   createdAt: timestamp,
   updatedAt: timestamp,
+  archivedAt: null,
 };
 
 const task: Task = {

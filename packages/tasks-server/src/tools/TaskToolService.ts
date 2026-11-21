@@ -80,6 +80,8 @@ import type { TaskToolInvocationContext } from "./TaskToolTypes.ts";
 
 import { agentRunModes, broaderRunMode, type RunModes } from "../agents/runModes.ts";
 import {
+  agentWorks,
+  nextAgentArchivedAt,
   noMatchingAgentReason,
   releasedRunId,
   startsForTask,
@@ -609,7 +611,7 @@ const make = Effect.gen(function* () {
     context: TaskToolInvocationContext,
   ) {
     const refusals = new Map<TaskId, string>();
-    const agents = (yield* repository.listAllAgents()).filter((agent) => agent.enabled);
+    const agents = (yield* repository.listAllAgents()).filter(agentWorks);
     if (agents.length === 0) return refusals;
     for (const id of new Set(ids)) {
       const task = Option.getOrNull(yield* repository.getById({ id }));
@@ -1137,10 +1139,15 @@ const make = Effect.gen(function* () {
         }
         case "agent_get": {
           const input = yield* decoders.agent_get(args);
-          const agent = yield* repository.getAgentById(input);
-          return Option.isSome(agent)
-            ? { isError: false, text: json({ agent: agent.value }) }
-            : { isError: true, text: `Agent '${input.id}' was not found.` };
+          const agent = yield* repository.getAgentById({ id: input.id });
+          if (Option.isNone(agent))
+            return { isError: true, text: `Agent '${input.id}' was not found.` };
+          if (agent.value.archivedAt !== null && input.includeArchived !== true)
+            return {
+              isError: true,
+              text: `Agent '${input.id}' is archived. Pass includeArchived: true to read it.`,
+            };
+          return { isError: false, text: json({ agent: agent.value }) };
         }
         case "agent_search": {
           return {
@@ -1205,6 +1212,7 @@ const make = Effect.gen(function* () {
             config: buildAgentConfig({ name: input.name, modelSelection: model, patch: input }),
             createdAt: timestamp,
             updatedAt: timestamp,
+            archivedAt: null,
           };
           if (isDryRun)
             return {
@@ -1281,6 +1289,7 @@ const make = Effect.gen(function* () {
                 resolution,
               }),
             };
+          const timestamp = yield* now;
           const agent: TaskAgent = {
             ...existing.value,
             projectId,
@@ -1301,7 +1310,8 @@ const make = Effect.gen(function* () {
                   }),
                 }
               : {}),
-            updatedAt: yield* now,
+            updatedAt: timestamp,
+            archivedAt: nextAgentArchivedAt(existing.value.archivedAt, input.archived, timestamp),
           };
           if (isDryRun)
             return {
@@ -1314,9 +1324,9 @@ const make = Effect.gen(function* () {
                 resolution: resolution && compactTaskToolContext(resolution),
               }),
             };
-          // Any edit of an enabled agent lets it run again on its matching tasks
-          // (see runsAgain); disabling it starts nothing.
-          const updateRefusal = agent.enabled
+          // Any edit of an enabled, unarchived agent lets it run again on its matching
+          // tasks (see runsAgain); disabling or archiving it starts nothing.
+          const updateRefusal = agentWorks(agent)
             ? runStartRefusal(context, agentRunModes(agent.config), "Changing an enabled agent")
             : null;
           if (updateRefusal !== null) return { isError: true, text: updateRefusal };

@@ -444,6 +444,7 @@ async function seedAgentRuns(
           },
           createdAt: at,
           updatedAt: at,
+          archivedAt: null,
         });
         yield* repository.createAgentRun({
           id: TaskAgentRunId.make(`run-${id}`),
@@ -707,7 +708,7 @@ test("task_context leaves the catalogs and other guidance out unless included", 
   NodeAssert.equal((await call("task_context", { include: ["everything"] })).isError, true);
 });
 
-test("task_context lists the project's enabled agents with their queues", async () => {
+test("task_context lists the project's enabled, unarchived agents with their queues", async () => {
   const { call, run } = await harness();
   const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-test" };
   const at = new Date().toISOString();
@@ -719,6 +720,7 @@ test("task_context lists the project's enabled agents with their queues", async 
         fields: {
           readonly projectId: string | null;
           readonly enabled?: boolean;
+          readonly archivedAt?: string;
           readonly startStatuses?: ReadonlyArray<string>;
           readonly startTags?: ReadonlyArray<string>;
           readonly startRunStatuses?: ReadonlyArray<"failed">;
@@ -735,6 +737,7 @@ test("task_context lists the project's enabled agents with their queues", async 
           config: { role: id, modelSelection, instructions: "Work." },
           createdAt: at,
           updatedAt: at,
+          archivedAt: fields.archivedAt ?? null,
         });
       yield* agent("developer", {
         projectId: "project-a",
@@ -748,6 +751,7 @@ test("task_context lists the project's enabled agents with their queues", async 
       });
       yield* agent("doctor", { projectId: null, startRunStatuses: ["failed"] });
       yield* agent("disabled", { projectId: "project-a", enabled: false, startTags: ["dev"] });
+      yield* agent("archived", { projectId: "project-a", archivedAt: at, startTags: ["dev"] });
       yield* agent("elsewhere", { projectId: "project-b", startTags: ["dev"] });
       const task = (id: string, projectId: string, status: string, tags: ReadonlyArray<string>) =>
         repository.upsert({
@@ -823,6 +827,7 @@ test("task_context leaves a person's own tasks out of agent queues unless tags h
           config: { role: id, modelSelection, instructions: "Work." },
           createdAt: at,
           updatedAt: at,
+          archivedAt: null,
         });
       }
       for (const [id, audience, tags] of [
@@ -880,6 +885,7 @@ test("task_context shows a tag-only agent busy once a run holds its To Do task",
         config: { role: "builder", modelSelection, instructions: "Work." },
         createdAt: at,
         updatedAt: at,
+        archivedAt: null,
       });
       for (const [id, projectId] of [
         ["claimed", "project-a"],
@@ -1092,6 +1098,7 @@ test("allChats rejects a stale revision, dry-runs under a read-only policy, and 
         config: { role: "worker", modelSelection, instructions: "Work." },
         createdAt: at,
         updatedAt: at,
+        archivedAt: null,
       });
       yield* repository.createAgentRun({
         id: TaskAgentRunId.make("run-worker"),

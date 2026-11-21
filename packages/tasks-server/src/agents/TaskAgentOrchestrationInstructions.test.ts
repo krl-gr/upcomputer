@@ -65,6 +65,7 @@ it.layer(TestLayer)("Orchestration block for task-agent runs", (it) => {
             },
             createdAt: timestamp,
             updatedAt: timestamp,
+            archivedAt: null,
           });
           const threadId = ThreadId.make(`thread-${name}`);
           yield* repository.createAgentRun({

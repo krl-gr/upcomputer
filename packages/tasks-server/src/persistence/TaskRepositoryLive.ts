@@ -156,6 +156,7 @@ const TaskAgentDbRow = Schema.Struct({
   config: Schema.fromJsonString(TaskAgent.fields.config),
   createdAt: TaskAgent.fields.createdAt,
   updatedAt: TaskAgent.fields.updatedAt,
+  archivedAt: Schema.NullOr(TaskAgent.fields.createdAt),
 });
 
 const TaskAgentRunDbRow = Schema.Struct({
@@ -1104,7 +1105,8 @@ const makeTaskRepository = Effect.gen(function* () {
           config_json,
           start_run_statuses_json,
           created_at,
-          updated_at
+          updated_at,
+          archived_at
         )
         VALUES (
           ${agent.id},
@@ -1116,7 +1118,8 @@ const makeTaskRepository = Effect.gen(function* () {
           ${stringifyJsonColumn(agent.config)},
           ${stringifyJsonColumn(agent.startRunStatuses)},
           ${agent.createdAt},
-          ${agent.updatedAt}
+          ${agent.updatedAt},
+          ${agent.archivedAt}
         )
         ON CONFLICT (id)
         DO UPDATE SET
@@ -1127,7 +1130,8 @@ const makeTaskRepository = Effect.gen(function* () {
           start_tags_json = excluded.start_tags_json,
           config_json = excluded.config_json,
           start_run_statuses_json = excluded.start_run_statuses_json,
-          updated_at = excluded.updated_at
+          updated_at = excluded.updated_at,
+          archived_at = excluded.archived_at
       `,
   });
 
@@ -1146,7 +1150,8 @@ const makeTaskRepository = Effect.gen(function* () {
           config_json AS "config",
           start_run_statuses_json AS "startRunStatuses",
           created_at AS "createdAt",
-          updated_at AS "updatedAt"
+          updated_at AS "updatedAt",
+          archived_at AS "archivedAt"
         FROM task_agents
         WHERE id = ${id}
         LIMIT 1
@@ -1157,10 +1162,11 @@ const makeTaskRepository = Effect.gen(function* () {
     Request: Schema.Struct({
       projectId: Schema.NullOr(Task.fields.projectId),
       enabled: Schema.NullOr(Schema.Number),
+      includeArchived: Schema.Number,
       limit: Schema.Number,
     }),
     Result: TaskAgentDbRow,
-    execute: ({ projectId, enabled, limit }) =>
+    execute: ({ projectId, enabled, includeArchived, limit }) =>
       sql`
         SELECT
           id,
@@ -1172,10 +1178,12 @@ const makeTaskRepository = Effect.gen(function* () {
           config_json AS "config",
           start_run_statuses_json AS "startRunStatuses",
           created_at AS "createdAt",
-          updated_at AS "updatedAt"
+          updated_at AS "updatedAt",
+          archived_at AS "archivedAt"
         FROM task_agents
         WHERE (${projectId} IS NULL OR project_id IS NULL OR project_id = ${projectId})
           AND (${enabled} IS NULL OR enabled = ${enabled})
+          AND (${includeArchived} = 1 OR archived_at IS NULL)
         ORDER BY updated_at DESC, created_at DESC, id ASC
         LIMIT ${limit}
       `,
@@ -1196,7 +1204,8 @@ const makeTaskRepository = Effect.gen(function* () {
           config_json AS "config",
           start_run_statuses_json AS "startRunStatuses",
           created_at AS "createdAt",
-          updated_at AS "updatedAt"
+          updated_at AS "updatedAt",
+          archived_at AS "archivedAt"
         FROM task_agents
         ORDER BY updated_at DESC, created_at DESC, id ASC
       `,
@@ -1282,7 +1291,10 @@ const makeTaskRepository = Effect.gen(function* () {
                 SELECT json_array_length(start_tags_json) FROM task_agents WHERE id = ${run.agentId}
               ) > 0)))
           )
-          AND EXISTS (SELECT 1 FROM task_agents WHERE id = ${run.agentId} AND enabled = 1)
+          AND EXISTS (
+            SELECT 1 FROM task_agents
+            WHERE id = ${run.agentId} AND enabled = 1 AND archived_at IS NULL
+          )
           AND NOT EXISTS (
             SELECT 1 FROM bots WHERE agent_id = ${run.agentId}
             AND NOT EXISTS (
@@ -3155,6 +3167,7 @@ const makeTaskRepository = Effect.gen(function* () {
     return searchAgentRows({
       projectId: input.projectId ?? null,
       enabled: input.enabled === undefined ? null : input.enabled ? 1 : 0,
+      includeArchived: input.includeArchived === true ? 1 : 0,
       limit,
     }).pipe(
       Effect.map((rows) => rows.map(mapAgentRow)),
