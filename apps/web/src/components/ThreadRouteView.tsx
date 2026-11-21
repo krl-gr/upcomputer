@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
-import { visibilityParentKey } from "@t3tools/client-runtime/state/threads";
+import { threadFamilyRead, visibilityParentKey } from "@t3tools/client-runtime/state/threads";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { Navigate, useNavigate } from "@tanstack/react-router";
@@ -18,12 +18,14 @@ import {
   useQuietThreadShell,
 } from "../state/entities";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { useEnvironmentQuerySelector } from "../state/query";
 import { useEnvironmentShellStatus } from "../state/shell";
 import { environmentThreadShells, threadFamilies, useEnvironmentThread } from "../state/threads";
 import {
   buildThreadRouteParams,
   isThreadRouteSnapshotAuthoritative,
   resolveThreadRouteRenderState,
+  shouldCloseOffShellThread,
   type ThreadRouteTarget,
 } from "../threadRoutes";
 
@@ -131,6 +133,12 @@ export function ThreadRouteView({
       unlistedParentShell !== null &&
       !hiddenKeys.has(unlistedParentKey)
     );
+  const offShellFamilyRead = useEnvironmentQuerySelector(
+    offShellBlocked
+      ? threadFamilies.familyAtom(unlistedThreadRef.environmentId, unlistedThreadRef.threadId)
+      : null,
+    threadFamilyRead,
+  );
   const renderState = resolveThreadRouteRenderState({
     bootstrapComplete,
     serverThreadExists: serverThreadShell !== null,
@@ -211,8 +219,16 @@ export function ThreadRouteView({
   } else if (hiddenByTagFilter) {
     redirect = <Navigate to="/" replace />;
   } else if (offShellBlocked) {
-    // Before the shell bootstraps, a listed visible thread can still look off-shell.
-    if (bootstrapComplete && unlistedThread !== null) redirect = <Navigate to="/" replace />;
+    // Before the shell bootstraps, a listed visible thread can still look off-shell, and before
+    // its family read answers, an older settled or task-agent thread can.
+    if (
+      shouldCloseOffShellThread({
+        bootstrapComplete,
+        detailLoaded: unlistedThread !== null,
+        familyRead: offShellFamilyRead,
+      })
+    )
+      redirect = <Navigate to="/" replace />;
   } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {
     view = (
       <ChatView
