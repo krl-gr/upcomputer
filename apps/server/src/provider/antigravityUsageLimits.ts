@@ -3,6 +3,7 @@ import * as NodeModule from "node:module";
 import type { AntigravitySettings, ServerProviderUsageWindow } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
+import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -242,6 +243,11 @@ const readCliKeyringSecret = (platform: NodeJS.Platform, architecture: NodeJS.Ar
     catch: (cause) => new AntigravityKeyringError({ cause }),
   });
 
+/** Tests replace the CLI keyring read so they never touch a real keyring. */
+export const AntigravityCliKeyring = Context.Reference("t3/provider/AntigravityCliKeyring", {
+  defaultValue: () => readCliKeyringSecret,
+});
+
 /** Keys an account by its Google ID, which matches across machines and hubs; refresh tokens do not. */
 export const antigravityAccountFingerprint = (userInfo: unknown) =>
   decodeUserInfo(userInfo).pipe(Effect.flatMap((info) => sha256(`google-account\0${info.id}`)));
@@ -334,7 +340,8 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
     "antigravity-acp",
     "antigravity-oauth-token",
   );
-  const readKeyringSecret = input.readKeyringSecret ?? readCliKeyringSecret(platform, architecture);
+  const readKeyringSecret =
+    input.readKeyringSecret ?? (yield* AntigravityCliKeyring)(platform, architecture);
   let cached:
     | { fingerprint: string; account: string; accessToken: string; expiresAt: number }
     | undefined;
