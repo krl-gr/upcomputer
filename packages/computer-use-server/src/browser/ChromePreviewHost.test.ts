@@ -15,6 +15,7 @@ import {
   PreviewAutomationSnapshot,
   ProviderInstanceId,
   ThreadId,
+  type OrchestrationV2DomainEvent,
   type PreviewAutomationOperation,
   type PreviewAutomationRequest,
   type PreviewAutomationStatus,
@@ -32,7 +33,9 @@ import { computerUseSettingsPath } from "../settings/ComputerUseSettingsFile.ts"
 import { createBrowserAutomationService } from "./BrowserAutomationService.ts";
 import { readBrowserUseSettings } from "./BrowserUseSettings.ts";
 import {
+  CHROME_TAB_IDLE_MS,
   chromePreference,
+  chromeTabCleanup,
   createChromePreviewHost,
   serveChromePreviewHost,
   toPreviewAutomationRemoteError,
@@ -464,6 +467,94 @@ test("dialogs, hover, select, drag, uploads and downloads work like the built-in
   NodeAssert.equal(download.url, `http://localhost:${port}/report.txt`);
   NodeAssert.ok(download.path.startsWith(NodePath.join(downloadsDir, downloaded.tabId ?? "")));
   NodeAssert.equal(NodeFS.readFileSync(download.path, "utf8"), "report body");
+});
+
+test("Chrome tabs have the built-in browser's limits, owners and idle cleanup", async (t) => {
+  const context = await openContext(t);
+  if (!context) return;
+  let clock = 0;
+  let changes = 0;
+  const host = createChromePreviewHost({ getContext: async () => context, now: () => clock });
+  host.onTabsChanged(() => {
+    changes += 1;
+  });
+  const opened: string[] = [];
+  for (let index = 0; index < 8; index += 1) {
+    const status = (await host.execute(
+      request("open", { reuseExistingTab: false }),
+    )) as PreviewAutomationStatus;
+    opened.push(status.tabId ?? "");
+  }
+  const limited = await failure(host.execute(request("open", { reuseExistingTab: false })));
+  NodeAssert.equal(limited._tag, "PreviewAutomationControlInterruptedError");
+  NodeAssert.equal(limited.detail, "tabLimit");
+  NodeAssert.match(limited.message, /8 per agent, 32 in all/u);
+  const listed = (await host.execute(request("status"))) as PreviewAutomationStatus;
+  NodeAssert.deepEqual(
+    listed.tabs?.map((tab) => tab.tabId),
+    opened,
+  );
+
+  // Another agent can neither act on nor read a tab it did not open.
+  const foreign = await failure(
+    host.execute(
+      request(
+        "snapshot",
+        {},
+        {
+          threadId: "thread-2" as PreviewAutomationRequest["threadId"],
+          tabId: opened[0] as PreviewAutomationRequest["tabId"],
+        },
+      ),
+    ),
+  );
+  NodeAssert.equal(foreign.detail, "agentMismatch");
+
+  // Only tabs nobody used for half an hour close.
+  clock = CHROME_TAB_IDLE_MS - 1;
+  await host.execute(
+    request("status", {}, { tabId: opened[1] as PreviewAutomationRequest["tabId"] }),
+  );
+  clock = CHROME_TAB_IDLE_MS;
+  await host.closeIdleTabs();
+  NodeAssert.deepEqual(
+    host.liveTabs().map((tab) => tab.tabId),
+    [opened[1]],
+  );
+  NodeAssert.ok(changes > 0);
+
+  await host.closeThreadTabs("thread-1" as PreviewAutomationRequest["threadId"]);
+  NodeAssert.deepEqual(host.liveTabs(), []);
+  NodeAssert.equal(context.pages().length, 0);
+});
+
+test("a deleted thread's Chrome tabs close, and a worker's when its run ends", async () => {
+  const closed: string[] = [];
+  const cleanup = chromeTabCleanup({
+    host: {
+      liveTabs: () =>
+        ["chat", "worker"].map((thread) => ({
+          threadId: ThreadId.make(thread),
+          tabId: PreviewTabId.make(`chrome-${thread}`),
+        })),
+      closeThreadTabs: async (threadId) => {
+        closed.push(threadId);
+      },
+    },
+    isWorker: async (threadId) => threadId === "worker",
+  });
+  const event = (type: string, threadId: string, status?: string) =>
+    ({ type, threadId, payload: { status } }) as unknown as OrchestrationV2DomainEvent;
+  // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- A plain Effect.promise.
+  const handle = (next: OrchestrationV2DomainEvent) => Effect.runPromise(cleanup(next));
+
+  await handle(event("run.updated", "worker", "running"));
+  await handle(event("run.updated", "chat", "completed"));
+  await handle(event("run.updated", "other", "completed"));
+  NodeAssert.deepEqual(closed, []);
+  await handle(event("run.updated", "worker", "completed"));
+  await handle(event("thread.deleted", "chat"));
+  NodeAssert.deepEqual(closed, ["worker", "chat"]);
 });
 
 test("only an explicit open raises the Chrome window", async (t) => {

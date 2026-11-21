@@ -7,6 +7,7 @@ import * as NodePath from "node:path";
 
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import {
   errors,
@@ -25,6 +26,7 @@ import {
   PREVIEW_AUTOMATION_V1_OPERATIONS,
   type BrowserNavigationTarget,
   type EnvironmentId,
+  type OrchestrationV2DomainEvent,
   type PreviewAutomationActionEvent,
   type PreviewAutomationClickInput,
   type PreviewAutomationConsoleEntry,
@@ -61,8 +63,10 @@ import { resolvePreviewViewport } from "@t3tools/shared/previewViewport";
 import { ServerConfig } from "../../../../apps/server/src/config.ts";
 import {
   forkParked,
+  isActiveRun,
   PreviewAutomationBroker,
   ServerEnvironment,
+  ThreadManagementService,
 } from "../../../../apps/server/src/extensionApi.ts";
 import type { PreviewAutomationServerHost } from "../../../../apps/server/src/mcp/PreviewAutomationBroker.ts";
 import * as ServerBrowserPage from "../../../../apps/server/src/preview/ServerBrowserPage.ts";
@@ -77,6 +81,11 @@ const DIAGNOSTIC_BUFFER_LIMIT = 200;
 const MAX_EVALUATION_BYTES = 64_000;
 /** Saved downloads a tab lists; older files are deleted. */
 const DOWNLOAD_LIMIT = 20;
+/** The built-in browser's limits, so an agent that loops cannot fill Chrome with tabs. */
+const AGENT_TAB_LIMIT = 8;
+const TOTAL_TAB_LIMIT = 32;
+/** An agent tab nobody used this long is closed; workers that stop early leave tabs behind. */
+export const CHROME_TAB_IDLE_MS = 30 * 60_000;
 /** How long a locator may take to become actionable when the call sets no timeout. */
 const LOCATOR_ACTION_TIMEOUT_MS = 5_000;
 /** Leaves time to reply before the broker gives up on the request. */
@@ -107,6 +116,7 @@ interface ChromeTab {
   fileChooser: { readonly chooser: FileChooser; readonly accept: string } | null;
   readonly downloads: ChromeDownload[];
   readonly savingDownloads: Set<Promise<void>>;
+  usedAt: number;
 }
 
 /** A failure reported to agents with the same tags desktop hosts use. */
@@ -278,12 +288,19 @@ export interface ChromePreviewHostOptions {
   readonly getContext: () => Promise<BrowserContext>;
   /** Where agents' downloads are saved, one folder per tab. Unset leaves them to Chrome. */
   readonly downloadsDir?: string;
+  readonly now?: () => number;
 }
 
 export interface ChromePreviewHost {
   readonly supportedOperations: ReadonlyArray<PreviewAutomationOperation>;
   readonly execute: (request: PreviewAutomationRequest) => Promise<unknown>;
   readonly liveTabs: () => NonNullable<PreviewAutomationHostFocus["liveTabs"]>;
+  /** Closes the thread's tabs, for a deleted thread or a finished worker. */
+  readonly closeThreadTabs: (threadId: ThreadId) => Promise<void>;
+  /** Closes tabs no call used for `CHROME_TAB_IDLE_MS`. */
+  readonly closeIdleTabs: () => Promise<void>;
+  /** Called when a tab opens or closes outside a request, such as the user closing it. */
+  readonly onTabsChanged: (listener: () => void) => () => void;
 }
 
 /**
@@ -296,6 +313,14 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
   const threadTabIds = new Map<string, string>();
   let actionSequence = 0;
   let downloadSequence = 0;
+  const now = options.now ?? Date.now;
+  const tabsChangedListeners = new Set<() => void>();
+  const tabsChanged = () => {
+    for (const listener of tabsChangedListeners) listener();
+  };
+
+  const openTabs = () => [...tabs.values()].filter((tab) => !tab.page.isClosed());
+  const threadTabs = (threadId: ThreadId) => openTabs().filter((tab) => tab.threadId === threadId);
 
   const registerTab = (page: Page, threadId: ThreadId): ChromeTab => {
     const tab: ChromeTab = {
@@ -311,6 +336,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       fileChooser: null,
       downloads: [],
       savingDownloads: new Set(),
+      usedAt: now(),
     };
     const timestamp = () => new Date().toISOString();
     page.on("console", (message) =>
@@ -370,7 +396,10 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
       const saving = saveDownload(tab, download).finally(() => tab.savingDownloads.delete(saving));
       tab.savingDownloads.add(saving);
     });
-    page.on("close", () => tabs.delete(tab.id));
+    page.on("close", () => {
+      tabs.delete(tab.id);
+      tabsChanged();
+    });
     tabs.set(tab.id, tab);
     return tab;
   };
@@ -413,7 +442,16 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
   const currentTab = (request: PreviewAutomationRequest): ChromeTab | undefined => {
     const tabId = request.tabId ?? threadTabIds.get(request.threadId);
     const tab = tabId === undefined ? undefined : tabs.get(tabId);
-    return tab && !tab.page.isClosed() ? tab : undefined;
+    if (!tab || tab.page.isClosed()) return undefined;
+    if (tab.threadId !== request.threadId) {
+      throw hostError(
+        "PreviewAutomationControlInterruptedError",
+        "This Chrome tab belongs to another agent. Open your own tab.",
+        "agentMismatch",
+      );
+    }
+    tab.usedAt = now();
+    return tab;
   };
 
   const requireTab = (request: PreviewAutomationRequest): ChromeTab => {
@@ -485,6 +523,14 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     }
   };
 
+  /** Whether the tab's window is on screen; a tab behind another one in it still counts. */
+  const windowShown = async (tab: ChromeTab): Promise<boolean> => {
+    const window = await cdpSession(tab)
+      .then((cdp) => cdp.send("Browser.getWindowForTarget"))
+      .catch(() => null);
+    return window !== null && window.bounds.windowState !== "minimized";
+  };
+
   const status = async (tab: ChromeTab): Promise<PreviewAutomationStatus> => {
     // A pending dialog blocks page script, so status reads nothing from the page.
     const page = tab.dialog
@@ -499,7 +545,7 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     const title = tab.dialog ? "" : await tab.page.title().catch(() => "");
     return {
       available: true,
-      visible: true,
+      visible: await windowShown(tab),
       tabId: tab.id,
       url: tab.page.url() || null,
       title: title || null,
@@ -515,6 +561,15 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         ? { multiple: tab.fileChooser.chooser.isMultiple(), accept: tab.fileChooser.accept }
         : null,
       downloads: [...tab.downloads],
+      tabs: await Promise.all(
+        threadTabs(tab.threadId).map(async (candidate) => ({
+          tabId: candidate.id,
+          url: candidate.page.url() || null,
+          owner: "agent" as const,
+          ownedByCaller: true,
+          visible: await windowShown(candidate),
+        })),
+      ),
       viewportSetting: tab.viewportSetting,
       ...(page && page.width > 0 && page.height > 0
         ? { viewport: { width: page.width, height: page.height } }
@@ -568,6 +623,17 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
         "PreviewAutomationControlInterruptedError",
         DIALOG_PENDING_MESSAGE,
         "dialogPending",
+      );
+    }
+    if (
+      !existing &&
+      (threadTabs(request.threadId).length >= AGENT_TAB_LIMIT ||
+        openTabs().length >= TOTAL_TAB_LIMIT)
+    ) {
+      throw hostError(
+        "PreviewAutomationControlInterruptedError",
+        `Too many Chrome tabs are open (${AGENT_TAB_LIMIT} per agent, ${TOTAL_TAB_LIMIT} in all). Close one with t3_preview_close, or reuse a tabId from preview_status tabs.`,
+        "tabLimit",
       );
     }
     const tab =
@@ -850,13 +916,6 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
 
   const close = async (request: PreviewAutomationRequest): Promise<Record<string, never>> => {
     const tab = requireTab(request);
-    if (tab.threadId !== request.threadId) {
-      throw hostError(
-        "PreviewAutomationControlInterruptedError",
-        "Only the thread that opened this Chrome tab can close it.",
-        "agentMismatch",
-      );
-    }
     try {
       await tab.page.close();
     } catch (cause) {
@@ -998,12 +1057,31 @@ export function createChromePreviewHost(options: ChromePreviewHostOptions): Chro
     }
   };
 
-  const liveTabs = () =>
-    [...tabs.values()]
-      .filter((tab) => !tab.page.isClosed())
-      .map((tab) => ({ threadId: tab.threadId, tabId: tab.id }));
+  const liveTabs = () => openTabs().map((tab) => ({ threadId: tab.threadId, tabId: tab.id }));
 
-  return { supportedOperations: CHROME_PREVIEW_HOST_OPERATIONS, execute, liveTabs };
+  const closeTabs = async (closing: ReadonlyArray<ChromeTab>) => {
+    await Promise.all(
+      closing.map(async (tab) => {
+        tabs.delete(tab.id);
+        if (threadTabIds.get(tab.threadId) === tab.id) threadTabIds.delete(tab.threadId);
+        await tab.page.close().catch(() => undefined);
+      }),
+    );
+    if (closing.length > 0) tabsChanged();
+  };
+
+  return {
+    supportedOperations: CHROME_PREVIEW_HOST_OPERATIONS,
+    execute,
+    liveTabs,
+    closeThreadTabs: (threadId) => closeTabs(threadTabs(threadId)),
+    closeIdleTabs: () =>
+      closeTabs(openTabs().filter((tab) => now() - tab.usedAt >= CHROME_TAB_IDLE_MS)),
+    onTabsChanged: (listener) => {
+      tabsChangedListeners.add(listener);
+      return () => tabsChangedListeners.delete(listener);
+    },
+  };
 }
 
 /** What this host serves; the server's own browser serves the rest. */
@@ -1040,37 +1118,53 @@ export const serveChromePreviewHost = Effect.fn("ChromePreviewHost.serve")(funct
     },
     { serverHost: { preferred: input.preferred } },
   );
-  yield* Stream.runForEach(events, (event) => {
-    if (event.type !== "request") return Effect.void;
-    const reply = (fields: Pick<PreviewAutomationResponse, "ok" | "result" | "error">) =>
-      broker
-        .respond({
-          clientId: CHROME_PREVIEW_HOST_CLIENT_ID,
-          connectionId: event.connectionId,
-          requestId: event.request.requestId,
-          ...fields,
-        })
-        .pipe(Effect.ignore);
-    // The broker routes a named tab by these, so they are current before the agent sees a reply.
-    const reportLiveTabs = Effect.suspend(() =>
+  const runFork = Effect.runForkWith(yield* Effect.context<never>());
+  let connectionId: string | undefined;
+  const reportTabs = (reportConnectionId: string) =>
+    Effect.suspend(() =>
       broker.focusHost({
         clientId: CHROME_PREVIEW_HOST_CLIENT_ID,
         environmentId: input.environmentId,
-        connectionId: event.connectionId,
+        connectionId: reportConnectionId,
         focused: false,
         liveTabs: input.host.liveTabs(),
       }),
     );
-    return Effect.tryPromise({
-      try: () => input.host.execute(event.request),
-      catch: toPreviewAutomationRemoteError,
-    }).pipe(
-      Effect.matchEffect({
-        onSuccess: (result) => Effect.andThen(reportLiveTabs, reply({ ok: true, result })),
-        onFailure: (error) => Effect.andThen(reportLiveTabs, reply({ ok: false, error })),
-      }),
-      Effect.forkScoped,
+  yield* Effect.gen(function* () {
+    // Tabs closed without a request (the user, cleanup) must stop routing named-tab calls here.
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        input.host.onTabsChanged(() => {
+          if (connectionId !== undefined) runFork(reportTabs(connectionId));
+        }),
+      ),
+      (unsubscribe) => Effect.sync(unsubscribe),
     );
+    yield* Stream.runForEach(events, (event) => {
+      if (event.type === "connected") connectionId = event.connectionId;
+      if (event.type !== "request") return Effect.void;
+      const reply = (fields: Pick<PreviewAutomationResponse, "ok" | "result" | "error">) =>
+        broker
+          .respond({
+            clientId: CHROME_PREVIEW_HOST_CLIENT_ID,
+            connectionId: event.connectionId,
+            requestId: event.request.requestId,
+            ...fields,
+          })
+          .pipe(Effect.ignore);
+      // The broker routes a named tab by these, so they are current before the agent sees a reply.
+      const reportLiveTabs = reportTabs(event.connectionId);
+      return Effect.tryPromise({
+        try: () => input.host.execute(event.request),
+        catch: toPreviewAutomationRemoteError,
+      }).pipe(
+        Effect.matchEffect({
+          onSuccess: (result) => Effect.andThen(reportLiveTabs, reply({ ok: true, result })),
+          onFailure: (error) => Effect.andThen(reportLiveTabs, reply({ ok: false, error })),
+        }),
+        Effect.forkScoped,
+      );
+    });
   }).pipe(Effect.scoped);
 });
 
@@ -1125,5 +1219,68 @@ export const ChromePreviewHostLive = Layer.effectDiscard(
         Effect.forever,
       ),
     );
+    yield* forkParked(
+      Effect.promise(() => host.closeIdleTabs()).pipe(Effect.repeat(Schedule.spaced("1 minute"))),
+    );
+    const threads = yield* ThreadManagementService;
+    const workers = workerThreads(threads);
+    yield* forkParked(
+      Stream.runForEach(
+        threads.streamDomainEvents,
+        chromeTabCleanup({ host, isWorker: workers.isWorker }),
+      ).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Chrome tab cleanup stopped reading thread events", { cause }),
+        ),
+        Effect.andThen(Effect.sleep("5 seconds")),
+        Effect.forever,
+      ),
+    );
   }),
 );
+
+/** A deleted thread's tabs close, and so do a worker's once its run ends. */
+export const chromeTabCleanup =
+  (input: {
+    readonly host: Pick<ChromePreviewHost, "liveTabs" | "closeThreadTabs">;
+    readonly isWorker: (threadId: ThreadId) => Promise<boolean>;
+  }) =>
+  (event: OrchestrationV2DomainEvent): Effect.Effect<void> => {
+    const { host } = input;
+    if (!host.liveTabs().some((tab) => tab.threadId === event.threadId)) return Effect.void;
+    if (event.type === "thread.deleted") {
+      return Effect.promise(() => host.closeThreadTabs(event.threadId));
+    }
+    if (
+      event.type === "run.updated" &&
+      !isActiveRun(event.payload) &&
+      event.payload.status !== "queued"
+    ) {
+      return Effect.promise(async () => {
+        if (await input.isWorker(event.threadId)) await host.closeThreadTabs(event.threadId);
+      });
+    }
+    return Effect.void;
+  };
+
+/**
+ * Worker (task-agent run) threads are created hidden from the sidebar, and
+ * stay that way, so the answer is cached per thread.
+ */
+const workerThreads = (threads: ThreadManagementService["Service"]) => {
+  const known = new Map<ThreadId, boolean>();
+  const runPromise = Effect.runPromise;
+  return {
+    isWorker: async (threadId: ThreadId): Promise<boolean> => {
+      const cached = known.get(threadId);
+      if (cached !== undefined) return cached;
+      const shell = await runPromise(
+        threads.getThreadShell(threadId).pipe(Effect.orElseSucceed(() => null)),
+      );
+      if (shell === null) return false;
+      const worker = shell.sidebarHidden === true;
+      known.set(threadId, worker);
+      return worker;
+    },
+  };
+};

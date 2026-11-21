@@ -87,6 +87,10 @@ export class PreviewAutomationBroker extends Context.Service<
     readonly invoke: <A = unknown>(
       request: PreviewAutomationInvokeInput,
     ) => Effect.Effect<A, PreviewAutomationError>;
+    /** The thread's tabs in server hosts, which have no preview session to list. */
+    readonly serverHostTabs: (
+      scope: McpInvocationContext.McpThreadInvocationScope,
+    ) => Effect.Effect<ReadonlyArray<PreviewTabId>>;
   }
 >()("t3/mcp/PreviewAutomationBroker") {}
 
@@ -791,7 +795,20 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     return result;
   });
 
-  return PreviewAutomationBroker.of({ connect, focusHost, respond, invoke });
+  const serverHostTabs: PreviewAutomationBroker["Service"]["serverHostTabs"] = (scope) =>
+    SynchronizedRef.get(state).pipe(
+      Effect.map((current) =>
+        Array.from(current.clients.values()).flatMap((host) =>
+          host.serverHost !== undefined && host.environmentId === scope.environmentId
+            ? host.liveTabs
+                .filter((tab) => tab.threadId === scope.thread.threadId)
+                .map((tab) => tab.tabId)
+            : [],
+        ),
+      ),
+    );
+
+  return PreviewAutomationBroker.of({ connect, focusHost, respond, invoke, serverHostTabs });
 }).pipe(Effect.withSpan("PreviewAutomationBroker.make"));
 
 export const layer = Layer.effect(PreviewAutomationBroker, make);

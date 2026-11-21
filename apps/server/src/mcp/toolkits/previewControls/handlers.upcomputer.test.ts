@@ -23,7 +23,7 @@ import * as PreviewControlsHandlers from "./handlers.ts";
 import { PreviewControlsToolkit } from "./tools.ts";
 
 it.effect(
-  "close sends a tab without a preview session to its server-side host, and a gone tab counts as closed",
+  "list and close reach tabs without a preview session in their server-side host, and a gone tab counts as closed",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -56,11 +56,28 @@ it.effect(
         );
         const closedTabs: Array<string | undefined> = [];
         const host = yield* broker.connect(
-          { clientId: "chrome-host", environmentId, supportedOperations: ["close"] },
+          { clientId: "chrome-host", environmentId, supportedOperations: ["close", "status"] },
           { serverHost: { preferred: () => Effect.succeed(true) } },
         );
         yield* Stream.runForEach(host, (event) => {
-          if (event.type !== "request") return Effect.void;
+          if (event.type === "connected") {
+            return broker.focusHost({
+              clientId: "chrome-host",
+              environmentId,
+              connectionId: event.connectionId,
+              focused: false,
+              liveTabs: [{ threadId, tabId: PreviewTabId.make("chrome-open") }],
+            });
+          }
+          if (event.request.operation === "status") {
+            return broker.respond({
+              clientId: "chrome-host",
+              connectionId: event.connectionId,
+              requestId: event.request.requestId,
+              ok: true,
+              result: { tabId: event.request.tabId, url: "http://localhost:5173/", title: "App" },
+            });
+          }
           closedTabs.push(event.request.tabId);
           const open = event.request.tabId === "chrome-open";
           return broker.respond({
@@ -102,6 +119,19 @@ it.effect(
           toolkit
             .handle("t3_preview_close", { tabId: PreviewTabId.make(tabId) })
             .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(layerDependencies));
+
+        const listed = yield* toolkit
+          .handle("t3_preview_list", {})
+          .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(layerDependencies));
+        expect(listed.at(-1)?.result).toMatchObject({
+          sessions: [
+            {
+              tabId: "chrome-open",
+              runtime: "server",
+              navStatus: { _tag: "Success", url: "http://localhost:5173/", title: "App" },
+            },
+          ],
+        });
 
         expect((yield* close("chrome-open")).at(-1)?.result).toEqual({});
         expect((yield* close("chrome-gone")).at(-1)?.result).toEqual({});
