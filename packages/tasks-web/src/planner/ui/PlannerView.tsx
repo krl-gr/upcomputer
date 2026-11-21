@@ -541,37 +541,45 @@ export function PlannerView(props: {
       if (entry) setPlannerWidth(entry.contentRect.width);
     });
   }, [plannerElement]);
+  const environmentSelect =
+    environmentOptions.length > 1 && environmentId ? (
+      <Select
+        value={environmentId}
+        onValueChange={(value) => {
+          if (value) setStoredEnvironment(value);
+        }}
+      >
+        <SelectTrigger className="w-44 shrink-0" size="sm" aria-label={gt("Environment")}>
+          <SelectValue>
+            {environmentOptions.find((option) => option.id === environmentId)?.label}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectPopup>
+          {environmentOptions.map((option) => (
+            <SelectItem key={option.id} value={option.id}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+    ) : null;
   return (
     <WorkspaceViewLayout
       variant={props.panel ? "panel" : "page"}
       switches={props.viewSwitch}
       // Until the planner shows, the page header keeps the title bar and the view switch.
       header={!ready && !headerless}
+      // A headerless entry has no header, so its environment choice floats until then.
+      floatingControls={headerless && !ready}
       toolbar={
-        <>
-          <span className="min-w-0 flex-1" />
-          {environmentOptions.length > 1 && environmentId ? (
-            <Select
-              value={environmentId}
-              onValueChange={(value) => {
-                if (value) setStoredEnvironment(value);
-              }}
-            >
-              <SelectTrigger className="w-44 shrink-0" size="sm" aria-label={gt("Environment")}>
-                <SelectValue>
-                  {environmentOptions.find((option) => option.id === environmentId)?.label}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                {environmentOptions.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          ) : null}
-        </>
+        headerless ? (
+          environmentSelect
+        ) : (
+          <>
+            <span className="min-w-0 flex-1" />
+            {environmentSelect}
+          </>
+        )
       }
       navigateOnEscape={false}
       inset={false}

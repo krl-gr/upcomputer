@@ -182,7 +182,9 @@ const tasksServer = vi.hoisted(() => {
     } as Record<string, unknown>,
     { get: (target, key: string) => target[key] ?? (async () => ({})) },
   );
-  return { client: { tasks }, pageInputs };
+  // A second environment whose server has no planner, for tests that turn it on.
+  const second = { on: false, environmentId: "remote" };
+  return { client: { tasks }, pageInputs, second };
 });
 
 vi.mock("../../../../packages/tasks-web/src/environmentApi.ts", async () => {
@@ -191,7 +193,10 @@ vi.mock("../../../../packages/tasks-web/src/environmentApi.ts", async () => {
     readTasksWebAccess: () => resolveTasksWebAccess({ availability: "enabled" }),
     readTasksWebClient: () => tasksServer.client,
     readPlannerAvailability: () => "enabled",
-    usePlannerAvailability: () => "enabled",
+    usePlannerAvailability: (environmentId: string | null) =>
+      tasksServer.second.on && environmentId === tasksServer.second.environmentId
+        ? "unavailable"
+        : "enabled",
     useTasksWebAccessRevision: () => 0,
   };
 });
@@ -239,8 +244,15 @@ vi.mock("../../../../packages/tasks-web/src/ui/useWorkspaceData.ts", async () =>
     memberProjectRefs: [{ environmentId, projectId: item.id }],
     remoteEnvironmentLabels: [],
   }));
+  const withSecond = {
+    ...data,
+    taskTargets: [
+      ...data.taskTargets,
+      { ...data.taskTargets[0]!, environmentId: tasksServer.second.environmentId },
+    ],
+  };
   return {
-    useTasksWorkspaceData: () => data,
+    useTasksWorkspaceData: () => (tasksServer.second.on ? withSecond : data),
     useSidebarProjectSnapshots: () => groups,
   };
 });
@@ -258,6 +270,7 @@ afterEach(() => {
   product.tasks = true;
   window.localStorage.clear();
   tasksServer.pageInputs.length = 0;
+  tasksServer.second.on = false;
 });
 
 const previewSurface = {
@@ -502,6 +515,8 @@ describe("the Tasks surface's content", () => {
     );
   }
   const shows = (text: string) => document.body.textContent?.includes(text) === true;
+  const floatingControl = (selector: string) =>
+    document.querySelector(`[data-tasks-floating-actions] ${selector}`);
 
   it("lists the planner's routines in every project, not only the thread's", async () => {
     renderTasks({ "tasks.view": "planner", "tasks.planner.kind": "routine" });
@@ -554,27 +569,37 @@ describe("the Tasks surface's content", () => {
     renderTasks(tasksTab, "tasks.mine");
     await vi.waitFor(() => expect(shows("Life OS task")).toBe(true), { timeout: 5000 });
     expect(shows("Health routine")).toBe(false);
-    expect(floating()?.querySelector('[aria-label="New task"]')).not.toBeNull();
+    expect(floatingControl('[aria-label="New task"]')).not.toBeNull();
     expect(switches()).toBeNull();
     remount();
 
     renderTasks({ "tasks.view": "table", "tasks.planner.kind": "task" }, "tasks.routines");
     await vi.waitFor(() => expect(shows("Life OS routine")).toBe(true), { timeout: 5000 });
     expect(shows("Life OS task")).toBe(false);
-    expect(floating()?.querySelector('[aria-label="New routine"]')).not.toBeNull();
+    expect(floatingControl('[aria-label="New routine"]')).not.toBeNull();
     expect(switches()).toBeNull();
     remount();
 
     renderTasks({ "tasks.view": "planner" }, "tasks.workers");
     await vi.waitFor(() => expect(shows("Health task")).toBe(true), { timeout: 5000 });
-    expect(floating()?.querySelector("[data-task-filters-button]")).not.toBeNull();
+    expect(floatingControl("[data-task-filters-button]")).not.toBeNull();
     expect(switches()).toBeNull();
     remount();
 
     renderTasks({ "tasks.view": "planner" }, "tasks.automations");
     await vi.waitFor(() => expect(floating()).not.toBeNull(), { timeout: 5000 });
-    expect(floating()?.querySelector('[aria-label="New automation"]')).not.toBeNull();
+    expect(floatingControl('[aria-label="New automation"]')).not.toBeNull();
     expect(switches()).toBeNull();
+  });
+
+  it("floats the environment choice in My tasks while its environment has no planner", async () => {
+    tasksServer.second.on = true;
+    renderTasks({ "tasks.planner.environment": tasksServer.second.environmentId }, "tasks.mine");
+
+    await vi.waitFor(() => expect(shows("older server without the planner")).toBe(true), {
+      timeout: 5000,
+    });
+    expect(floatingControl('[aria-label="Environment"]')).not.toBeNull();
   });
 
   it("keeps the Worker tasks entry's filters apart from the Tasks page's", async () => {
