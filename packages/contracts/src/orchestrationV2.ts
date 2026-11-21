@@ -4156,6 +4156,11 @@ export const OrchestrationV2SubscribeShellInput = Schema.Struct({
    * `getOlderSettledThreads`. Send only to servers that advertise `shellOlderSettled`.
    */
   omitOlderSettled: Schema.optionalKey(Schema.Boolean),
+  /**
+   * With `omitOlderSettled`, snapshots also leave out idle task-agent (`sidebarHidden`) threads;
+   * read one with `getThreadFamily`. Servers that predate it ignore it and keep them.
+   */
+  omitIdleHidden: Schema.optionalKey(Schema.Boolean),
 });
 export type OrchestrationV2SubscribeShellInput = typeof OrchestrationV2SubscribeShellInput.Type;
 

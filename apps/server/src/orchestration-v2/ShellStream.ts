@@ -237,8 +237,8 @@ function shellTrimFacts(rows: ReadonlyArray<ShellTrimRow>): ShellTrimFacts {
 }
 
 /**
- * Task-agent threads stay out of thread lists, and clients read an idle one through its family
- * when they open it, so the trims that drop older settled threads drop idle ones too.
+ * Task-agent threads stay out of thread lists, and clients that opt in with `omitIdleHidden` read
+ * an idle one through its family when they open it, so the older-settled trim drops idle ones too.
  */
 function isTaskAgentShellRow(row: { readonly sidebarHidden?: boolean | undefined }): boolean {
   return row.sidebarHidden === true;
@@ -279,6 +279,7 @@ function omitOlderSettledShellsWith(
     ShellTrimFacts,
     "olderSettledBeforeMs" | "olderSettledCounts" | "remoteTaskParentIds"
   >,
+  omitIdleHidden: boolean,
 ): {
   readonly threads: ReadonlyArray<OrchestrationV2ThreadShell>;
   readonly olderSettled: OrchestrationV2OlderSettledThreads;
@@ -288,7 +289,10 @@ function omitOlderSettledShellsWith(
   const ancestorIds = hiddenChildAncestorIds(input.threads);
   const threads = input.threads.filter(
     (thread) =>
-      !(isOlderSettledThreadShell(thread, beforeMs) || isTaskAgentShellRow(thread)) ||
+      !(
+        isOlderSettledThreadShell(thread, beforeMs) ||
+        (omitIdleHidden && isTaskAgentShellRow(thread))
+      ) ||
       thread.pinnedAt != null ||
       (thread.snoozedUntil != null && DateTime.toEpochMillis(thread.snoozedUntil) > nowMs) ||
       isLiveSubagentShell(thread) ||
@@ -345,16 +349,23 @@ export function omitOlderSettledShells(input: {
   readonly threads: ReadonlyArray<OrchestrationV2ThreadShell>;
   readonly snapshotSequence: number;
   readonly now: DateTime.Utc;
+  readonly omitIdleHidden?: boolean;
 }): {
   readonly threads: ReadonlyArray<OrchestrationV2ThreadShell>;
   readonly olderSettled: OrchestrationV2OlderSettledThreads;
 } {
-  return omitOlderSettledShellsWith(input, shellTrimFacts(input.threads));
+  return omitOlderSettledShellsWith(
+    input,
+    shellTrimFacts(input.threads),
+    input.omitIdleHidden === true,
+  );
 }
 
 interface ShellSubscriberOptions {
   readonly omitIdleSubagents: boolean;
   readonly omitOlderSettled: boolean;
+  /** Clients without a family fallback for task-agent threads leave this off and keep them. */
+  readonly omitIdleHidden: boolean;
 }
 
 function trimShellSnapshot(
@@ -369,6 +380,7 @@ function trimShellSnapshot(
   const older = omitOlderSettledShellsWith(
     { threads, snapshotSequence: base.snapshotSequence, now: options.now },
     facts,
+    options.omitIdleHidden,
   );
   return { ...base, threads: older.threads, olderSettled: older.olderSettled };
 }
@@ -404,7 +416,7 @@ function shellSubscriberThreadIds(
       : !options.omitOlderSettled ||
           !(
             (beforeMs !== undefined && isOlderSettledThreadShell(entry, beforeMs)) ||
-            isTaskAgentShellRow(entry)
+            (options.omitIdleHidden && isTaskAgentShellRow(entry))
           ) ||
           entry.pinnedAt != null ||
           entry.snoozedUntil != null ||

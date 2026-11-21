@@ -691,7 +691,10 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         const current = yield* SubscriptionRef.get(state);
         const omission = {
           ...(omitIdleSubagents ? { omitIdleSubagents: true as const } : {}),
-          ...(omitOlderSettled ? { omitOlderSettled: true as const } : {}),
+          // Task views here read an omitted task-agent thread through its family.
+          ...(omitOlderSettled
+            ? { omitOlderSettled: true as const, omitIdleHidden: true as const }
+            : {}),
         };
         if (Option.isNone(current.snapshot) || !(resumingHeldRows || loaded?.kind === "snapshot")) {
           return { ...omission, requestCompletionMarker: true as const };
