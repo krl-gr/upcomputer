@@ -33,7 +33,7 @@ import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useScratchProject } from "~/hooks/useScratchProject";
 import { newProjectId } from "~/lib/utils";
 import { isProductFeatureShown } from "~/product/productFlags";
-import { useProjects, useThreadShells, waitForProject } from "~/state/entities";
+import { useProjects, useQuietThreadShells, waitForProject } from "~/state/entities";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { environmentPresentations } from "~/state/presentation";
@@ -66,7 +66,10 @@ type LinkState =
 type LinkLaunch =
   | {
       readonly kind: "thread";
-      readonly thread: Pick<ReturnType<typeof useThreadShells>[number], "environmentId" | "id">;
+      readonly thread: Pick<
+        ReturnType<typeof useQuietThreadShells>[number],
+        "environmentId" | "id"
+      >;
     }
   | { readonly kind: "draft"; readonly project: EnvironmentProject }
   | { readonly kind: "scratch" }
@@ -110,7 +113,7 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
   const navigate = useNavigate();
   const ready = useAtomValue(allReachableShellsLiveAtom);
   const projects = useProjects();
-  const threads = useThreadShells();
+  const threads = useQuietThreadShells();
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const handleNewThread = useNewThreadHandler();

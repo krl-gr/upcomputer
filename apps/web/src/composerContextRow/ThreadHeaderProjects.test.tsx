@@ -75,11 +75,11 @@ vi.mock("../components/Sidebar.logic", () => ({
   sortScopedProjectsForSidebar: (projects: unknown[]) => projects,
 }));
 vi.mock("../state/entities", () => ({
-  useThreadShell: () => state.serverThread,
+  useQuietThreadShell: () => state.serverThread,
   useProject: (ref: { projectId: string } | null) =>
     ref === null ? null : (state.projects.find((project) => project.id === ref.projectId) ?? null),
   useProjects: () => state.projects,
-  useThreadShells: () => [],
+  useQuietThreadShells: () => [],
 }));
 vi.mock("../composerDraftStore", () => {
   const store = {

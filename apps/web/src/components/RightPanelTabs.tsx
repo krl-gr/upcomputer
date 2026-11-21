@@ -9,8 +9,8 @@ import {
 import {
   useProjects,
   useQuietThreadShell,
+  useQuietThreadShells,
   useServerConfigs,
-  useThreadShells,
 } from "~/state/entities";
 import {
   threadPullRequestKeysEqual,
@@ -874,7 +874,7 @@ function PullRequestSurfaceIcon({
   const resolvedEnvironmentId =
     (surface.environmentId as EnvironmentId | undefined) ?? environmentId;
   const projects = useProjects();
-  const threads = useThreadShells();
+  const threads = useQuietThreadShells();
   const project = projects.find(
     (entry) => entry.environmentId === resolvedEnvironmentId && entry.id === surface.projectId,
   );
