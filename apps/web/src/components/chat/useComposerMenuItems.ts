@@ -33,7 +33,11 @@ import {
   getProviderSlashCommandsForSlashMenu,
 } from "@t3tools/client-runtime/providerSkills";
 import { searchProviderSkills } from "../../providerSkillSearch";
-import { matchComposerRecipientItems } from "../../composerRecipients/composerRecipients";
+import {
+  composerRecipientItems,
+  useProductComposerRecipients,
+} from "../../composerRecipients/composerRecipients";
+import { withoutComposerRecipientChats } from "../../composerRecipients/composerRecipients.logic";
 import { useVisibleThreadShells } from "~/state/entities";
 import { useEnvironmentIdentities, useEnvironmentMachines } from "~/state/environments";
 import { offersLinkedEnvironmentsAtom } from "~/state/peerLinks";
@@ -123,6 +127,7 @@ export function useComposerMenuItems({
   const settledPullRequestTextQuery =
     pullRequestTextQuery === debouncedPullRequestTextQuery ? pullRequestTextQuery : null;
   const isPathTrigger = composerTriggerKind === "path";
+  const recipients = useProductComposerRecipients(environmentId, activeThreadId);
   const environmentThreadShells = useVisibleThreadShells(isPathTrigger);
   // Mounts older settled threads matching the mention, which shells may leave out.
   useThreadSearch(isPathTrigger ? [environmentId] : [], pathTriggerQuery, { titlesOnly: true });
@@ -203,10 +208,10 @@ export function useComposerMenuItems({
     if (composerTrigger.kind === "path") {
       return [
         ...(questionAttachmentTarget === null
-          ? matchComposerRecipientItems(environmentId, activeThreadId, composerTrigger.query)
+          ? composerRecipientItems(recipients, composerTrigger.query)
           : []),
         ...matchComposerThreadItems({
-          shells: environmentThreadShells,
+          shells: withoutComposerRecipientChats(environmentThreadShells, environmentId, recipients),
           environmentId,
           linkedEnvironments,
           excludeThreadId: activeThreadId,

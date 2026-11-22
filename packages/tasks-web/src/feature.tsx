@@ -33,21 +33,32 @@ const LazyThreadSeen = lazy(() =>
     default: module.TaskThreadSeen,
   })),
 );
-// The thread menu and the composer's `@` ask synchronously, so their bot modules load with the
-// Bots section, which every sidebar shows. Until then neither offers bots.
+// The thread menu asks synchronously, so its bot module loads with the Bots section, which
+// every sidebar shows. Until then the menu simply has no bot entry.
 let botMenu: typeof import("./bots/botMenu.ts") | undefined;
-let botRecipients: typeof import("./bots/botRecipients.ts") | undefined;
 const LazySidebarBots = lazy(() =>
-  Promise.all([
-    import("./bots/Bots.tsx"),
-    import("./bots/botMenu.ts"),
-    import("./bots/botRecipients.ts"),
-  ]).then(([bots, menu, recipients]) => {
+  Promise.all([import("./bots/Bots.tsx"), import("./bots/botMenu.ts")]).then(([bots, menu]) => {
     botMenu = menu;
-    botRecipients = recipients;
     return { default: bots.SidebarBots };
   }),
 );
+// The composer's `@` asks synchronously too; an open composer loads this module and the list.
+let botRecipients: typeof import("./bots/botRecipients.ts") | undefined;
+function subscribeBotRecipients(
+  environmentId: ExperimentalWebThreadAccessoryProps["environmentId"],
+  onChange: () => void,
+) {
+  let stop: (() => void) | undefined;
+  let stopped = false;
+  void import("./bots/botRecipients.ts").then((module) => {
+    botRecipients = module;
+    if (!stopped) stop = module.subscribeBotRecipients(environmentId, onChange);
+  });
+  return () => {
+    stopped = true;
+    stop?.();
+  };
+}
 /**
  * A bot's own chat, once the Bots section has loaded. It stays in its bot's working project,
  * so other features leave out moving it.
@@ -129,6 +140,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   chatHeaderAccessory: ChatHeaderRunCounts,
   threadActions: (thread) => botMenu?.botThreadActions(thread) ?? [],
   composerRecipients: (context) => botRecipients?.botComposerRecipients(context) ?? [],
+  subscribeComposerRecipients: subscribeBotRecipients,
   agentAvatar: BotAgentAvatar,
   sidebarSection: SidebarBots,
   coordinator: TaskReminders,

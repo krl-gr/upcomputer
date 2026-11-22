@@ -1,5 +1,6 @@
 import type { NavigateOptions } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { useSyncExternalStore } from "react";
 
 import type { ChatComposerHandle } from "../components/chat/ChatComposer";
 import type { ComposerCommandItem } from "../components/chat/ComposerCommandMenu";
@@ -10,7 +11,11 @@ import { type ComposerThreadTarget, useComposerDraftStore } from "../composerDra
 import { filterTerminalContextsWithText } from "../lib/terminalContext";
 import { WEB_PRODUCT } from "../product/productEntry";
 import type { ExperimentalWebComposerRecipient } from "../product/WebFeature";
-import { matchComposerRecipients, parseComposerRecipientMessage } from "./composerRecipients.logic";
+import {
+  type ComposerRecipientMessage,
+  matchComposerRecipients,
+  parseComposerRecipientMessage,
+} from "./composerRecipients.logic";
 
 /**
  * Who the composer of `threadId` can address with `@`, from every product feature, with ids
@@ -32,21 +37,54 @@ export function productComposerRecipients(
   });
 }
 
-export function matchComposerRecipientItems(
+let recipientsRevision = 0;
+const readRecipientsRevision = () => recipientsRevision;
+
+/**
+ * Who the composer of `threadId` can address, kept current while it is mounted: features load
+ * what they answer from, whether or not the view that usually shows it, such as the sidebar, is.
+ */
+export function useProductComposerRecipients(
   environmentId: EnvironmentId,
   threadId: ThreadId | null,
+): ReadonlyArray<ExperimentalWebComposerRecipient> {
+  const subscribe = (listener: () => void) => {
+    const onChange = () => {
+      recipientsRevision += 1;
+      listener();
+    };
+    const stops = WEB_PRODUCT.features.flatMap((feature) =>
+      feature.subscribeComposerRecipients
+        ? [feature.subscribeComposerRecipients(environmentId, onChange)]
+        : [],
+    );
+    return () => {
+      for (const stop of stops) stop();
+    };
+  };
+  const revision = useSyncExternalStore(subscribe, readRecipientsRevision, readRecipientsRevision);
+  return composerRecipientsAt(environmentId, threadId, revision);
+}
+
+// `revision` is not read: it makes the React Compiler ask again once a feature's state changed.
+const composerRecipientsAt = (
+  environmentId: EnvironmentId,
+  threadId: ThreadId | null,
+  _revision: number,
+) => productComposerRecipients(environmentId, threadId);
+
+export function composerRecipientItems(
+  recipients: ReadonlyArray<ExperimentalWebComposerRecipient>,
   query: string,
 ): ComposerCommandItem[] {
-  return matchComposerRecipients(productComposerRecipients(environmentId, threadId), query).map(
-    (recipient) => ({
-      id: `recipient:${recipient.id}`,
-      type: "recipient",
-      name: recipient.name,
-      icon: recipient.icon,
-      label: recipient.name,
-      description: recipient.description,
-    }),
-  );
+  return matchComposerRecipients(recipients, query).map((recipient) => ({
+    id: `recipient:${recipient.id}`,
+    type: "recipient",
+    name: recipient.name,
+    icon: recipient.icon,
+    label: recipient.name,
+    description: recipient.description,
+  }));
 }
 
 export const parseProductComposerRecipientMessage = (
@@ -80,14 +118,26 @@ let sending = false;
  * on its way.
  */
 export async function sendComposerRecipientMessage(input: {
-  readonly message: NonNullable<ReturnType<typeof parseProductComposerRecipientMessage>>;
+  readonly message: ComposerRecipientMessage<ExperimentalWebComposerRecipient>;
   readonly sendContext: ReturnType<ChatComposerHandle["getSendContext"]>;
   readonly draftTarget: ComposerThreadTarget;
   readonly navigate: (options: NavigateOptions) => Promise<void>;
 }): Promise<boolean> {
+  if (sending) return false;
+  if ("recipients" in input.message) {
+    toastManager.add(
+      stackedThreadToast({
+        type: "warning",
+        title: "Mention one bot per message",
+        description: `This message mentions ${input.message.recipients
+          .map((recipient) => `@${recipient.name}`)
+          .join(", ")}. Send each its own message.`,
+      }),
+    );
+    return false;
+  }
   const { recipient, text } = input.message;
   const mention = `@${recipient.name}`;
-  if (sending) return false;
   if (draftHasContext(input.sendContext, input.draftTarget)) {
     toastManager.add(
       stackedThreadToast({

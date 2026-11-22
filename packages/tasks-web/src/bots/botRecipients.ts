@@ -7,8 +7,13 @@ import type {
   ExperimentalWebComposerRecipient,
   ExperimentalWebComposerRecipientContext,
 } from "../../../../apps/web/src/product/WebFeature.ts";
-import { readTasksWebAccess, readTasksWebClient } from "../environmentApi.ts";
-import { readShownBots } from "./botData.tsx";
+import type { EnvironmentId } from "@t3tools/contracts";
+import {
+  readTasksWebAccess,
+  readTasksWebClient,
+  subscribeTasksWebAccess,
+} from "../environmentApi.ts";
+import { readShownBots, subscribeBots } from "./botData.tsx";
 
 /** The bots a chat's `@` offers: all of them but the chat's own bot, which is written to as is. */
 export const addressableBots = <B extends Pick<Bot, "threadId">>(
@@ -17,7 +22,30 @@ export const addressableBots = <B extends Pick<Bot, "threadId">>(
 ) => bots.filter((bot) => bot.threadId !== threadId);
 
 /**
- * Uses the list the Bots sidebar section keeps, so typing `@` needs no request. The message
+ * Follows the environment's bot list while a composer is open, so `@` offers the bots with the
+ * sidebar closed or showing other computers. The list is the one the Bots section shares.
+ */
+export function subscribeBotRecipients(environmentId: EnvironmentId, onChange: () => void) {
+  let stopBots: (() => void) | undefined;
+  const sync = () => {
+    const canRead = readTasksWebAccess(environmentId).canReadAgents;
+    if (canRead && stopBots === undefined) stopBots = subscribeBots(environmentId, onChange);
+    if (!canRead && stopBots !== undefined) {
+      stopBots();
+      stopBots = undefined;
+    }
+    onChange();
+  };
+  const stopAccess = subscribeTasksWebAccess(sync);
+  sync();
+  return () => {
+    stopAccess();
+    stopBots?.();
+  };
+}
+
+/**
+ * Reads the shared bot list, so typing `@` needs no request. The message
  * goes to the bot's chat, queued behind a busy turn, and the server posts the bot's reply back
  * in the chat it was sent from.
  */
@@ -36,6 +64,7 @@ export function botComposerRecipients({
     name: bot.agent.name,
     description: "Ask this bot here",
     icon: BotIcon,
+    chatThreadId: bot.threadId,
     send: (text) =>
       readTasksWebClient(environmentId).bots.mention({
         agentId: bot.agent.id,

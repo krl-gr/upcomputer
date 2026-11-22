@@ -149,7 +149,7 @@ export function readShownBots(environmentId: EnvironmentId) {
   return list?.loaded ? list.bots : null;
 }
 
-function subscribeBots(environmentId: EnvironmentId, listener: () => void) {
+export function subscribeBots(environmentId: EnvironmentId, listener: () => void) {
   const store = storeFor(environmentId);
   store.listeners.add(listener);
   if (store.listeners.size === 1) {

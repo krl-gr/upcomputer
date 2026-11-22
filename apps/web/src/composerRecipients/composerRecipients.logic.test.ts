@@ -4,6 +4,7 @@ import {
   composerRecipientMention,
   matchComposerRecipients,
   parseComposerRecipientMessage,
+  withoutComposerRecipientChats,
 } from "./composerRecipients.logic";
 
 const release = { name: "Release helper" };
@@ -83,11 +84,78 @@ describe("parseComposerRecipientMessage", () => {
     });
   });
 
+  it("finds the mention anywhere, keeping the name in the sentence", () => {
+    const cerbero = { name: "Cérbero" };
+    expect(
+      parseComposerRecipientMessage("oi @Cérbero, o que está fazendo?", [inbox, cerbero]),
+    ).toEqual({ recipient: cerbero, text: "oi Cérbero, o que está fazendo?" });
+    expect(parseComposerRecipientMessage("ask @Inbox manager later", [inbox])).toEqual({
+      recipient: inbox,
+      text: "ask Inbox manager later",
+    });
+    expect(parseComposerRecipientMessage('thanks (@"Release helper")', [release])).toEqual({
+      recipient: release,
+      text: "thanks (Release helper)",
+    });
+  });
+
+  it("reads a mention followed by punctuation, dropping it when the mention opens the message", () => {
+    const cerbero = { name: "Cérbero" };
+    for (const prompt of [
+      "@Cérbero , o que esta fazendo agora?",
+      "@Cérbero, o que esta fazendo agora?",
+      "@cérbero: o que esta fazendo agora?",
+      // Decomposed accents, as some keyboards type them.
+      "@Ce\u0301rbero, o que esta fazendo agora?",
+    ]) {
+      expect(parseComposerRecipientMessage(prompt, [cerbero])).toEqual({
+        recipient: cerbero,
+        text: "o que esta fazendo agora?",
+      });
+    }
+    expect(parseComposerRecipientMessage("is it done @Cérbero?", [cerbero])).toEqual({
+      recipient: cerbero,
+      text: "is it done Cérbero?",
+    });
+  });
+
+  it("sends a message that mentions one recipient twice to it once", () => {
+    expect(parseComposerRecipientMessage("@Inbox manager tell @Inbox manager hi", [inbox])).toEqual(
+      { recipient: inbox, text: "tell Inbox manager hi" },
+    );
+  });
+
+  it("names every recipient when a message mentions more than one, so it goes to none", () => {
+    expect(
+      parseComposerRecipientMessage("@Inbox manager ask @Research assistant", [
+        inbox,
+        research,
+        release,
+      ]),
+    ).toEqual({ recipients: [inbox, research] });
+  });
+
   it("leaves other prompts for the open chat", () => {
-    expect(parseComposerRecipientMessage("ask @Inbox manager later", [inbox])).toBeNull();
     expect(parseComposerRecipientMessage("@Inbox managers are busy", [inbox])).toBeNull();
+    expect(parseComposerRecipientMessage("@Inbox manager-bot hi", [inbox])).toBeNull();
     expect(parseComposerRecipientMessage("@src/index.ts explain", [inbox])).toBeNull();
+    expect(parseComposerRecipientMessage("mail me@Nova.dev", [{ name: "Nova" }])).toBeNull();
+    expect(parseComposerRecipientMessage("open @Nova.ts", [{ name: "Nova" }])).toBeNull();
     expect(parseComposerRecipientMessage("@Inbox manager hi", [])).toBeNull();
     expect(parseComposerRecipientMessage('@"Inbox" hi', [inbox])).toBeNull();
+  });
+});
+
+describe("withoutComposerRecipientChats", () => {
+  it("leaves out a recipient's own chat on the composer's computer only", () => {
+    const botChat = { environmentId: "here", id: "bot-chat:nova" };
+    const chat = { environmentId: "here", id: "thread-1" };
+    const elsewhere = { environmentId: "linked", id: "bot-chat:nova" };
+    expect(
+      withoutComposerRecipientChats([botChat, chat, elsewhere], "here", [
+        { chatThreadId: "bot-chat:nova" },
+        {},
+      ]),
+    ).toEqual([chat, elsewhere]);
   });
 });

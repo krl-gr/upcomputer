@@ -94,10 +94,12 @@ export interface ExperimentalWebComposerRecipientContext {
 export interface ExperimentalWebComposerRecipient {
   /** Unique within the feature. */
   readonly id: string;
-  /** A message that starts with `@` and this name goes to the recipient, without the name. */
+  /** A message that mentions `@` and this name anywhere goes to the recipient. */
   readonly name: string;
   readonly description: string;
   readonly icon?: ComponentType<{ readonly className?: string }>;
+  /** The recipient's own chat, which `@` then offers only as the recipient, not as a thread. */
+  readonly chatThreadId?: ThreadId;
   /**
    * Sends the text as the person's own message; rejects with the reason it was not sent.
    * `repliesHere` says the answer comes back to the open chat.
@@ -171,6 +173,14 @@ export interface ExperimentalWebFeatureContribution {
   readonly composerRecipients?: (
     context: ExperimentalWebComposerRecipientContext,
   ) => ReadonlyArray<ExperimentalWebComposerRecipient>;
+  /**
+   * Called while a composer of the environment is mounted, to load and follow what
+   * `composerRecipients` answers from; `onChange` asks again. Returns the unsubscribe.
+   */
+  readonly subscribeComposerRecipients?: (
+    environmentId: EnvironmentId,
+    onChange: () => void,
+  ) => () => void;
   /** Renders null for an agent the feature does not know. */
   readonly agentAvatar?: ComponentType<ExperimentalWebAgentAvatarProps>;
   readonly sidebarSection?: ComponentType;
