@@ -40,6 +40,7 @@ export interface TasksWebRpcClient {
     readonly acceptProposal: RpcUnaryMethod<typeof BOTS_RPC_METHODS.acceptProposal>;
     readonly rejectProposal: RpcUnaryMethod<typeof BOTS_RPC_METHODS.rejectProposal>;
     readonly assign: RpcUnaryMethod<typeof BOTS_RPC_METHODS.assign>;
+    readonly mention: RpcUnaryMethod<typeof BOTS_RPC_METHODS.mention>;
   };
 
   readonly tasks: {
@@ -183,6 +184,8 @@ export function createTasksWebRpcClient(
       rejectProposal: (input) =>
         request("bots.rejectProposal", "canMutateAgents", BOTS_RPC_METHODS.rejectProposal, input),
       assign: (input) => request("bots.assign", "canMutateAgents", BOTS_RPC_METHODS.assign, input),
+      mention: (input) =>
+        request("bots.mention", "canMutateAgents", BOTS_RPC_METHODS.mention, input),
     },
     tasks: {
       create: (input) => request("tasks.create", "canMutateTasks", TASKS_RPC_METHODS.create, input),

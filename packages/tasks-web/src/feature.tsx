@@ -7,6 +7,7 @@ import { msg } from "gt-react";
 // may reach web state at module load. The UI below loads on first render.
 import {
   defineExperimentalWebFeature,
+  type ExperimentalWebAgentAvatarProps,
   type ExperimentalWebThreadAccessoryProps,
   type ExperimentalWebThreadRowAccessoryProps,
 } from "../../../apps/web/src/product/WebFeature.ts";
@@ -56,6 +57,18 @@ export const isBotChatThread = (thread: ExperimentalWebThreadAccessoryProps) =>
 const LazyBotHeader = lazy(() =>
   import("./bots/Bots.tsx").then((module) => ({ default: module.BotHeader })),
 );
+
+const LazyBotAgentAvatar = lazy(() =>
+  import("./bots/Bots.tsx").then((module) => ({ default: module.BotAgentAvatar })),
+);
+
+function BotAgentAvatar(props: ExperimentalWebAgentAvatarProps) {
+  return (
+    <Suspense fallback={null}>
+      <LazyBotAgentAvatar {...props} />
+    </Suspense>
+  );
+}
 
 function SidebarBots() {
   return (
@@ -116,6 +129,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   chatHeaderAccessory: ChatHeaderRunCounts,
   threadActions: (thread) => botMenu?.botThreadActions(thread) ?? [],
   composerRecipients: (context) => botRecipients?.botComposerRecipients(context) ?? [],
+  agentAvatar: BotAgentAvatar,
   sidebarSection: SidebarBots,
   coordinator: TaskReminders,
   settings: [

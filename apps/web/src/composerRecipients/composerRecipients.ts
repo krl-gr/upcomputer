@@ -75,8 +75,8 @@ function draftHasContext(
 let sending = false;
 
 /**
- * Sends the message to its recipient instead of the open chat, and says where it went. It
- * resolves false, keeping the draft, when nothing was sent, also while an earlier one is still
+ * Sends the message to its recipient instead of the open chat, and says where it went when the
+ * reply does not come back here. It resolves false, keeping the draft, when nothing was sent, also while an earlier one is still
  * on its way.
  */
 export async function sendComposerRecipientMessage(input: {
@@ -105,8 +105,9 @@ export async function sendComposerRecipientMessage(input: {
     return false;
   }
   sending = true;
+  let repliesHere = false;
   try {
-    await recipient.send(text);
+    ({ repliesHere } = await recipient.send(text));
   } catch (error) {
     toastManager.add(
       stackedThreadToast({
@@ -119,6 +120,8 @@ export async function sendComposerRecipientMessage(input: {
   } finally {
     sending = false;
   }
+  // The chat shows the message and, later, the reply.
+  if (repliesHere) return true;
   toastManager.add(
     stackedThreadToast({
       type: "success",

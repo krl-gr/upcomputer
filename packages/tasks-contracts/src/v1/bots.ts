@@ -1,5 +1,6 @@
 import {
   IsoDateTime,
+  MessageId,
   ModelSelection,
   ProjectId,
   ProviderInteractionMode,
@@ -270,6 +271,19 @@ export const BotMemoryWriteInput = Schema.Struct({
   source: BotMemory.fields.source,
 });
 export type BotMemoryWriteInput = typeof BotMemoryWriteInput.Type;
+/** The person's `@bot` message from `threadId`; the bot's reply comes back to that thread. */
+export const BotMentionInput = Schema.Struct({
+  agentId: TaskAgentId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  text: TrimmedNonEmptyString,
+});
+export type BotMentionInput = typeof BotMentionInput.Type;
+export const BotMentionResult = Schema.Struct({
+  /** False when the reply stays in the bot's chat, as for a chat the server has not created yet. */
+  repliesHere: Schema.Boolean,
+});
+export type BotMentionResult = typeof BotMentionResult.Type;
 
 export const BOTS_RPC_NAMESPACE = "upcomputer.bots.v1";
 export const BOTS_RPC_METHODS = {
@@ -284,6 +298,7 @@ export const BOTS_RPC_METHODS = {
   rejectProposal: `${BOTS_RPC_NAMESPACE}.rejectProposal`,
   assign: `${BOTS_RPC_NAMESPACE}.assign`,
   extract: `${BOTS_RPC_NAMESPACE}.extract`,
+  mention: `${BOTS_RPC_NAMESPACE}.mention`,
 } as const;
 const agentInput = Schema.Struct({ agentId: TaskAgentId });
 const entryInput = Schema.Struct({ ...agentInput.fields, id: TrimmedNonEmptyString });
@@ -321,6 +336,11 @@ export const BotsRpcGroup = RpcGroup.make(
     error: TaskError,
   }),
   Rpc.make(BOTS_RPC_METHODS.rejectProposal, { payload: entryInput, error: TaskError }),
+  Rpc.make(BOTS_RPC_METHODS.mention, {
+    payload: BotMentionInput,
+    success: BotMentionResult,
+    error: TaskError,
+  }),
   Rpc.make(BOTS_RPC_METHODS.assign, {
     payload: Schema.Struct({
       ...agentInput.fields,

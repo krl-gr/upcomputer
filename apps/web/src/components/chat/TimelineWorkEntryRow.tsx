@@ -16,6 +16,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { Link } from "@tanstack/react-router";
 import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-execution";
 import { TaskRunsNotificationCard } from "./TaskRunsNotificationCard";
+import { BotMentionNotificationCard } from "./BotMentionNotificationCard";
 import { providerFailureActions } from "@t3tools/client-runtime/state/turn-item-presentation";
 import { ErrorDetails } from "~/components/errors/ErrorDetails";
 import {
@@ -173,6 +174,18 @@ export const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEn
         tasks={item.source.tasks}
         createdAt={props.workEntry.createdAt}
         timestampFormat={ctx.timestampFormat}
+      />
+    );
+  }
+  if (item?.type === "notification" && item.source.kind === "bot_mention") {
+    return (
+      <BotMentionNotificationCard
+        environmentId={ctx.activeThreadEnvironmentId}
+        source={item.source}
+        notification={item}
+        createdAt={props.workEntry.createdAt}
+        timestampFormat={ctx.timestampFormat}
+        onOpenThread={ctx.onOpenThread}
       />
     );
   }

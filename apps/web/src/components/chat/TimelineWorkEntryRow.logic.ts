@@ -154,6 +154,7 @@ export function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconNa
       case "subagent":
       case "delegated_task":
       case "task_agent_run":
+      case "bot_mention":
         return "bot";
       case "command":
         return "terminal";

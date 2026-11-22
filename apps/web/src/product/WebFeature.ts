@@ -98,10 +98,20 @@ export interface ExperimentalWebComposerRecipient {
   readonly name: string;
   readonly description: string;
   readonly icon?: ComponentType<{ readonly className?: string }>;
-  /** Sends the text as the person's own message; rejects with the reason it was not sent. */
-  readonly send: (text: string) => Promise<void>;
+  /**
+   * Sends the text as the person's own message; rejects with the reason it was not sent.
+   * `repliesHere` says the answer comes back to the open chat.
+   */
+  readonly send: (text: string) => Promise<{ readonly repliesHere: boolean }>;
   /** Opens where the message went. */
   readonly open: (context: ExperimentalWebThreadActionContext) => void;
+}
+
+/** An agent's face where the timeline shows something it wrote, such as a bot's reply. */
+export interface ExperimentalWebAgentAvatarProps {
+  readonly environmentId: EnvironmentId;
+  readonly agentId: string;
+  readonly size: number;
 }
 
 export interface ExperimentalWebThreadRowAccessoryProps extends ExperimentalWebThreadAccessoryProps {
@@ -161,6 +171,8 @@ export interface ExperimentalWebFeatureContribution {
   readonly composerRecipients?: (
     context: ExperimentalWebComposerRecipientContext,
   ) => ReadonlyArray<ExperimentalWebComposerRecipient>;
+  /** Renders null for an agent the feature does not know. */
+  readonly agentAvatar?: ComponentType<ExperimentalWebAgentAvatarProps>;
   readonly sidebarSection?: ComponentType;
   /**
    * Mounted once in the app shell while the primary environment is signed in,

@@ -207,6 +207,7 @@ export class BotService extends Context.Service<
     readonly removal: (
       agentId: TaskAgentId,
     ) => Effect.Effect<{ readonly name: string; readonly memories: number } | null, TaskError>;
+    readonly get: (agentId: TaskAgentId) => Effect.Effect<Bot, TaskError>;
     readonly forThread: (threadId: ThreadId) => Effect.Effect<Bot | null, TaskError>;
     /**
      * Why the thread may not move to the project, or null. A bot's chat follows its bot's
@@ -1075,6 +1076,9 @@ const make = Effect.gen(function* () {
         ),
     ),
     followChatRenames: followChatRenames.pipe(Effect.mapError(asError)),
+    get: Effect.fn("BotService.getBot")(function* (agentId) {
+      return yield* get(agentId);
+    }, Effect.mapError(asError)),
     forThread: Effect.fn("BotService.forThread")(function* (threadId) {
       return yield* forThread(threadId);
     }, Effect.mapError(asError)),

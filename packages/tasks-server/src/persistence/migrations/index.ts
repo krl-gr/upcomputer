@@ -7,6 +7,7 @@ import { BotOneProjectMigration } from "./038_BotOneProject.ts";
 import { TaskListSettingsMigration } from "./039_TaskListSettings.ts";
 import { DropOrphanTaskEventsMigration } from "./040_DropOrphanTaskEvents.ts";
 import { UpdateDefaultBotCreationPromptsMigration } from "./041_UpdateDefaultBotCreationPrompts.ts";
+import { BotMentionsMigration } from "./042_BotMentions.ts";
 import { TasksNewestFirstMigration } from "./031_TasksNewestFirst.ts";
 import { BotsMigration } from "./033_Bots.ts";
 import { UpdateDefaultFeedOrderPromptsMigration } from "./030_UpdateDefaultFeedOrderPrompts.ts";
@@ -148,5 +149,6 @@ export const TASK_MIGRATION_CONTRIBUTION = {
       name: "UpdateDefaultBotCreationPrompts",
       run: UpdateDefaultBotCreationPromptsMigration,
     },
+    { version: 42, name: "BotMentions", run: BotMentionsMigration },
   ],
 } as const;

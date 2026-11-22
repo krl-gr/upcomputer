@@ -103,6 +103,7 @@ import {
   TaskThreadTasksButton,
   TaskThreadTasksSubmenu,
 } from "../ui/TaskThreadRunCounts.tsx";
+import type { ExperimentalWebAgentAvatarProps } from "../../../../apps/web/src/product/WebFeature.ts";
 import { botRowMenuEntries } from "./botMenu.ts";
 import { BOTS_ORDER_STORAGE_KEY, botOrderKey, moveBotInOrder, orderBots } from "./botOrder.ts";
 import { botsInProjectScope } from "./botProjectScope.ts";
@@ -635,4 +636,11 @@ export function BotHeader({
   useCompactComposerChat(chatKey);
   if (!isBotChat) return null;
   return <span hidden data-chat-header-hidden />;
+}
+
+/** A bot's face on what it wrote in another chat, such as its reply to a mention. */
+export function BotAgentAvatar({ environmentId, agentId, size }: ExperimentalWebAgentAvatarProps) {
+  const { bots } = useBots(environmentId);
+  const bot = bots.find((item) => item.agent.id === agentId);
+  return <BotAvatar id={agentId} appearance={bot?.appearance} state="idle" size={size} />;
 }
