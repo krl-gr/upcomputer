@@ -1,6 +1,7 @@
-import { OrchestratorMcpFailure, TurnItemId } from "@t3tools/contracts";
+import { OrchestratorMcpFailure, type ThreadId, TurnItemId } from "@t3tools/contracts";
 import { TaskError } from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { McpSchema, Tool, Toolkit } from "effect/ai";
@@ -10,6 +11,7 @@ import {
   McpToolAccess,
   resultToolkitRegistration,
   ThreadManagementService,
+  threadToolVisibility,
 } from "../../../../apps/server/src/extensionApi.ts";
 import { agentRunModes, broaderRunMode } from "../agents/runModes.ts";
 import { BotService } from "./BotService.ts";
@@ -218,4 +220,20 @@ const handlers = McpToolAccess.toLayer(
     };
   }),
 );
-export const BotMcpToolsLive = resultToolkitRegistration(toolkit, handlers);
+/** A bot whose agent keeps its own memory gets no memory tools, in its chat or its task runs. */
+const MemoryToolVisibility = threadToolVisibility(
+  ["bot_memory", "bot_remember", "bot_forget"],
+  Effect.map(BotService, (bots) => ({
+    visible: (threadId: ThreadId) =>
+      bots.forThread(threadId).pipe(
+        Effect.map((bot) => bot?.memoryMode !== "agent"),
+        Effect.orElseSucceed(() => true),
+      ),
+    changes: bots.memoryModeChanges,
+  })),
+);
+
+export const BotMcpToolsLive = Layer.merge(
+  resultToolkitRegistration(toolkit, handlers),
+  MemoryToolVisibility,
+);
