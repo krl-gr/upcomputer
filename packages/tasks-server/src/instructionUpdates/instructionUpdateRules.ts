@@ -34,13 +34,27 @@ export interface UserTexts {
   }>;
 }
 
-function namedStatuses(text: string, statuses: ReadonlyArray<string>): string[] {
-  return statuses.filter((status) =>
-    new RegExp(
-      `(^|[^\\p{L}\\p{N}])${status.replace(/\s+/g, "\\s+")}($|[^\\p{L}\\p{N}])`,
-      "iu",
-    ).test(text),
+/**
+ * Whole status names only: "Backlog" or "Needs input", not the word "backlog",
+ * "BACKLOG.md" or "backlog_items".
+ */
+function statusPattern(status: string): RegExp {
+  const words = status
+    .trim()
+    .split(/\s+/)
+    .map((word, index) => {
+      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (index === 0) return escaped;
+      return `[${word[0]?.toUpperCase()}${word[0]?.toLowerCase()}]${escaped.slice(1)}`;
+    });
+  return new RegExp(
+    `(?<![\\p{L}\\p{N}_])${words.join("\\s+")}(?![\\p{L}\\p{N}_]|\\.[\\p{L}\\p{N}])`,
+    "u",
   );
+}
+
+function namedStatuses(text: string, statuses: ReadonlyArray<string>): string[] {
+  return statuses.filter((status) => statusPattern(status).test(text));
 }
 
 /**
