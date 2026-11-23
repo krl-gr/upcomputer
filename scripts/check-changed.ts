@@ -40,6 +40,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { decide, readWorkspace } from "../.github/scripts/ci-changes.cjs";
 import { vitePlusCommand } from "./check-changed-command.ts";
+import { MOBILE_SKIPPED, mobileDepsInstalled, withoutMobile } from "./lib/mobile-app.ts";
 
 const GiB = 1024 ** 3;
 
@@ -304,6 +305,8 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
     const hash = NodeCrypto.createHash("sha256");
     // CI changes test behavior (vite.config.ts rejects .only under CI).
     hash.update(`${process.version}\0${base}\0${ci}\0`);
+    // Installing the mobile dependencies brings back the mobile tests it skipped.
+    hash.update(`${mobileDepsInstalled(root)}\0`);
     hash.update(
       yield* git(root, [
         "diff",
@@ -366,13 +369,16 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
   for (const test of docReaderTests(files)) tests.add(test);
   // It reads files other than the ones beside it, so no changed file selects it.
   if (affected.includes("t3")) tests.add("apps/server/src/provider/AgentContextBudget.test.ts");
-  const { vitestTests, nodeTests } = splitTests(tests);
+  const { vitestTests: allVitestTests, nodeTests } = splitTests(tests);
+  const mobileInstalled = mobileDepsInstalled(root);
+  const vitest = withoutMobile(allVitestTests, mobileInstalled, (file) => file);
+  const vitestTests = vitest.kept;
 
   // React Compiler coverage compiles every client source file, so run only the
   // changed files' cases, in one extra step: a -t filter in the main test step
   // would drop every other test. An app is skipped when the main step already
   // runs its coverage file unfiltered. File filters mirror each coverage test.
-  const compilerApps = [
+  const allCompilerApps = [
     {
       test: "apps/web/src/reactCompilerCoverage.test.ts",
       root: "apps/web/src/",
@@ -400,6 +406,8 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
     const pattern = [...names, ...always];
     return pattern.length > 0 ? [{ test, names, pattern }] : [];
   });
+  const compiler = withoutMobile(allCompilerApps, mobileInstalled, (app) => app.test);
+  const compilerApps = compiler.kept;
 
   // knip:check cannot be scoped to a package. Any code change can leave a file,
   // export, or dependency unused (removing the last import of a helper does), so
@@ -600,6 +608,7 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
   if (ciOnly.length > 0) summary.push(`  CI also runs: ${ciOnly.join(", ")}`);
   if (!runPatchCheck) summary.push("  unused patch check skipped: no dependency files changed");
   if (!runKnip) summary.push("  knip skipped: no code or manifest changed");
+  if (vitest.skipped || compiler.skipped) summary.push(`  ${MOBILE_SKIPPED}`);
   yield* Console.log(`\n${summary.join("\n")}`);
 
   if (results.some((result) => result.outcome !== "pass")) return false;

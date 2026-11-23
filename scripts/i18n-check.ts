@@ -7,13 +7,14 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import { MOBILE_SKIPPED, mobileDepsInstalled } from "./lib/mobile-app.ts";
+
 // Desktop only depends on gt-i18n, so the gt CLI hides `generate` there; its script adds it back.
 const GENERATE: Record<string, readonly [string, ...string[]]> = {
   "apps/web": ["node_modules/.bin/gt", "generate"],
   "apps/mobile": ["node_modules/.bin/gt", "generate"],
   "apps/desktop": [process.execPath, "scripts/i18n-generate.mjs"],
 };
-const APPS = Object.keys(GENERATE);
 
 // JSX entries (`<T>`) are arrays and objects, so values compare by their JSON text.
 type Catalog = Record<string, unknown>;
@@ -23,8 +24,14 @@ const missingFrom = (from: Catalog, catalog: Catalog) =>
 
 const root = NodePath.resolve(import.meta.dirname, "..");
 const problems: string[] = [];
+const checked: string[] = [];
 
 for (const [app, [command, ...args]] of Object.entries(GENERATE)) {
+  if (app === "apps/mobile" && !mobileDepsInstalled(root)) {
+    console.log(MOBILE_SKIPPED);
+    continue;
+  }
+  checked.push(app);
   const appDir = NodePath.join(root, app);
   const config = readJson(NodePath.join(appDir, "gt.config.json"));
   const catalogDir = NodePath.join(appDir, NodePath.dirname(config.files.gt.output));
@@ -81,5 +88,5 @@ if (problems.length > 0) {
   );
   process.exitCode = 1;
 } else {
-  console.log(`i18n catalogs match the source in ${APPS.join(", ")}.`);
+  console.log(`i18n catalogs match the source in ${checked.join(", ")}.`);
 }

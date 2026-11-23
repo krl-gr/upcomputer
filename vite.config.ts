@@ -3,6 +3,7 @@ import { defineConfig } from "vite-plus";
 import * as NodeURL from "node:url";
 import { remoteCacheUrl } from "./infra/task-cache/src/remoteCache.ts";
 import { cachedTestTasks } from "./scripts/lib/cached-tests.ts";
+import { mobileDepsInstalled } from "./scripts/lib/mobile-app.ts";
 
 // Up.computer tests written for jsdom and react-test-renderer before upstream
 // moved web DOM tests to the browser project. Move each to
@@ -186,7 +187,9 @@ export default defineConfig({
     ...(isRepoRootTestRun
       ? {
           projects: [
-            ...TEST_CONFIG_PACKAGES,
+            ...TEST_CONFIG_PACKAGES.filter(
+              (dir) => dir !== "apps/mobile" || mobileDepsInstalled(import.meta.dirname),
+            ),
             {
               extends: true,
               test: {
