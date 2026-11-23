@@ -980,6 +980,17 @@ const make = Effect.gen(function* () {
               : null);
           if (invalid !== null)
             return { isError: true, text: `${invalid} The task was not changed.` };
+          // A chat acting on a stale report (a failed run it wants to retry) must not
+          // relabel a task that a newer run, such as a person's Continue, already works on.
+          if (input.status !== undefined && input.status !== before.value.status) {
+            const active = yield* repository.listActiveAgentRunsForTask({ id: input.id });
+            const run = active[0];
+            if (run !== undefined && !active.some((each) => each.threadId === context.threadId))
+              return {
+                isError: true,
+                text: `Task '${input.id}' is being worked on by run ${run.id}, started ${run.startedAt}, so its status was not changed. Read it again with task_get; message the run with agent_run_message, or stop it with task_cancel first.`,
+              };
+          }
           const callerRun = context.threadId
             ? Option.getOrNull(
                 yield* repository.findActiveAgentRunByThreadId({ threadId: context.threadId }),

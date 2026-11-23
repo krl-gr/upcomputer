@@ -635,6 +635,59 @@ it.effect("a task delegated from a bot's permanent chat reports and counts there
   }).pipe(Effect.provide(layer));
 });
 
+it.effect("a chat cannot move a task back while another thread's run works on it", () => {
+  const { layer, create, update, stored } = harness();
+  return Effect.gen(function* () {
+    const repository = yield* TaskRepository;
+    const at = "2026-11-23T18:18:00.000Z";
+    const modelSelection = { instanceId: ProviderInstanceId.make("opencode"), model: "glm-5.4" };
+    yield* repository.upsertAgent({
+      id: TaskAgentId.make("agent-scribe"),
+      projectId: null,
+      name: "Scribe",
+      enabled: true,
+      startStatuses: ["To Do"],
+      startTags: [],
+      startRunStatuses: [],
+      config: { role: "Agent", modelSelection, instructions: "Work." },
+      createdAt: at,
+      updatedAt: at,
+      archivedAt: null,
+    });
+    yield* create(item("recipes", "To Do"));
+    const [task] = yield* stored;
+    if (!task) return assert.fail("the task was not created");
+    // The person's Continue started this run while the chat was still reacting to the failure.
+    const runThread = ThreadId.make("thread-continued-run");
+    yield* repository.createAgentRun({
+      id: TaskAgentRunId.make("run-continued"),
+      taskId: task.id,
+      agentId: TaskAgentId.make("agent-scribe"),
+      threadId: runThread,
+      modelSelection,
+      status: "running",
+      startedAt: at,
+      completedAt: null,
+      triggerRunId: null,
+      continuesRunId: TaskAgentRunId.make("run-failed"),
+    });
+    const asRun = (args: Record<string, unknown>) =>
+      Effect.flatMap(TaskToolService, (tools) =>
+        tools.call({ name: "task_update", args, context: { ...chat, threadId: runThread } }),
+      );
+    assert.isFalse((yield* asRun({ id: task.id, status: "In Progress" })).isError);
+
+    const retry = yield* update({ id: task.id, status: "To Do" });
+    assert.isTrue(retry.isError);
+    assert.include(retry.text, "run-continued");
+    assert.equal((yield* stored)[0]?.status, "In Progress");
+    // Other fields stay open to the chat, and the run itself still sets the status.
+    assert.isFalse((yield* update({ id: task.id, output: "Noted." })).isError);
+    assert.isFalse((yield* asRun({ id: task.id, status: "To Verify" })).isError);
+    assert.equal((yield* stored)[0]?.status, "To Verify");
+  }).pipe(Effect.provide(layer));
+});
+
 /** A bot and a task agent, each with its own chat, as the bot settings save them. */
 const seedBotAndAgent = Effect.gen(function* () {
   const repository = yield* TaskRepository;
