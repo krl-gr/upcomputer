@@ -36,7 +36,9 @@ import {
   shippedGroupOrder,
   renamedStatuses,
   touchesEditedText,
+  waitsForOf,
   type EditedText,
+  type InstructionUpdateStates,
   type UserTexts,
 } from "./instructionUpdateRules.ts";
 
@@ -108,6 +110,9 @@ const make = Effect.gen(function* () {
     Effect.map((rows) => new Map(rows.map((row) => [row.id, row]))),
     sqlError("rows"),
   );
+  const statesOf = (
+    rows: ReadonlyMap<string, { readonly state: InstructionUpdateState }>,
+  ): InstructionUpdateStates => new Map([...rows].map(([id, row]) => [id, row.state]));
 
   const readMode = sql<{ mode: string }>`
     SELECT instruction_updates_mode AS mode FROM task_settings WHERE id = 1
@@ -167,6 +172,7 @@ const make = Effect.gen(function* () {
   const details: InstructionUpdatesServiceShape["details"] = Effect.gen(function* () {
     const rows = yield* readRows;
     const texts = yield* userTexts;
+    const states = statesOf(rows);
     const listSettings = yield* repository.listSettings();
     return {
       mode: yield* readMode,
@@ -175,7 +181,10 @@ const make = Effect.gen(function* () {
       entries: INSTRUCTION_UPDATES.flatMap((entry) => {
         const row = rows.get(entry.id);
         if (row === undefined) return [];
-        const edited = editedTextOf(entry, texts);
+        const edited = editedTextOf(entry, texts, states);
+        const waitsFor = isPendingInstructionUpdate(row.state)
+          ? waitsForOf(entry, texts, states)
+          : undefined;
         return [
           {
             id: entry.id,
@@ -183,6 +192,7 @@ const make = Effect.gen(function* () {
             decidedAt: row.decidedAt,
             decidedBy: row.decidedBy,
             touchesEditedText: touchesEditedText(edited),
+            ...(waitsFor === undefined ? {} : { waitsFor }),
             entry,
             edited,
           },
@@ -264,13 +274,16 @@ const make = Effect.gen(function* () {
   const applyAutomatically = Effect.gen(function* () {
     const mode = yield* readMode;
     if (mode !== "auto") return [];
-    const rows = yield* readRows;
     const applied: string[] = [];
     for (const entry of INSTRUCTION_UPDATES) {
+      // Re-read per entry so chained updates see what earlier entries just wrote.
+      const rows = yield* readRows;
       const row = rows.get(entry.id);
       if (row === undefined || !isPendingInstructionUpdate(row.state)) continue;
-      // Re-read user texts per entry so chained updates see prompt text written by earlier entries.
-      if (touchesEditedText(editedTextOf(entry, yield* userTexts))) continue;
+      const texts = yield* userTexts;
+      const states = statesOf(rows);
+      if (touchesEditedText(editedTextOf(entry, texts, states))) continue;
+      if (waitsForOf(entry, texts, states) !== undefined) continue;
       // One entry that cannot apply leaves it pending for the user, not the others.
       const done = yield* applyAsShipped(entry).pipe(
         Effect.as(true),
@@ -332,6 +345,8 @@ const make = Effect.gen(function* () {
     const rows = yield* readRows;
     if (!rows.has(input.id)) return Option.none();
     yield* writeRow(input.id, input.state, input.state === "pending" ? null : input.decidedBy);
+    // Applying one entry can free a later one that waited for it.
+    yield* applyAutomatically;
     yield* repository.announceInstructionUpdatesChanged();
     return yield* statusOf(input.id);
   });

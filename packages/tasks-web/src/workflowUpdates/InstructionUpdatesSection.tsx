@@ -1,8 +1,9 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import type {
-  InstructionUpdateChange,
-  InstructionUpdatesMode,
-  InstructionUpdateStatus,
+import {
+  instructionUpdateById,
+  type InstructionUpdateChange,
+  type InstructionUpdatesMode,
+  type InstructionUpdateStatus,
 } from "@t3tools/tasks-contracts/v1";
 import { useGT, useLocale } from "gt-react";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
@@ -120,6 +121,8 @@ function UpdateRow({
     if (!open) setOpen(true);
   }
   const decided = status.state === "applied" || status.state === "kept";
+  const waitsFor =
+    status.waitsFor === undefined ? undefined : instructionUpdateById(status.waitsFor);
   const setState = (state: "pending" | "kept") =>
     updateInstructionUpdates(environmentId, { entries: [{ id: entry.id, state }] }).catch(() =>
       toastManager.add({
@@ -166,10 +169,18 @@ function UpdateRow({
                   ? gt("Up.computer {release} · Changes text you edited, so it waits for you", {
                       release: entry.release,
                     })
-                  : gt(
-                      "Up.computer {release} · {count, plural, one {{count} change} other {{count} changes}} · Not applied",
-                      { release: entry.release, count: entry.changes.length },
-                    )}
+                  : mode === "auto" && waitsFor !== undefined
+                    ? gt(
+                        "Up.computer {release} · Applies automatically once “{update}” is applied",
+                        {
+                          release: entry.release,
+                          update: instructionUpdateCopy(gt, waitsFor).title,
+                        },
+                      )
+                    : gt(
+                        "Up.computer {release} · {count, plural, one {{count} change} other {{count} changes}} · Not applied",
+                        { release: entry.release, count: entry.changes.length },
+                      )}
             </span>
           </span>
         </CollapsibleTrigger>

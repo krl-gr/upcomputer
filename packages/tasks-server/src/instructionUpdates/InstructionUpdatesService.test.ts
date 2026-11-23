@@ -4,6 +4,7 @@ import { ProjectId, ProviderInstanceId } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import {
   DEFAULT_TASK_PROMPT_SETTINGS,
+  INSTRUCTION_UPDATES,
   LEGACY_TASK_PROMPT_SETTINGS,
   TaskAgentId,
   TaskId,
@@ -18,7 +19,10 @@ import { runExperimentalFeatureMigrations } from "../../../../apps/server/src/ex
 import { TaskAgentService } from "../agents/TaskAgentService.ts";
 import { AllChatsInstructions } from "../persistence/AllChatsInstructions.ts";
 import { TASK_MIGRATION_CONTRIBUTION } from "../persistence/migrations/index.ts";
-import { TaskPromptSettingsStoreLive } from "../persistence/TaskPromptSettingsStore.ts";
+import {
+  TaskPromptSettingsStore,
+  TaskPromptSettingsStoreLive,
+} from "../persistence/TaskPromptSettingsStore.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
 import { TaskRepositoryLive } from "../persistence/TaskRepositoryLive.ts";
 import {
@@ -27,6 +31,14 @@ import {
 } from "./InstructionUpdatesService.ts";
 
 const ENTRY = "task-statuses-v2";
+const BOT_ENTRY = "bot-vs-worker-agent-creation";
+const STATUSES_AGENT_CREATION = (() => {
+  const change = INSTRUCTION_UPDATES[0]?.changes.find(
+    (item) => item.kind === "prompt" && item.field === "agentCreation",
+  );
+  if (change?.kind !== "prompt") throw new Error("missing agentCreation change");
+  return change.after;
+})();
 const timestamp = "2026-11-20T10:00:00.000Z";
 
 const migrateThrough = (version: number) =>
@@ -217,6 +229,71 @@ it.effect("Apply automatically never overwrites edited text: the entry waits and
     assert.strictEqual(details.workflowVersion, 1);
     const queued = Option.getOrThrow(yield* repository.getById({ id: TaskId.make("queued") }));
     assert.strictEqual(queued.status, "Backlog");
+  }).pipe(Effect.provide(layer())),
+);
+
+it.effect(
+  "a later entry on untouched 0.0.39 text waits for the earlier one, then applies at once",
+  () =>
+    Effect.gen(function* () {
+      // QA's 0.0.39 install: Task creation edited, Worker creation still the 0.0.39 default.
+      yield* existingInstall({
+        ...LEGACY_TASK_PROMPT_SETTINGS,
+        taskCreation: "My own task rules.",
+      });
+      const updates = yield* InstructionUpdatesService;
+      const prompts = yield* TaskPromptSettingsStore;
+      const botGuidance = Effect.map(updates.get, ({ entries }) =>
+        entries.find((item) => item.id === BOT_ENTRY),
+      );
+
+      yield* updates.update({ mode: "auto" });
+
+      assert.isTrue((yield* entryOf)?.touchesEditedText);
+      const waiting = yield* botGuidance;
+      assert.strictEqual(waiting?.state, "pending");
+      assert.isFalse(waiting?.touchesEditedText);
+      assert.strictEqual(waiting?.waitsFor, ENTRY);
+      const details = yield* updates.details;
+      assert.deepStrictEqual(details.entries[1]?.edited.editedFields, []);
+
+      // A chat applies the statuses update with the new Worker creation text.
+      const state = yield* prompts.getState;
+      yield* prompts.updateField({
+        projectId: null,
+        field: "agentCreation",
+        text: STATUSES_AGENT_CREATION,
+        reason: "test",
+        expectedRevision: state.revision,
+        origin: { source: "unknown", threadId: null, runId: null },
+        dryRun: false,
+      });
+      yield* (yield* TaskRepository).setWorkflowVersion({ version: 2 });
+      yield* updates.decide({
+        id: ENTRY,
+        state: "applied",
+        decidedBy: { kind: "chat", name: null },
+      });
+
+      const applied = yield* botGuidance;
+      assert.strictEqual(applied?.state, "applied");
+      assert.deepStrictEqual(applied?.decidedBy, { kind: "auto", name: null });
+      assert.strictEqual(
+        (yield* prompts.getState).settings.agentCreation,
+        DEFAULT_TASK_PROMPT_SETTINGS.agentCreation,
+      );
+    }).pipe(Effect.provide(layer())),
+);
+
+it.effect("text the user kept or edited still makes the later entry wait", () =>
+  Effect.gen(function* () {
+    yield* existingInstall({ ...LEGACY_TASK_PROMPT_SETTINGS, taskCreation: "My own task rules." });
+    const updates = yield* InstructionUpdatesService;
+    yield* updates.update({ mode: "auto", entries: [{ id: ENTRY, state: "kept" }] });
+    const kept = (yield* updates.get).entries.find((item) => item.id === BOT_ENTRY);
+    assert.strictEqual(kept?.state, "pending");
+    assert.isTrue(kept?.touchesEditedText);
+    assert.isUndefined(kept?.waitsFor);
   }).pipe(Effect.provide(layer())),
 );
 

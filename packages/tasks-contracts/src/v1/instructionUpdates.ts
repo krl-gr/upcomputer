@@ -272,6 +272,11 @@ export const InstructionUpdateStatus = Schema.Struct({
   decidedBy: Schema.NullOr(InstructionUpdateDecider),
   /** Applying it would change text the user edited, so it never applies by itself. */
   touchesEditedText: Schema.Boolean,
+  /**
+   * A pending earlier entry whose shipped text this one builds on. It applies
+   * by itself only after that one does.
+   */
+  waitsFor: Schema.optional(TrimmedNonEmptyString),
 });
 export type InstructionUpdateStatus = typeof InstructionUpdateStatus.Type;
 

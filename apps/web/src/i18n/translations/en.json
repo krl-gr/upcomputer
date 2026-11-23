@@ -1656,6 +1656,7 @@
   "64ab5f58b0818b06": "Applied today in a chat",
   "51f94c63888ece8a": "Applied on {date} in a chat",
   "98dabfa5c252418c": "Up.computer {release} · Changes text you edited, so it waits for you",
+  "0d060caa70a7f5bd": "Up.computer {release} · Applies automatically once “{update}” is applied",
   "4ff3fcbbc05deb52": "Up.computer {release} · {count, plural, one {{count} change} other {{count} changes}} · Not applied",
   "a863c2f59f209e24": "Applied",
   "8783ac6f51f72c70": "Kept yours",
