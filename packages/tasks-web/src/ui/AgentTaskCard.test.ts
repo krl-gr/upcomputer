@@ -37,12 +37,18 @@ vi.mock("../../../../apps/web/src/components/ProjectFavicon.tsx", () => ({
 }));
 
 import { AgentTaskCard } from "./AgentTaskCard.tsx";
+import {
+  COMPOSER_TASK_DRAG_TYPE,
+  decodeTaskDragPayload,
+} from "../../../../apps/web/src/components/chat/composerTaskDrag.ts";
+import { Option } from "effect";
 
 const task = (overrides: Partial<ScopedTaskListItem> = {}) =>
   ({
     id: "task-1",
     title: "Tidy the backlog",
     status: "To Do",
+    kind: "task",
     tags: [],
     archivedAt: null,
     environmentId: "local",
@@ -72,16 +78,22 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render(item: ScopedTaskListItem) {
+async function render(
+  item: ScopedTaskListItem,
+  options?: { readonly reorderable?: boolean; readonly quoteDraggable?: boolean },
+) {
   await act(async () => {
     renderer = create(
       createElement(AgentTaskCard, {
         task: item,
         project: null,
         statuses: ["To Do", "Done"],
-        canMutate: true,
+        canMutate: options?.reorderable ?? true,
         dragged: false,
-        reorderable: true,
+        reorderable: options?.reorderable ?? true,
+        ...(options?.quoteDraggable === undefined
+          ? {}
+          : { quoteDraggable: options.quoteDraggable }),
         ...handlers,
       }),
     );
@@ -111,13 +123,20 @@ it("Alt+Arrow on the title moves the task; plain arrows do not", async () => {
 it("the card body drags and opens the task; its controls do neither", async () => {
   await render(task());
   const drag = () => {
-    const event = { preventDefault: vi.fn(), dataTransfer: { effectAllowed: "" } };
+    const data = new Map<string, string>();
+    const event = {
+      preventDefault: vi.fn(),
+      dataTransfer: {
+        effectAllowed: "",
+        setData: (type: string, value: string) => void data.set(type, value),
+      },
+    };
     card().props.onDragStart(event);
-    return event;
+    return { event, data };
   };
 
   await act(async () => card().props.onPointerDown({ target: target(true) }));
-  expect(drag().preventDefault).toHaveBeenCalled();
+  expect(drag().event.preventDefault).toHaveBeenCalled();
   expect(handlers.onDragStart).not.toHaveBeenCalled();
   await act(async () =>
     card().props.onClick({ target: target(true), currentTarget: { contains: () => true } }),
@@ -126,11 +145,44 @@ it("the card body drags and opens the task; its controls do neither", async () =
 
   await act(async () => card().props.onPointerDown({ target: target(false) }));
   const started = drag();
-  expect(started.preventDefault).not.toHaveBeenCalled();
-  expect(started.dataTransfer.effectAllowed).toBe("move");
+  expect(started.event.preventDefault).not.toHaveBeenCalled();
+  expect(started.event.dataTransfer.effectAllowed).toBe("move");
   expect(handlers.onDragStart).toHaveBeenCalledTimes(1);
+  const decoded = decodeTaskDragPayload(started.data.get(COMPOSER_TASK_DRAG_TYPE));
+  expect(Option.getOrNull(decoded)).toEqual({
+    environmentId: "local",
+    taskId: "task-1",
+    title: "Tidy the backlog",
+    kind: "task",
+  });
   await act(async () =>
     card().props.onClick({ target: target(false), currentTarget: { contains: () => true } }),
   );
   expect(handlers.onOpen).toHaveBeenCalledTimes(1);
+});
+
+it("read-only panel cards still attach the quote drag payload without accepting reorder drops", async () => {
+  await render(task(), { reorderable: false, quoteDraggable: true });
+  expect(card().props.draggable).toBe(true);
+  const data = new Map<string, string>();
+  card().props.onDragStart({
+    preventDefault: vi.fn(),
+    dataTransfer: {
+      effectAllowed: "",
+      setData: (type: string, value: string) => void data.set(type, value),
+    },
+  });
+  expect(handlers.onDragStart).not.toHaveBeenCalled();
+  expect(Option.getOrNull(decodeTaskDragPayload(data.get(COMPOSER_TASK_DRAG_TYPE)))?.taskId).toBe(
+    "task-1",
+  );
+
+  const dragOverEvent = { preventDefault: vi.fn() };
+  card().props.onDragOver(dragOverEvent);
+  expect(dragOverEvent.preventDefault).not.toHaveBeenCalled();
+
+  const dropEvent = { preventDefault: vi.fn() };
+  card().props.onDrop(dropEvent);
+  expect(dropEvent.preventDefault).not.toHaveBeenCalled();
+  expect(handlers.onDrop).not.toHaveBeenCalled();
 });

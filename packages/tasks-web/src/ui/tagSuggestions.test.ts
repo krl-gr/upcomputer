@@ -7,6 +7,13 @@ const agents = [
   { name: "Developer", enabled: true, projectId: "project-1", startTags: ["dev", "release"] },
   { name: "Reviewer", enabled: true, projectId: null, startTags: ["review", "release"] },
   { name: "Paused", enabled: false, projectId: "project-1", startTags: ["paused"] },
+  {
+    name: "Archived",
+    enabled: true,
+    archivedAt: "2026-10-19T09:00:00.000Z",
+    projectId: "project-1",
+    startTags: ["archived"],
+  },
   { name: "Elsewhere", enabled: true, projectId: "project-2", startTags: ["other"] },
 ];
 

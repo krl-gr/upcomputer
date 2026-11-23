@@ -191,14 +191,14 @@ export class AnalyticsService extends Context.Service<
       observedBy: "server" | "client",
     ) => Effect.Effect<void>;
     /**
-     * Sends one event now and says whether PostHog took it. Only for answers the user
-     * chose to send, so it also sends when analytics is off: then the event carries
-     * just `properties` under a one-off anonymous id, asks PostHog to keep no IP address
-     * or location, and the install stays unidentified.
+     * Sends one event now and says whether PostHog took it. Only for what the user chose
+     * to send, so with analytics off (or `anonymous`) it still goes, carrying just
+     * `properties` under a one-off id, with no IP, location or install identity.
      */
     readonly sendNow: (
       event: string,
       properties: Readonly<Record<string, unknown>>,
+      options?: { readonly anonymous?: boolean },
     ) => Effect.Effect<boolean>;
     /** False when the install opted out; nothing is recorded or written then. */
     readonly enabled: boolean;
@@ -391,10 +391,10 @@ export const make = Effect.gen(function* () {
   });
 
   const sendNow: AnalyticsService["Service"]["sendNow"] = Effect.fn("AnalyticsService.sendNow")(
-    function* (event, properties) {
+    function* (event, properties, options) {
       const uuid = yield* crypto.uuidV7();
       const capturedAt = DateTime.formatIso(yield* DateTime.now);
-      if (distinctId !== null && (yield* telemetryEnabled)) {
+      if (!options?.anonymous && distinctId !== null && (yield* telemetryEnabled)) {
         yield* sendBatch([
           { uuid, event, properties, capturedAt, isInternal: yield* internalDevice },
         ]);

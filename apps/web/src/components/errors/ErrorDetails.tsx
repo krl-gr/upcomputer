@@ -1,7 +1,7 @@
 import { describeError, plainErrorSentence } from "@t3tools/client-runtime/errors";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon } from "lucide-react";
 import { createElement, useState, type ReactNode } from "react";
-import { useGT } from "gt-react";
+import { msg, useGT } from "gt-react";
 
 import { Button } from "~/components/ui/button";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -13,7 +13,13 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 export function ErrorDetails({ detail }: { readonly detail: string | null | undefined }) {
   const gt = useGT();
   const [open, setOpen] = useState(false);
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "error details" });
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    target: {
+      target: "error details",
+      unavailableMessage: msg("Clipboard API is unavailable while copying error details."),
+      failureMessage: msg("Failed to copy error details to the clipboard."),
+    },
+  });
   const text = detail?.trim();
   if (!text) return null;
   return (

@@ -755,6 +755,7 @@ const make = Effect.gen(function* () {
             startRunStatuses: [],
             createdAt: Option.isSome(oldAgent) ? oldAgent.value.createdAt : at,
             updatedAt: at,
+            archivedAt: Option.isSome(oldAgent) ? oldAgent.value.archivedAt : null,
           });
         if (
           !existing ||

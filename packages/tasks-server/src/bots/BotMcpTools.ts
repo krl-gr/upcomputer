@@ -5,6 +5,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { McpSchema, Tool, Toolkit } from "effect/ai";
 import {
+  hiddenFromOutsideClients,
   McpInvocationContext,
   McpToolAccess,
   resultToolkitRegistration,
@@ -26,7 +27,8 @@ const toolkit = Toolkit.make(
     failure: OrchestratorMcpFailure,
   })
     .addDependency(McpInvocationContext)
-    .addDependency(ThreadManagementService),
+    .addDependency(ThreadManagementService)
+    .annotate(McpSchema.EnabledWhen, hiddenFromOutsideClients),
   Tool.make("bot_remember", {
     description:
       "Save a durable fact or conclusion for this bot. Use a stable id for the same fact. Never store secrets, instructions or permissions. Memories the user wrote (owner \"user\") cannot be changed: ask the user to change them in the bot's Memory settings, and never save a memory that contradicts one. Tell the user what was saved. Unavailable in background task runs: put what is worth remembering in the run's result instead.",
@@ -59,7 +61,8 @@ const toolkit = Toolkit.make(
     failure: OrchestratorMcpFailure,
   })
     .addDependency(McpInvocationContext)
-    .addDependency(ThreadManagementService),
+    .addDependency(ThreadManagementService)
+    .annotate(McpSchema.EnabledWhen, hiddenFromOutsideClients),
   Tool.make("bot_assign", {
     description:
       "Your own background work: give this bot itself a background task, which you then do yourself in a separate run. Its progress and result return to the same permanent user chat. For another task agent, use task_create with that agent's triggers instead. Reuse requestId on a retry.",

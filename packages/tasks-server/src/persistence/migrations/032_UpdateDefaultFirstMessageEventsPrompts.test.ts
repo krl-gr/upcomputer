@@ -1,6 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import { DEFAULT_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
+import { LEGACY_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -58,8 +58,8 @@ it.layer(database)("UpdateDefaultFirstMessageEventsPrompts migration", (it) => {
       yield* UpdateDefaultFirstMessageEventsPromptsMigration;
       yield* UpdateDefaultFirstMessageEventsPromptsMigration;
       const after = yield* settings;
-      assert.equal(after.agentCreation, DEFAULT_TASK_PROMPT_SETTINGS.agentCreation);
-      assert.equal(after.taskExecution, DEFAULT_TASK_PROMPT_SETTINGS.taskExecution);
+      assert.equal(after.agentCreation, LEGACY_TASK_PROMPT_SETTINGS.agentCreation);
+      assert.equal(after.taskExecution, LEGACY_TASK_PROMPT_SETTINGS.taskExecution);
       assert.include(after.agentCreation, "do not call task_get at the start");
       assert.include(after.taskExecution, "Do not call task_get at the start");
       assert.equal(after.revision, before.revision + 2);
@@ -73,7 +73,7 @@ it.layer(database)("UpdateDefaultFirstMessageEventsPrompts migration", (it) => {
       yield* UpdateDefaultFirstMessageEventsPromptsMigration;
       const after = yield* settings;
       assert.equal(after.agentCreation, "My own agents.");
-      assert.equal(after.taskExecution, DEFAULT_TASK_PROMPT_SETTINGS.taskExecution);
+      assert.equal(after.taskExecution, LEGACY_TASK_PROMPT_SETTINGS.taskExecution);
       assert.deepStrictEqual(yield* changes, ["taskExecution"]);
     }),
   );

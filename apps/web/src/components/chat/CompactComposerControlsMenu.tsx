@@ -1,4 +1,5 @@
 import type { RuntimeMode } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import { memo, useRef } from "react";
 import { EllipsisIcon } from "lucide-react";
 import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -18,6 +19,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   triggerClassName?: string;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
+  const gt = useGT();
   const composerFloatingLayerProps = useComposerMenuProps();
   const size = props.size ?? "sm";
   const [open, setOpen] = useComposerMenuState(props.hidden);
@@ -35,7 +37,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             ref={triggerRef}
             size={size}
             className={props.triggerClassName ?? "shrink-0"}
-            aria-label="More composer controls"
+            aria-label={gt("More composer controls")}
             data-composer-shortcut={props.showPermissions ? "composer.mode" : undefined}
           />
         }

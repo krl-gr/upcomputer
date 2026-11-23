@@ -229,7 +229,6 @@ function WholeSidebar(props: {
                     environmentId: ENVIRONMENT_ID,
                     bots: props.bots ?? BOTS,
                     loaded: true,
-                    error: "",
                   },
                 ]}
               />

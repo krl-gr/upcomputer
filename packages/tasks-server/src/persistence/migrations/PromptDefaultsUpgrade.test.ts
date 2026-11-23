@@ -1,6 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import { DEFAULT_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
+import { LEGACY_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -102,10 +102,10 @@ const assertUpgraded = (upgraded: Effect.Success<typeof state>) => {
   );
   // An edited text stays the user's; an unedited one gets the current default.
   assert.equal(upgraded.settings.agentCreation, editedAgentCreation);
-  assert.equal(upgraded.settings.taskExecution, DEFAULT_TASK_PROMPT_SETTINGS.taskExecution);
+  assert.equal(upgraded.settings.taskExecution, LEGACY_TASK_PROMPT_SETTINGS.taskExecution);
   assert.equal(
     upgraded.settings.automationCreation,
-    DEFAULT_TASK_PROMPT_SETTINGS.automationCreation,
+    LEGACY_TASK_PROMPT_SETTINGS.automationCreation,
   );
   // Project additions are never defaults: empty stays empty.
   assert.deepStrictEqual(upgraded.projectSettings, {
@@ -125,7 +125,7 @@ it.effect("a database at 19 runs 20..32 and keeps the user's edited texts", () =
 
     const upgraded = yield* state;
     assertUpgraded(upgraded);
-    assert.equal(upgraded.settings.taskCreation, DEFAULT_TASK_PROMPT_SETTINGS.taskCreation);
+    assert.equal(upgraded.settings.taskCreation, LEGACY_TASK_PROMPT_SETTINGS.taskCreation);
     assert.deepStrictEqual(upgraded.changes, [
       "task-prompt-change-default-update-25-taskCreation",
       "task-prompt-change-default-update-26-taskExecution",

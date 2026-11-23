@@ -61,6 +61,7 @@ import { TaskToolServiceLive } from "../tools/TaskToolService.ts";
 import { TaskToolService } from "../tools/TaskToolServiceTag.ts";
 import type { TaskToolInvocationContext } from "../tools/TaskToolTypes.ts";
 import {
+  TASK_AGENT_RUN_RECOVERY_HINT,
   TaskAgentService,
   TaskAgentServiceLive,
   type TaskAgentServiceShape,
@@ -149,6 +150,7 @@ function agentInput(id: string, overrides: Partial<TaskAgent> = {}): TaskAgent {
     config: { role: id, modelSelection, instructions: "Work." },
     createdAt: at,
     updatedAt: at,
+    archivedAt: null,
     ...overrides,
   };
 }
@@ -1119,6 +1121,23 @@ test("a run-status agent handles each failure once and a failed run is not repla
       );
       NodeAssert.match(prompt, /Triggering run:/);
       NodeAssert.match(prompt, /reason: quota exhausted/);
+      // The failed run held the task: it leaves active work as Failed, a status
+      // change that moves no trigger.
+      const failedTask = Option.getOrThrow(yield* repository.getById({ id: task.id }));
+      NodeAssert.equal(failedTask.status, "Failed");
+      NodeAssert.equal(failedTask.triggerChangedAt, task.triggerChangedAt);
+      // A tag or notBefore change starts nothing in Failed, so the advice
+      // says to bring the task back to a start status.
+      const {
+        events: [failure],
+      } = yield* repository.events({ taskId: task.id, kinds: ["task.agent-failed"] });
+      const recovery = (failure?.payload as { readonly recovery?: string } | undefined)?.recovery;
+      NodeAssert.match(recovery ?? "", /move the task back to a status its agent starts on/);
+      NodeAssert.doesNotMatch(recovery ?? "", /notBefore/);
+      NodeAssert.match(
+        failedTask.output ?? "",
+        /move the task back to the status its worker starts on/,
+      );
 
       // The doctor fails too: nobody starts again.
       endRun(doctorRun.threadId, "failed", { lastError: "quota exhausted" });
@@ -1137,8 +1156,8 @@ test("a run-status agent handles each failure once and a failed run is not repla
         "doctor:failed",
       ]);
 
-      // The doctor's retry is a trigger change; the developer then runs again.
-      yield* change(harness, yield* repository.update({ actor, id: task.id, notBefore: isoNow() }));
+      // The doctor's retry moves the task back to To Do; the developer then runs again.
+      yield* change(harness, yield* repository.update({ actor, id: task.id, status: "To Do" }));
       yield* waitFor(
         "developer retry",
         runsOf(repository, "t").pipe(
@@ -1147,6 +1166,52 @@ test("a run-status agent handles each failure once and a failed run is not repla
           ),
         ),
       );
+    }),
+  );
+});
+
+test("on workflow 1 a crashed run leaves its task's status, and a continuation keeps it", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service, calls, endRun } = harness;
+      yield* repository.setWorkflowVersion({ version: 1 });
+      yield* repository.upsertAgent(agentInput("dev"));
+      const task = yield* repository.upsert(taskInput("t"));
+      yield* service.scheduleTaskChanged({ task, reason: "created" });
+      const devRun = yield* waitFor(
+        "developer run",
+        runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
+      );
+      yield* waitFor(
+        "the developer's first turn",
+        Effect.sync(() => (turnsTo(calls, devRun.threadId).length > 0 ? true : undefined)),
+      );
+      endRun(devRun.threadId, "failed", { lastError: "quota exhausted" });
+      yield* waitFor(
+        "developer failure",
+        repository
+          .getAgentRunById({ id: devRun.id })
+          .pipe(
+            Effect.map((run) => (Option.getOrThrow(run).status === "failed" ? true : undefined)),
+          ),
+      );
+      const current = () =>
+        repository.getById({ id: task.id }).pipe(Effect.map((found) => Option.getOrThrow(found)));
+      NodeAssert.equal((yield* current()).status, "To Do");
+      // The task stays in its start status, so the old advice still works.
+      const {
+        events: [failure],
+      } = yield* repository.events({ taskId: task.id, kinds: ["task.agent-failed"] });
+      NodeAssert.equal(
+        (failure?.payload as { readonly recovery?: string } | undefined)?.recovery,
+        TASK_AGENT_RUN_RECOVERY_HINT,
+      );
+
+      // Failed is a plain status on workflow 1: continuing the run leaves it.
+      yield* repository.update({ actor, id: task.id, status: "Failed" });
+      const continued = yield* service.messageRun({ id: devRun.id, text: "Go on." });
+      NodeAssert.ok(continued.ok);
+      NodeAssert.equal((yield* current()).status, "Failed");
     }),
   );
 });
@@ -1185,6 +1250,27 @@ test("no agent starts on an archived task, and unarchiving lets a matching agent
       yield* service.scheduleTaskChanged({ task: restored, reason: "unarchived" });
       yield* waitFor(
         "run after unarchive",
+        runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
+      );
+    }),
+  );
+});
+
+test("an archived agent never starts on a matching task, and unarchiving it lets it start", async () => {
+  await withScheduler((harness) =>
+    Effect.gen(function* () {
+      const { repository, service } = harness;
+      // Archived regardless of enabled: the agent keeps enabled for when it comes back.
+      yield* repository.upsertAgent({ ...agentInput("dev"), archivedAt: isoNow() });
+      const task = yield* repository.upsert(taskInput("t"));
+      yield* service.scheduleTaskChanged({ task, reason: "created" });
+      yield* service.recover;
+      yield* Effect.sleep("300 millis");
+      NodeAssert.equal((yield* runsOf(repository, "t")).length, 0);
+      const unarchived = yield* repository.upsertAgent({ ...agentInput("dev"), archivedAt: null });
+      yield* service.scheduleAgentChanged({ agent: unarchived, reason: "upserted" });
+      yield* waitFor(
+        "run after the agent's unarchive",
         runsOf(repository, "t").pipe(Effect.map((runs) => runs[0])),
       );
     }),
@@ -1683,11 +1769,17 @@ test("messaging an ended run continues it in its thread, and its own result fini
       yield* repository.upsertAgent(idleAgent("dev"));
       const before = "2026-01-01T00:00:00.000Z";
       const previous = new Map<string, TaskAgentRun>();
+      const taskBefore = new Map<string, Task>();
       for (const status of ["completed", "failed", "stopped"] as const) {
         // notBefore gates trigger starts only, never an explicit message.
-        yield* repository.upsert(
-          taskInput(status, { notBefore: new Date(Date.now() + 3_600_000).toISOString() }),
+        const created = yield* repository.upsert(
+          taskInput(status, {
+            notBefore: new Date(Date.now() + 3_600_000).toISOString(),
+            // As the server leaves a task whose run failed while holding it.
+            ...(status === "failed" ? { status: "Failed" } : {}),
+          }),
         );
+        taskBefore.set(status, created);
         const run = yield* repository.createAgentRun(runInput(`${status}-1`, status, "dev"));
         yield* finish(repository, run, status);
         previous.set(status, run);
@@ -1721,6 +1813,12 @@ test("messaging an ended run continues it in its thread, and its own result fini
           status,
           "the messaged run keeps its status",
         );
+        // A continued Failed task is back in progress; no trigger moves.
+        const continuedTask = Option.getOrThrow(
+          yield* repository.getById({ id: TaskId.make(status) }),
+        );
+        NodeAssert.equal(continuedTask.status, status === "failed" ? "In Progress" : "To Do");
+        NodeAssert.equal(continuedTask.triggerChangedAt, taskBefore.get(status)!.triggerChangedAt);
         continuations.set(status, result.run);
       }
 
@@ -1785,6 +1883,11 @@ test("messaging refuses another active run of the agent, an archived task, and a
       const disabled = yield* service.messageRun({ id: ended.id, text: "go" });
       NodeAssert.ok(!disabled.ok);
       NodeAssert.match(disabled.error, /is disabled/);
+
+      yield* repository.upsertAgent(idleAgent("dev", { archivedAt: isoNow() }));
+      const archivedAgent = yield* service.messageRun({ id: ended.id, text: "go" });
+      NodeAssert.ok(!archivedAgent.ok);
+      NodeAssert.match(archivedAgent.error, /Agent 'dev' \(dev\) is archived/);
 
       const missing = yield* service.messageRun({ id: TaskAgentRunId.make("nope"), text: "go" });
       NodeAssert.ok(!missing.ok);
@@ -1941,7 +2044,7 @@ test("a delayed duplicate stop of a finished run leaves the continuation on its 
   );
 });
 
-test("an archive, postponement or agent deletion between the start checks and the run insert prevents the start", async () => {
+test("an archive, postponement, agent archive or agent deletion between the start checks and the run insert prevents the start", async () => {
   const pause: { taskId: string | null; reached: boolean; release: () => void } = {
     taskId: null,
     reached: false,
@@ -1964,6 +2067,10 @@ test("an archive, postponement or agent deletion between the start checks and th
                 id: taskId,
                 notBefore: new Date(Date.now() + 3_600_000).toISOString(),
               }),
+          },
+          {
+            id: "agent-archived-meanwhile",
+            cancel: () => repository.upsertAgent({ ...agentInput("dev"), archivedAt: isoNow() }),
           },
           {
             id: "agent-deleted-meanwhile",

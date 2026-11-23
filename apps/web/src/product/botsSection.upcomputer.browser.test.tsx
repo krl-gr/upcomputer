@@ -4,10 +4,12 @@ import "../adaptiveSidebar/adaptiveSidebar.css";
 import { EnvironmentId } from "@t3tools/contracts";
 import { BOTS_ORDER_STORAGE_KEY, BotsSection } from "@t3tools/tasks-web/bots";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import { SIDEBAR_COMPACT_WIDTH } from "../adaptiveSidebar/sidebarWidthMode";
-import { SidebarProvider } from "../components/ui/sidebar";
+import { useCloseMobileSidebarOnNavigate } from "../components/sidebar/closeMobileSidebarOnNavigate.upcomputer";
+import { Sidebar as SidebarSheet, SidebarProvider, useSidebar } from "../components/ui/sidebar";
+import { ProductSidebarNavigation } from "./ProductSlots";
 import { bot } from "../uiStates/sidebarRowFixtures";
 import { render } from "../../test/render";
 
@@ -44,9 +46,7 @@ function Sidebar(props: { readonly environmentId: EnvironmentId; readonly compac
         style={props.compact ? { width: SIDEBAR_COMPACT_WIDTH } : undefined}
       >
         <div data-sidebar="sidebar" className="bg-sidebar">
-          <BotsSection
-            lists={[{ environmentId: props.environmentId, bots: BOTS, loaded: true, error: "" }]}
-          />
+          <BotsSection lists={[{ environmentId: props.environmentId, bots: BOTS, loaded: true }]} />
         </div>
       </div>
     </SidebarProvider>
@@ -87,4 +87,73 @@ describe("Bots section order", () => {
       expect(names()).toEqual(["Builder", "Writer", "Scout"]);
     },
   );
+});
+
+function PhoneSidebar(props: { readonly environmentId: EnvironmentId }) {
+  return (
+    <SidebarProvider>
+      <PhoneShell />
+      <SidebarSheet>
+        <ProductSidebarNavigation />
+        <BotsSection lists={[{ environmentId: props.environmentId, bots: BOTS, loaded: true }]} />
+      </SidebarSheet>
+    </SidebarProvider>
+  );
+}
+
+/** The app shell's part: the close-on-navigate rule and the button that opens the sheet. */
+function PhoneShell() {
+  useCloseMobileSidebarOnNavigate();
+  const { openMobile, setOpenMobile } = useSidebar();
+  return (
+    <button type="button" data-sheet-open={openMobile} onClick={() => setOpenMobile(true)}>
+      Open sidebar
+    </button>
+  );
+}
+
+describe("Phone sidebar", () => {
+  it("closes when an entry navigates, also to the page already open, and stays open for a menu", async () => {
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(390, 800);
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
+    };
+    const environmentId = EnvironmentId.make("environment-phone");
+    localStorage.removeItem(BOTS_ORDER_STORAGE_KEY);
+    using _order = { [Symbol.dispose]: () => localStorage.removeItem(BOTS_ORDER_STORAGE_KEY) };
+    await using screen = await render(<PhoneSidebar environmentId={environmentId} />);
+    // The open sheet is modal, which hides the rest of the page from role queries.
+    const sheetOpen = () =>
+      document.querySelector("[data-sheet-open]")?.getAttribute("data-sheet-open");
+    const openSheet = async () => {
+      await userEvent.click(screen.getByRole("button", { name: "Open sidebar" }));
+      await expect.poll(sheetOpen).toBe("true");
+      await expect.element(screen.getByText("Builder")).toBeVisible();
+    };
+    const builderChat = `/${environmentId}/bot-builder-chat`;
+
+    await openSheet();
+    await userEvent.click(rowOf("Builder"));
+    await expect.poll(() => screen.router!.state.location.pathname).toBe(builderChat);
+    await expect.poll(sheetOpen).toBe("false");
+
+    await openSheet();
+    await userEvent.click(rowOf("Builder"));
+    await expect.poll(sheetOpen).toBe("false");
+    expect(screen.router!.state.location.pathname).toBe(builderChat);
+
+    await openSheet();
+    await userEvent.click(rowOf("Builder"), { button: "right" });
+    await expect.element(screen.getByRole("menuitem", { name: "Settings" })).toBeVisible();
+    expect(sheetOpen()).toBe("true");
+    await userEvent.keyboard("{Escape}");
+    await expect
+      .element(screen.getByRole("menuitem", { name: "Settings" }))
+      .not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    await expect.poll(() => screen.router!.state.location.pathname).toBe("/tasks");
+    await expect.poll(sheetOpen).toBe("false");
+  });
 });

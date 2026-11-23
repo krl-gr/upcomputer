@@ -39,7 +39,7 @@ test("a task update cannot archive: closedAt is no longer part of it", () => {
 
 test("statuses compare without case or spacing, so a lowercase Done stays done for a person", () => {
   assert.ok(sameTaskStatus("done", "Done"));
-  assert.ok(sameTaskStatus(" needs  review ", "Needs Review"));
+  assert.ok(sameTaskStatus(" to  verify ", "To Verify"));
   assert.ok(!sameTaskStatus("To Do", "Done"));
   assert.equal(statusForPersonAudience("done"), "Done");
   assert.equal(statusForPersonAudience("in progress"), "To Do");

@@ -6,8 +6,10 @@ import { TaskThreadSeenMigration } from "./037_TaskThreadSeen.ts";
 import { BotOneProjectMigration } from "./038_BotOneProject.ts";
 import { TaskListSettingsMigration } from "./039_TaskListSettings.ts";
 import { DropOrphanTaskEventsMigration } from "./040_DropOrphanTaskEvents.ts";
-import { UpdateDefaultBotCreationPromptsMigration } from "./041_UpdateDefaultBotCreationPrompts.ts";
-import { BotMentionsMigration } from "./042_BotMentions.ts";
+import { TaskAgentArchiveMigration } from "./041_TaskAgentArchive.ts";
+import { ActiveTaskListIndexMigration } from "./042_ActiveTaskListIndex.ts";
+import { TaskWorkflowVersionMigration } from "./043_TaskWorkflowVersion.ts";
+import { BotMentionsMigration } from "./044_BotMentions.ts";
 import { TasksNewestFirstMigration } from "./031_TasksNewestFirst.ts";
 import { BotsMigration } from "./033_Bots.ts";
 import { UpdateDefaultFeedOrderPromptsMigration } from "./030_UpdateDefaultFeedOrderPrompts.ts";
@@ -144,11 +146,9 @@ export const TASK_MIGRATION_CONTRIBUTION = {
     { version: 38, name: "BotOneProject", run: BotOneProjectMigration },
     { version: 39, name: "TaskListSettings", run: TaskListSettingsMigration },
     { version: 40, name: "DropOrphanTaskEvents", run: DropOrphanTaskEventsMigration },
-    {
-      version: 41,
-      name: "UpdateDefaultBotCreationPrompts",
-      run: UpdateDefaultBotCreationPromptsMigration,
-    },
-    { version: 42, name: "BotMentions", run: BotMentionsMigration },
+    { version: 41, name: "TaskAgentArchive", run: TaskAgentArchiveMigration },
+    { version: 42, name: "ActiveTaskListIndex", run: ActiveTaskListIndexMigration },
+    { version: 43, name: "TaskWorkflowVersion", run: TaskWorkflowVersionMigration },
+    { version: 44, name: "BotMentions", run: BotMentionsMigration },
   ],
 } as const;

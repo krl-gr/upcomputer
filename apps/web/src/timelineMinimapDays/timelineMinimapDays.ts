@@ -1,10 +1,7 @@
 import { useGT, useLocale } from "gt-react";
 import { useEffect, useSyncExternalStore } from "react";
 
-import {
-  isTimelineMinimapRowVisible,
-  type MessagesTimelineRow,
-} from "../components/chat/MessagesTimeline.logic";
+import type { MessagesTimelineRow } from "../components/chat/MessagesTimeline.logic";
 import {
   deriveTimelineMinimapItems,
   type TimelineMinimapItem,
@@ -73,11 +70,8 @@ export function isTimelineMinimapTickInView(
   visibleStart: number | null | undefined,
   visibleEnd: number | null | undefined,
 ): boolean {
-  if (tick.lastRowIndex === undefined) {
-    return isTimelineMinimapRowVisible(tick.rowIndex, visibleStart, visibleEnd);
-  }
   if (visibleStart == null || visibleEnd == null) return false;
-  return tick.rowIndex <= visibleEnd && tick.lastRowIndex >= visibleStart;
+  return tick.rowIndex <= visibleEnd && (tick.lastRowIndex ?? tick.rowIndex) >= visibleStart;
 }
 
 /* Chats whose minimap groups by day, by scoped thread key: bot chats, marked by their header. */

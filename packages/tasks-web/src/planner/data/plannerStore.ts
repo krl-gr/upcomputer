@@ -32,7 +32,11 @@ import type { ProjectId } from "@t3tools/contracts";
 import { msg } from "gt-react";
 
 import type { TasksWebRpcClient } from "../../rpc/index.ts";
-import { TaskPageLoader, type TaskPageLoadState } from "../../state/taskPageLoader.ts";
+import {
+  isDisconnectError,
+  TaskPageLoader,
+  type TaskPageLoadState,
+} from "../../state/taskPageLoader.ts";
 import { reuseRows, sameRow } from "../../state/recent.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
 import type { ScheduleProgressCount } from "../logic/progress.ts";
@@ -332,7 +336,8 @@ export class PlannerStore {
       (change) => this.change(change),
       (error) => {
         for (const lane of this.lanes) lane.loader.fail(error);
-        this.rangeError = errorMessage(error);
+        // A computer that went away is not a failed week: the reconnect's sync loads it.
+        if (!isDisconnectError(error)) this.rangeError = errorMessage(error);
         this.emit();
       },
     );
@@ -543,7 +548,8 @@ export class PlannerStore {
       }
       this.rangeError = null;
     } catch (error) {
-      this.rangeError = errorMessage(error);
+      // A computer that went away reloads the week on reconnect.
+      if (!isDisconnectError(error)) this.rangeError = errorMessage(error);
     }
   }
 

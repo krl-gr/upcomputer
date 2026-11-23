@@ -513,6 +513,7 @@ it.effect("agent_update refuses a modelAlias that does not resolve and keeps the
       },
       createdAt: "2026-10-22T00:00:00.000Z",
       updatedAt: "2026-10-22T00:00:00.000Z",
+      archivedAt: null,
     });
     const result = yield* (yield* TaskToolService).call({
       name: "agent_update",
@@ -551,6 +552,7 @@ it.effect("a task delegated from a bot's permanent chat reports and counts there
         config: { role: "Agent", modelSelection, instructions: "Work." },
         createdAt: at,
         updatedAt: at,
+        archivedAt: null,
       });
     yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted)
       VALUES ('bot:helper', ${botChat}, ${project}, ${JSON.stringify([project])}, 0)`;
@@ -600,6 +602,7 @@ const seedBotAndAgent = Effect.gen(function* () {
       config: { role: "Agent", modelSelection, instructions: "Work." },
       createdAt: at,
       updatedAt: at,
+      archivedAt: null,
     });
   yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted)
     VALUES ('bot:named', 'bot-chat:named', ${project}, ${JSON.stringify([project])}, 0)`;
@@ -742,6 +745,7 @@ it.effect(
         config: { role: "Dev", modelSelection: modelSelection as never, instructions: "Code." },
         createdAt: "2026-10-27T00:00:00.000Z",
         updatedAt: "2026-10-27T00:00:00.000Z",
+        archivedAt: null,
       });
       // A worker does not become a bot.
       const duplicate = yield* call("bot_create", {
@@ -787,3 +791,148 @@ it.effect(
     }).pipe(Effect.provide(layer));
   },
 );
+
+it.effect("changing a task replies short; verbose and task_get return the whole task", () => {
+  const { layer, create, update } = harness();
+  return Effect.gen(function* () {
+    const tools = yield* TaskToolService;
+    const call = (name: string, args: Record<string, unknown>) =>
+      tools.call({ name, args, context: chat });
+    const description = `Context.\n${"d".repeat(20_000)}`;
+    const output = `## Summary\n${"o".repeat(40_000)}`;
+
+    const created = yield* create(item("big", "Backlog", { description, tags: ["dev"] }));
+    assert.isFalse(created.isError, created.text);
+    const createReply = JSON.parse(created.text);
+    const id = createReply.task.id;
+    assert.deepStrictEqual(Object.keys(createReply.task), [
+      "id",
+      "title",
+      "status",
+      "audience",
+      "kind",
+      "tags",
+      "notBefore",
+      "updatedAt",
+    ]);
+    assert.deepStrictEqual(createReply.description, { length: description.length });
+    assert.notProperty(createReply, "output");
+    assert.notInclude(created.text, "ddddd");
+
+    const written = yield* update({ id, status: "To Do", output });
+    assert.isFalse(written.isError, written.text);
+    const reply = JSON.parse(written.text);
+    assert.deepStrictEqual([...reply.changed].sort(), ["output", "status"]);
+    assert.equal(reply.task.status, "To Do");
+    assert.deepStrictEqual(reply.output, { length: output.length, firstLine: "## Summary" });
+    assert.notProperty(reply, "description");
+    assert.notInclude(written.text, "ooooo");
+
+    // A short field this call changed comes with its new value.
+    const prioritized = JSON.parse((yield* update({ id, priority: "high" })).text);
+    assert.deepStrictEqual(prioritized.changed, ["priority"]);
+    assert.equal(prioritized.task.priority, "high");
+    assert.notProperty(prioritized, "output");
+
+    const full = yield* update({ id, title: "bigger", verbose: true });
+    const whole = JSON.parse(full.text).task;
+    assert.equal(whole.output, output);
+    assert.equal(whole.description, description);
+    const got = yield* call("task_get", { id });
+    assert.deepStrictEqual(JSON.parse(got.text), { task: whole });
+    // Sizes for a real-sized task: the whole task is what every update used to reply.
+    assert.isAbove(full.text.length, 60_000);
+    assert.isBelow(written.text.length, 600);
+
+    const other = JSON.parse((yield* create(item("other", "Backlog"))).text).task.id;
+    const moved = JSON.parse((yield* call("task_reorder", { id, beforeTaskId: other })).text);
+    assert.deepStrictEqual(moved.changed, ["rank"]);
+    assert.isString(moved.task.rank);
+    const movedFull = yield* call("task_reorder", { id: other, beforeTaskId: id, verbose: true });
+    assert.equal(JSON.parse(movedFull.text).task.description, "Do other.");
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("agent_create and agent_update leave the instructions out unless verbose", () => {
+  const { layer } = harness();
+  return Effect.gen(function* () {
+    const tools = yield* TaskToolService;
+    const call = (name: string, args: Record<string, unknown>) =>
+      tools.call({ name, args, context: chat });
+    const instructions = `Build it.\n${"i".repeat(10_000)}`;
+    const created = yield* call("agent_create", {
+      name: "Dev",
+      enabled: false,
+      modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+      instructions: "Build it.",
+    });
+    assert.isFalse(created.isError, created.text);
+    const createReply = JSON.parse(created.text);
+    assert.notProperty(createReply.agent.config, "instructions");
+    assert.deepStrictEqual(createReply.instructions, { length: "Build it.".length });
+
+    const id = createReply.agent.id;
+    const updated = yield* call("agent_update", { id, instructions, startTags: ["dev"] });
+    assert.isFalse(updated.isError, updated.text);
+    const reply = JSON.parse(updated.text);
+    assert.deepStrictEqual([...reply.changed].sort(), ["instructions", "startTags"]);
+    assert.deepStrictEqual(reply.instructions, { length: instructions.length });
+    assert.deepStrictEqual(reply.agent.startTags, ["dev"]);
+    assert.notInclude(updated.text, "iiiii");
+
+    const unchanged = JSON.parse((yield* call("agent_update", { id, enabled: false })).text);
+    assert.deepStrictEqual(unchanged.changed, []);
+    assert.notProperty(unchanged, "instructions");
+
+    const full = yield* call("agent_update", { id, startTags: ["dev", "x"], verbose: true });
+    assert.equal(JSON.parse(full.text).agent.config.instructions, instructions);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("an archived agent leaves agent_search and agent_get, and unarchives as it was", () => {
+  const { layer } = harness();
+  return Effect.gen(function* () {
+    const tools = yield* TaskToolService;
+    const call = (name: string, args: Record<string, unknown>) =>
+      tools.call({ name, args, context: chat });
+    const searched = (args: Record<string, unknown>) =>
+      call("agent_search", args).pipe(
+        Effect.map((result) =>
+          JSON.parse(result.text).agents.map((agent: { readonly id: string }) => agent.id),
+        ),
+      );
+    const created = yield* call("agent_create", {
+      name: "Old analyst",
+      enabled: false,
+      modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+      instructions: "Analyse.",
+    });
+    const id = JSON.parse(created.text).agent.id;
+
+    const archived = JSON.parse((yield* call("agent_update", { id, archived: true })).text);
+    assert.deepStrictEqual(archived.changed, ["archived"]);
+    assert.isString(archived.agent.archivedAt);
+    assert.deepStrictEqual(yield* searched({}), []);
+    assert.deepStrictEqual(yield* searched({ includeArchived: true }), [id]);
+    const hidden = yield* call("agent_get", { id });
+    assert.isTrue(hidden.isError);
+    assert.include(hidden.text, "includeArchived");
+    const read = yield* call("agent_get", { id, includeArchived: true });
+    assert.equal(JSON.parse(read.text).agent.archivedAt, archived.agent.archivedAt);
+
+    const again = JSON.parse((yield* call("agent_update", { id, archived: true })).text);
+    assert.equal(again.agent.archivedAt, archived.agent.archivedAt, "keeps the first archive time");
+
+    const unarchived = JSON.parse((yield* call("agent_update", { id, archived: false })).text);
+    assert.deepStrictEqual(unarchived.changed, ["archived"]);
+    assert.isNull(unarchived.agent.archivedAt);
+    assert.isFalse(unarchived.agent.enabled, "comes back paused, as it was archived");
+    assert.deepStrictEqual(yield* searched({}), [id]);
+
+    // A bot's agent has no Unarchive in the app, so the tool refuses to archive it.
+    yield* call("agent_update", { id, startTags: [`bot:${id}`] });
+    const bot = yield* call("agent_update", { id, archived: true });
+    assert.isTrue(bot.isError);
+    assert.deepStrictEqual(yield* searched({}), [id]);
+  }).pipe(Effect.provide(layer));
+});

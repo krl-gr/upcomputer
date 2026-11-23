@@ -57,9 +57,8 @@ export function resolveEnvironmentsViewStatus(input: {
   if (states.some((state) => state.status === "loading")) {
     return { status: input.initialWaitOver ? "offline" : "loading" };
   }
-  const failure = states.find(
-    (state) => state.status === "error" || state.status === "unavailable",
-  );
+  // A computer that doesn't serve Tasks has nothing to list; that is not a failure.
+  const failure = states.find((state) => state.status === "error");
   return failure?.message ? { status: "error", message: failure.message } : { status: "ready" };
 }
 
@@ -68,12 +67,14 @@ export function resolveEnvironmentsViewStatus(input: {
  * environment. A disconnected environment, or one whose access probe still
  * retries after the initial wait, is offline: it is named in a quiet note
  * while the others show their tasks, and its change stream reloads it on
- * reconnect. Only a real failure is an error.
+ * reconnect. One that doesn't serve Tasks has nothing to list. Only a real
+ * failure is an error.
  */
 export function resolveTaskPagesStatus(input: {
   readonly lanes: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
     readonly accessPending: boolean;
+    readonly accessUnavailable: boolean;
     readonly state:
       | {
           readonly initialLoading: boolean;
@@ -85,25 +86,27 @@ export function resolveTaskPagesStatus(input: {
   readonly initialWaitOver: boolean;
 }): {
   readonly status: "loading" | "ready" | "error" | "offline";
-  readonly errorMessage: string;
+  /** A real failure's message per computer, for its Notifications card. */
+  readonly failures: ReadonlyMap<EnvironmentId, string>;
   readonly offlineEnvironmentIds: readonly EnvironmentId[];
 } {
   const offline = new Set<EnvironmentId>();
-  const errors = new Set<string>();
+  const failures = new Map<EnvironmentId, string>();
   let loading = false;
   let answered = false;
   for (const lane of input.lanes) {
     const { state } = lane;
+    if (lane.accessUnavailable) continue;
     if (state?.disconnected || (lane.accessPending && input.initialWaitOver))
       offline.add(lane.environmentId);
     else if (!state || state.initialLoading) loading = true;
-    else if (state.error) errors.add(state.error);
+    else if (state.error) failures.set(lane.environmentId, state.error);
     else answered = true;
   }
   const allOffline = offline.size > 0 && !answered;
   return {
-    status: loading ? "loading" : errors.size > 0 ? "error" : allOffline ? "offline" : "ready",
-    errorMessage: [...errors].join(" "),
+    status: loading ? "loading" : failures.size > 0 ? "error" : allOffline ? "offline" : "ready",
+    failures,
     offlineEnvironmentIds: [...offline],
   };
 }

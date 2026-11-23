@@ -300,6 +300,7 @@ test("an agent run's result status moves the entries too", () =>
       startRunStatuses: [],
       createdAt: created,
       updatedAt: created,
+      archivedAt: null,
     });
     yield* repository.createAgentRun({
       id: runId,

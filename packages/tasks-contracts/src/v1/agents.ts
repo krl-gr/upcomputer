@@ -8,6 +8,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { TaskId, TaskTag } from "./tasks.ts";
@@ -48,6 +49,11 @@ export const TaskAgent = Schema.Struct({
   config: TaskAgentConfig,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  /**
+   * Set while the agent is archived: it never starts runs, whatever `enabled` says, and
+   * agent searches leave it out unless asked. Absent from task agents RPC version 4 and older.
+   */
+  archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefaultKey(Effect.succeed(null))),
 });
 export type TaskAgent = typeof TaskAgent.Type;
 
@@ -76,10 +82,15 @@ export const TaskAgentUpsertInput = Schema.Struct({
   startTags: Schema.optional(Schema.Array(TaskTag)),
   startRunStatuses: Schema.optional(Schema.Array(TaskAgentRunTriggerStatus)),
   config: TaskAgentConfig,
+  /** true archives the agent, false unarchives it; absent keeps its archived state. */
+  archived: Schema.optional(Schema.Boolean),
 });
 export type TaskAgentUpsertInput = typeof TaskAgentUpsertInput.Type;
 
-export const AgentGetInput = Schema.Struct({ id: TaskAgentId });
+export const AgentGetInput = Schema.Struct({
+  id: TaskAgentId,
+  includeArchived: Schema.optional(Schema.Boolean),
+});
 export type AgentGetInput = typeof AgentGetInput.Type;
 
 export const AgentCreateInput = Schema.Struct({
@@ -121,6 +132,7 @@ export const AgentUpdateInput = Schema.Struct({
   tools: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
   skills: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
   instructions: Schema.optional(TrimmedNonEmptyString),
+  archived: Schema.optional(Schema.Boolean),
 });
 export type AgentUpdateInput = typeof AgentUpdateInput.Type;
 
@@ -130,6 +142,8 @@ export type AgentDeleteInput = typeof AgentDeleteInput.Type;
 export const TaskAgentSearchInput = Schema.Struct({
   projectId: Schema.optional(Schema.NullOr(ProjectId)),
   enabled: Schema.optional(Schema.Boolean),
+  /** Archived agents are left out unless this is true. */
+  includeArchived: Schema.optional(Schema.Boolean),
   limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(500))),
 });
 export type TaskAgentSearchInput = typeof TaskAgentSearchInput.Type;

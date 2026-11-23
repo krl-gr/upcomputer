@@ -49,6 +49,9 @@ import {
 } from "../platform/orchestrationCache.ts";
 import * as RpcSession from "../rpc/session.ts";
 import { v2Now, v2Projection, v2ThreadId } from "./orchestrationV2TestFixtures.ts";
+import { threadKey } from "./entities.ts";
+import { holdThreadWindowView } from "./threadWindow.ts";
+import { settledTurnsProjection } from "./threadWindowTestFixtures.ts";
 import { onThreadRequestsResolved, type ThreadRequestsResolved } from "./threadRequests.ts";
 import { EMPTY_THREAD_HISTORY_META } from "./threadHistoryMerge.ts";
 import * as ThreadHistoryController from "./threadHistoryController.ts";
@@ -67,6 +70,17 @@ const TARGET = new PrimaryConnectionTarget({
   wsBaseUrl: "wss://environment.example.test",
 });
 const THREAD_ID = v2ThreadId;
+/** A view of the test thread that follows its live end (or reads older rows) for this test. */
+const holdTestThreadView = (following: boolean) =>
+  Effect.acquireRelease(
+    Effect.sync(() =>
+      holdThreadWindowView(
+        threadKey({ environmentId: TARGET.environmentId, threadId: THREAD_ID }),
+        following,
+      ),
+    ),
+    (release) => Effect.sync(release),
+  );
 const CACHED_SNAPSHOT_SEQUENCE = 7;
 const PREPARED: PreparedConnection = {
   environmentId: TARGET.environmentId,
@@ -2410,6 +2424,119 @@ describe("EnvironmentThreads", () => {
       expect(saved[0]?.snapshotSequence).toBe(5);
       expect(saved[0]?.projection.thread.title).toBe("Streaming update");
       expect(saved[0]?.projection.runs[0]?.status).toBe("running");
+    }),
+  );
+
+  it.effect(
+    "trims an open thread past its window when a run settles, and caches only the tail",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness();
+        const long = settledTurnsProjection(BASE_PROJECTION, 550);
+        yield* Queue.offer(harness.inputs, snapshot(long, 4));
+        yield* awaitThreadState(
+          harness.observed,
+          (value) =>
+            Option.isSome(value.data) && value.data.value.visibleTurnItems.length === 1_100,
+        );
+        // Someone reading older rows holds the window; the next settled run at the end trims.
+        const reading = yield* holdTestThreadView(false);
+        yield* holdTestThreadView(true);
+        yield* Queue.offer(harness.inputs, {
+          kind: "event",
+          sequence: 5,
+          event: {
+            id: EventId.make("event-run-settled-while-reading"),
+            type: "run.updated",
+            threadId: THREAD_ID,
+            occurredAt: v2Now,
+            payload: long.runs.at(-1)!,
+          },
+        });
+        const held = yield* awaitThreadState(harness.observed, (value) => value.sequence === 5);
+        expect(Option.getOrThrow(held.data).visibleTurnItems).toHaveLength(1_100);
+        reading();
+        yield* Queue.offer(harness.inputs, {
+          kind: "event",
+          sequence: 6,
+          event: {
+            id: EventId.make("event-run-settled"),
+            type: "run.updated",
+            threadId: THREAD_ID,
+            occurredAt: v2Now,
+            payload: long.runs.at(-1)!,
+          },
+        });
+        const trimmed = yield* awaitThreadState(
+          harness.observed,
+          (value) => Option.isSome(value.data) && value.data.value.visibleTurnItems.length < 1_100,
+        );
+        const rows = Option.getOrThrow(trimmed.data).visibleTurnItems;
+        expect(rows).toHaveLength(600);
+        expect(rows[0]?.sourceItemId).toBe("user-251");
+        expect(trimmed.history).toMatchObject({ hasMoreHistory: true, expanded: false });
+        expect(trimmed.history.historyCursor).not.toBeNull();
+
+        yield* TestClock.adjust("10 seconds");
+        const saved = (yield* Ref.get(harness.savedThreads)).at(-1);
+        expect(saved?.projection.visibleTurnItems).toHaveLength(300);
+        expect(saved?.projection.visibleTurnItems[0]?.sourceItemId).toBe("user-401");
+        expect(saved?.hasMoreHistory).toBe(true);
+      }),
+  );
+
+  it.effect("does not trim while older history is loading, so the load still finishes", () =>
+    Effect.gen(function* () {
+      const asked = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const harness = yield* makeHarness({
+        historyHttpClient: HttpClient.make((request) =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(asked, undefined);
+            yield* Deferred.await(release);
+            return HttpClientResponse.fromWeb(
+              request,
+              Response.json({
+                snapshotSequence: 4,
+                items: [],
+                nextCursor: null,
+                hasMoreHistory: false,
+              }),
+            );
+          }),
+        ),
+      });
+      const long = settledTurnsProjection(BASE_PROJECTION, 550);
+      yield* holdTestThreadView(true);
+      yield* Queue.offer(harness.inputs, {
+        ...snapshot(long, 4),
+        historyCursor: "older",
+        hasMoreHistory: true,
+      });
+      yield* awaitThreadState(
+        harness.observed,
+        (value) => Option.isSome(value.data) && value.data.value.visibleTurnItems.length === 1_100,
+      );
+      const loading = yield* harness.loadEarlier().pipe(Effect.forkChild);
+      yield* Deferred.await(asked);
+      yield* Queue.offer(harness.inputs, {
+        kind: "event",
+        sequence: 5,
+        event: {
+          id: EventId.make("event-run-settled"),
+          type: "run.updated",
+          threadId: THREAD_ID,
+          occurredAt: v2Now,
+          payload: long.runs.at(-1)!,
+        },
+      });
+      const settled = yield* awaitThreadState(harness.observed, (value) => value.sequence === 5);
+      expect(Option.getOrThrow(settled.data).visibleTurnItems).toHaveLength(1_100);
+
+      yield* Deferred.succeed(release, undefined);
+      expect(yield* Fiber.join(loading)).toEqual({ _tag: "loaded" });
+      const loaded = yield* SubscriptionRef.get(harness.threadState);
+      expect(loaded.history).toMatchObject({ loading: false, expanded: true });
     }),
   );
 

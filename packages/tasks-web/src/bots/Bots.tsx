@@ -287,7 +287,6 @@ export function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectio
     .join("\n");
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the claims registry entry while mounted
   useEffect(() => claimSidebarThreads("bots", chatKeys ? chatKeys.split("\n") : []), [chatKeys]);
-  const errors = lists.filter((list) => list.error !== "");
   const create = () => {
     if (canWrite) void navigate(botPage(createOn));
   };
@@ -346,14 +345,6 @@ export function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectio
               <SidebarEmptyRow label={gt("New bot")} disabled={!canWrite} onClick={create} />
             )}
           </SidebarMenu>
-          {errors.map((list) => (
-            <BotListError
-              key={list.environmentId}
-              environmentId={list.environmentId}
-              error={list.error}
-              named={lists.length > 1}
-            />
-          ))}
         </div>
       </CollapsiblePanel>
     </Collapsible>
@@ -385,25 +376,6 @@ function SortableBotItem(props: { readonly id: string; readonly children: ReactN
     >
       <BotDragging.Provider value={isDragging}>{props.children}</BotDragging.Provider>
     </SidebarMenuItem>
-  );
-}
-
-/** A computer's failed bot list; with several computers merged, it names the computer. */
-function BotListError({
-  environmentId,
-  error,
-  named,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly error: string;
-  readonly named: boolean;
-}) {
-  const m = useMessages();
-  const name = useComputerName(environmentId);
-  return (
-    <p role="alert" className="px-3 text-xs text-destructive">
-      {named && name ? `${name}: ${m(error)}` : m(error)}
-    </p>
   );
 }
 

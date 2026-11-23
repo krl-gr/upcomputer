@@ -51,7 +51,7 @@ vi.mock("../components/ui/tooltip", () => ({
 
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 
-import { runtimeModeConfig, runtimeModeOptions } from "../components/chat/runtimeModeConfig";
+import { resolveRuntimeModeOption, runtimeModeOptions } from "../components/chat/runtimeModeConfig";
 import type { UpComputerComposerFooterProps } from "./UpComputerComposerFooter";
 import {
   COMPOSER_CONTROL_ICON_TRIGGER_CLASS,
@@ -120,7 +120,7 @@ function footerProps(
     modelPicker: modelPicker(),
     providerUnavailableControl: null,
     runtimeMode: "full-access",
-    runtimeModeOptions: runtimeModeOptions.map((mode) => ({ mode, ...runtimeModeConfig[mode] })),
+    runtimeModeOptions: runtimeModeOptions.map((mode) => resolveRuntimeModeOption(mode)),
     onRuntimeModeChange: spies.onRuntimeModeChange,
     primaryActions: <button type="submit" aria-label="Send message" />,
     ...overrides,

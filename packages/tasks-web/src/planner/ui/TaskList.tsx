@@ -5,6 +5,7 @@ import { useDroppable } from "@dnd-kit/core";
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
 import { MenuItem, MenuSeparator } from "../../../../../apps/web/src/components/ui/menu.tsx";
 import { cn } from "../../../../../apps/web/src/lib/utils.ts";
+import { FLOATING_ACTIONS_CLEARANCE_CLASS } from "../../ui/FloatingActions.tsx";
 import { ListEmptyState } from "../../ui/ListEmptyState.tsx";
 import type { PaginatedTasks } from "../data/hooks.ts";
 import type { PlannerTask } from "../data/pendingOps.ts";
@@ -45,6 +46,8 @@ export function TaskList(props: {
   readonly deleting: readonly string[] | null;
   readonly onDeletingChange: (ids: readonly string[] | null) => void;
   readonly centered: boolean;
+  /** Buttons float over the list's bottom right corner: the last row scrolls clear of them. */
+  readonly floatingActions?: boolean;
 }) {
   const gt = useGT();
   const { store, kind } = usePlanner();
@@ -102,6 +105,7 @@ export function TaskList(props: {
             props.centered ? `mx-auto max-w-3xl ${LIST_CLASS}` : LIST_CLASS,
             // The empty list's note sits in the middle of the pane.
             empty && "flex h-full flex-col",
+            props.floatingActions && FLOATING_ACTIONS_CLEARANCE_CLASS,
           )}
         >
           {firstPageLoading ? null : empty ? (

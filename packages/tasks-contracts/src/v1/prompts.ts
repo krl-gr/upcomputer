@@ -6,6 +6,8 @@ import {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
+import { LEGACY_TASK_WORKFLOW_VERSION, type TaskWorkflowVersion } from "./tasks.ts";
+
 /** User-editable guidance layered on top of the Tasks machine protocol. */
 export const TaskPromptSettings = Schema.Struct({
   taskCreation: Schema.String,
@@ -145,7 +147,11 @@ export const EMPTY_TASK_PROMPT_SETTINGS: TaskPromptSettings = {
   taskExecution: "",
 };
 
-export const DEFAULT_TASK_PROMPT_SETTINGS: TaskPromptSettings = {
+/**
+ * Workflow 1's default texts: Backlog queues, Needs Review hand-offs. An
+ * install keeps the texts it stores, so these only fill in for workflow 1.
+ */
+export const LEGACY_TASK_PROMPT_SETTINGS: TaskPromptSettings = {
   taskCreation: `Create focused, independently reviewable tasks. The description must be self-contained and keep the user's intent: goal, context, target, constraints, verification and expected output, so the agent never needs the originating chat. Include absolute paths of attached images and tell the agent to open them.
 
 Choosing the agent: unless the user's recorded preferences or explicit words already decide it, do not pick one silently. Show the relevant agents from task_context's agents (name, model, start statuses and tags), recommend one with a reason, and let the user decide. If none fits, propose creating one; agent_search also lists disabled agents.
@@ -153,9 +159,7 @@ Choosing the agent: unless the user's recorded preferences or explicit words alr
 Assignment: add the chosen agent's trigger tag and record its id in metadata.targetAgentId. A run id exists only after the run starts.
 
 Queue: an agent works through its tasks one at a time. task_context's agents shows each agent's queue, so no task_search or agent_get is needed before creating. If the agent has no task in its start status, none In Progress and none active, create the first task directly in its start status so it starts now, and any further ones in Backlog. Otherwise create them all in Backlog; the agent's queue hand-off activates them later. Create several tasks in one task_create call (tasks), in the order they should run: new tasks go to the top of the list and queues run from the bottom, so they run in the order given and no reorder is needed. An agent without start statuses starts on its tag in any status, so add the tag only when the task should start. Never start several tasks of one queue at once unless the user asked for fan-out.`,
-  agentCreation: `Bot or worker: a bot has one permanent chat, its own memory and a place under Bots; create it with bot_create. A worker has no chat: it picks up tasks by its start statuses and tags and is listed under Workers; create it with agent_create. When the user asks for a bot, use bot_create.
-
-Create narrowly scoped agents with a clear role, explicit responsibilities, and trigger statuses or tags that do not overlap accidentally. Choose and explicitly pass a model appropriate for the work the agent will perform, along with appropriate runtime permissions. Project, current-thread, and server defaults are contextual fallbacks, not suitability recommendations; use modelAlias: "project" only when deliberately choosing the project default. Recommend strong models for orchestration and review, and fast or cheap ones for bulk work. Offer only providers and models that task_context reports as available; never assume one is installed.
+  agentCreation: `Create narrowly scoped agents with a clear role, explicit responsibilities, and trigger statuses or tags that do not overlap accidentally. Choose and explicitly pass a model appropriate for the work the agent will perform, along with appropriate runtime permissions. Project, current-thread, and server defaults are contextual fallbacks, not suitability recommendations; use modelAlias: "project" only when deliberately choosing the project default. Recommend strong models for orchestration and review, and fast or cheap ones for bulk work. Offer only providers and models that task_context reports as available; never assume one is installed.
 
 Adapt these templates for the agent's instructions.
 
@@ -182,3 +186,48 @@ Reviewer, started by its own tag or status:
 - If your instructions define a queue hand-off, do it before the final update.
 - Do everything else first, then make exactly one final task_update with assigneeAgentRunId: null. It ends the run. If you cannot continue, give that update the status Blocked and the blocker in the output; the run then ends as blocked.`,
 };
+
+/** The default texts a new install starts with (workflow 2). */
+export const DEFAULT_TASK_PROMPT_SETTINGS: TaskPromptSettings = {
+  taskCreation: `Create focused, independently reviewable tasks. The description must be self-contained and keep the user's intent: goal, context, target, constraints, verification and expected output, so the agent never needs the originating chat. Include absolute paths of attached images and tell the agent to open them.
+
+Choosing the agent: unless the user's recorded preferences or explicit words already decide it, do not pick one silently. Show the relevant agents from task_context's agents (name, model, start statuses and tags), recommend one with a reason, and let the user decide. If none fits, propose creating one; agent_search also lists disabled agents.
+
+Assignment: add the chosen agent's trigger tag and record its id in metadata.targetAgentId. A run id exists only after the run starts.
+
+Queue: an agent works through its tasks one at a time. task_context's agents shows each agent's queue, so no task_search or agent_get is needed before creating. If the agent has no task in its start status, none In Progress and none active, create the first task directly in its start status so it starts now, and any further ones in Queued. Otherwise create them all in Queued; the agent's queue hand-off activates them later. Use Idea only for ideas the user has not approved yet. Create several tasks in one task_create call (tasks), in the order they should run: new tasks go to the top of the list and queues run from the bottom, so they run in the order given and no reorder is needed. An agent without start statuses starts on its tag in any status, so add the tag only when the task should start. Never start several tasks of one queue at once unless the user asked for fan-out.`,
+  agentCreation: `Bot or worker: a bot has one permanent chat, its own memory and a place under Bots; create it with bot_create. A worker has no chat: it picks up tasks by its start statuses and tags and is listed under Workers; create it with agent_create. When the user asks for a bot, use bot_create.
+
+Create narrowly scoped agents with a clear role, explicit responsibilities, and trigger statuses or tags that do not overlap accidentally. Choose and explicitly pass a model appropriate for the work the agent will perform, along with appropriate runtime permissions. Project, current-thread, and server defaults are contextual fallbacks, not suitability recommendations; use modelAlias: "project" only when deliberately choosing the project default. Recommend strong models for orchestration and review, and fast or cheap ones for bulk work. Offer only providers and models that task_context reports as available; never assume one is installed.
+
+Adapt these templates for the agent's instructions.
+
+Queue worker (developer), started by its tag in its start status, e.g. To Do:
+- Work only on tasks with your tag in your start status.
+- At start: set In Progress and read the repository's AGENTS.md or CLAUDE.md. The run prompt carries the task, its output and its recent events, and the run already holds it, so do not call task_get at the start.
+- Make the smallest coherent change; verify it with tests, typecheck and lint.
+- Commit only your own files, and only if the user allowed commits.
+- Run every command in the foreground with a timeout; start no background processes.
+- Keep the task output current.
+- Queue hand-off, before the final update: if no other task with your tag is in your start status or In Progress, move the bottom Queued task with your tag to your start status: task_search with your tag, status Queued, from "bottom" and limit 1 returns it. Never more than one.
+- Final mutation: a single task_update to the review status, e.g. To Verify, with assigneeAgentRunId: null. When a person must decide something first, the same update with status Needs You and the question at the top of the output. When blocked, status Blocked and the blocker in the output.
+
+Reviewer, started by its own tag or status:
+- Read the full diff and run the verification yourself.
+- Never edit; report findings by severity with file:line and evidence.
+- End with one task_update that hands the task to a person: To Verify, your trigger tag removed, and assigneeAgentRunId: null.`,
+  automationCreation: `Create an automation only for genuinely recurring work. Use the user's timezone, make the generated task template self-contained, avoid duplicate open work when appropriate, and leave agent-created automations as drafts for human review.`,
+  taskExecution: `Your agent's own instructions come first; where they differ from this, follow them.
+- Start from this prompt: it carries the task, its output, its recent events and whether your run already holds the task. Do not call task_get at the start; call it only right before changing the task, when another run may have changed it.
+- Keep the task status and output current, so a person can evaluate the result without reading the thread.
+- Run every command in the foreground and wait for it; start no background processes.
+- Record blockers with evidence. On quota, rate-limit or auth failures, stop and report them; do not retry.
+- If your instructions define a queue hand-off, do it before the final update.
+- Do everything else first, then make exactly one final task_update with assigneeAgentRunId: null. It ends the run. When the work is finished, give that update the status To Verify so a person checks it. When a person must decide something first, give it Needs You with the question at the top of the output. If you cannot continue, give it the status Blocked and the blocker in the output; the run then ends as blocked.`,
+};
+
+export function defaultTaskPromptSettings(version: TaskWorkflowVersion): TaskPromptSettings {
+  return version === LEGACY_TASK_WORKFLOW_VERSION
+    ? LEGACY_TASK_PROMPT_SETTINGS
+    : DEFAULT_TASK_PROMPT_SETTINGS;
+}

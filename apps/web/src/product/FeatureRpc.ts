@@ -5,6 +5,7 @@ import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
 import {
   createEnvironmentCommand,
   createCommandPermissions,
+  runAtomCommand,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Effect from "effect/Effect";
@@ -79,16 +80,21 @@ export async function requestExperimentalFeatureRpc<Group extends RpcGroup.Any, 
   authorization?: { readonly method: string; readonly input: unknown },
 ): Promise<A> {
   featureRpcRequest ??= makeFeatureRpcRequest();
-  const result = await featureRpcRequest.run(appAtomRegistry, {
-    environmentId,
-    input: {
-      ...authorization,
-      execute: (client) =>
-        execute(client as ExperimentalFeatureRpcClient<Group>).pipe(
-          Effect.mapError((error) => new FeatureRpcFailure({ error })),
-        ),
+  const result = await runAtomCommand(
+    appAtomRegistry,
+    featureRpcRequest,
+    {
+      environmentId,
+      input: {
+        ...authorization,
+        execute: (client) =>
+          execute(client as ExperimentalFeatureRpcClient<Group>).pipe(
+            Effect.mapError((error) => new FeatureRpcFailure({ error })),
+          ),
+      },
     },
-  });
+    { reportFailure: false, reportDefect: false },
+  );
   if (result._tag === "Success") return result.value as A;
   const failure = squashAtomCommandFailure(result);
   throw isFeatureRpcFailure(failure) ? failure.error : failure;

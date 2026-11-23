@@ -47,7 +47,7 @@ function platformComputerName(platform: string, gt: Gt): string {
 }
 
 /** The desktop app's own computer reads "This Mac"; a browser names every computer. */
-function computerName(
+export function computerName(
   presentation: Pick<EnvironmentPresentation, "environmentId" | "label">,
   primaryId: EnvironmentId | null,
   gt: Gt,

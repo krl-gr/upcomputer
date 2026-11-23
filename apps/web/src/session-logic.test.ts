@@ -1069,6 +1069,24 @@ describe("V2 session presentation", () => {
     expect(next.entries).toEqual(deriveTimelineEntriesFromVisibleTurnItems(nextInput));
     expect(next.entries.at(-1)?.attempt?.status).toBe("superseded");
     expect(previous.entries.at(-1)?.attempt?.status).toBe("running");
+
+    // A node status update keeps every derived entry.
+    const settledNodes = nodes.map((entry) => ({ ...entry, status: "completed" as const }));
+    const settled = deriveTimelineEntriesFromVisibleTurnItemsWithState(
+      { ...input, nodes: settledNodes },
+      previous,
+    );
+    for (const [index, entry] of previous.entries.entries()) {
+      expect(settled.entries[index]).toBe(entry);
+    }
+    // A node a retained row walks through arrives late, so that row resolves its attempt anew.
+    const early = deriveTimelineEntriesFromVisibleTurnItemsWithState({
+      ...input,
+      nodes: nodes.filter((entry) => entry.id !== supersededChildNodeId),
+    });
+    expect(early.entries[0]?.attempt).toBeUndefined();
+    const late = deriveTimelineEntriesFromVisibleTurnItemsWithState(input, early);
+    expect(late.entries[0]?.attempt?.id).toBe(supersededAttemptId);
   });
 });
 

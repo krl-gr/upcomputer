@@ -1,8 +1,15 @@
 import * as NodeAssert from "node:assert/strict";
+import { taskStatusesFor } from "@t3tools/tasks-contracts/v1";
 import { test } from "vite-plus/test";
 
 import { planVisibleTaskMove } from "./taskReorder.ts";
-import { mergedGroupOrder, taskStatusGroups, tasksOfGroup } from "./taskStatusGroups.ts";
+import {
+  defaultStatusGroupOrder,
+  keptStatusGroups,
+  mergedGroupOrder,
+  taskStatusGroups,
+  tasksOfGroup,
+} from "./taskStatusGroups.ts";
 
 const task = (id: string, status: string) => ({ id, environmentId: "local", status });
 
@@ -15,6 +22,7 @@ test("groups follow the server counts: no group without tasks, Done and Cancelle
       statusFilter: null,
       order: [],
       open: {},
+      workflowVersion: 2,
       ...input,
     }).groups.map(({ key, title, count, open, tasks }) => [key, title, count, open, tasks.length]);
 
@@ -48,11 +56,41 @@ test("groups follow the server counts: no group without tasks, Done and Cancelle
   NodeAssert.deepEqual(groups({ counts: new Map() }), []);
 });
 
+test("each workflow orders its own standard statuses; another workflow's status is a custom group", () => {
+  NodeAssert.deepEqual([...defaultStatusGroupOrder(2)].sort(), [...taskStatusesFor(2)].sort());
+  NodeAssert.deepEqual([...defaultStatusGroupOrder(1)].sort(), [...taskStatusesFor(1)].sort());
+  const shown = (order: readonly string[], workflowVersion: 1 | 2 = 2) =>
+    taskStatusGroups({
+      tasks: [],
+      counts: new Map([
+        ["needs input", 2],
+        ["to do", 1],
+        ["done", 1],
+      ]),
+      statuses: ["Needs Input", "To Do", "Done"],
+      statusFilter: null,
+      order,
+      open: {},
+      workflowVersion,
+    }).groups.map(({ key, title }) => [key, title]);
+  NodeAssert.deepEqual(shown([]), [
+    ["to do", "To Do"],
+    ["done", "Done"],
+    ["needs input", "Needs Input"],
+  ]);
+  NodeAssert.deepEqual(shown(["needs input"])[0], ["needs input", "Needs Input"]);
+  NodeAssert.deepEqual(shown([], 1), [
+    ["needs input", "Needs Input"],
+    ["to do", "To Do"],
+    ["done", "Done"],
+  ]);
+});
+
 test("a reorder of the shown groups keeps every hidden group's place in the stored order", () => {
   const { order, groups } = taskStatusGroups({
     tasks: [],
     counts: new Map([
-      ["needs input", 1],
+      ["needs you", 1],
       ["to do", 1],
       ["done", 1],
     ]),
@@ -60,20 +98,21 @@ test("a reorder of the shown groups keeps every hidden group's place in the stor
     statusFilter: null,
     order: ["done"],
     open: {},
+    workflowVersion: 2,
   });
   const shown = groups.map(({ key }) => key);
-  NodeAssert.deepEqual(shown, ["done", "needs input", "to do"]);
-  NodeAssert.equal(order.length, 10, "the order holds every standard status, shown or not");
+  NodeAssert.deepEqual(shown, ["done", "needs you", "to do"]);
+  NodeAssert.equal(order.length, 11, "the order holds every standard status, shown or not");
 
-  // To Do dragged above Needs Input: it lands right before it, the hidden ones stay put.
-  const next = mergedGroupOrder(order, ["done", "to do", "needs input"], "to do");
-  NodeAssert.deepEqual(next.slice(0, 4), ["done", "to do", "needs input", "needs review"]);
+  // To Do dragged above Needs You: it lands right before it, the hidden ones stay put.
+  const next = mergedGroupOrder(order, ["done", "to do", "needs you"], "to do");
+  NodeAssert.deepEqual(next.slice(0, 4), ["done", "to do", "needs you", "failed"]);
   NodeAssert.deepEqual(
     next.filter((key) => !shown.includes(key)),
     order.filter((key) => !shown.includes(key)),
   );
   // Dragged to the end: right after the last shown group, before the hidden ones that followed it.
-  const last = mergedGroupOrder(order, ["needs input", "to do", "done"], "done");
+  const last = mergedGroupOrder(order, ["needs you", "to do", "done"], "done");
   NodeAssert.deepEqual(last.slice(last.indexOf("to do"), last.indexOf("to do") + 2), [
     "to do",
     "done",
@@ -103,5 +142,18 @@ test("in a grouped list a task moves among its own group's tasks only", () => {
     down.plan.request,
     { id: "b", afterTaskId: "c" },
     "neighbors from its group only",
+  );
+});
+
+test("a group closed after it was open stays loaded; one never opened does not", () => {
+  const none: ReadonlySet<string> = new Set();
+  // Backlog is open by default and Done closed: closing Backlog keeps it, Done was never open.
+  const closedBacklog = keptStatusGroups(none, {}, { backlog: false, done: false });
+  NodeAssert.deepEqual([...closedBacklog], ["backlog"]);
+  const opened = keptStatusGroups(closedBacklog, { backlog: false }, { done: true });
+  NodeAssert.equal(opened, closedBacklog, "opening a group changes nothing kept");
+  NodeAssert.deepEqual(
+    [...keptStatusGroups(opened, { done: true }, { done: false })],
+    ["backlog", "done"],
   );
 });

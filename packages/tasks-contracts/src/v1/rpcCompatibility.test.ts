@@ -4,6 +4,7 @@ import { assert, test } from "vite-plus/test";
 
 import { TaskAutomation, TaskAutomationId } from "./automations.ts";
 import {
+  TaskAgentsSearchRpc,
   TaskAutomationsSearchRpc,
   TasksGetRpc,
   TasksPageRpc,
@@ -230,4 +231,25 @@ test("automations RPC versions 1 and 2 decode each other's search results", () =
   const fromV1 = decodeAutomationSearch({ automations: [v1] });
   assert.equal(fromV1.automations[0]?.rank, undefined);
   assert.equal(fromV1.automations[0]?.taskCount, undefined);
+});
+
+test("the current client decodes a task agents version 4 server's agents as unarchived", () => {
+  const decodeAgentSearch = Schema.decodeUnknownSync(TaskAgentsSearchRpc.successSchema);
+  const v4Agent = {
+    id: "task-agent-1",
+    projectId: null,
+    name: "Developer",
+    enabled: false,
+    startStatuses: ["To Do"],
+    startTags: [],
+    startRunStatuses: [],
+    config: {
+      role: "Developer",
+      modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+      instructions: "Build.",
+    },
+    createdAt: "2026-10-07T10:00:00.000Z",
+    updatedAt: "2026-10-07T10:00:00.000Z",
+  };
+  assert.equal(decodeAgentSearch({ agents: [v4Agent] }).agents[0]?.archivedAt, null);
 });

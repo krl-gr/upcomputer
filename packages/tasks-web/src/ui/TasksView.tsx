@@ -8,17 +8,18 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ArrowLeftIcon, GripVerticalIcon } from "lucide-react";
+import { ArrowLeftIcon, GripVerticalIcon, MoreHorizontalIcon } from "lucide-react";
 import { msg, useGT, useMessages } from "gt-react";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   AGENT_RESTORED_STATUS,
   DEFAULT_TASK_STATUS,
   sameTaskStatus,
   TASK_HISTORY_EVENT_KINDS,
-  TASK_STATUSES,
+  taskStatusesFor,
+  taskWorkflowVersionOf,
   TaskId,
   type TaskArchiveFilter,
-  type TaskAudience,
   type TaskEvent,
 } from "@t3tools/tasks-contracts/v1";
 import { taskRunPresentation, groupTaskRunCounts, runSearchStatus } from "./taskRunPresentation.ts";
@@ -26,7 +27,13 @@ import type { ScopedTaskListItem } from "../state/taskPages.ts";
 import type { EnvironmentId, ProjectId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 
 import type { TasksWebRpcClient } from "../rpc/index.ts";
-import type { ScopedTask, ScopedTaskAgent, ScopedTaskAgentRun } from "../state/index.ts";
+import {
+  scopedTaskWithText,
+  type ScopedTask,
+  type ScopedTaskAgent,
+  type ScopedTaskAgentRun,
+  type ScopedTaskRow,
+} from "../state/index.ts";
 import { stackedThreadToast, toastManager } from "../../../../apps/web/src/components/ui/toast.tsx";
 import {
   Select,
@@ -35,11 +42,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../../apps/web/src/components/ui/select.tsx";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuTrigger,
+} from "../../../../apps/web/src/components/ui/menu.tsx";
 import { ProjectFavicon } from "../../../../apps/web/src/components/ProjectFavicon.tsx";
 import { TaskOutput } from "./TaskOutput.tsx";
 import { openFileInWorkerThread } from "./TaskFileWindow.tsx";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
 import { TaskThreadLink } from "./TaskThreadLink.tsx";
+import { useOmittedThreadShell } from "./useOmittedThreadShell.ts";
 import { getTaskRunAgentPresentation } from "./agentModelOptions.ts";
 import { persistPlannedTaskMove, planVisibleTaskMove } from "./taskReorder.ts";
 import {
@@ -51,6 +65,7 @@ import {
 } from "./DetailSidebar.tsx";
 import { toastAudienceMoved } from "../planner/ui/audienceMoved.ts";
 import { WorkspaceViewLayout } from "./WorkspaceViewLayout.tsx";
+import { FLOATING_ACTIONS_CLEARANCE_CLASS } from "./FloatingActions.tsx";
 import { SHOW_MANUAL_CREATE_ACTIONS } from "./manualCreation.ts";
 import {
   orderedProjectFilterKeys,
@@ -67,7 +82,7 @@ import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
 import { AgentTaskCard } from "./AgentTaskCard.tsx";
 import { TaskFilterRow, TaskFiltersButton } from "./TaskFilters.tsx";
 import {
-  TaskGroupMore,
+  TaskGroupShowMore,
   TaskStatusCardGroup,
   TaskStatusGroupsProvider,
   TaskStatusTableGroup,
@@ -75,13 +90,16 @@ import {
 import {
   mergedGroupOrder,
   sameStatusGroup,
+  statusGroupKey,
   taskStatusGroups,
   tasksOfGroup,
+  type TaskStatusGroup,
 } from "./taskStatusGroups.ts";
 import type { TasksViewGrouping } from "./useTaskList.ts";
 import { taskListLayout, type TaskListLayout } from "./taskListLayout.ts";
 import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
+import { writeTextToClipboard } from "../../../../apps/web/src/hooks/useCopyToClipboard.ts";
 import { observeResize } from "../../../../apps/web/src/lib/observeResize.ts";
 import { useMediaQuery } from "../../../../apps/web/src/hooks/useMediaQuery.ts";
 import { TableRunCounts } from "./RunCountNumbers.tsx";
@@ -89,7 +107,7 @@ import { TaskHistory, taskHistoryEntries } from "./TaskHistory.tsx";
 import { TaskTagChips } from "./TaskTagChips.tsx";
 import { TagChipsField } from "./TagChipsField.tsx";
 import { tagSuggestions } from "./tagSuggestions.ts";
-import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
+import { LazyMarkdownEditor, preloadMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import {
   splitListInput,
   taskKey,
@@ -102,12 +120,26 @@ import { ListEmptyState } from "./ListEmptyState.tsx";
 import { useTaskArrivals } from "./taskArrivals.ts";
 import "./taskArrival.css";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
-import { useComputerName } from "../../../../apps/web/src/sidebarComputers/useSidebarComputers.ts";
 
-/** The canonical statuses in workflow order, with Restore's status next to To Do. */
-const STATUS_ORDER = TASK_STATUSES.flatMap((status) =>
-  status === DEFAULT_TASK_STATUS ? [status, AGENT_RESTORED_STATUS] : [status],
-);
+/** Rows a status group shows at first, and how many more each "Show more" adds. */
+const GROUP_FIRST_ROWS = 20;
+const GROUP_MORE_ROWS = 50;
+const LIST_ONLY: ReadonlySet<string> = new Set([""]);
+
+/** Orders statuses as the workflow's standard ones go, with Restore's status next to To Do. */
+function statusComparator(standard: readonly string[]) {
+  const order = standard.flatMap((status) =>
+    status === DEFAULT_TASK_STATUS ? [status, AGENT_RESTORED_STATUS] : [status],
+  );
+  return (left: string, right: string): number => {
+    const leftIndex = order.findIndex((status) => sameTaskStatus(status, left));
+    const rightIndex = order.findIndex((status) => sameTaskStatus(status, right));
+    if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
+    if (leftIndex === -1) return 1;
+    if (rightIndex === -1) return -1;
+    return leftIndex - rightIndex;
+  };
+}
 
 type InlineTaskUpdate = Partial<
   Pick<ScopedTask, "title" | "description" | "status" | "tags" | "audience" | "projectId">
@@ -122,37 +154,10 @@ interface TaskFormState {
   readonly description: string;
 }
 
-/** Who does a task, in its details: changing it moves the task between Agents and Me. */
-const AUDIENCE_LABELS: Record<TaskAudience, string> = {
-  agent: msg("Workers"),
-  person: msg("Me", { $context: "the person themselves, as who does a task" }),
-};
 const TASKS_OFFLINE_TEXT = msg(
-  "The environment with Tasks is not reachable right now. Tasks show when it connects.",
+  "The computer with your tasks isn't reachable right now. Tasks show when it connects.",
 );
 const TABLE_CLASS = "w-full min-w-[920px] border-collapse text-left text-sm";
-const OFFLINE_NOTE_CLASS =
-  "rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground";
-
-function OfflineComputerNote(props: {
-  readonly environmentId: EnvironmentId;
-  readonly showsRows: boolean;
-}) {
-  const gt = useGT();
-  const name = useComputerName(props.environmentId);
-  return (
-    <div className={OFFLINE_NOTE_CLASS}>
-      {props.showsRows
-        ? name
-          ? gt("{name} is not connected. Its tasks may be out of date.", { name })
-          : gt("A computer is not connected. Its tasks may be out of date.")
-        : name
-          ? gt("Tasks from {name} will show when it reconnects.", { name })
-          : gt("Tasks from a computer that is not connected will show when it reconnects.")}
-    </div>
-  );
-}
-
 export interface TasksViewProps {
   readonly projects: readonly TasksWebProject[];
   readonly tasks: readonly ScopedTaskListItem[];
@@ -181,8 +186,7 @@ export interface TasksViewProps {
     readonly ProviderInstanceEntry[]
   >;
   readonly status: "loading" | "ready" | "error" | "offline";
-  readonly errorMessage?: string;
-  /** Environments that are not connected while others answered: each gets a quiet note. */
+  /** Environments that are not connected while others answered. */
   readonly offlineEnvironmentIds?: readonly EnvironmentId[];
   readonly initialSelectedTaskKey?: string;
   readonly canMutateEnvironment: (environmentId: EnvironmentId) => boolean;
@@ -195,6 +199,8 @@ export interface TasksViewProps {
   readonly onOpenInPlanner?: (environmentId: EnvironmentId, taskId: string) => void;
   /** `panel` fits a right-panel surface: cards, filters behind a button, stacked details. */
   readonly layout?: "page" | "panel";
+  /** The panel's Worker tasks entry: no list header, the filter and + float over the list. */
+  readonly floatingControls?: boolean;
   /** The thread beside a right-panel surface, whose panel opens the output's file links. */
   readonly filePanelRef?: ScopedThreadRef;
 }
@@ -227,7 +233,142 @@ function errorDescription(error: unknown): string {
 }
 
 const DESCRIPTION_EDITOR_CLASS =
-  "min-h-36 w-full flex-1 px-3 py-2 text-lg leading-8 text-foreground";
+  "min-h-36 w-full flex-1 px-3 py-2 text-sm leading-relaxed text-foreground";
+const DETAIL_DESCRIPTION_EDITOR_CLASS =
+  "min-h-10 w-full px-3 py-1.5 text-sm leading-relaxed text-foreground";
+
+type TitleDraftState =
+  | { readonly kind: "editing"; readonly text: string; readonly dirty: boolean }
+  | { readonly kind: "saving"; readonly base: string; readonly text: string };
+
+/**
+ * Full wrapping task title at the top of the detail main column, editable in
+ * place. Holds the draft while focused so remote refreshes cannot clobber
+ * active typing, and drops a failed save cleanly.
+ */
+function DetailTitleHeading(props: {
+  readonly value: string;
+  readonly canEdit: boolean;
+  readonly disabled: boolean;
+  readonly onSave: (title: string) => Promise<boolean>;
+}) {
+  const gt = useGT();
+  const [draft, setDraft] = useState<TitleDraftState | null>(null);
+  const cancelledRef = useRef(false);
+  const value =
+    draft === null
+      ? props.value
+      : draft.kind === "editing"
+        ? draft.text
+        : draft.base === props.value
+          ? draft.text
+          : props.value;
+
+  if (!props.canEdit) {
+    return (
+      <h2 className="mb-2 break-words px-2 py-0.5 text-lg font-semibold leading-snug text-foreground">
+        {props.value}
+      </h2>
+    );
+  }
+
+  const commit = (raw: string) => {
+    if (draft?.kind === "editing" && !draft.dirty) {
+      setDraft(null);
+      return;
+    }
+    const title = raw.trim();
+    if (!title || title === props.value) {
+      setDraft(null);
+      return;
+    }
+    const base = props.value;
+    setDraft({ kind: "saving", base, text: title });
+    void props.onSave(title).then((saved) => {
+      if (!saved) {
+        setDraft((current) =>
+          current?.kind === "saving" && current.base === base && current.text === title
+            ? null
+            : current,
+        );
+      }
+    });
+  };
+
+  return (
+    <textarea
+      rows={1}
+      value={value}
+      disabled={props.disabled}
+      aria-label={gt("Task title")}
+      placeholder={gt("Task title…")}
+      className="field-sizing-content mb-2 block w-full resize-none overflow-hidden rounded-md bg-transparent px-2 py-0.5 text-lg font-semibold leading-snug text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:bg-accent/50 focus:bg-accent/50 focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
+      onFocus={() => {
+        cancelledRef.current = false;
+        setDraft({ kind: "editing", text: value, dirty: false });
+      }}
+      onChange={(event) => {
+        const text = event.currentTarget.value.replace(/[\r\n]+/g, " ");
+        setDraft({ kind: "editing", text, dirty: true });
+      }}
+      onBlur={(event) => {
+        if (cancelledRef.current) {
+          cancelledRef.current = false;
+          return;
+        }
+        commit(event.currentTarget.value);
+      }}
+      onKeyDown={(event) => {
+        if (event.nativeEvent?.isComposing || event.keyCode === 229) return;
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          cancelledRef.current = true;
+          setDraft(null);
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+/** Source thread row inside the Details list, linking directly to the originating thread. */
+function DetailSourceThreadRow(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly onOpen: (environmentId: EnvironmentId, threadId: ThreadId) => void;
+}) {
+  const gt = useGT();
+  const threadRef = useMemo(
+    () => scopeThreadRef(props.environmentId, props.threadId),
+    [props.environmentId, props.threadId],
+  );
+  const thread = useOmittedThreadShell(threadRef, true);
+  const unavailable = thread?.deletedAt != null;
+  const title = thread?.title || gt("Source thread");
+
+  return (
+    <DetailSidebarRow
+      label={gt("Source thread")}
+      controlSelector={unavailable ? undefined : "button"}
+    >
+      {unavailable ? (
+        <span className="truncate text-muted-foreground">{gt("Unavailable")}</span>
+      ) : (
+        <button
+          type="button"
+          className="min-w-0 max-w-full cursor-pointer truncate text-right text-sm font-normal leading-relaxed tracking-normal text-foreground hover:underline"
+          title={title}
+          onClick={() => props.onOpen(props.environmentId, props.threadId)}
+        >
+          {title}
+        </button>
+      )}
+    </DetailSidebarRow>
+  );
+}
 
 /**
  * A task's description in the table detail, saved when the field loses focus.
@@ -236,6 +377,7 @@ const DESCRIPTION_EDITOR_CLASS =
 function DetailDescriptionEditor(props: {
   readonly value: string;
   readonly disabled: boolean;
+  readonly onReady?: (() => void) | undefined;
   readonly onSave: (description: string) => void;
 }) {
   const gt = useGT();
@@ -251,7 +393,8 @@ function DetailDescriptionEditor(props: {
       disabled={props.disabled}
       placeholder={gt("Description…")}
       ariaLabel={gt("Task description")}
-      className={DESCRIPTION_EDITOR_CLASS}
+      className={DETAIL_DESCRIPTION_EDITOR_CLASS}
+      onReady={props.onReady}
       onChange={(next) => {
         textRef.current = next;
         setDraft({ base: props.value, text: next });
@@ -264,22 +407,60 @@ function DetailDescriptionEditor(props: {
   );
 }
 
-function shortTaskId(id: string): string {
-  const displayId = id.startsWith("task-") ? id.slice("task-".length) : id;
-  return displayId.length > 8 ? `${displayId.slice(0, 8)}…` : displayId;
-}
+function TaskDescriptionSection(props: {
+  readonly title: string;
+  readonly defaultOpen: boolean;
+  readonly text: string | null;
+  readonly canEdit: boolean;
+  readonly disabled: boolean;
+  readonly onSave: (description: string) => void;
+}) {
+  const gt = useGT();
+  const [startedCollapsed] = useState(!props.defaultOpen);
+  const usesEditor = props.text !== null && props.canEdit;
+  const [editorReady, setEditorReady] = useState(false);
+  const [prevUsesEditor, setPrevUsesEditor] = useState(usesEditor);
+  if (prevUsesEditor !== usesEditor) {
+    setPrevUsesEditor(usesEditor);
+    if (editorReady) setEditorReady(false);
+  }
 
-function compareStatuses(left: string, right: string): number {
-  const leftIndex = STATUS_ORDER.findIndex((status) => sameTaskStatus(status, left));
-  const rightIndex = STATUS_ORDER.findIndex((status) => sameTaskStatus(status, right));
-  if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
-  if (leftIndex === -1) return 1;
-  if (rightIndex === -1) return -1;
-  return leftIndex - rightIndex;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- schedules post-paint chunk preload for a collapsed description editor
+  useEffect(() => {
+    if (!startedCollapsed || !usesEditor) return;
+    const timer = setTimeout(() => preloadMarkdownEditor(), 0);
+    return () => clearTimeout(timer);
+  }, [startedCollapsed, usesEditor]);
+
+  return (
+    <DetailSidebarSection
+      title={props.title}
+      defaultOpen={props.defaultOpen}
+      contentReady={!startedCollapsed || !usesEditor || editorReady}
+      onWarm={startedCollapsed && usesEditor ? preloadMarkdownEditor : undefined}
+    >
+      {props.text === null ? (
+        <p className="px-3 py-1.5 text-sm text-muted-foreground">{gt("Loading task…")}</p>
+      ) : props.canEdit ? (
+        <DetailDescriptionEditor
+          value={props.text}
+          disabled={props.disabled}
+          onReady={startedCollapsed ? () => setEditorReady(true) : undefined}
+          onSave={props.onSave}
+        />
+      ) : props.text.trim() ? (
+        <p className="whitespace-pre-wrap px-3 py-1.5 text-sm leading-relaxed text-foreground">
+          {props.text}
+        </p>
+      ) : (
+        <p className="px-3 py-1.5 text-sm text-muted-foreground">{gt("No description.")}</p>
+      )}
+    </DetailSidebarSection>
+  );
 }
 
 export function TaskReorderHandle(props: {
-  readonly task: ScopedTask;
+  readonly task: ScopedTaskRow;
   /** Translated by the caller, which has `useGT()`. */
   readonly ariaLabel: string;
   readonly title: string;
@@ -328,7 +509,6 @@ export function TasksView(props: TasksViewProps) {
   const pendingDetailRefresh = useRef<(() => void) | null>(null);
   const detailPagesRef = useRef(1);
   const [runFilter, setRunFilter] = useState(ALL_FILTER);
-  const [activeRuns, setActiveRuns] = useState<readonly ScopedTaskAgentRun[]>([]);
   const [moreRuns, setMoreRuns] = useState(false);
   const [fetchedTask, setFetchedTask] = useState<ScopedTask | null>(null);
   /** English from `msg()`, shown through `useMessages()`. */
@@ -393,7 +573,9 @@ export function TasksView(props: TasksViewProps) {
       props.tasks.find((task) => taskKey(task) === selectedTaskKey) ??
       null)
     : null;
-  const hasSelectedTaskOutput = Boolean(selectedTask?.output?.trim());
+  // List rows can leave out the text; details show it once their own read has it.
+  const selectedTaskText = selectedTask === null ? null : scopedTaskWithText(selectedTask);
+  const hasSelectedTaskOutput = Boolean(selectedTaskText?.output?.trim());
   const projectsByKey = useMemo(
     () => new Map(props.projects.map((project) => [projectKey(project), project] as const)),
     [props.projects],
@@ -410,28 +592,34 @@ export function TasksView(props: TasksViewProps) {
     [props.projects, selectedTask?.environmentId],
   );
   const taskThreads = detailRuns;
-  // Active runs come unfiltered; the history can be filtered by status.
-  const latestRun = [...activeRuns, ...detailRuns].reduce<ScopedTaskAgentRun | undefined>(
+  const latestRun = detailRuns.reduce<ScopedTaskAgentRun | undefined>(
     (latest, run) => (latest === undefined || run.startedAt > latest.startedAt ? run : latest),
     undefined,
   );
   const mutableProjects = props.projects.filter((project) =>
     props.canMutateEnvironment(project.environmentId),
   );
-  const hasReadOnlyProjects = mutableProjects.length < props.projects.length;
   const projectOptions = useMemo(() => pickerProjects(mutableProjects), [mutableProjects]);
   const selectedProjectOption = useMemo(
     () => (selectedProject ? pickerProjectFor(projectOptions, selectedProject) : undefined),
     [projectOptions, selectedProject],
   );
+  const workflowVersion = taskWorkflowVersionOf(props.grouping?.settings ?? {});
+  const compareStatuses = useMemo(
+    () => statusComparator(taskStatusesFor(workflowVersion)),
+    [workflowVersion],
+  );
   const statusOptions = useMemo(
     () =>
-      uniqueStatuses([
-        ...props.statuses,
-        ...(statusFilter === ALL_FILTER ? [] : [statusFilter]),
-        ...(selectedTask ? [selectedTask.status] : []),
-      ]).sort(compareStatuses),
-    [props.statuses, selectedTask, statusFilter],
+      uniqueStatuses(
+        [
+          ...props.statuses,
+          ...(statusFilter === ALL_FILTER ? [] : [statusFilter]),
+          ...(selectedTask ? [selectedTask.status] : []),
+        ],
+        workflowVersion,
+      ).sort(compareStatuses),
+    [compareStatuses, props.statuses, selectedTask, statusFilter, workflowVersion],
   );
   // The server applies the last-run filter; an older one does not, so the loaded rows are checked too.
   const filteredTasks = useMemo(
@@ -449,13 +637,28 @@ export function TasksView(props: TasksViewProps) {
         statusFilter: statusFilter === ALL_FILTER ? null : statusFilter,
         order: grouping?.settings.statusGroupOrder ?? [],
         open: grouping?.settings.statusGroupOpen ?? {},
+        workflowVersion,
       }),
-    [filteredTasks, grouped, grouping, props.statuses, statusFilter],
+    [filteredTasks, grouped, grouping, props.statuses, statusFilter, workflowVersion],
   );
-  const groupsLoading = [...(grouping?.paging.values() ?? [])].some((paging) => paging.loading);
+  // Open groups whose rows are loaded: only a task that shows up in one of these is new.
+  const readyGroups = useMemo(
+    () =>
+      grouped
+        ? new Set(
+            groups
+              .filter((group) => group.open && grouping?.paging.get(group.key)?.loading !== true)
+              .map((group) => group.key),
+          )
+        : LIST_ONLY,
+    [grouped, grouping?.paging, groups],
+  );
   // The loaded rows, not the optimistic copy, which trails a page by a render.
-  const { arrivals, settle: settleArrival } = useTaskArrivals(
-    props.tasks.map(taskKey),
+  const { arrivals, settle: settleArrivals } = useTaskArrivals(
+    props.tasks.map((task) => ({
+      key: taskKey(task),
+      group: grouped ? statusGroupKey(task.status) : "",
+    })),
     // A computer going offline or coming back resets the baseline, so its rows don't replay as new.
     JSON.stringify([
       projectFilter?.key ?? null,
@@ -464,8 +667,8 @@ export function TasksView(props: TasksViewProps) {
       grouped,
     ]),
     props.status === "ready",
-    // A group's first page, as it opens, brings old tasks too.
-    props.loadingMore || groupsLoading,
+    props.loadingMore,
+    readyGroups,
   );
   const triggerTags = useMemo(() => agentTriggerTags(props.agents), [props.agents]);
   const tagOptions = useMemo(
@@ -481,13 +684,20 @@ export function TasksView(props: TasksViewProps) {
   const showStatusColumn = !grouped;
   const environmentCount = new Set(props.tasks.map(({ environmentId }) => environmentId)).size;
 
+  const [groupRowLimits, setGroupRowLimits] = useState<Readonly<Record<string, number>>>({});
+
   const persistVisibleMove = useCallback(
     async (task: ScopedTaskListItem, directionOrTarget: "up" | "down" | ScopedTaskListItem) => {
       if (reorderInFlightRef.current || !props.canMutateEnvironment(task.environmentId)) return;
       const result = planVisibleTaskMove({
         tasks: optimisticTasks,
-        // In a grouped list a task moves among its own group's tasks only.
-        visibleTasks: grouped ? tasksOfGroup(filteredTasks, task.status) : filteredTasks,
+        // In a grouped list a task moves among its own group's shown tasks only.
+        visibleTasks: grouped
+          ? tasksOfGroup(filteredTasks, task.status).slice(
+              0,
+              groupRowLimits[statusGroupKey(task.status)] ?? GROUP_FIRST_ROWS,
+            )
+          : filteredTasks,
         task,
         directionOrTarget,
       });
@@ -525,7 +735,7 @@ export function TasksView(props: TasksViewProps) {
         reorderInFlightRef.current = false;
       }
     },
-    [filteredTasks, gt, grouped, optimisticTasks, props],
+    [filteredTasks, gt, grouped, groupRowLimits, optimisticTasks, props],
   );
 
   const dropOn = (task: ScopedTaskListItem) => {
@@ -597,21 +807,15 @@ export function TasksView(props: TasksViewProps) {
               )?.name ?? null,
           });
         },
-        () => {
-          if (!cancelled && request === current) setDetailError(msg("Could not refresh task."));
-        },
+        // A failed refresh keeps what the details show, or "Loading task…"; the next change retries.
+        () => undefined,
       );
     };
-    const unsubscribe = client.tasks.subscribe(
-      (event) => {
-        if (event.kind !== "sync" && !event.taskIds.includes(TaskId.make(id))) return;
-        clearTimeout(timer);
-        timer = setTimeout(refresh, 150);
-      },
-      () => {
-        if (!cancelled) setDetailError(msg("Task updates are temporarily unavailable."));
-      },
-    );
+    const unsubscribe = client.tasks.subscribe((event) => {
+      if (event.kind !== "sync" && !event.taskIds.includes(TaskId.make(id))) return;
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 150);
+    });
     const foreground = () => {
       if (document.visibilityState === "visible") refresh();
     };
@@ -625,7 +829,7 @@ export function TasksView(props: TasksViewProps) {
   }, [selectedTaskKey, props.getClient, props.projects]);
 
   const loadTaskRuns = useCallback(
-    (task: ScopedTask, append = false, background = false) => {
+    (task: ScopedTaskRow, append = false, background = false) => {
       const requestId = ++detailRequestRef.current;
       if (!background) setDetailRunsStatus("loading");
       const client = props.getClient(task.environmentId);
@@ -662,25 +866,8 @@ export function TasksView(props: TasksViewProps) {
         }
         return { runs, hasMore };
       };
-      const fetchActive = async () => {
-        const runs: ScopedTaskAgentRun[] = [];
-        let cursor: { startedAt: string; id: ScopedTaskAgentRun["id"] } | undefined;
-        while (detailRequestRef.current === requestId) {
-          const result = await client.agents.searchRuns({
-            taskId: task.id,
-            activeOnly: true,
-            limit: 500,
-            ...(cursor ? { cursor } : {}),
-          });
-          runs.push(...result.runs.map((run) => ({ ...run, environmentId: task.environmentId })));
-          const tail = result.runs.at(-1);
-          if (result.runs.length < 500 || !tail) break;
-          cursor = { startedAt: tail.startedAt, id: tail.id };
-        }
-        return { runs };
-      };
-      void Promise.all([fetchHistory(), fetchActive()]).then(
-        ([result, active]) => {
+      void fetchHistory().then(
+        (result) => {
           if (detailRequestRef.current !== requestId) return;
           const scoped = result.runs.map((run) => ({ ...run, environmentId: task.environmentId }));
           setDetailRuns((previous) => [
@@ -688,7 +875,6 @@ export function TasksView(props: TasksViewProps) {
               (append ? [...previous, ...scoped] : scoped).map((run) => [run.id, run]),
             ).values(),
           ]);
-          setActiveRuns(active.runs.map((run) => ({ ...run, environmentId: task.environmentId })));
           setMoreRuns(result.hasMore);
           if (append) detailPagesRef.current += 1;
           finished();
@@ -708,8 +894,8 @@ export function TasksView(props: TasksViewProps) {
   loadTaskRunsRef.current = loadTaskRuns;
 
   const openTask = useCallback(
-    (task: ScopedTask, status = ALL_FILTER) => {
-      setFetchedTask(task);
+    (task: ScopedTaskRow, status = ALL_FILTER) => {
+      setFetchedTask(scopedTaskWithText(task));
       setRunFilter(status);
       selectTaskKey(taskKey(task));
     },
@@ -718,7 +904,6 @@ export function TasksView(props: TasksViewProps) {
 
   useEffect(() => {
     setDetailRuns([]);
-    setActiveRuns([]);
     setMoreRuns(false);
     detailPagesRef.current = 1;
     if (selectedTask) loadTaskRunsRef.current(selectedTask);
@@ -768,7 +953,7 @@ export function TasksView(props: TasksViewProps) {
   }, [selectedTask?.id, selectedTask?.environmentId, props.getClient]);
 
   const updateTaskInline = useCallback(
-    async (task: ScopedTask, field: string, update: InlineTaskUpdate): Promise<boolean> => {
+    async (task: ScopedTaskRow, field: string, update: InlineTaskUpdate): Promise<boolean> => {
       const client = props.getClient(task.environmentId);
       if (!client) return false;
       setUpdatingField(field);
@@ -834,7 +1019,7 @@ export function TasksView(props: TasksViewProps) {
   }, [detailRuns, gt, history, props.agents, selectedTask]);
 
   const setTaskArchived = useCallback(
-    async (task: ScopedTask, archived: boolean) => {
+    async (task: ScopedTaskRow, archived: boolean) => {
       const client = props.getClient(task.environmentId);
       if (!client) return;
       setUpdatingField("archive");
@@ -933,7 +1118,7 @@ export function TasksView(props: TasksViewProps) {
       className="grid"
       data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
       onAnimationEnd={(event) => {
-        if (event.animationName === "task-arrival-tint") settleArrival(taskKey(task));
+        if (event.animationName === "task-arrival-tint") settleArrivals([taskKey(task)]);
       }}
     >
       <div className="min-h-0 overflow-hidden">
@@ -949,6 +1134,7 @@ export function TasksView(props: TasksViewProps) {
           canMutate={props.canMutateEnvironment(task.environmentId)}
           dragged={draggedTaskKey === taskKey(task)}
           reorderable={props.canMutateEnvironment(task.environmentId)}
+          quoteDraggable={panel}
           onDragStart={() => setDraggedTaskKey(taskKey(task))}
           onDragEnd={() => setDraggedTaskKey(null)}
           onMove={(direction) => void persistVisibleMove(task, direction)}
@@ -986,7 +1172,7 @@ export function TasksView(props: TasksViewProps) {
         key={taskKey(task)}
         data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
         onAnimationEnd={(event) => {
-          if (event.animationName === "task-arrival-tint") settleArrival(taskKey(task));
+          if (event.animationName === "task-arrival-tint") settleArrivals([taskKey(task)]);
         }}
         className={`cursor-pointer border-b border-border transition-colors hover:bg-muted/20 ${
           draggedTaskKey === taskKey(task) ? "opacity-50" : ""
@@ -1057,19 +1243,29 @@ export function TasksView(props: TasksViewProps) {
           grouping.onSettingsChange({ groupByStatus }),
       }
     : {};
-  const setGroupOpen = (key: string, open: boolean) =>
-    grouping?.onSettingsChange({ statusGroupOpen: { [key]: open } });
-  // The end of an open group with more on the server: its next page loads when this scrolls into view.
-  const groupMore = (key: string, loaded: number, row: boolean) => {
-    const paging = grouping?.paging.get(key);
-    if (!grouping || !paging?.hasMore) return null;
+  // A highlight cut short by closing its group does not play again when the group opens.
+  const setGroupOpen = (group: TaskStatusGroup<ScopedTaskListItem>, open: boolean) => {
+    settleArrivals(group.tasks.map(taskKey));
+    grouping?.onSettingsChange({ statusGroupOpen: { [group.key]: open } });
+  };
+  const groupRows = (group: TaskStatusGroup<ScopedTaskListItem>) =>
+    group.tasks.slice(0, groupRowLimits[group.key] ?? GROUP_FIRST_ROWS);
+  // The group's next rows, loading the server's next page when the loaded rows run out.
+  const groupShowMore = (group: TaskStatusGroup<ScopedTaskListItem>, row: boolean) => {
+    const limit = groupRowLimits[group.key] ?? GROUP_FIRST_ROWS;
+    const paging = grouping?.paging.get(group.key);
+    const hidden = Math.max(group.count, group.tasks.length) - limit;
+    if (!grouping || hidden <= 0 || (group.tasks.length <= limit && !paging?.hasMore)) return null;
     return (
-      <TaskGroupMore
-        // A new observer per page, so a short page that leaves the end in view loads the next one.
-        key={`more:${loaded}`}
+      <TaskGroupShowMore
         row={row}
         columnCount={showProjectColumn ? 5 : 4}
-        onVisible={() => grouping.onLoadGroup(key)}
+        hidden={hidden}
+        onShowMore={() => {
+          const next = limit + GROUP_MORE_ROWS;
+          setGroupRowLimits((limits) => ({ ...limits, [group.key]: next }));
+          if (group.tasks.length < next && paging?.hasMore) grouping.onLoadGroup(group.key);
+        }}
       />
     );
   };
@@ -1078,12 +1274,13 @@ export function TasksView(props: TasksViewProps) {
     ? "flex w-full min-w-0 py-3"
     : "flex min-h-0 w-full flex-1 py-5";
   const detailInnerClass = stackedDetail
-    ? "flex min-w-0 flex-1 flex-col gap-3"
+    ? "flex min-w-0 flex-1 flex-col"
     : "flex min-h-0 min-w-0 flex-1 gap-5";
 
   return (
     <WorkspaceViewLayout
       variant={props.layout}
+      floatingControls={props.floatingControls === true}
       {...(selectedTask
         ? {}
         : createModeOpen
@@ -1143,9 +1340,6 @@ export function TasksView(props: TasksViewProps) {
       toolbar={
         selectedTask ? (
           <>
-            <span className="shrink-0 text-sm font-medium text-blue-400" title={selectedTask.id}>
-              {shortTaskId(selectedTask.id)}
-            </span>
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
               {selectedTask.title}
             </span>
@@ -1154,12 +1348,64 @@ export function TasksView(props: TasksViewProps) {
                 {gt("Archived", { $context: "status of an archived task" })}
               </span>
             ) : null}
+            <Menu>
+              <MenuTrigger
+                render={<Button size="icon-sm" variant="outline" aria-label={gt("More actions")} />}
+              >
+                <MoreHorizontalIcon />
+              </MenuTrigger>
+              <MenuPopup align="end">
+                <MenuItem
+                  onClick={() => {
+                    void writeTextToClipboard(selectedTask.id).then(
+                      (copied) => {
+                        if (copied)
+                          toastManager.add({ type: "success", title: gt("Task ID copied") });
+                      },
+                      () =>
+                        toastManager.add({
+                          type: "error",
+                          title: gt("Could not copy task ID"),
+                        }),
+                    );
+                  }}
+                >
+                  {gt("Copy task ID")}
+                </MenuItem>
+                {selectedTask.kind !== "routine" &&
+                props.canMutateEnvironment(selectedTask.environmentId) ? (
+                  <MenuItem
+                    disabled={updatingField === "audience"}
+                    onClick={() => {
+                      const task = selectedTask;
+                      const audience = task.audience === "agent" ? "person" : "agent";
+                      void updateTaskInline(task, "audience", { audience }).then((moved) => {
+                        if (!moved) return;
+                        toastAudienceMoved(
+                          audience,
+                          task.title,
+                          () =>
+                            audience === "person"
+                              ? props.onOpenInPlanner?.(task.environmentId, task.id)
+                              : selectTaskKey(taskKey(task)),
+                          gt,
+                        );
+                      });
+                    }}
+                  >
+                    {selectedTask.audience === "agent"
+                      ? gt("Move to my planner")
+                      : gt("Move to workers")}
+                  </MenuItem>
+                ) : null}
+              </MenuPopup>
+            </Menu>
           </>
         ) : createModeOpen ? undefined : (
           <>
             {cards ? (
               // A margin, not a spacer, pushes it right: a spacer adds a gap the phone header lacks.
-              <div className="ms-auto shrink-0">
+              <div className="ms-auto flex shrink-0">
                 <TaskFiltersButton
                   filters={filters}
                   onFiltersChange={onFiltersChange}
@@ -1201,28 +1447,25 @@ export function TasksView(props: TasksViewProps) {
         <div className={detailOuterClass}>
           <div className={detailInnerClass}>
             <main className={stackedDetail ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto"}>
-              <DetailSidebarSection
-                key={`${taskKey(selectedTask)}:description`}
+              <DetailTitleHeading
+                key={`${taskKey(selectedTask)}:title`}
+                value={selectedTask.title}
+                canEdit={props.canMutateEnvironment(selectedTask.environmentId)}
+                disabled={updatingField === "title"}
+                onSave={(title) => updateTaskInline(selectedTask, "title", { title })}
+              />
+              {/* Opens once the text arrives, collapsed when the task has output, as before. */}
+              <TaskDescriptionSection
+                key={`${taskKey(selectedTask)}:description:${selectedTaskText === null ? "loading" : "loaded"}`}
                 title={gt("Description")}
-                defaultOpen={!hasSelectedTaskOutput}
-              >
-                {props.canMutateEnvironment(selectedTask.environmentId) ? (
-                  <DetailDescriptionEditor
-                    key={`${taskKey(selectedTask)}:description-editor`}
-                    value={selectedTask.description}
-                    disabled={updatingField === "description"}
-                    onSave={(description) =>
-                      void updateTaskInline(selectedTask, "description", { description })
-                    }
-                  />
-                ) : selectedTask.description.trim() ? (
-                  <p className="whitespace-pre-wrap px-3 py-2 text-lg leading-8 text-foreground">
-                    {selectedTask.description}
-                  </p>
-                ) : (
-                  <p className="px-3 py-2 text-sm text-muted-foreground">{gt("No description.")}</p>
-                )}
-              </DetailSidebarSection>
+                defaultOpen={selectedTaskText !== null && !hasSelectedTaskOutput}
+                text={selectedTaskText === null ? null : selectedTaskText.description}
+                canEdit={props.canMutateEnvironment(selectedTask.environmentId)}
+                disabled={updatingField === "description"}
+                onSave={(description) =>
+                  void updateTaskInline(selectedTask, "description", { description })
+                }
+              />
               {hasSelectedTaskOutput ? (
                 <DetailSidebarSection
                   key={`${taskKey(selectedTask)}:output`}
@@ -1230,7 +1473,7 @@ export function TasksView(props: TasksViewProps) {
                   defaultOpen
                 >
                   <TaskOutput
-                    text={selectedTask.output ?? ""}
+                    text={selectedTaskText?.output ?? ""}
                     environmentId={selectedTask.environmentId}
                     cwd={selectedTaskProject?.workspaceRoot}
                     filePanelRef={props.filePanelRef}
@@ -1262,37 +1505,6 @@ export function TasksView(props: TasksViewProps) {
             <DetailColumn stacked={stackedDetail}>
               <DetailSidebarSection title={gt("Details")}>
                 <dl className="flex min-w-0 flex-col gap-0.5">
-                  <DetailSidebarRow
-                    label={gt("Title")}
-                    controlSelector={
-                      props.canMutateEnvironment(selectedTask.environmentId) ? "input" : undefined
-                    }
-                  >
-                    {props.canMutateEnvironment(selectedTask.environmentId) ? (
-                      <input
-                        key={`${selectedTask.updatedAt}:title`}
-                        className={DETAIL_INPUT_CLASS}
-                        defaultValue={selectedTask.title}
-                        disabled={updatingField === "title"}
-                        aria-label={gt("Task title")}
-                        onBlur={(event) => {
-                          const title = event.currentTarget.value.trim();
-                          if (title && title !== selectedTask.title)
-                            void updateTaskInline(selectedTask, "title", { title });
-                          else event.currentTarget.value = selectedTask.title;
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") event.currentTarget.blur();
-                          if (event.key === "Escape") {
-                            event.currentTarget.value = selectedTask.title;
-                            event.currentTarget.blur();
-                          }
-                        }}
-                      />
-                    ) : (
-                      selectedTask.title
-                    )}
-                  </DetailSidebarRow>
                   <DetailSidebarRow
                     label={gt("Status")}
                     controlSelector={
@@ -1326,74 +1538,6 @@ export function TasksView(props: TasksViewProps) {
                     ) : (
                       selectedTask.status
                     )}
-                  </DetailSidebarRow>
-                  {selectedTask.kind === "routine" ? null : (
-                    <DetailSidebarRow
-                      label={gt("For", { $context: "who a task is for" })}
-                      controlSelector={
-                        props.canMutateEnvironment(selectedTask.environmentId)
-                          ? "button"
-                          : undefined
-                      }
-                    >
-                      {props.canMutateEnvironment(selectedTask.environmentId) ? (
-                        <Select
-                          value={selectedTask.audience}
-                          onValueChange={(audience) => {
-                            if (audience !== "agent" && audience !== "person") return;
-                            if (audience === selectedTask.audience) return;
-                            const task = selectedTask;
-                            void updateTaskInline(task, "audience", { audience }).then((moved) => {
-                              if (!moved) return;
-                              toastAudienceMoved(
-                                audience,
-                                task.title,
-                                () =>
-                                  audience === "person"
-                                    ? props.onOpenInPlanner?.(task.environmentId, task.id)
-                                    : selectTaskKey(taskKey(task)),
-                                gt,
-                              );
-                            });
-                          }}
-                        >
-                          <SelectTrigger
-                            className={DETAIL_SELECT_TRIGGER_CLASS}
-                            style={{ color: "var(--foreground)" }}
-                            variant="ghost"
-                            aria-label={gt("For", { $context: "who a task is for" })}
-                            disabled={updatingField === "audience"}
-                          >
-                            <SelectValue>{m(AUDIENCE_LABELS[selectedTask.audience])}</SelectValue>
-                          </SelectTrigger>
-                          <SelectPopup>
-                            <SelectItem value="agent">{m(AUDIENCE_LABELS.agent)}</SelectItem>
-                            <SelectItem value="person">{m(AUDIENCE_LABELS.person)}</SelectItem>
-                          </SelectPopup>
-                        </Select>
-                      ) : (
-                        m(AUDIENCE_LABELS[selectedTask.audience])
-                      )}
-                    </DetailSidebarRow>
-                  )}
-                  <DetailSidebarRow label={gt("ID")}>
-                    <button
-                      type="button"
-                      className="max-w-full truncate font-mono text-xs hover:underline"
-                      title={gt("Copy task ID")}
-                      onClick={() => {
-                        void navigator.clipboard.writeText(selectedTask.id).then(
-                          () => toastManager.add({ type: "success", title: gt("Task ID copied") }),
-                          () =>
-                            toastManager.add({
-                              type: "error",
-                              title: gt("Could not copy task ID"),
-                            }),
-                        );
-                      }}
-                    >
-                      {selectedTask.id}
-                    </button>
                   </DetailSidebarRow>
                   <DetailSidebarRow
                     label={gt("Project")}
@@ -1493,6 +1637,13 @@ export function TasksView(props: TasksViewProps) {
                       )}
                     </DetailSidebarRow>
                   )}
+                  {selectedTask.sourceThreadId ? (
+                    <DetailSourceThreadRow
+                      environmentId={selectedTask.environmentId}
+                      threadId={selectedTask.sourceThreadId as ThreadId}
+                      onOpen={props.onOpenThread}
+                    />
+                  ) : null}
                   <DetailSidebarRow label={gt("Created", { $context: "date a task was created" })}>
                     {new Date(selectedTask.createdAt).toLocaleDateString()}
                   </DetailSidebarRow>
@@ -1515,50 +1666,6 @@ export function TasksView(props: TasksViewProps) {
                   ) : null}
                 </dl>
               </DetailSidebarSection>
-              {selectedTask.sourceThreadId ? (
-                <DetailSidebarSection title={gt("Source thread")}>
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    <TaskThreadLink
-                      environmentId={selectedTask.environmentId}
-                      threadId={selectedTask.sourceThreadId as ThreadId}
-                      title={gt("Source thread")}
-                      onOpen={props.onOpenThread}
-                    />
-                  </div>
-                </DetailSidebarSection>
-              ) : null}
-              <DetailSidebarSection title={gt("Active runs")} count={activeRuns.length}>
-                {activeRuns.length === 0 ? (
-                  <p className="px-2 py-3 text-sm text-muted-foreground">
-                    {detailRunsStatus === "loading"
-                      ? gt("Loading active runs…")
-                      : detailRunsStatus === "error"
-                        ? gt("Could not refresh active runs.")
-                        : gt("No active runs.")}
-                  </p>
-                ) : (
-                  activeRuns.map((run) => {
-                    const { agentName, modelLabel } = getTaskRunAgentPresentation(
-                      run,
-                      props.agents,
-                      props.providerEntriesByEnvironment.get(run.environmentId),
-                      gt,
-                    );
-                    return (
-                      <TaskThreadLink
-                        key={run.id}
-                        environmentId={run.environmentId}
-                        threadId={run.threadId}
-                        title={agentName}
-                        label={agentName}
-                        detail={modelLabel}
-                        runStatus={run.status}
-                        onOpen={props.onOpenThread}
-                      />
-                    );
-                  })
-                )}
-              </DetailSidebarSection>
               <DetailSidebarSection
                 title={gt("Runs", { $context: "noun: a task's worker runs" })}
                 count={detailRuns.length}
@@ -1575,45 +1682,51 @@ export function TasksView(props: TasksViewProps) {
                     </button>
                   </div>
                 ) : null}
-                {detailRunsStatus === "error" ? (
-                  <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-                    {gt("Could not refresh this task's worker runs. Showing cached results.")}
-                  </div>
-                ) : null}
                 {detailRunsStatus === "loading" && taskThreads.length === 0 ? (
-                  <div className="px-2 py-5 text-sm text-muted-foreground">
+                  <p className="px-2 py-2 text-sm text-muted-foreground">
                     {gt("Loading worker runs...")}
-                  </div>
+                  </p>
+                ) : detailRunsStatus === "error" && taskThreads.length === 0 ? (
+                  <p className="px-2 py-2 text-sm text-muted-foreground">
+                    {gt("Could not refresh runs.")}
+                  </p>
                 ) : taskThreads.length === 0 ? (
-                  <div className="px-2 py-5 text-sm text-muted-foreground">
+                  <p className="px-2 py-2 text-sm text-muted-foreground">
                     {runFilter === ALL_FILTER
                       ? gt("No worker has worked on this task yet.")
                       : gt("No runs match this status.")}
-                  </div>
+                  </p>
                 ) : (
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    {taskThreads.map((run) => {
-                      const { agentName, modelLabel } = getTaskRunAgentPresentation(
-                        run,
-                        props.agents,
-                        props.providerEntriesByEnvironment.get(run.environmentId),
-                        gt,
-                      );
-                      return (
-                        <TaskThreadLink
-                          key={`${run.environmentId}:${run.id}`}
-                          environmentId={run.environmentId}
-                          threadId={run.threadId}
-                          title={agentName}
-                          label={agentName}
-                          detail={modelLabel}
-                          runStatus={run.status}
-                          timestamp={run.startedAt}
-                          onOpen={props.onOpenThread}
-                        />
-                      );
-                    })}
-                  </div>
+                  <>
+                    {detailRunsStatus === "error" ? (
+                      <p className="px-2 py-1.5 text-sm text-muted-foreground">
+                        {gt("Could not refresh runs.")}
+                      </p>
+                    ) : null}
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      {taskThreads.map((run) => {
+                        const { agentName, modelLabel } = getTaskRunAgentPresentation(
+                          run,
+                          props.agents,
+                          props.providerEntriesByEnvironment.get(run.environmentId),
+                          gt,
+                        );
+                        return (
+                          <TaskThreadLink
+                            key={`${run.environmentId}:${run.id}`}
+                            environmentId={run.environmentId}
+                            threadId={run.threadId}
+                            title={agentName}
+                            label={agentName}
+                            detail={modelLabel}
+                            runStatus={run.status}
+                            timestamp={run.startedAt}
+                            onOpen={props.onOpenThread}
+                          />
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
                 {moreRuns ? (
                   <button
@@ -1638,7 +1751,13 @@ export function TasksView(props: TasksViewProps) {
       ) : createModeOpen ? (
         <div className={detailOuterClass}>
           <div className={detailInnerClass}>
-            <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <main
+              className={
+                stackedDetail
+                  ? "flex min-w-0 flex-col pb-3"
+                  : "flex min-h-0 min-w-0 flex-1 flex-col"
+              }
+            >
               <LazyMarkdownEditor
                 value={form.description}
                 placeholder={gt("Description…")}
@@ -1760,7 +1879,13 @@ export function TasksView(props: TasksViewProps) {
                 : `flex w-full min-w-0 flex-col ${panel ? "gap-3 py-3" : "gap-5 py-6"}`
             }
           >
-            <div className={cards ? `flex min-h-full flex-col ${LIST_CLASS}` : "contents"}>
+            <div
+              className={
+                cards
+                  ? `flex min-h-full flex-col ${LIST_CLASS} ${props.floatingControls ? FLOATING_ACTIONS_CLEARANCE_CLASS : ""}`
+                  : "contents"
+              }
+            >
               <div
                 className={
                   cards
@@ -1775,45 +1900,22 @@ export function TasksView(props: TasksViewProps) {
                     )}
                   </div>
                 ) : null}
-                {hasReadOnlyProjects ? (
-                  <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-                    {gt(
-                      "Existing tasks from unavailable or expired extensions remain readable. Mutation controls are hidden for those environments.",
-                    )}
-                  </div>
-                ) : null}
                 {selectedTaskKey ? (
                   <p className="text-sm text-muted-foreground">
                     {m(detailError) ?? gt("Loading task…")}
                   </p>
                 ) : null}
-                {props.status === "error" ? (
-                  <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-                    {gt("Up.computer couldn't load your tasks. {reason}", {
-                      reason: props.errorMessage ?? gt("Try again."),
-                    })}
-                    <button type="button" className="ml-3 underline" onClick={props.onReload}>
-                      {gt("Retry")}
-                    </button>
-                  </div>
-                ) : props.status === "offline" && props.tasks.length > 0 ? (
-                  <div className={OFFLINE_NOTE_CLASS}>{m(TASKS_OFFLINE_TEXT)}</div>
-                ) : null}
-                {props.status === "offline"
-                  ? null
-                  : props.offlineEnvironmentIds?.map((environmentId) => (
-                      <OfflineComputerNote
-                        key={environmentId}
-                        environmentId={environmentId}
-                        showsRows={props.tasks.some((task) => task.environmentId === environmentId)}
-                      />
-                    ))}
               </div>
 
               {listEmpty ? (
                 // Blank while the list loads: it arrives within a moment.
                 props.status === "loading" ? null : props.status === "offline" ? (
                   <ListEmptyState title={gt("Tasks unavailable")} hint={m(TASKS_OFFLINE_TEXT)} />
+                ) : props.status === "error" ? (
+                  <ListEmptyState
+                    title={gt("Tasks didn't load")}
+                    hint={gt("Notifications has the details.")}
+                  />
                 ) : filtersNarrow ? (
                   <ListEmptyState title={gt("No tasks match the current filters")} />
                 ) : (
@@ -1839,10 +1941,10 @@ export function TasksView(props: TasksViewProps) {
                         <TaskStatusCardGroup
                           key={group.key}
                           group={group}
-                          onOpenChange={(open) => setGroupOpen(group.key, open)}
+                          onOpenChange={(open) => setGroupOpen(group, open)}
                         >
-                          {group.tasks.map(renderCard)}
-                          {groupMore(group.key, group.tasks.length, false)}
+                          {groupRows(group).map(renderCard)}
+                          {groupShowMore(group, false)}
                         </TaskStatusCardGroup>
                       ))}
                     </div>
@@ -1856,10 +1958,10 @@ export function TasksView(props: TasksViewProps) {
                             key={group.key}
                             group={group}
                             columnCount={showProjectColumn ? 5 : 4}
-                            onOpenChange={(open) => setGroupOpen(group.key, open)}
+                            onOpenChange={(open) => setGroupOpen(group, open)}
                           >
-                            {group.tasks.map(renderRow)}
-                            {groupMore(group.key, group.tasks.length, true)}
+                            {groupRows(group).map(renderRow)}
+                            {groupShowMore(group, true)}
                           </TaskStatusTableGroup>
                         ))}
                       </table>

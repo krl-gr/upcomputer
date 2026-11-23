@@ -27,7 +27,12 @@ import {
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { NoProjectIcon } from "../sidebarProjects/sidebarProjectIcons";
-import { useProject, useProjects, useThreadShell, useThreadShells } from "../state/entities";
+import {
+  useProject,
+  useProjects,
+  useQuietThreadShell,
+  useQuietThreadShells,
+} from "../state/entities";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
@@ -54,7 +59,7 @@ export const ThreadHeaderProjects = memo(function ThreadHeaderProjects(props: {
   const { environmentId, threadId } = props;
   const gt = useGT();
   const threadRef = scopeThreadRef(environmentId, threadId);
-  const serverThread = useThreadShell(threadRef);
+  const serverThread = useQuietThreadShell(threadRef);
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
   const draftId = useComposerDraftStore((store) => store.getDraftIdByRef(threadRef));
   const projectRef = serverThread
@@ -64,7 +69,7 @@ export const ThreadHeaderProjects = memo(function ThreadHeaderProjects(props: {
       : null;
   const threadProject = useProject(projectRef);
   const projects = useProjects();
-  const threads = useThreadShells();
+  const threads = useQuietThreadShells();
   const { scratchWorkspaceRootFor } = useScratchProject();
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata);
   const retargetDraft = useRetargetDraftToProject();

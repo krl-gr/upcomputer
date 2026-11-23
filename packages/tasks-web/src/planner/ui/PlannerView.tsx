@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
-import { DndContext, DragOverlay, pointerWithin } from "@dnd-kit/core";
+import { createPortal } from "react-dom";
+import { DndContext, DragOverlay } from "@dnd-kit/core";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useGT } from "gt-react";
+import { msg, useGT } from "gt-react";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
+import { useHeldClientNotices } from "../../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
 import {
   Select,
   SelectItem,
@@ -19,6 +21,7 @@ import {
 } from "../../../../../apps/web/src/state/environments.ts";
 import { usePlannerAvailability } from "../../environmentApi.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
+import { FloatingActions } from "../../ui/FloatingActions.tsx";
 import { agentTriggerTags } from "../../ui/pageFilters.ts";
 import type { HandOffAgent } from "../logic/handOff.ts";
 import type { TasksWebProject } from "../../ui/shared.ts";
@@ -47,7 +50,7 @@ import { usePlannerWindows, windowStoreFor } from "../windows/windowStore.ts";
 import { EntryDragPreview, TaskDragPreview, type EntryCardHandlers } from "./EntryCard.tsx";
 import type { EntryMenuTarget } from "./EntryMenu.tsx";
 import { PlannerContext, type PlannerContextValue } from "./plannerContext.ts";
-import { ListHeader, type PlannerEnvironmentOption } from "./ListHeader.tsx";
+import { ListActions, ListHeader, type PlannerEnvironmentOption } from "./ListHeader.tsx";
 import { PlannerLayout } from "./PlannerLayout.tsx";
 import { isInboxRoot, type PlannerProject } from "./ProjectChip.tsx";
 import { TaskList } from "./TaskList.tsx";
@@ -67,8 +70,11 @@ const NO_SELECTION: WeekSelection = { active: false, ids: new Set() };
 function PlannerBody(props: {
   readonly environmentId: EnvironmentId;
   readonly panel: boolean;
+  /** No list header: the list's buttons float over it, and select mode brings the bulk row. */
+  readonly headerless: boolean;
   /** List left and week right: the planner's own width, measured by `PlannerView`. */
   readonly wide: boolean;
+  readonly plannerRoot: HTMLElement | null;
   readonly projects: readonly PlannerProject[];
   readonly viewSwitch: ReactNode;
   readonly environments: readonly PlannerEnvironmentOption[];
@@ -84,6 +90,20 @@ function PlannerBody(props: {
   const windows = windowStoreFor(props.environmentId, props.panel ? "panel" : "page");
   usePlannerLive(store);
   const snapshot = usePlannerSnapshot(store);
+  useHeldClientNotices(
+    snapshot.rangeError
+      ? [
+          {
+            id: "planner:week",
+            environmentId: props.environmentId,
+            severity: "error",
+            title: msg("The planner didn't load on {computer}"),
+            message: msg("The week shows what it had before."),
+            detail: snapshot.rangeError,
+          },
+        ]
+      : [],
+  );
   const openWindows = usePlannerWindows(windows);
   const [preferences, updatePreferences] = usePlannerPreferences();
   const [viewState, updateViewState] = usePlannerViewState();
@@ -140,6 +160,10 @@ function PlannerBody(props: {
   );
 
   const exitWeekSelection = useCallback(() => setWeekSelection(NO_SELECTION), []);
+  const composerDrag = useMemo(
+    () => (props.panel ? { environmentId: props.environmentId } : undefined),
+    [props.environmentId, props.panel],
+  );
   const dnd = usePlannerDnd({
     store,
     tasks: snapshot.view.tasks,
@@ -151,6 +175,8 @@ function PlannerBody(props: {
     selection: weekSelection,
     onBlockMoved: exitWeekSelection,
     slotHeight: preferences.slotHeight,
+    plannerRoot: props.plannerRoot,
+    composerDrag,
   });
 
   const handlers = useMemo<EntryCardHandlers>(
@@ -260,11 +286,6 @@ function PlannerBody(props: {
   );
   const weekContent = (
     <div className="flex h-full min-h-0 flex-col">
-      {snapshot.rangeError ? (
-        <p className="border-b px-3 py-1.5 text-xs text-destructive-foreground">
-          {snapshot.rangeError}
-        </p>
-      ) : null}
       <div className="min-h-0 flex-1">
         {preferences.weekViewMode === "calendar" ? (
           <WeekCalendar
@@ -296,9 +317,17 @@ function PlannerBody(props: {
   );
 
   const weekHidden = wide && viewState.rightPaneHidden;
+  const toggleArchived = () => {
+    setShowArchived((current) => !current);
+    setListSelect({ active: false, ids: new Set() });
+  };
   return (
     <PlannerContext value={context}>
-      <DndContext sensors={dnd.sensors} collisionDetection={pointerWithin} {...dnd.handlers}>
+      <DndContext
+        sensors={dnd.sensors}
+        collisionDetection={dnd.collisionDetection}
+        {...dnd.handlers}
+      >
         <PlannerLayout
           wide={wide}
           titleBar={!props.panel}
@@ -308,29 +337,50 @@ function PlannerBody(props: {
           weekHeader={weekHeader}
           week={weekContent}
           listHeader={
-            <ListHeader
-              viewSwitch={props.viewSwitch}
-              onKindChange={props.onKindChange}
-              environments={props.environments}
-              onEnvironmentChange={props.onEnvironmentChange}
-              showArchived={showArchived}
-              onToggleArchived={() => {
-                setShowArchived((current) => !current);
-                setListSelect({ active: false, ids: new Set() });
-              }}
-              selectMode={listSelect.active}
-              selected={selectedTasks}
-              queueDate={markedDate}
-              onSelectModeChange={(activeMode) =>
-                setListSelect({ active: activeMode, ids: new Set() })
-              }
-              onMoveUnder={() => setMoving(selectedTasks.map((task) => task.id))}
-              onDelete={() => setDeleting(selectedTasks.map((task) => task.id))}
-              canHideWeek={wide}
-              weekHidden={weekHidden}
-              onToggleWeek={() => updateViewState({ rightPaneHidden: !viewState.rightPaneHidden })}
-              titleBar={wide && !props.panel}
-            />
+            props.headerless && !listSelect.active ? null : (
+              <ListHeader
+                viewSwitch={props.viewSwitch}
+                onKindChange={props.onKindChange}
+                environments={props.environments}
+                onEnvironmentChange={props.onEnvironmentChange}
+                showArchived={showArchived}
+                onToggleArchived={toggleArchived}
+                selectMode={listSelect.active}
+                selected={selectedTasks}
+                queueDate={markedDate}
+                onSelectModeChange={(activeMode) =>
+                  setListSelect({ active: activeMode, ids: new Set() })
+                }
+                onMoveUnder={() => setMoving(selectedTasks.map((task) => task.id))}
+                onDelete={() => setDeleting(selectedTasks.map((task) => task.id))}
+                canHideWeek={wide}
+                weekHidden={weekHidden}
+                onToggleWeek={() =>
+                  updateViewState({ rightPaneHidden: !viewState.rightPaneHidden })
+                }
+                titleBar={wide && !props.panel}
+              />
+            )
+          }
+          listOverlay={
+            props.headerless && !listSelect.active ? (
+              <FloatingActions>
+                <ListActions
+                  environments={props.environments}
+                  onEnvironmentChange={props.onEnvironmentChange}
+                  showArchived={showArchived}
+                  onToggleArchived={toggleArchived}
+                  onSelectModeChange={(activeMode) =>
+                    setListSelect({ active: activeMode, ids: new Set() })
+                  }
+                  canHideWeek={wide}
+                  weekHidden={weekHidden}
+                  onToggleWeek={() =>
+                    updateViewState({ rightPaneHidden: !viewState.rightPaneHidden })
+                  }
+                />
+              </FloatingActions>
+            ) : null
           }
           list={
             <TaskList
@@ -358,20 +408,26 @@ function PlannerBody(props: {
               deleting={deleting}
               onDeletingChange={setDeleting}
               centered={weekHidden}
+              floatingActions={props.headerless}
             />
           }
         />
-        <DragOverlay dropAnimation={dnd.dropAnimation}>
-          {dnd.active?.kind === "task" ? (
-            <TaskDragPreview task={dnd.active.task} />
-          ) : dnd.active?.kind === "entry" ? (
-            <EntryDragPreview
-              entry={dnd.active.entry}
-              task={snapshot.view.tasks.get(dnd.active.entry.taskId)}
-              count={dnd.active.count}
-            />
-          ) : null}
-        </DragOverlay>
+        {(() => {
+          const overlay = (
+            <DragOverlay dropAnimation={dnd.dropAnimation} className="pointer-events-none">
+              {dnd.active?.kind === "task" ? (
+                <TaskDragPreview task={dnd.active.task} />
+              ) : dnd.active?.kind === "entry" ? (
+                <EntryDragPreview
+                  entry={dnd.active.entry}
+                  task={snapshot.view.tasks.get(dnd.active.entry.taskId)}
+                  count={dnd.active.count}
+                />
+              ) : null}
+            </DragOverlay>
+          );
+          return typeof document === "undefined" ? overlay : createPortal(overlay, document.body);
+        })()}
       </DndContext>
       <PlannerWindows
         windows={openWindows}
@@ -435,12 +491,18 @@ export function PlannerView(props: {
   readonly taskTargets: readonly TasksStateTarget[];
   /** Every environment's agents; the planner suggests and marks their trigger tags. */
   readonly agents: ReadonlyArray<HandOffAgent & { readonly environmentId: string }>;
-  readonly onShowTable: () => void;
+  /** Left out where the view has no table to switch to. */
+  readonly onShowTable?: () => void;
   /** Opens a task in the table, where its runs are listed. */
   readonly onOpenTask: (environmentId: EnvironmentId, taskId: string) => void;
   readonly onNavigateBack: () => void;
   /** The right panel's planner: the page's lists under the panel's tab bar, task windows inside it. */
   readonly panel?: boolean;
+  /**
+   * A panel entry of its own (My tasks, Routines): this list only, with no
+   * header and so no switches; the list's buttons float over it.
+   */
+  readonly fixedKind?: PlannerKind;
 }) {
   const gt = useGT();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -475,7 +537,9 @@ export function PlannerView(props: {
     accessPending: tasksAccessPending(props.taskTargets),
     initialWaitOver: useTasksInitialWaitOver(),
   });
-  const [kind, setKind] = useStoredPlannerKind();
+  const [storedKind, setKind] = useStoredPlannerKind();
+  const kind = props.fixedKind ?? storedKind;
+  const headerless = props.fixedKind !== undefined;
   const agents = useMemo(
     () => props.agents.filter((agent) => agent.environmentId === environmentId),
     [props.agents, environmentId],
@@ -504,37 +568,45 @@ export function PlannerView(props: {
       if (entry) setPlannerWidth(entry.contentRect.width);
     });
   }, [plannerElement]);
+  const environmentSelect =
+    environmentOptions.length > 1 && environmentId ? (
+      <Select
+        value={environmentId}
+        onValueChange={(value) => {
+          if (value) setStoredEnvironment(value);
+        }}
+      >
+        <SelectTrigger className="w-44 shrink-0" size="sm" aria-label={gt("Environment")}>
+          <SelectValue>
+            {environmentOptions.find((option) => option.id === environmentId)?.label}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectPopup>
+          {environmentOptions.map((option) => (
+            <SelectItem key={option.id} value={option.id}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+    ) : null;
   return (
     <WorkspaceViewLayout
       variant={props.panel ? "panel" : "page"}
       switches={props.viewSwitch}
       // Until the planner shows, the page header keeps the title bar and the view switch.
-      header={!ready}
+      header={!ready && !headerless}
+      // A headerless entry has no header, so its environment choice floats until then.
+      floatingControls={headerless && !ready}
       toolbar={
-        <>
-          <span className="min-w-0 flex-1" />
-          {environmentOptions.length > 1 && environmentId ? (
-            <Select
-              value={environmentId}
-              onValueChange={(value) => {
-                if (value) setStoredEnvironment(value);
-              }}
-            >
-              <SelectTrigger className="w-44 shrink-0" size="sm" aria-label={gt("Environment")}>
-                <SelectValue>
-                  {environmentOptions.find((option) => option.id === environmentId)?.label}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                {environmentOptions.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          ) : null}
-        </>
+        headerless ? (
+          environmentSelect
+        ) : (
+          <>
+            <span className="min-w-0 flex-1" />
+            {environmentSelect}
+          </>
+        )
       }
       navigateOnEscape={false}
       inset={false}
@@ -548,15 +620,17 @@ export function PlannerView(props: {
         ) : gate === "offline" || environmentId === null ? (
           <Notice>
             {gt(
-              "The environment with Tasks is not reachable right now. The planner opens when it connects.",
+              "The computer with your tasks isn't reachable right now. The planner opens when it connects.",
             )}
           </Notice>
         ) : availability === "unavailable" ? (
           <Notice
             action={
-              <Button size="sm" variant="outline" onClick={props.onShowTable}>
-                {gt("Open the table")}
-              </Button>
+              props.onShowTable ? (
+                <Button size="sm" variant="outline" onClick={props.onShowTable}>
+                  {gt("Open the table")}
+                </Button>
+              ) : undefined
             }
           >
             {gt(
@@ -570,7 +644,9 @@ export function PlannerView(props: {
                 key={environmentId}
                 environmentId={environmentId}
                 panel={props.panel === true}
+                headerless={headerless}
                 wide={plannerIsWide(plannerWidth)}
+                plannerRoot={plannerElement}
                 projects={plannerProjects}
                 viewSwitch={props.viewSwitch}
                 environments={environmentOptions}

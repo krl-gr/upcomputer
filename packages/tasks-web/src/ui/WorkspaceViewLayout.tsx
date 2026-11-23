@@ -6,6 +6,7 @@ import { isElectron } from "../../../../apps/web/src/env.ts";
 import { WorkspacePageHeader } from "../../../../apps/web/src/extensionApi.ts";
 import { SidebarInset } from "../../../../apps/web/src/components/ui/sidebar.tsx";
 import { TASKS_HEADER_CONTAINER_CLASS } from "../planner/ui/HeaderSwitchLabel.tsx";
+import { FloatingActions } from "./FloatingActions.tsx";
 
 export interface WorkspaceViewAction {
   readonly ariaLabel: string;
@@ -38,6 +39,24 @@ function HeaderAction(props: { readonly action: WorkspaceViewAction }) {
     >
       {icon}
       {action.label}
+    </Button>
+  );
+}
+
+/** The view's action over a headerless list: the round button in the corner. */
+function FloatingMainAction(props: { readonly action: WorkspaceViewAction }) {
+  const { action } = props;
+  return (
+    <Button
+      variant="floating"
+      size="icon-floating"
+      aria-label={action.ariaLabel}
+      data-track={action.track}
+      disabled={action.disabled}
+      onClick={action.onClick}
+      title={action.title ?? action.ariaLabel}
+    >
+      {action.icon ?? <PlusIcon />}
     </Button>
   );
 }
@@ -77,6 +96,7 @@ export function WorkspaceViewLayout({
   navigateOnEscape = true,
   inset = true,
   header = true,
+  floatingControls = false,
   variant = "page",
 }: WorkspaceViewHeading & {
   readonly action?: WorkspaceViewAction | undefined;
@@ -96,6 +116,12 @@ export function WorkspaceViewLayout({
    * row, so the page header (and with it the title) is left out.
    */
   readonly header?: boolean;
+  /**
+   * A panel view opened by its own launcher entry: the list has no header, and its
+   * toolbar and action float over its bottom right corner. A view with a back
+   * control or a title (a task's details, a create form) keeps the header.
+   */
+  readonly floatingControls?: boolean;
   readonly variant?: "page" | "panel" | undefined;
 }) {
   const navigateBack = useCallback(() => onNavigateBack(), [onNavigateBack]);
@@ -112,9 +138,9 @@ export function WorkspaceViewLayout({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [navigateBack, navigateOnEscape, panel]);
 
-  const headerContent = (
+  const leading = leadingAction ? <HeaderAction action={leadingAction} /> : null;
+  const headerBody = (
     <>
-      {leadingAction ? <HeaderAction action={leadingAction} /> : null}
       {title ? (
         <h1
           className={`${toolbar ? "shrink-0" : "flex-1"} min-w-0 truncate text-sm font-medium text-foreground`}
@@ -149,22 +175,31 @@ export function WorkspaceViewLayout({
   );
 
   if (panel) {
+    const floating = floatingControls && !leadingAction && !title;
     return (
       <div
-        className="flex min-h-0 min-w-0 flex-1 flex-col text-foreground"
+        className="relative flex min-h-0 min-w-0 flex-1 flex-col text-foreground"
         onKeyDown={(event) => {
           if (!navigateOnEscape || event.defaultPrevented || event.key !== "Escape") return;
           event.preventDefault();
           navigateBack();
         }}
       >
-        {header && (leadingAction || title || switches || toolbar || action) ? (
+        {floating ? (
+          toolbar || action ? (
+            <FloatingActions>
+              {toolbar}
+              {action ? <FloatingMainAction action={action} /> : null}
+            </FloatingActions>
+          ) : null
+        ) : header && (leadingAction || title || switches || toolbar || action) ? (
           // The planner list header's frame, so Me and Workers share one header.
           <WorkspacePageHeader
             clearCollapsedSidebar={false}
             className={`${TASKS_HEADER_CONTAINER_CLASS} border-b border-border`}
           >
-            <div className="flex min-w-0 flex-1 items-center gap-1">{headerContent}</div>
+            {leading}
+            <div className="flex min-w-0 flex-1 items-center gap-1">{headerBody}</div>
           </WorkspacePageHeader>
         ) : null}
         <div
@@ -181,7 +216,8 @@ export function WorkspaceViewLayout({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col text-foreground">
         {header ? (
           <WorkspacePageHeader electron={isElectron} className={TASKS_HEADER_CONTAINER_CLASS}>
-            {headerContent}
+            {leading}
+            {headerBody}
           </WorkspacePageHeader>
         ) : null}
         <div

@@ -80,7 +80,7 @@ test("grouped, an open group pages by itself and a collapsed group loads only it
     },
   ] as never;
   const tags: string[] = [];
-  const open = (key: string) => key !== "done";
+  let open = (key: string) => key !== "done";
   const results: ReturnType<typeof useTaskPages>[] = [];
   function List() {
     results.push(useTaskPages(targets, null, "__all__", tags, "active", "failed", open));
@@ -110,6 +110,39 @@ test("grouped, an open group pages by itself and a collapsed group loads only it
   NodeAssert.deepEqual(pages.at(-1)?.cursor?.id, "To Do-99");
   NodeAssert.equal(result().tasks.length, 150);
   NodeAssert.deepEqual(result().groupPaging.get("to do"), { hasMore: false, loading: false });
+
+  // A group counts as ready for arrival highlights once it stops loading, so until its rows
+  // are there it must say loading, also in the render before its lane's effect runs.
+  const openDone = async () => {
+    const from = results.length;
+    open = () => true;
+    await act(async () => renderer?.update(createElement(List)));
+    await settle(3);
+    const opened = results.slice(from);
+    NodeAssert.ok(opened.at(-1)!.tasks.some((task) => task.status === "Done"));
+    for (const render of opened)
+      if (!render.tasks.some((task) => task.status === "Done"))
+        NodeAssert.equal(
+          render.groupPaging.get("done")?.loading,
+          true,
+          "Done is ready without rows",
+        );
+  };
+  await openDone();
+  NodeAssert.ok(
+    pages.some(({ status }) => status === "Done"),
+    "Done is fetched",
+  );
+
+  // Reopened, Done's last rows come from the page cache: still not ready before they show.
+  await act(async () => renderer?.unmount());
+  open = (key) => key !== "done";
+  await act(async () => {
+    renderer = create(createElement(List));
+  });
+  await settle(3);
+  NodeAssert.ok(!result().tasks.some((task) => task.status === "Done"));
+  await openDone();
 
   await act(async () => renderer?.unmount());
 });

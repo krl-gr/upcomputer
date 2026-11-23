@@ -4,10 +4,10 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useGT, useMessages } from "gt-react";
 
-import { useThreadShell } from "../../../../apps/web/src/state/entities.ts";
 import { formatRelativeTimeLabel } from "../../../../apps/web/src/timestampFormat.ts";
 import { cn } from "../../../../apps/web/src/lib/utils.ts";
 import { taskRunPresentation } from "./taskRunPresentation.ts";
+import { useOmittedThreadShell } from "./useOmittedThreadShell.ts";
 
 export interface TaskThreadLinkProps {
   readonly environmentId: EnvironmentId;
@@ -20,6 +20,8 @@ export interface TaskThreadLinkProps {
   readonly detail?: string;
   readonly runStatus?: string;
   readonly timestamp?: string;
+  /** Reads the title of a thread the shell leaves out. One read per link, so single links only. */
+  readonly loadOmitted?: boolean;
   readonly onOpen: (environmentId: EnvironmentId, threadId: ThreadId) => void;
 }
 
@@ -28,8 +30,8 @@ const LABEL_COLOR_CLASS = "text-foreground dark:text-white/82";
 const MUTED_TEXT_CLASS = "text-muted-foreground dark:text-white/50";
 
 /**
- * A task-agent thread is hidden from thread lists but keeps its shell, so the
- * link reads its title and status there and the chat route opens it directly.
+ * A task-agent thread is hidden from thread lists, and the shell has it only while it is live.
+ * The link reads its title and status there when it can; the chat route opens it either way.
  */
 export function TaskThreadLink(props: TaskThreadLinkProps) {
   const gt = useGT();
@@ -38,9 +40,9 @@ export function TaskThreadLink(props: TaskThreadLinkProps) {
     () => scopeThreadRef(props.environmentId, props.threadId),
     [props.environmentId, props.threadId],
   );
-  const thread = useThreadShell(threadRef);
-  const available = thread !== null && thread.deletedAt === null;
+  const thread = useOmittedThreadShell(threadRef, props.loadOmitted === true);
   const unavailable = thread?.deletedAt != null;
+  const available = !unavailable;
   const runStatusPresentation = taskRunPresentation(
     props.runStatus,
     thread?.hasPendingApprovals ?? false,
@@ -81,7 +83,7 @@ export function TaskThreadLink(props: TaskThreadLinkProps) {
         ) : null}
       </span>
       <span className={cn("ml-auto shrink-0 pl-2 text-right", MUTED_TEXT_CLASS, LABEL_TEXT_CLASS)}>
-        {unavailable ? gt("Unavailable") : available ? timeLabel : gt("Loading…")}
+        {unavailable ? gt("Unavailable") : timeLabel}
       </span>
     </button>
   );

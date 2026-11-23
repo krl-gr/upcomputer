@@ -136,6 +136,8 @@ export interface ExperimentalWebRightPanelSurfaceContribution {
   readonly id: string;
   /** The launcher entry and the tab title. */
   readonly label: string;
+  /** One line under the label in Settings, where the entry can be turned off. */
+  readonly description?: string;
   /** One letter that opens the surface from the launcher; core's letters are taken. */
   readonly shortcut: string;
   readonly icon: ComponentType<{ readonly className?: string }>;

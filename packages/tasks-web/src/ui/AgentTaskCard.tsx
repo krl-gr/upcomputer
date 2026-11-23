@@ -3,6 +3,7 @@ import { FolderIcon, InboxIcon } from "lucide-react";
 import { useGT, useMessages } from "gt-react";
 
 import { ProjectFavicon } from "../../../../apps/web/src/components/ProjectFavicon.tsx";
+import { setComposerTaskDragData } from "../../../../apps/web/src/components/chat/composerTaskDrag.ts";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import {
   Select,
@@ -32,8 +33,9 @@ import {
 import type { ScopedTaskListItem } from "../state/taskPages.ts";
 import type { TasksWebProject } from "./shared.ts";
 import { groupTaskRunCounts } from "./taskRunPresentation.ts";
+import "./agentTaskCard.css";
 
-/** The controls' height: the xs button and select are 28px, and 24px from the `sm` breakpoint. */
+/** The tile's height: the xs runs button's, 28px, and 24px from the `sm` breakpoint. */
 const TILE_SIZE = "size-7 sm:size-6";
 
 /**
@@ -95,11 +97,21 @@ function ProjectTile(props: {
   );
 }
 
+/** Gives the card its status select's width, which the title fades out under on hover. */
+function measureStatusWidth(status: HTMLDivElement | null) {
+  const card = status?.parentElement;
+  if (!status || !card || typeof ResizeObserver === "undefined") return;
+  const observer = new ResizeObserver(() => {
+    card.style.setProperty("--card-status-width", `${status.offsetWidth}px`);
+  });
+  observer.observe(status);
+  return () => observer.disconnect();
+}
+
 /**
  * An agent task in the narrow list, laid out like a notification card: the
- * project's icon, the title with its tags under it as a line of plain muted
- * text, and on the right the run counts and the status select. The icon and
- * the controls are level with the card's middle at every width.
+ * project's icon, the title over a line of tag chips, then the run counts and
+ * the status select, shown on hover (`agentTaskCard.css`), level with its middle.
  */
 export function AgentTaskCard(props: {
   readonly task: ScopedTaskListItem;
@@ -111,6 +123,8 @@ export function AgentTaskCard(props: {
   readonly dragged: boolean;
   /** The whole card drags into the list order, as a planner row does; its controls do not start a drag. */
   readonly reorderable: boolean;
+  /** Allows dragging the card into a chat composer as a quote even when reordering is disabled. */
+  readonly quoteDraggable?: boolean;
   readonly onDragStart: () => void;
   readonly onDragEnd: () => void;
   readonly onMove: (direction: "up" | "down") => void;
@@ -129,14 +143,15 @@ export function AgentTaskCard(props: {
     <div
       className={cn(
         ROW_CLASS,
-        "grid cursor-pointer items-start gap-x-2.5",
+        // The runs and the status flow into columns after the title's.
+        "grid cursor-pointer grid-flow-col grid-rows-[auto] auto-cols-auto items-start gap-x-2.5",
         props.showProject === false
-          ? "grid-cols-[minmax(0,1fr)_auto]"
-          : "grid-cols-[auto_minmax(0,1fr)_auto]",
+          ? "grid-cols-[minmax(0,1fr)]"
+          : "grid-cols-[auto_minmax(0,1fr)]",
         props.dragged ? ROW_DRAGGING_CLASS : ROW_HOVER_CLASS,
       )}
       data-task-card=""
-      draggable={props.reorderable}
+      draggable={props.reorderable || props.quoteDraggable === true}
       onPointerDown={(event) => {
         dragFromControl.current = (event.target as Element).closest("[data-prevent-drag]") !== null;
       }}
@@ -145,12 +160,21 @@ export function AgentTaskCard(props: {
           event.preventDefault();
           return;
         }
-        props.onDragStart();
+        setComposerTaskDragData(event.dataTransfer, {
+          environmentId: task.environmentId,
+          taskId: task.id,
+          title: task.title,
+          kind: task.kind,
+        });
+        if (props.reorderable) props.onDragStart();
         event.dataTransfer.effectAllowed = "move";
       }}
       onDragEnd={props.onDragEnd}
-      onDragOver={(event) => event.preventDefault()}
+      onDragOver={(event) => {
+        if (props.reorderable) event.preventDefault();
+      }}
       onDrop={(event) => {
+        if (!props.reorderable) return;
         event.preventDefault();
         props.onDrop();
       }}
@@ -165,7 +189,7 @@ export function AgentTaskCard(props: {
       {props.showProject === false ? null : (
         <ProjectTile project={props.project} name={task.projectName} />
       )}
-      <div className="min-w-0 self-center">
+      <div className="col-[-2/-1] row-start-1 min-w-0 self-center" data-card-content="">
         <button
           type="button"
           className={cn(
@@ -192,7 +216,13 @@ export function AgentTaskCard(props: {
             >
               {archived ? (task.tags.length > 0 ? `${archivedLabel} · ` : archivedLabel) : null}
               {task.tags.map((tag, index) => (
-                <span key={tag} className={index > 0 ? "ms-1.5" : undefined}>
+                <span
+                  key={tag}
+                  className={cn(
+                    "inline-block rounded-sm bg-foreground/6 px-1 align-top",
+                    index > 0 && "ms-1",
+                  )}
+                >
                   {tag}
                 </span>
               ))}
@@ -203,8 +233,8 @@ export function AgentTaskCard(props: {
           </Tooltip>
         ) : null}
       </div>
-      <div className="flex items-center gap-1 self-center" data-prevent-drag data-card-side="">
-        {runs.length > 0 ? (
+      {runs.length > 0 ? (
+        <div className="flex items-center self-center" data-prevent-drag data-card-side="">
           <Button
             variant="outline"
             size="xs"
@@ -215,7 +245,14 @@ export function AgentTaskCard(props: {
               <RunCountNumbers groups={runs} />
             </span>
           </Button>
-        ) : null}
+        </div>
+      ) : null}
+      <div
+        ref={measureStatusWidth}
+        className="flex min-w-0 items-center self-center"
+        data-prevent-drag
+        data-card-status=""
+      >
         <Select
           value={task.status}
           disabled={!props.canMutate}
@@ -224,7 +261,7 @@ export function AgentTaskCard(props: {
           }}
         >
           <SelectTrigger
-            size="xs"
+            size="sm"
             className="w-auto min-w-0 max-w-48"
             aria-label={gt("Task status")}
           >

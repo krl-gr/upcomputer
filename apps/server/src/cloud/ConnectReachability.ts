@@ -151,6 +151,13 @@ export function classifyReachability(
       restart,
     );
   }
+  if (status === 530 && cloudflareError === "1016") {
+    return fail(
+      "dns_failed",
+      "The UpComputer Connect address no longer points to this machine's tunnel (Cloudflare error 1016). UpComputer Connect may have removed this environment.",
+      "Link this environment again. Turn UpComputer Connect off and on in Settings > Sharing & access, or run `up connect link` and then restart Up.computer.",
+    );
+  }
   if (status !== null) {
     const code = cloudflareError === undefined ? "" : ` (Cloudflare error ${cloudflareError})`;
     return fail(

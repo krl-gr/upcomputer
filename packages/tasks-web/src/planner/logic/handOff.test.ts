@@ -19,6 +19,7 @@ describe("handing a person task to an agent", () => {
     const agents = [
       agent("reviewer", { name: "Reviewer" }),
       agent("off", { enabled: false }),
+      agent("archived", { archivedAt: "2026-10-19T09:00:00.000Z" }),
       agent("elsewhere", { projectId: "project-2" }),
       agent("everywhere", { name: "Developer", projectId: null }),
       agent("fixer", { startRunStatuses: ["failed"] }),

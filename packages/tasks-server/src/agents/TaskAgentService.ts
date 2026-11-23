@@ -1,5 +1,7 @@
 import {
   sameTaskStatus,
+  LEGACY_TASK_WORKFLOW_VERSION,
+  type TaskWorkflowVersion,
   TaskAgentRunId,
   TaskEventId,
   type Task,
@@ -150,16 +152,53 @@ export function isBlockedTaskStatus(status: string): boolean {
   return sameTaskStatus(status, BLOCKED_TASK_STATUS);
 }
 
+/**
+ * The status the server sets on an agent task whose run failed or was
+ * interrupted while holding it, when the install's workflow marks crashed
+ * runs. A continuation of the run moves the task back to RESUMED_TASK_STATUS.
+ */
+export const FAILED_TASK_STATUS = "Failed";
+export const RESUMED_TASK_STATUS = "In Progress";
+
+export function isFailedTaskStatus(status: string): boolean {
+  return sameTaskStatus(status, FAILED_TASK_STATUS);
+}
+
+/** Workflow 1 leaves a crashed run's task as it was. */
+export function marksCrashedRunsFailed(version: TaskWorkflowVersion): boolean {
+  return version !== LEGACY_TASK_WORKFLOW_VERSION;
+}
+
 /** Longest task output a blocked release copies into its result event. */
 const RELEASE_SUMMARY_MAX_LENGTH = 2_000;
 
-/** What an agent can do about a run that ended without a result. */
+/** What an agent can do about a run that ended without a result (workflow 1). */
 export const TASK_AGENT_RUN_RECOVERY_HINT =
   "Review the run, then continue it with agent_run_message, or change the task's status, tags or notBefore to retry.";
 
-/** The same advice in words for the person reading the task output. */
+/** The same advice in words for the person reading the task output (workflow 1). */
 const TASK_AGENT_RUN_PERSON_HINT =
   "Open the run to see what happened, then send it a message to continue, or change the task's status or tags to start over.";
+
+/**
+ * Workflow 2 can move the task to Failed, where a tag or notBefore change
+ * starts nothing: a retry has to bring it back to a start status.
+ */
+const TASK_AGENT_RUN_RECOVERY_HINT_V2 =
+  "Review the run, then continue it with agent_run_message, or move the task back to a status its agent starts on to retry.";
+
+const TASK_AGENT_RUN_PERSON_HINT_V2 =
+  "Open the run to see what happened, then send it a message to continue, or move the task back to the status its worker starts on to start over.";
+
+/** Retry advice for a run that ended without a result, in the install's workflow. */
+export function taskAgentRunRecoveryHints(version: TaskWorkflowVersion): {
+  readonly agent: string;
+  readonly person: string;
+} {
+  return marksCrashedRunsFailed(version)
+    ? { agent: TASK_AGENT_RUN_RECOVERY_HINT_V2, person: TASK_AGENT_RUN_PERSON_HINT_V2 }
+    : { agent: TASK_AGENT_RUN_RECOVERY_HINT, person: TASK_AGENT_RUN_PERSON_HINT };
+}
 
 const RUN_CUT_OFF_REASON =
   "Up.computer closed or restarted while this run was starting or finishing, so it ended early. Retry to run it again.";
@@ -214,6 +253,24 @@ function startsOnStatus(agent: Pick<TaskAgent, "startStatuses">, status: string)
   return agent.startStatuses.some((startStatus) => sameTaskStatus(startStatus, status));
 }
 
+/** An archived agent never starts or continues runs, whatever its `enabled` says. */
+export function agentWorks(agent: TaskAgent): boolean {
+  return agent.enabled && agent.archivedAt === null;
+}
+
+/**
+ * The archive time after an upsert: `archived` absent keeps the current state, and
+ * archiving an archived agent keeps its original time.
+ */
+export function nextAgentArchivedAt(
+  current: string | null,
+  archived: boolean | undefined,
+  timestamp: string,
+): string | null {
+  if (archived === undefined) return current;
+  return archived ? (current ?? timestamp) : null;
+}
+
 /**
  * Task-state part of an agent's trigger. Whether a matching agent actually
  * starts also depends on its previous runs (see `startAgent`).
@@ -227,7 +284,7 @@ export function startsForTask(agent: TaskAgent, task: Task, nowMs: number): bool
   )
     return false;
   if (!agentMayTakeTask(agent, task)) return false;
-  if (!agent.enabled || (agent.projectId !== null && agent.projectId !== task.projectId)) {
+  if (!agentWorks(agent) || (agent.projectId !== null && agent.projectId !== task.projectId)) {
     return false;
   }
   if (task.archivedAt !== null) return false;
@@ -253,7 +310,9 @@ export function noMatchingAgentReason(
     return null;
   }
   if (task.notBefore !== null && Date.parse(task.notBefore) > nowMs) return null;
-  const onStatus = agents.filter((agent) => agent.enabled && startsOnStatus(agent, task.status));
+  const onStatus = agents.filter(
+    (agent) => agentWorks(agent) && startsOnStatus(agent, task.status),
+  );
   if (onStatus.length === 0) return null;
   if (agents.some((agent) => startsForTask(agent, task, nowMs))) return null;
   return `No enabled worker starts on "${task.status}" with these tags, so this task will wait. Pick a worker, or change the status or tags.`;
@@ -265,7 +324,7 @@ export function noMatchingAgentReason(
  * change underneath it, for example when several agents work on one task.
  */
 export function continuesTaskAgentRun(agent: TaskAgent, task: Task): boolean {
-  return agent.enabled && task.archivedAt === null;
+  return agentWorks(agent) && task.archivedAt === null;
 }
 
 type StopReason =
@@ -276,6 +335,7 @@ type StopReason =
   | "task-archived"
   | "task-deleted"
   | "agent-disabled"
+  | "agent-archived"
   | "agent-deleted";
 
 const STOP_REASON_CODES = {
@@ -286,6 +346,7 @@ const STOP_REASON_CODES = {
   "task-archived": "task_archived",
   "task-deleted": "task_deleted",
   "agent-disabled": "agent_disabled",
+  "agent-archived": "agent_archived",
   "agent-deleted": "agent_deleted",
 } as const satisfies Record<StopReason, AgentRunReasonCode>;
 
@@ -293,6 +354,7 @@ const STOP_REASON_CODES = {
 function endingStopReason(agent: TaskAgent | null, task: Task | null): StopReason | null {
   if (task === null) return "task-deleted";
   if (agent === null) return "agent-deleted";
+  if (agent.archivedAt !== null) return "agent-archived";
   if (!agent.enabled) return "agent-disabled";
   return continuesTaskAgentRun(agent, task) ? null : "task-archived";
 }
@@ -599,6 +661,7 @@ const make = Effect.gen(function* () {
     /** Interrupt the run's in-flight v2 work before recording the end. */
     readonly interrupt: boolean;
     readonly taskOutput?: string | null;
+    readonly heldTaskStatus?: string;
     readonly events?: ReadonlyArray<{
       readonly id: TaskEventId;
       readonly taskId: Task["id"];
@@ -648,6 +711,7 @@ const make = Effect.gen(function* () {
           completedAt: timestamp,
           taskId: input.run.taskId,
           ...(input.taskOutput !== undefined ? { taskOutput: input.taskOutput } : {}),
+          ...(input.heldTaskStatus !== undefined ? { heldTaskStatus: input.heldTaskStatus } : {}),
           releaseAssignment: true,
           events: input.events ?? [],
         });
@@ -782,11 +846,13 @@ const make = Effect.gen(function* () {
       readonly interrupt: boolean;
     }) {
       const timestamp = yield* now;
+      const workflowVersion = yield* repository.workflowVersion();
+      const hints = taskAgentRunRecoveryHints(workflowVersion);
       let taskOutput: string | null | undefined;
       const events = [];
       if (input.task !== null) {
-        const recovery = TASK_AGENT_RUN_RECOVERY_HINT;
-        const recoveryNote = `Run ${input.status === "failed" ? "failed" : "was interrupted"}: ${input.reason} ${TASK_AGENT_RUN_PERSON_HINT} (run ${input.run.id})`;
+        const recovery = hints.agent;
+        const recoveryNote = `Run ${input.status === "failed" ? "failed" : "was interrupted"}: ${input.reason} ${hints.person} (run ${input.run.id})`;
         const existingOutput = input.task.output?.trim() ?? "";
         taskOutput = existingOutput.includes(recoveryNote)
           ? existingOutput
@@ -807,6 +873,7 @@ const make = Effect.gen(function* () {
           createdAt: timestamp,
         });
       }
+      const marksFailed = marksCrashedRunsFailed(workflowVersion);
       const finalized = yield* finalizeRun({
         run: input.run,
         finalizingStatus: `finalizing:${input.status}`,
@@ -814,6 +881,7 @@ const make = Effect.gen(function* () {
         reasonCode: input.reasonCode,
         interrupt: input.interrupt,
         ...(taskOutput !== undefined ? { taskOutput } : {}),
+        ...(marksFailed ? { heldTaskStatus: FAILED_TASK_STATUS } : {}),
         events,
       });
       if (finalized && input.task !== null) yield* scheduleRunFinished(input.task.id);
@@ -1328,7 +1396,7 @@ const make = Effect.gen(function* () {
         }),
       { discard: true, concurrency: 1 },
     );
-    if (reason === "deleted" || !agent.enabled) return;
+    if (reason === "deleted" || !agentWorks(agent)) return;
     yield* Effect.forEach(
       yield* repository.listTriggerCandidates(),
       (task) => startMatchingAgents([agent], task),
@@ -1338,7 +1406,7 @@ const make = Effect.gen(function* () {
 
   const recover = Effect.gen(function* () {
     yield* reconcileActiveRuns;
-    const agents = (yield* repository.listAllAgents()).filter((agent) => agent.enabled);
+    const agents = (yield* repository.listAllAgents()).filter(agentWorks);
     yield* Effect.forEach(
       yield* repository.listTriggerCandidates(),
       (task) => startMatchingAgents(agents, task),
@@ -1391,6 +1459,10 @@ const make = Effect.gen(function* () {
         const agentOption = yield* repository.getAgentById({ id: run.agentId });
         if (Option.isNone(agentOption)) return refuse(`Agent '${run.agentId}' was not found.`);
         const agent = agentOption.value;
+        if (agent.archivedAt !== null)
+          return refuse(
+            `Agent '${agent.name}' (${agent.id}) is archived. Unarchive it before messaging its runs.`,
+          );
         if (!agent.enabled)
           return refuse(
             `Agent '${agent.name}' (${agent.id}) is disabled. Enable it before messaging its runs.`,
@@ -1437,6 +1509,10 @@ const make = Effect.gen(function* () {
         const active = yield* findActive;
         if (Option.isSome(active)) return activeRefusal(active.value);
         const timestamp = message.type === "adopted" ? message.startedAt : yield* now;
+        const reopensFailed =
+          task.audience === "agent" &&
+          isFailedTaskStatus(task.status) &&
+          marksCrashedRunsFailed(yield* repository.workflowVersion());
         // Unarchived task and enabled agent are re-checked inside the insert, so a
         // close, disable or delete committed since the checks above wins.
         const created = yield* repository
@@ -1453,6 +1529,9 @@ const make = Effect.gen(function* () {
             continuesRunId: run.id,
             // Explicit messages ignore notBefore.
             startableAt: null,
+            ...(reopensFailed
+              ? { reopenTaskStatus: { from: FAILED_TASK_STATUS, to: RESUMED_TASK_STATUS } }
+              : {}),
           })
           .pipe(
             Effect.map((continuation) => ({

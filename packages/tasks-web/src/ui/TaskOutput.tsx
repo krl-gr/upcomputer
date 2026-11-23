@@ -8,6 +8,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { useGT } from "gt-react";
 import { QuoteIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -28,9 +29,12 @@ import {
   captureAssistantTextSelection,
   type AssistantCitationSourceAnchor,
 } from "../../../../apps/web/src/lib/assistantTextSelection.ts";
-import { useThreadShell } from "../../../../apps/web/src/state/entities.ts";
+import { useOmittedThreadShell } from "./useOmittedThreadShell.ts";
 import { TaskFileWindow, type TaskFileWindowProps } from "./TaskFileWindow.tsx";
-import { taskQuoteDestinationLabel, taskQuoteTarget } from "./taskQuoteTarget.ts";
+import { promptQuotesPassage, taskQuoteTarget } from "./taskQuoteTarget.ts";
+
+/** The comment a block's quote button replies with: approving that point in one click. */
+const BLOCK_REPLY_COMMENT = "ok";
 
 /** The task an output belongs to, as a quote from it names it. */
 export interface TaskOutputQuoteSource {
@@ -85,7 +89,7 @@ export function TaskOutput(props: {
       filePanelRef={filePanelRef}
       onOpenFile={opensWindow ? (path, line) => open({ path, line }) : undefined}
       // The quote button stands at the right of a block's first line, in room kept free of text.
-      className={`${props.quoteSource ? "pr-9 pl-3" : "px-3"} py-2 text-lg leading-8 text-foreground`}
+      className={`${props.quoteSource ? "pr-9 pl-3" : "px-3"} py-1.5 text-sm leading-relaxed text-foreground`}
     />
   );
   return (
@@ -126,6 +130,7 @@ function QuotableTaskOutput(props: {
   readonly children: React.ReactNode;
 }) {
   const { environmentId, task, panelThreadRef, onOpenThread } = props;
+  const gt = useGT();
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
   const sourceRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -136,7 +141,7 @@ function QuotableTaskOutput(props: {
     () => (task.rootThreadId ? scopeThreadRef(environmentId, task.rootThreadId) : null),
     [environmentId, task.rootThreadId],
   );
-  const rootThread = useThreadShell(rootThreadRef);
+  const rootThread = useOmittedThreadShell(rootThreadRef, true);
   const target = taskQuoteTarget({
     besideThreadRef: panelThreadRef,
     environmentId,
@@ -152,19 +157,26 @@ function QuotableTaskOutput(props: {
     [environmentId, task.id, task.title],
   );
 
-  // A selection's Cite opens the comment box, as in chat. The quote button only drops the quote.
+  // A selection's Cite opens the comment box, as in chat. The quote button drops the quote with
+  // its comment already written, and only once.
   const cite = (
     citation: AssistantCitation,
     sourceAnchor: AssistantCitationSourceAnchor,
     options?: { readonly withComment?: boolean },
   ) => {
+    const quote = formatAssistantCitationForComposer(citation, citation.comment);
     if (target.kind === "beside") {
       const composer = composerRef?.current;
+      if (
+        options?.withComment === false &&
+        composer &&
+        promptQuotesPassage(composer.readSnapshot().value, citation)
+      ) {
+        return true;
+      }
       const inserted =
         options?.withComment === false
-          ? (composer?.insertTextAtEnd(formatAssistantCitationForComposer(citation), {
-              ensureLeadingBoundary: true,
-            }) ?? false)
+          ? (composer?.insertTextAtEnd(quote, { ensureLeadingBoundary: true }) ?? false)
           : (composer?.citeAssistantText(citation, sourceAnchor) ?? false);
       if (!inserted) {
         toastManager.add({
@@ -176,11 +188,10 @@ function QuotableTaskOutput(props: {
       }
       return inserted;
     }
-    const quote = formatAssistantCitationForComposer(citation);
     const store = useComposerDraftStore.getState();
     const appendTo = (draftTarget: Parameters<typeof store.setPrompt>[0]) => {
       const prompt = store.getComposerDraft(draftTarget)?.prompt ?? "";
-      if (prompt.includes(quote.trim())) return;
+      if (promptQuotesPassage(prompt, citation)) return;
       store.setPrompt(draftTarget, `${prompt}${prompt && !/\s$/.test(prompt) ? " " : ""}${quote}`);
     };
     if (target.kind === "root" && onOpenThread) {
@@ -228,7 +239,7 @@ function QuotableTaskOutput(props: {
       return;
     }
     cite(
-      { version: 1, ...taskSource, ...captured.selector, text },
+      { version: 1, ...taskSource, ...captured.selector, text, comment: BLOCK_REPLY_COMMENT },
       { source: captured.source, range: captured.range, viewport },
       { withComment: false },
     );
@@ -278,7 +289,12 @@ function QuotableTaskOutput(props: {
     };
   }, [viewport]);
 
-  const destination = taskQuoteDestinationLabel(target);
+  const reply =
+    target.kind === "beside"
+      ? gt('Reply "ok" in chat')
+      : target.kind === "root"
+        ? gt('Reply "ok" in "{title}"', { title: target.title })
+        : gt('Reply "ok" in a new chat');
   const top =
     block && viewport && block.isConnected
       ? block.getBoundingClientRect().top - viewport.getBoundingClientRect().top
@@ -302,9 +318,9 @@ function QuotableTaskOutput(props: {
                 ref={buttonRef}
                 type="button"
                 data-task-output-quote-button="true"
-                aria-label={`${destination}: this part`}
+                aria-label={reply}
                 className="absolute right-1.5 flex size-6 items-center justify-center rounded-md border border-border bg-popover text-muted-foreground shadow-xs hover:bg-accent hover:text-foreground"
-                style={{ top: top + 4 }}
+                style={{ top }}
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={() => citeBlock(block)}
               />
@@ -312,7 +328,7 @@ function QuotableTaskOutput(props: {
           >
             <QuoteIcon aria-hidden="true" className="size-3.5" />
           </TooltipTrigger>
-          <TooltipPopup>{destination}</TooltipPopup>
+          <TooltipPopup>{reply}</TooltipPopup>
         </Tooltip>
       ) : null}
       <AssistantSelectionToolbar viewport={viewport} taskSource={taskSource} onCite={cite} />

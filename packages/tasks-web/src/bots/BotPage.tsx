@@ -148,8 +148,7 @@ function BotRouteContent({
   readonly threadId: string | null;
 }) {
   const gt = useGT();
-  const m = useMessages();
-  const { bots, loaded, error } = useBots(environmentId);
+  const { bots, loaded, failed } = useBots(environmentId);
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   const bot = bots.find((item) =>
@@ -166,7 +165,7 @@ function BotRouteContent({
     return (
       <WorkspaceViewLayout title={gt("Bot")} onNavigateBack={back} navigateOnEscape={false}>
         <p className="py-6 text-sm text-muted-foreground">
-          {m(error) || (loaded ? gt("This bot no longer exists.") : "")}
+          {failed ? gt("Couldn't load bots.") : loaded ? gt("This bot no longer exists.") : ""}
         </p>
       </WorkspaceViewLayout>
     );

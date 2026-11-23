@@ -5,8 +5,8 @@ export interface TagSuggestion {
 }
 
 /**
- * Tags to offer while adding one to a task: the trigger tags of the enabled
- * agents serving its project, labelled with those agents' names, then tags
+ * Tags to offer while adding one to a task: the trigger tags of the enabled,
+ * unarchived agents serving its project, labelled with those agents' names, then tags
  * other tasks use. Tags the task has are left out; `query` matches a tag or
  * an agent's name.
  */
@@ -17,6 +17,7 @@ export function tagSuggestions(input: {
   readonly agents: ReadonlyArray<{
     readonly name: string;
     readonly enabled: boolean;
+    readonly archivedAt?: string | null;
     readonly projectId: string | null;
     readonly startTags: readonly string[];
   }>;
@@ -25,7 +26,11 @@ export function tagSuggestions(input: {
   const has = new Set(input.taskTags);
   const agentsByTag = new Map<string, string[]>();
   for (const agent of input.agents) {
-    if (!agent.enabled || (agent.projectId !== null && agent.projectId !== input.projectId))
+    if (
+      !agent.enabled ||
+      agent.archivedAt != null ||
+      (agent.projectId !== null && agent.projectId !== input.projectId)
+    )
       continue;
     for (const tag of agent.startTags)
       agentsByTag.set(tag, [...(agentsByTag.get(tag) ?? []), agent.name]);

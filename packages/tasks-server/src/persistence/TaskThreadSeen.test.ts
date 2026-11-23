@@ -5,6 +5,7 @@ import { TaskAgentId, TaskAgentRunId, TaskId, type TaskChange } from "@t3tools/t
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 
 import { runExperimentalFeatureMigrations } from "../../../../apps/server/src/extensionApi.ts";
@@ -30,7 +31,21 @@ const seedAgent = Effect.gen(function* () {
     config: { role: "developer", modelSelection, instructions: "Test" },
     createdAt: at(0),
     updatedAt: at(0),
+    archivedAt: null,
   });
+});
+
+/** The agent row as the schema before the upgrade stores it, without later columns. */
+const seedAgentRow = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`INSERT INTO task_agents (
+    id, project_id, name, enabled, start_statuses_json, start_tags_json, config_json,
+    start_run_statuses_json, created_at, updated_at
+  ) VALUES (
+    'agent', ${project}, 'agent', 1, '["To Do"]', '[]',
+    ${JSON.stringify({ role: "developer", modelSelection, instructions: "Test" })},
+    '[]', ${at(0)}, ${at(0)}
+  )`;
 });
 
 const seedTask = (id: string, root: ThreadId) =>
@@ -168,7 +183,7 @@ it.layer(TaskRepositoryLive.pipe(Layer.provideMerge(database())))("Thread run co
 
 it.effect("the upgrade marks runs that finished before it as seen", () =>
   Effect.gen(function* () {
-    yield* seedAgent;
+    yield* seedAgentRow;
     yield* seedTask("old", ThreadId.make("old-chat"));
     yield* seedRun("old-done", "old", "completed", at(0), at(1));
     yield* seedRun("old-failed", "old", "failed", at(0), at(2));

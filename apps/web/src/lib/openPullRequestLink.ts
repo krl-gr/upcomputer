@@ -3,6 +3,7 @@ import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import { type MouseEvent } from "react";
+import { msg } from "gt-react";
 
 import {
   resolveChangeRequestLinkTarget,
@@ -16,6 +17,7 @@ import { useOpenLink } from "../browser/useOpenLink";
 import { useClientSettings } from "../hooks/useSettings";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { isProductFeatureShown } from "../product/productFlags";
+import { m } from "../i18n/messages";
 import { useRightPanelStore } from "../rightPanelStore";
 import {
   selectThreadBranchBaseRef,
@@ -39,6 +41,27 @@ export function usePullRequestPreviewTarget(environmentId: EnvironmentId | null,
     projects,
     pullRequestsEnabled: serverConfig !== null,
     url,
+  });
+}
+
+/** Where a click on this link opens the in-app panel, read at call time as the click reads it. */
+export function pullRequestLinkPanelTarget(input: {
+  readonly url: string;
+  readonly environmentId: EnvironmentId | undefined;
+  readonly primaryEnvironmentId: EnvironmentId | null;
+  readonly lendHostProject: boolean;
+}) {
+  // Read at click time: every provider status push replaces the config map, and
+  // subscribing would hand every rendered link a new handler. Projects likewise, so a
+  // link can resolve against a snapshot that arrived after this handler was built.
+  const serverConfigs = appAtomRegistry.get(environmentServerConfigsAtom);
+  return resolveChangeRequestLinkTarget({
+    url: input.url,
+    projects: readProjects(),
+    configLoaded: (environmentId) => serverConfigs.has(environmentId),
+    environmentId: input.environmentId,
+    primaryEnvironmentId: input.primaryEnvironmentId,
+    lendHostProject: input.lendHostProject,
   });
 }
 
@@ -80,14 +103,8 @@ export function useOpenChangeRequestLink(
     const openPullRequest = () => {
       // UpComputer: pull request links open as ordinary links; commit links still open the diff.
       if (!isProductFeatureShown("pullRequests")) return false;
-      // Read at click time: every provider status push replaces the config map, and
-      // subscribing would hand every rendered link a new handler. Projects likewise, so a
-      // link can resolve against a snapshot that arrived after this handler was built.
-      const serverConfigs = appAtomRegistry.get(environmentServerConfigsAtom);
-      const target = resolveChangeRequestLinkTarget({
+      const target = pullRequestLinkPanelTarget({
         url: targetUrl,
-        projects: readProjects(),
-        configLoaded: (environmentId) => serverConfigs.has(environmentId),
         environmentId: resolvedThreadRef?.environmentId ?? targetEnvironmentId,
         primaryEnvironmentId,
         lendHostProject: resolvedPanelRef !== undefined,
@@ -217,9 +234,9 @@ export function useOpenChangeRequestLink(
             const toastId = toastManager.add(
               stackedThreadToast({
                 type: "info",
-                title: "This commit is not in the thread's workspace",
+                title: m(msg("This commit is not in the thread's workspace")),
                 actionProps: {
-                  children: "Open link",
+                  children: m(msg("Open link")),
                   onClick: () => {
                     toastManager.close(toastId);
                     window.open(targetUrl, "_blank", "noopener,noreferrer");
@@ -264,7 +281,7 @@ export function useOpenPrLink(threadRef?: ScopedThreadRef) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Unable to open pull request link",
+          title: m(msg("Unable to open pull request link")),
           description: errorToastDescription(error),
         }),
       );

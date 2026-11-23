@@ -1,4 +1,5 @@
-import type { BackgroundNotice, DesktopUpdateState } from "@t3tools/contracts";
+import type { BackgroundNotice, DesktopUpdateState, EnvironmentId } from "@t3tools/contracts";
+import { connectionErrorText } from "@t3tools/client-runtime/connection";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
@@ -9,13 +10,14 @@ import {
   CircleAlertIcon,
   ExternalLinkIcon,
   InfoIcon,
+  MessageSquareTextIcon,
   RefreshCwIcon,
   RotateCcwIcon,
   ServerIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { Fragment, memo, type ReactNode, useState } from "react";
-import { T, useGT } from "gt-react";
+import { Fragment, memo, type ReactNode, useEffect, useEffectEvent, useState } from "react";
+import { T, useGT, useMessages } from "gt-react";
 
 import {
   getDesktopUpdateDownloadedVersion,
@@ -29,11 +31,18 @@ import { UpdateEverythingDialog } from "../components/sidebar/UpdateEverythingDi
 import { dismissSettledUpdateRunMachines } from "../components/sidebar/updateEverythingRun";
 import { InlineButton } from "../components/ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
-import { SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
+import { SidebarMenuButton, SidebarMenuItem, useSidebar } from "../components/ui/sidebar";
 import { Spinner } from "../components/ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { APP_BASE_NAME } from "../branding";
+import { environmentCatalog } from "../connection/catalog";
 import { useLocalStorage } from "../hooks/useLocalStorage";
+import { computerName } from "../sidebarComputers/useSidebarComputers";
 import { useServerConfigs } from "../state/entities";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+import { useAtomCommand } from "../state/use-atom-command";
+import { type ListedClientNotice, useClientNotices } from "./clientNotices";
+import { useComputerOutages } from "./computerOutages";
 import {
   NotificationButton,
   NotificationCard,
@@ -53,11 +62,16 @@ import {
   type SidebarNotificationsDot,
   updateRunFailed,
   visibleBackgroundNotices,
+  withoutUnreachableComputers,
 } from "./sidebarNotifications.logic";
 import { type SidebarUpdates, useSidebarUpdates } from "./useSidebarUpdates";
 import { useSidebarFooterTooltipSide } from "../adaptiveSidebar/adaptiveSidebar";
 import { BadgedIcon } from "../badgedIcon/BadgedIcon";
-import { useSurveyForm } from "../userSurvey/surveyParts";
+import { WithConnectAccountEmail } from "../sendFeedback/ConnectAccountEmail";
+import { SendFeedbackForm } from "../sendFeedback/SendFeedbackForm";
+import { onSendFeedbackRequest } from "../sendFeedback/sendFeedbackStore";
+import { useSendFeedback, useSendFeedbackForm } from "../sendFeedback/useSendFeedback";
+import { SurveyAction, SurveyAutoHeight, useSurveyForm } from "../userSurvey/surveyParts";
 import { UserSurveyCard } from "../userSurvey/UserSurveyCard";
 import { UserSurveyDialog } from "../userSurvey/UserSurveyDialog";
 import { useUserSurvey } from "../userSurvey/useUserSurvey";
@@ -74,18 +88,89 @@ const DOT_CLASS: Record<SidebarNotificationsDot, string> = {
 const PROGRESS_RADIUS = 14;
 const PROGRESS_CIRCUMFERENCE = 2 * Math.PI * PROGRESS_RADIUS;
 
-/** Failures that belong to no thread (reminders, automations, scheduled runs, worktree cleanup, remote access). */
+/**
+ * Failures that belong to no thread: the servers' (reminders, automations, scheduled runs,
+ * worktree cleanup, remote access) and this client's (an unreachable computer, a list that
+ * didn't load).
+ */
 function useBackgroundNotices() {
+  const gt = useGT();
+  const m = useMessages();
   const configs = useServerConfigs();
+  const { environments } = useEnvironments();
+  const primaryId = usePrimaryEnvironmentId();
+  const outages = useComputerOutages();
+  const clientNotices = useClientNotices();
+  const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const [dismissedList, setDismissedList] = useLocalStorage(
     DISMISSED_KEY,
     [] as ReadonlyArray<string>,
     DismissedNotices,
   );
-  const notices = visibleBackgroundNotices(
-    [...configs].map(([environmentId, config]) =>
-      config.backgroundNotices?.map((notice) => ({ ...notice, environmentId })),
+  const presentationOf = (environmentId: EnvironmentId) =>
+    environments.find((environment) => environment.environmentId === environmentId);
+  const nameOf = (environmentId: EnvironmentId) => {
+    const presentation = presentationOf(environmentId);
+    return presentation ? computerName(presentation, primaryId, gt) : null;
+  };
+  const local: ListedClientNotice[] = [
+    ...outages.shown.flatMap(({ environmentId, since }): ListedClientNotice[] => {
+      const computer = nameOf(environmentId);
+      if (computer === null) return [];
+      const connection = presentationOf(environmentId)?.connection;
+      // A connection stopped on an error (a revoked pairing) waits for Retry or a fix.
+      const stopped = connection?.phase === "error";
+      const detail = stopped ? connectionErrorText(connection, m) : null;
+      return [
+        {
+          id: `client:${environmentId}:computer:${stopped ? "blocked" : "unreachable"}`,
+          area: "app",
+          severity: stopped ? "error" : "warning",
+          title: stopped
+            ? gt("Can't connect to {computer}", { computer })
+            : gt("Can't reach {computer}", { computer }),
+          message: stopped
+            ? gt("{appName} stopped trying. Retry, or open Connections to see why.", {
+                appName: APP_BASE_NAME,
+              })
+            : gt("{appName} keeps trying. Its chats, bots and tasks show what they had.", {
+                appName: APP_BASE_NAME,
+              }),
+          ...(detail ? { detail } : {}),
+          link: { label: gt("Connections"), path: "/settings/connections" },
+          occurredAt: new Date(since).toISOString(),
+          environmentId,
+          retry: () => void retryEnvironment(environmentId),
+        },
+      ];
+    }),
+    ...withoutUnreachableComputers(clientNotices, outages.unreachable).flatMap(
+      (notice): ListedClientNotice[] => {
+        const computer = nameOf(notice.environmentId);
+        if (computer === null) return [];
+        return [
+          {
+            id: `client:${notice.environmentId}:${notice.id}`,
+            area: "app",
+            severity: notice.severity,
+            title: m(notice.title, { computer }),
+            message: m(notice.message, { computer }),
+            ...(notice.detail ? { detail: notice.detail } : {}),
+            occurredAt: notice.occurredAt,
+            environmentId: notice.environmentId,
+            ...(notice.retry ? { retry: notice.retry } : {}),
+          },
+        ];
+      },
     ),
+  ];
+  const notices = visibleBackgroundNotices<ListedClientNotice>(
+    [
+      ...[...configs].map(([environmentId, config]) =>
+        config.backgroundNotices?.map((notice) => ({ ...notice, environmentId })),
+      ),
+      local,
+    ],
     new Set(dismissedList),
   );
   const dismiss = (keys: ReadonlyArray<string>) =>
@@ -110,6 +195,23 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
     userSurvey?.submit ?? null,
     userSurvey?.partial ?? null,
   );
+  const feedbackSource = useSendFeedback();
+  const feedback = useSendFeedbackForm(feedbackSource);
+  const [view, setView] = useState<"list" | "feedback">("list");
+  const sidebar = useSidebar();
+  const openFeedbackForm = useEffectEvent(() => {
+    if (!feedbackSource.available) return;
+    if (sidebar.isMobile) sidebar.setOpenMobile(true);
+    else if (!sidebar.open) sidebar.setOpen(true);
+    setView("feedback");
+    setOpen(true);
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the command palette asks for the form from outside this tree
+  useEffect(() => onSendFeedbackRequest(openFeedbackForm), []);
+  const showList = () => {
+    setView("list");
+    if (feedback.status.kind === "sent") feedback.reset();
+  };
   const { dot, label } = describeSidebarNotificationsButton(
     {
       severities: notices.map((notice) => notice.severity),
@@ -133,6 +235,10 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
           onOpenChange={(next) => {
             setOpen(next);
             if (next) userSurvey?.shown();
+          }}
+          // Closing keeps the draft, and the bell opens on the notifications again.
+          onOpenChangeComplete={(next) => {
+            if (!next) showList();
           }}
         >
           <Tooltip>
@@ -163,31 +269,51 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
             side={tooltipSide}
             align={tooltipSide === "top" ? "start" : "end"}
             padding="compact"
-            className="w-85"
+            className="w-85 max-w-[calc(100vw-1rem)]"
           >
-            <NotificationsPanel
-              updates={updates}
-              notices={notices}
-              dismiss={dismiss}
-              surveyCard={
-                userSurvey ? (
-                  <UserSurveyCard
-                    key={userSurvey.survey.id}
-                    survey={userSurvey.survey}
-                    draft={surveyForm.draft}
-                    onStart={(draft) => {
-                      surveyForm.start(draft);
-                      setOpen(false);
-                      setSurveyOpen(true);
-                    }}
-                    onDismiss={() => {
-                      if (surveyForm.leftOn) userSurvey.dismiss(surveyForm.leftOn);
-                    }}
-                  />
-                ) : null
-              }
-              onClose={() => setOpen(false)}
-            />
+            <SurveyAutoHeight>
+              {view === "feedback" ? (
+                <WithConnectAccountEmail>
+                  {(accountEmail) => (
+                    <SendFeedbackForm
+                      draft={feedback.draft}
+                      status={feedback.status}
+                      accountEmail={accountEmail}
+                      systemInfo={feedbackSource.systemInfo}
+                      onDraftChange={feedback.setDraft}
+                      onSubmit={() => feedback.submit(accountEmail)}
+                      onBack={showList}
+                      onDone={showList}
+                    />
+                  )}
+                </WithConnectAccountEmail>
+              ) : (
+                <NotificationsPanel
+                  updates={updates}
+                  notices={notices}
+                  dismiss={dismiss}
+                  surveyCard={
+                    userSurvey ? (
+                      <UserSurveyCard
+                        key={userSurvey.survey.id}
+                        survey={userSurvey.survey}
+                        draft={surveyForm.draft}
+                        onStart={(draft) => {
+                          surveyForm.start(draft);
+                          setOpen(false);
+                          setSurveyOpen(true);
+                        }}
+                        onDismiss={() => {
+                          if (surveyForm.leftOn) userSurvey.dismiss(surveyForm.leftOn);
+                        }}
+                      />
+                    ) : null
+                  }
+                  onClose={() => setOpen(false)}
+                  onSendFeedback={feedbackSource.available ? () => setView("feedback") : null}
+                />
+              )}
+            </SurveyAutoHeight>
           </PopoverPopup>
         </Popover>
         <UpdateEverythingDialog
@@ -287,6 +413,7 @@ function NotificationsPanel({
   dismiss,
   surveyCard,
   onClose,
+  onSendFeedback,
 }: {
   readonly updates: SidebarUpdates;
   readonly notices: ReturnType<typeof useBackgroundNotices>["notices"];
@@ -294,6 +421,8 @@ function NotificationsPanel({
   /** The survey the server offers, as its card; it ranks with the notices. */
   readonly surveyCard: ReactNode;
   readonly onClose: () => void;
+  /** Turns the popover to the feedback form; null when this client may not send feedback. */
+  readonly onSendFeedback: (() => void) | null;
 }) {
   const gt = useGT();
   const navigate = useNavigate();
@@ -316,6 +445,13 @@ function NotificationsPanel({
         }}
         detail={notice.message}
         details={notice.detail}
+        action={
+          notice.retry ? (
+            <NotificationButton tone="secondary" onClick={notice.retry}>
+              {gt("Retry")}
+            </NotificationButton>
+          ) : null
+        }
         links={
           notice.link ? (
             <NotificationButton
@@ -546,6 +682,19 @@ function NotificationsPanel({
           ))}
         </ol>
       )}
+      {onSendFeedback ? (
+        <div className="mt-2 flex border-t border-foreground/7 pt-1.5">
+          <SurveyAction
+            size="sm"
+            tone="quiet"
+            data-track="notifications.send-feedback"
+            onClick={onSendFeedback}
+          >
+            <MessageSquareTextIcon aria-hidden />
+            <T>Send feedback</T>
+          </SurveyAction>
+        </div>
+      ) : null}
     </div>
   );
 }

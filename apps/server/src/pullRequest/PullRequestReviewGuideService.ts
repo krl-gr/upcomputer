@@ -459,7 +459,7 @@ const make = Effect.gen(function* () {
     if (!settings.reviewGuidesEnabled) {
       return yield* new PullRequestOperationError({
         operation: "generateReviewGuide",
-        detail: "Review guides are off. Turn them on in Settings → Source Control.",
+        detail: "Review guides are off. Turn them on in Settings → Source control & issues.",
       });
     }
     const { key, workspaceRoot, identity } = yield* keyFor(input);

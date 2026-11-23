@@ -1,7 +1,7 @@
 import { T, useGT, useLocale, useMessages } from "gt-react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ContextMenuSource, ScopedThreadRef } from "@t3tools/contracts";
 import type { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { EllipsisIcon } from "lucide-react";
@@ -24,6 +24,7 @@ import {
   resolveThreadLastVisitedAt,
 } from "../components/Sidebar.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { contextMenuSourceOf } from "../contextMenuSource";
 import { cn } from "../lib/utils";
 import { ProductThreadRowAccessory } from "../product/ProductSlots";
 import {
@@ -83,7 +84,11 @@ export interface SidebarCompactThreadRowProps {
   readonly isRenaming: boolean;
   readonly renamingTitle: string;
   /** Upstream's thread actions menu, the same one right-click opens. */
-  readonly onContextMenu: (threadRef: ScopedThreadRef, position: { x: number; y: number }) => void;
+  readonly onContextMenu: (
+    threadRef: ScopedThreadRef,
+    position: { x: number; y: number },
+    source: ContextMenuSource,
+  ) => void;
   readonly onFileDropThreads?: ((threadRef: ScopedThreadRef, files: File[]) => void) | undefined;
   /** Upstream's route reveal: until the open thread's row mounts, its project scope may widen. */
   readonly revealRef?: ((row: HTMLElement, threadKey: string) => void) | undefined;
@@ -181,7 +186,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
     event.stopPropagation();
     const rect = event.currentTarget.getBoundingClientRect();
     setMenuOpen(true);
-    onContextMenu(threadRef, { x: rect.left, y: rect.bottom + 4 });
+    onContextMenu(threadRef, { x: rect.left, y: rect.bottom + 4 }, contextMenuSourceOf(event));
   };
 
   const [titleTruncated, setTitleTruncated] = useState(false);
@@ -299,7 +304,11 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
               }}
               onContextMenu={(event) => {
                 event.preventDefault();
-                onContextMenu(threadRef, { x: event.clientX, y: event.clientY });
+                onContextMenu(
+                  threadRef,
+                  { x: event.clientX, y: event.clientY },
+                  contextMenuSourceOf(event),
+                );
               }}
             />
           }

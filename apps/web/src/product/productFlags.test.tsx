@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   DEFAULT_RESOLVED_KEYBINDINGS,
   mergeWithDefaultKeybindings,
@@ -13,6 +13,7 @@ import {
   filterAvailableSettingsSearchItems,
   searchSettings,
 } from "../components/settings/settingsSearch";
+import { areIssuesShown } from "../issuesSetting/issuesShown";
 import {
   isProductFeatureShown,
   isProductKeybindingShown,
@@ -97,7 +98,7 @@ function renderLauncher() {
   );
 }
 
-const HIDDEN_SURFACES = [">Pull request<", ">Linked pull requests<"];
+const HIDDEN_SURFACES = [">Pull request<", ">Linked items<"];
 const KEPT_SURFACES = [">Browser<", ">Terminal<", ">Files<", ">Diff<", ">Device<"];
 
 describe("hidden upstream features in the web app", () => {
@@ -233,6 +234,16 @@ describe("hidden upstream features in the web app", () => {
     expect(isProductSettingsSearchItemVisible({ id: "thread-list" })).toBe(false);
     product.hidden = true;
     expect(isProductSettingsSearchItemVisible({ id: "thread-list" })).toBe(true);
+  });
+
+  it("shows Issues upstream, and in Up.computer only once the user turns them on", () => {
+    expect(areIssuesShown(DEFAULT_CLIENT_SETTINGS)).toBe(true);
+    expect(isProductSettingsSearchItemVisible({ id: "issues-page" })).toBe(false);
+    product.hidden = true;
+    expect(DEFAULT_CLIENT_SETTINGS.issuesEnabled).toBe(false);
+    expect(areIssuesShown(DEFAULT_CLIENT_SETTINGS)).toBe(false);
+    expect(areIssuesShown({ ...DEFAULT_CLIENT_SETTINGS, issuesEnabled: true })).toBe(true);
+    expect(isProductSettingsSearchItemVisible({ id: "issues-page" })).toBe(true);
   });
 
   it("offers Compact composer only with the UpComputer composer", () => {

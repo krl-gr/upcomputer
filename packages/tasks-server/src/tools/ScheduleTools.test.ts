@@ -359,6 +359,7 @@ it.effect("a task-agent run may write the schedule without listing the tools", (
       config: { role: "agent", modelSelection, instructions: "Work." },
       createdAt: timestamp,
       updatedAt: timestamp,
+      archivedAt: null,
     });
     yield* repository.createAgentRun({
       id: TaskAgentRunId.make("run-1"),

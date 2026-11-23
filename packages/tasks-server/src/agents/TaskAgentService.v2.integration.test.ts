@@ -413,6 +413,7 @@ const agent: TaskAgent = {
   },
   createdAt: timestamp,
   updatedAt: timestamp,
+  archivedAt: null,
 };
 
 const task: Task = {
@@ -1220,6 +1221,16 @@ it.live("a person's message in a failed run's thread continues it as a new run",
         `;
         assert.lengthOf(results, 1);
         assert.include(results[0]?.payload_json ?? "", continuation.id);
+        // The failed run left the task Failed; its continuation took it back.
+        const statuses = yield* sql<{ readonly payload_json: string }>`
+          SELECT payload_json FROM task_events
+          WHERE task_id = ${task.id} AND kind = 'task.status-changed'
+          ORDER BY created_at, rowid
+        `;
+        assert.deepStrictEqual(
+          statuses.map((row) => JSON.parse(row.payload_json).to),
+          ["Failed", "In Progress", "Needs Review"],
+        );
       }),
   ),
 );
@@ -1782,6 +1793,8 @@ it.live("a chat creates a task through MCP tools and, waking off, hears back as 
         status: "To Do",
         audience: "agent",
         sourceThreadId: "thread:task-agents-v2:parent",
+        // The stored fields below come only with the whole task.
+        verbose: true,
       });
       assert.isFalse(created.isError, textOf(created));
       const createdTask = JSON.parse(textOf(created)).task;
