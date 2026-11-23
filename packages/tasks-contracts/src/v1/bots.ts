@@ -200,9 +200,6 @@ export const BotUpdateInput = Schema.Struct({
 });
 export type BotUpdateInput = typeof BotUpdateInput.Type;
 
-export const BotDeleteInput = Schema.Struct({ id: TaskAgentId });
-export type BotDeleteInput = typeof BotDeleteInput.Type;
-
 export const BotMemory = Schema.Struct({
   id: TrimmedNonEmptyString,
   agentId: TaskAgentId,

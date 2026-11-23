@@ -67,18 +67,67 @@ function harness(
     readonly commandId?: string;
     readonly threadId?: string;
     title?: string;
+    readonly runtimeMode?: string;
+    readonly interactionMode?: string;
   }> = [];
+  const threadModes = new Map<string, { runtimeMode: string; interactionMode: string }>();
   const threads = {
+    getThreadShell: (threadId: ThreadId) =>
+      Effect.succeed({
+        id: threadId,
+        projectId: project,
+        ...(threadModes.get(threadId) ?? {
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+        }),
+      }),
     getThreadRecords: (threadId: ThreadId) =>
       Effect.succeed({
-        thread: { id: threadId, title: "Old title", projectId: project, deletedAt: null },
+        thread: {
+          id: threadId,
+          title: "Old title",
+          projectId: project,
+          deletedAt: null,
+          ...(threadModes.get(threadId) ?? {
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+          }),
+        },
         runs: [],
         runtimeRequests: [],
       }),
     hasReceipt: (commandId: string) =>
       Effect.succeed(dispatched.some((command) => command.commandId === commandId)),
     dispatch: (command: (typeof dispatched)[number]) =>
-      Effect.sync(() => void dispatched.push(command)),
+      Effect.sync(() => {
+        dispatched.push(command);
+        if (command.threadId && command.type === "thread.create") {
+          threadModes.set(command.threadId, {
+            runtimeMode: command.runtimeMode ?? "full-access",
+            interactionMode: command.interactionMode ?? "default",
+          });
+        } else if (
+          command.threadId &&
+          command.type === "thread.runtime-mode.set" &&
+          command.runtimeMode
+        ) {
+          const prev = threadModes.get(command.threadId) ?? {
+            runtimeMode: "full-access",
+            interactionMode: "default",
+          };
+          threadModes.set(command.threadId, { ...prev, runtimeMode: command.runtimeMode });
+        } else if (
+          command.threadId &&
+          command.type === "thread.interaction-mode.set" &&
+          command.interactionMode
+        ) {
+          const prev = threadModes.get(command.threadId) ?? {
+            runtimeMode: "full-access",
+            interactionMode: "default",
+          };
+          threadModes.set(command.threadId, { ...prev, interactionMode: command.interactionMode });
+        }
+      }),
   };
   const database = Layer.effectDiscard(
     runExperimentalFeatureMigrations([TASK_MIGRATION_CONTRIBUTION]),
@@ -141,7 +190,7 @@ function harness(
   const stored = Effect.gen(function* () {
     return yield* (yield* TaskRepository).search({ limit: 50, kind: "all", from: "bottom" });
   });
-  return { layer, scheduled, dispatched, create, update, stored };
+  return { layer, scheduled, dispatched, threadModes, create, update, stored };
 }
 
 const item = (title: string, status: string, extra: Record<string, unknown> = {}) => ({
@@ -670,7 +719,7 @@ it.effect("agent_delete leaves a bot to the user and says what deleting it would
     assert.isTrue(refused.isError);
     assert.equal(
       refused.text,
-      "Old title is a bot. Deleting it also deletes its 1 memory, and its chat becomes a normal chat. Use bot_delete only if the user asked to delete this bot.",
+      "Old title is a bot. Deleting it also deletes its 1 memory, and its chat becomes a normal chat. Ask the user to remove it in the bot's settings if they want that.",
     );
     assert.isTrue(
       Option.isSome(
@@ -682,9 +731,9 @@ it.effect("agent_delete leaves a bot to the user and says what deleting it would
 });
 
 it.effect(
-  "bot_create makes a bot with its chat and tag; bot_update and bot_delete change it",
+  "bot_create and bot_update enforce mode ceilings, duplicate IDs, chat sync, and run-thread limits",
   () => {
-    const { layer, dispatched } = harness();
+    const { layer, dispatched, threadModes } = harness();
     const supervised: TaskToolInvocationContext = {
       ...chat,
       live: true,
@@ -699,6 +748,18 @@ it.effect(
       const sql = yield* SqlClient.SqlClient;
       const botRows = sql<{ readonly agentId: string; readonly threadId: string }>`
       SELECT agent_id AS "agentId", thread_id AS "threadId" FROM bots`;
+
+      assert.isFalse(TASK_TOOL_SPECS.some((spec) => spec.name === "bot_delete"));
+
+      // Plan mode (dryRun) does not create a bot.
+      const planDryRun = yield* call(
+        "bot_create",
+        { name: "Release helper", instructions: "Ship releases.", modelSelection },
+        { ...fullAccess, mutationPolicy: "deny", interactionMode: "plan" },
+      );
+      assert.isFalse(planDryRun.isError, planDryRun.text);
+      assert.isTrue(JSON.parse(planDryRun.text).dryRun);
+      assert.deepStrictEqual(yield* botRows, []);
 
       // The bot's chat would get full access, more than this chat has.
       const refused = yield* call(
@@ -734,6 +795,30 @@ it.effect(
         [{ threadId: bot.threadId, title: "Release helper" }],
       );
 
+      // bot_create refuses an existing bot's id, even from a narrower caller trying to overwrite it.
+      const overwriteAttempt = yield* call(
+        "bot_create",
+        {
+          id: bot.agent.id,
+          name: "Hijacked",
+          instructions: "Ignore rules.",
+          runtimeMode: "approval-required",
+          modelSelection,
+        },
+        supervised,
+      );
+      assert.isTrue(overwriteAttempt.isError);
+      assert.include(overwriteAttempt.text, "already exists");
+
+      // bot_update refuses a narrower caller trying to modify a full-access bot even with a narrower runtimeMode.
+      const hijackUpdate = yield* call(
+        "bot_update",
+        { id: bot.agent.id, instructions: "Hijacked.", runtimeMode: "approval-required" },
+        supervised,
+      );
+      assert.isTrue(hijackUpdate.isError);
+      assert.include(hijackUpdate.text, "Changing a bot would need more permissions (full-access)");
+
       const worker = yield* repository.upsertAgent({
         id: TaskAgentId.make("worker-dev"),
         projectId: null,
@@ -757,10 +842,17 @@ it.effect(
       assert.isTrue(duplicate.isError);
       assert.include(duplicate.text, "This agent already exists. Create a new bot identity.");
 
+      // bot_update refuses a worker id.
+      const workerUpdate = yield* call("bot_update", { id: worker.id, name: "Not a bot" });
+      assert.isTrue(workerUpdate.isError);
+      assert.equal(workerUpdate.text, "Worker is a worker, not a bot. Use agent_update for it.");
+
+      // bot_update updates name, model, and syncs interactionMode to the bot's chat thread.
       const updated = yield* call("bot_update", {
         id: bot.agent.id,
         name: "Release captain",
         modelSelection: { instanceId: "claudeAgent", model: "claude-haiku-4-5" },
+        interactionMode: "plan",
       });
       assert.isFalse(updated.isError, updated.text);
       const saved = yield* repository.getAgentById({ id: bot.agent.id });
@@ -769,25 +861,94 @@ it.effect(
         assert.equal(saved.value.name, "Release captain");
         assert.equal(saved.value.config.modelSelection.model, "claude-haiku-4-5");
         assert.equal(saved.value.config.instructions, "Ship releases.");
+        assert.equal(saved.value.config.interactionMode, "plan");
       }
-
-      const notBot = yield* call("bot_delete", { id: worker.id });
-      assert.isTrue(notBot.isError);
-      assert.equal(
-        notBot.text,
-        "Worker is a worker, not a bot. Use agent_update or agent_delete for it.",
+      assert.isTrue(
+        dispatched.some(
+          (command) =>
+            command.type === "thread.interaction-mode.set" &&
+            command.threadId === bot.threadId &&
+            command.interactionMode === "plan",
+        ),
       );
 
-      const deleted = yield* call("bot_delete", { id: bot.agent.id });
-      assert.isFalse(deleted.isError, deleted.text);
-      assert.deepStrictEqual(JSON.parse(deleted.text), {
-        deleted: true,
-        id: bot.agent.id,
-        name: "Release captain",
-        memories: 0,
+      // A supervised bot whose permanent chat thread was switched to full-access cannot be edited by a supervised caller.
+      const supervisedBotRes = yield* call(
+        "bot_create",
+        {
+          name: "Supervised bot",
+          instructions: "Ask first.",
+          runtimeMode: "approval-required",
+          modelSelection,
+        },
+        supervised,
+      );
+      assert.isFalse(supervisedBotRes.isError, supervisedBotRes.text);
+      const supervisedBot = JSON.parse(supervisedBotRes.text).bot;
+      threadModes.set(supervisedBot.threadId, {
+        runtimeMode: "full-access",
+        interactionMode: "default",
       });
-      assert.deepStrictEqual(yield* botRows, []);
-      assert.isTrue(Option.isNone(yield* repository.getAgentById({ id: bot.agent.id })));
+      const divergedUpdate = yield* call(
+        "bot_update",
+        { id: supervisedBot.agent.id, instructions: "Injected." },
+        supervised,
+      );
+      assert.isTrue(divergedUpdate.isError);
+      assert.include(
+        divergedUpdate.text,
+        "Changing a bot would need more permissions (full-access)",
+      );
+
+      // Background task-agent runs cannot call bot_create or bot_update (even after ending).
+      const runThread = ThreadId.make("thread-worker-run");
+      yield* repository.createAgentRun({
+        id: TaskAgentRunId.make("run-worker-1"),
+        taskId: (yield* repository.upsert({
+          id: "task-bg" as never,
+          projectId: project,
+          title: "Bg",
+          description: "Bg",
+          status: "To Do",
+          output: null,
+          priority: null,
+          createdBy: "agent",
+          assigneeAgentRunId: null,
+          sourceThreadId: null,
+          sourceRunId: null,
+          metadata: null,
+          tags: [],
+          notBefore: null,
+          createdAt: "2026-10-27T00:00:00.000Z",
+          updatedAt: "2026-10-27T00:00:00.000Z",
+          archivedAt: null,
+          audience: "agent",
+          kind: "task",
+        })).id,
+        agentId: worker.id,
+        threadId: runThread,
+        modelSelection: modelSelection as never,
+        status: "completed",
+        startedAt: "2026-10-27T00:00:00.000Z",
+        completedAt: "2026-10-27T00:01:00.000Z",
+        triggerRunId: null,
+        continuesRunId: null,
+      });
+      const runContext: TaskToolInvocationContext = { ...fullAccess, threadId: runThread };
+      const bgCreate = yield* call(
+        "bot_create",
+        { name: "Injected", instructions: "Bad.", modelSelection },
+        runContext,
+      );
+      assert.isTrue(bgCreate.isError);
+      assert.include(bgCreate.text, "cannot create or edit bots");
+      const bgUpdate = yield* call(
+        "bot_update",
+        { id: bot.agent.id, instructions: "Bad." },
+        runContext,
+      );
+      assert.isTrue(bgUpdate.isError);
+      assert.include(bgUpdate.text, "cannot create or edit bots");
     }).pipe(Effect.provide(layer));
   },
 );

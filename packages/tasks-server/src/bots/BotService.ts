@@ -814,6 +814,17 @@ const make = Effect.gen(function* () {
         threadId,
         runtimeMode: config.runtimeMode,
       });
+    if (
+      previous !== null &&
+      previous.agent.config.interactionMode !== config.interactionMode &&
+      thread.interactionMode !== config.interactionMode
+    )
+      yield* threads.dispatch({
+        type: "thread.interaction-mode.set",
+        commandId: CommandId.make(`bot:interaction:${input.id}:${commandSuffix}`),
+        threadId,
+        interactionMode: config.interactionMode,
+      });
     // A saved bot has its chat and its name again.
     yield* resolve(restoreNotice(input.id));
     yield* resolve(nameNotice(input.id));
@@ -1136,6 +1147,7 @@ const make = Effect.gen(function* () {
         const bot = yield* get(agentId);
         yield* sql.withTransaction(
           Effect.gen(function* () {
+            yield* sql`DELETE FROM bot_mentions WHERE agent_id = ${agentId}`;
             yield* sql`DELETE FROM bot_memories WHERE agent_id = ${agentId}`;
             yield* sql`DELETE FROM bots WHERE agent_id = ${agentId}`;
             yield* repository.deleteAgent({ id: agentId });

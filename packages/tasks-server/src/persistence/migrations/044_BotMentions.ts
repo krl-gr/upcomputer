@@ -17,4 +17,5 @@ export const BotMentionsMigration = Effect.gen(function* () {
     created_at TEXT NOT NULL
   )`;
   yield* sql`CREATE INDEX bot_mentions_pending_run ON bot_mentions (run_id) WHERE status = 'pending'`;
+  yield* sql`CREATE INDEX bot_mentions_thread_run ON bot_mentions (bot_thread_id, run_id)`;
 });

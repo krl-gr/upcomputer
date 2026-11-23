@@ -31,9 +31,13 @@ const modelSelection = object(
   ["instanceId", "model"],
 );
 
-const runtimeMode = {
+const botRuntimeMode = {
   type: "string",
-  enum: ["approval-required", "auto-accept-edits", "full-access"],
+  enum: ["approval-required", "auto-accept-edits", "auto", "full-access"],
+} as const;
+const interactionMode = {
+  type: "string",
+  enum: ["default", "plan"],
 } as const;
 const literals = (values: ReadonlyArray<string>) => ({ type: "string", enum: [...values] });
 const botAppearance = {
@@ -63,11 +67,11 @@ const botFields = {
   modelAlias: id,
   role: id,
   runtimeMode: {
-    ...runtimeMode,
+    ...botRuntimeMode,
     description:
       "The permissions of the bot's chat and background tasks. Leave it out for full-access, the default for a new bot.",
   },
-  interactionMode: id,
+  interactionMode,
   appearance: botAppearance,
 } as const;
 
@@ -530,25 +534,15 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     type: "function",
     mutation: "write",
     name: "bot_create",
-    description:
-      'Create a bot, as the user does with + next to Bots: a personal assistant with one permanent chat, its own memory, and a place under Bots in the sidebar. It also takes background tasks tagged bot:<id>. Use it when the user asks for a bot; for an agent that only picks up tasks by tag and status, use agent_create. Call task_context with include ["providers"] first and pass a model the bot suits. The instructions say what the bot does and how. Returns the bot with its id and chat (threadId).',
+    description: `Create a bot, as the user does with + next to Bots: a personal assistant with one permanent chat, its own memory, and a place under Bots in the sidebar. It also takes background tasks tagged bot:<id>. Use it when the user asks for a bot; for an agent that only picks up tasks by tag and status, use agent_create. Call task_context with include ["providers"] first and pass a model the bot suits. The instructions say what the bot does and how. Returns the bot with its id and chat (threadId). ${INSTRUCTIONS_WRITE_ACCESS}`,
     inputSchema: object({ id, name: id, instructions: id, ...botFields }, ["name", "instructions"]),
   },
   {
     type: "function",
     mutation: "write",
     name: "bot_update",
-    description:
-      "Change a bot's settings, as its settings page does. Fields left out stay as they are. A change of working project or provider waits until the bot is idle.",
+    description: `Change a bot's settings, as its settings page does. Fields left out stay as they are. A change of working project or provider waits until the bot is idle. ${INSTRUCTIONS_WRITE_ACCESS}`,
     inputSchema: object({ id, name: id, instructions: id, ...botFields }, ["id"]),
-  },
-  {
-    type: "function",
-    mutation: "write",
-    name: "bot_delete",
-    description:
-      "Delete a bot and all of its memory; its chat stays as a normal chat. Only when the user asked to delete this bot. Returns how many memories were deleted with it.",
-    inputSchema: object({ id }, ["id"]),
   },
   {
     type: "function",

@@ -15,7 +15,7 @@ helper" or "Research assistant", and say in the instructions what the job covers
   header, and choose **Turn into bot**. The chat keeps its history, model and permissions. A chat
   that is still running, archived, or a worker's run can't become a bot.
 - By asking: tell a bot or any chat to create a bot, such as "make me a release helper bot".
-  The agent creates it with the same settings, and can also change or delete bots when you ask.
+  The agent creates it with the same settings, and can also change bots when you ask.
 
 ## One permanent chat
 

@@ -10,7 +10,6 @@ import {
   AgentSearchInput,
   AgentUpdateInput,
   BotCreateInput,
-  BotDeleteInput,
   BotUpdateInput,
   AUTOMATION_DRAFT_LIMIT_PER_PROJECT,
   AutomationCreateInput,
@@ -151,7 +150,6 @@ const decoders = {
   agent_delete: Schema.decodeUnknownEffect(AgentDeleteInput),
   bot_create: Schema.decodeUnknownEffect(BotCreateInput),
   bot_update: Schema.decodeUnknownEffect(BotUpdateInput),
-  bot_delete: Schema.decodeUnknownEffect(BotDeleteInput),
   agent_run_get: Schema.decodeUnknownEffect(AgentRunGetInput),
   agent_run_search: Schema.decodeUnknownEffect(AgentRunSearchInput),
   agent_run_transcript: Schema.decodeUnknownEffect(AgentRunTranscriptInput),
@@ -561,10 +559,26 @@ const make = Effect.gen(function* () {
       .pipe(
         Effect.map((agent) =>
           Option.isSome(agent)
-            ? `${agent.value.name} is a worker, not a bot. Use agent_update or agent_delete for it.`
+            ? `${agent.value.name} is a worker, not a bot. Use agent_update for it.`
             : `Bot '${id}' was not found.`,
         ),
       );
+  /**
+   * Same rule as `instructionsWriteAccess`: unattended task-agent runs read
+   * untrusted content and cannot create or edit bots unless explicitly opted in.
+   */
+  const botWriteAccess = Effect.fn("TaskToolService.botWriteAccess")(function* (
+    name: string,
+    context: TaskToolInvocationContext,
+  ) {
+    const run = context.threadId
+      ? yield* repository.findLatestAgentRunByThreadId({ threadId: context.threadId })
+      : Option.none<TaskAgentRun>();
+    if (Option.isNone(run)) return null;
+    const agent = yield* repository.getAgentById({ id: run.value.agentId });
+    if (Option.isSome(agent) && (agent.value.config.tools ?? []).includes(name)) return null;
+    return `Task-agent run '${run.value.id}' cannot create or edit bots: a run may be acting on untrusted content. This also applies after the run ended. Put the suggested change in your task output instead. A person can allow this agent by adding '${name}' to its tools. This guards against accidental or injected writes; it is not a security boundary.`;
+  });
   /**
    * Task-agent runs read untrusted content, so an injected "add to the
    * instructions" must not rewrite every agent's rules. A thread that any run
@@ -1380,7 +1394,7 @@ const make = Effect.gen(function* () {
           if (bot !== null)
             return {
               isError: true,
-              text: `${bot.name} is a bot. Deleting it also deletes its ${bot.memories} ${bot.memories === 1 ? "memory" : "memories"}, and its chat becomes a normal chat. Use bot_delete only if the user asked to delete this bot.`,
+              text: `${bot.name} is a bot. Deleting it also deletes its ${bot.memories} ${bot.memories === 1 ? "memory" : "memories"}, and its chat becomes a normal chat. Ask the user to remove it in the bot's settings if they want that.`,
             };
           if (isDryRun)
             return {
@@ -1393,6 +1407,13 @@ const make = Effect.gen(function* () {
         }
         case "bot_create": {
           const input = yield* decoders.bot_create(args);
+          const writeRefusal = yield* botWriteAccess("bot_create", context);
+          if (writeRefusal !== null) return { isError: true, text: writeRefusal };
+          if (input.id !== undefined && (yield* bots.removal(input.id)) !== null)
+            return {
+              isError: true,
+              text: `Bot '${input.id}' already exists. Use bot_update to change it, or create a new bot.`,
+            };
           const resolution = yield* resolver.resolve({
             args: {
               ...(input.projectId ? { projectId: input.projectId } : {}),
@@ -1447,6 +1468,8 @@ const make = Effect.gen(function* () {
         }
         case "bot_update": {
           const input = yield* decoders.bot_update(args);
+          const writeRefusal = yield* botWriteAccess("bot_update", context);
+          if (writeRefusal !== null) return { isError: true, text: writeRefusal };
           const existing = (yield* bots.list).find((item) => item.agent.id === input.id);
           if (existing === undefined) return { isError: true, text: yield* notABot(input.id) };
           const resolution =
@@ -1505,19 +1528,21 @@ const make = Effect.gen(function* () {
             ...(input.appearance !== undefined ? { appearance: input.appearance } : {}),
           };
           if (isDryRun) return { isError: false, text: json({ dryRun: true, bot }) };
-          // An edited agent runs again on its matching tasks, so the caller's modes apply.
-          const refusal = runStartRefusal(context, agentRunModes(bot.config), "Changing a bot");
+          // Check existing config, requested config, and the live chat's current modes (a mode
+          // picked in the bot chat's composer can exceed the saved config).
+          const botChat = yield* threads
+            .getThreadShell(existing.threadId)
+            .pipe(Effect.orElseSucceed(() => null));
+          const refusal =
+            runStartRefusal(context, agentRunModes(existing.agent.config), "Changing a bot") ??
+            runStartRefusal(context, agentRunModes(bot.config), "Changing a bot") ??
+            runStartRefusal(
+              context,
+              botChat ?? { runtimeMode: "full-access", interactionMode: "default" },
+              "Changing a bot",
+            );
           if (refusal !== null) return { isError: true, text: refusal };
           return { isError: false, text: json({ bot: yield* bots.save(bot) }) };
-        }
-        case "bot_delete": {
-          const input = yield* decoders.bot_delete(args);
-          const removal = yield* bots.removal(input.id);
-          if (removal === null) return { isError: true, text: yield* notABot(input.id) };
-          const deleted = { deleted: true, id: input.id, ...removal };
-          if (isDryRun) return { isError: false, text: json({ dryRun: true, ...deleted }) };
-          yield* bots.remove(input.id);
-          return { isError: false, text: json(deleted) };
         }
         case "agent_run_get": {
           const input = yield* decoders.agent_run_get(args);
