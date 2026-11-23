@@ -14,8 +14,8 @@ const DIRECT_TOOLS: ReadonlySet<string> = new Set([
 const MAX_RESULTS = 10;
 // A long session keeps the newest loaded tools only, so its listing stays under 128-tool API limits.
 const MAX_LOADED = 60;
-// Sessions that ended are never reported here, so keep only the newest.
-const MAX_SESSIONS = 256;
+// Threads that ended are never reported here, so keep only the newest.
+const MAX_THREADS = 256;
 
 export interface ListedTool {
   readonly name: string;
@@ -25,12 +25,9 @@ export interface ListedTool {
 export class McpToolExposure extends Context.Service<
   McpToolExposure,
   {
-    /** Finds tools for the query and lists them to the session from now on. */
-    readonly search: (
-      providerSessionId: string,
-      query: string,
-    ) => Effect.Effect<ReadonlyArray<ListedTool>>;
-    readonly isListed: (providerSessionId: string, tool: string) => boolean;
+    /** Finds tools for the query and lists them to the thread's sessions from now on. */
+    readonly search: (threadId: string, query: string) => Effect.Effect<ReadonlyArray<ListedTool>>;
+    readonly isListed: (threadId: string, tool: string) => boolean;
   }
 >()("t3/mcp/McpToolExposure") {}
 
@@ -46,15 +43,19 @@ const score = (tool: ListedTool, terms: ReadonlyArray<string>) => {
   return total;
 };
 
+/**
+ * Loaded tools are kept per thread, not per MCP credential: a thread whose provider
+ * restarts gets a new credential, and its model still expects the tools it used.
+ */
 export const make = (
   tools: () => ReadonlyArray<ListedTool>,
   announceListChanged: () => Effect.Effect<void>,
 ) => {
   const loaded = new Map<string, Set<string>>();
-  const load = (providerSessionId: string, names: ReadonlyArray<string>) => {
-    const listed = loaded.get(providerSessionId) ?? new Set<string>();
-    loaded.delete(providerSessionId);
-    loaded.set(providerSessionId, listed);
+  const load = (threadId: string, names: ReadonlyArray<string>) => {
+    const listed = loaded.get(threadId) ?? new Set<string>();
+    loaded.delete(threadId);
+    loaded.set(threadId, listed);
     for (const name of names) {
       if (DIRECT_TOOLS.has(name)) continue;
       listed.delete(name);
@@ -65,12 +66,12 @@ export const make = (
       listed.delete(oldest);
     }
     for (const oldest of loaded.keys()) {
-      if (loaded.size <= MAX_SESSIONS) break;
+      if (loaded.size <= MAX_THREADS) break;
       loaded.delete(oldest);
     }
   };
   return McpToolExposure.of({
-    search: Effect.fn("McpToolExposure.search")(function* (providerSessionId, query) {
+    search: Effect.fn("McpToolExposure.search")(function* (threadId, query) {
       const terms = query
         .toLowerCase()
         .split(/[^a-z0-9_]+/u)
@@ -84,14 +85,14 @@ export const make = (
         .map((match) => match.tool);
       if (found.length > 0) {
         load(
-          providerSessionId,
+          threadId,
           found.map((tool) => tool.name),
         );
         yield* announceListChanged();
       }
       return found;
     }),
-    isListed: (providerSessionId, tool) =>
-      DIRECT_TOOLS.has(tool) || loaded.get(providerSessionId)?.has(tool) === true,
+    isListed: (threadId, tool) =>
+      DIRECT_TOOLS.has(tool) || loaded.get(threadId)?.has(tool) === true,
   });
 };
