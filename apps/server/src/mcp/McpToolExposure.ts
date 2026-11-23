@@ -13,9 +13,57 @@ const DIRECT_TOOLS: ReadonlySet<string> = new Set([
   TOOL_SEARCH,
 ]);
 
+/**
+ * Rarely used groups, and the large computer-use and browser groups, that a `core` listing
+ * leaves to `tool_search` so it stays under 128-tool API limits. OpenCode's instructions name
+ * a search word for each group.
+ */
+const SEARCH_ONLY_PREFIXES = [
+  "computer_",
+  "preview_",
+  "t3_preview_",
+  "device_",
+  "pull_request_",
+  "ci_",
+  "t3_environment_",
+  "t3_theme_",
+  "t3_attachment_",
+  "t3_worktree_",
+];
+const SEARCH_ONLY_TOOLS: ReadonlySet<string> = new Set([
+  "list_issues",
+  "read_issue",
+  "create_issue",
+  "comment_on_issue",
+  "set_issue_state",
+  "link_issue",
+  "unlink_issue",
+  "list_thread_issues",
+  "unlink_pull_request",
+  "unlink_pull_requests",
+  "list_thread_pull_requests",
+  "write_pull_request_guides",
+  "read_pull_request_guide",
+  "schedule_task",
+  "list_scheduled_tasks",
+  "delete_scheduled_task",
+  "run_scheduled_task_now",
+]);
+
+const isSearchOnly = (tool: string) =>
+  SEARCH_ONLY_TOOLS.has(tool) || SEARCH_ONLY_PREFIXES.some((prefix) => tool.startsWith(prefix));
+
+/**
+ * `deferred`: only the direct tools until a search (Copilot). `core`: every tool but the
+ * search-only groups (OpenCode, whose models skip `tool_search` for tools they need often).
+ */
+export type ListingMode = "deferred" | "core";
+
 const MAX_RESULTS = 10;
 // A long session keeps the newest loaded tools only, so its listing stays under 128-tool API limits.
 const MAX_LOADED = 60;
+// A `core` listing adds only this many of the newest loaded search-only tools, for the same limit.
+const MAX_LOADED_SEARCH_ONLY = 20;
 // Threads that ended are never reported here, so keep only the newest.
 const MAX_THREADS = 256;
 
@@ -53,7 +101,7 @@ export class McpToolExposure extends Context.Service<
   {
     /** Finds tools for the query and lists them to the thread's sessions from now on. */
     readonly search: (threadId: string, query: string) => Effect.Effect<ReadonlyArray<ListedTool>>;
-    readonly isListed: (threadId: string, tool: string) => boolean;
+    readonly isListed: (threadId: string, tool: string, mode: ListingMode) => boolean;
   }
 >()("t3/mcp/McpToolExposure") {}
 
@@ -63,6 +111,7 @@ const score = (tool: ListedTool, terms: ReadonlyArray<string>) => {
   let total = 0;
   for (const term of terms) {
     if (term === name) total += 100;
+    else if (name.startsWith(term)) total += 5;
     else if (name.includes(term)) total += 3;
     else if (description.includes(term)) total += 1;
   }
@@ -93,11 +142,9 @@ export const make = (
   tools: () => ReadonlyArray<SearchableTool>,
   announceListChanged: () => Effect.Effect<void>,
 ) => {
-  const loaded = new Map<string, Set<string>>();
+  const loaded = new Map<string, { all: Set<string>; searchOnly: Set<string> }>();
   const load = (threadId: string, names: ReadonlyArray<string>) => {
-    const listed = loaded.get(threadId) ?? new Set<string>();
-    loaded.delete(threadId);
-    loaded.set(threadId, listed);
+    const listed = loaded.get(threadId)?.all ?? new Set<string>();
     for (const name of names) {
       if (DIRECT_TOOLS.has(name)) continue;
       listed.delete(name);
@@ -107,6 +154,9 @@ export const make = (
       if (listed.size <= MAX_LOADED) break;
       listed.delete(oldest);
     }
+    const searchOnly = [...listed].filter(isSearchOnly).slice(-MAX_LOADED_SEARCH_ONLY);
+    loaded.delete(threadId);
+    loaded.set(threadId, { all: listed, searchOnly: new Set(searchOnly) });
     for (const oldest of loaded.keys()) {
       if (loaded.size <= MAX_THREADS) break;
       loaded.delete(oldest);
@@ -138,7 +188,11 @@ export const make = (
       }
       return found;
     }),
-    isListed: (threadId, tool) =>
-      DIRECT_TOOLS.has(tool) || loaded.get(threadId)?.has(tool) === true,
+    isListed: (threadId, tool, mode) => {
+      if (DIRECT_TOOLS.has(tool)) return true;
+      const thread = loaded.get(threadId);
+      if (mode === "deferred") return thread?.all.has(tool) === true;
+      return !isSearchOnly(tool) || thread?.searchOnly.has(tool) === true;
+    },
   });
 };

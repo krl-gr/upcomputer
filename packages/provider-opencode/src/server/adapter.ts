@@ -677,18 +677,17 @@ const T3_MCP_SERVER_NAME = "t3-code";
 const OPENCODE_DECLINED_MESSAGE = "Continue without it, or ask the user how to proceed.";
 
 /**
- * OpenCode sends every MCP tool to the model next to its own, and
- * OpenAI-compatible APIs reject a request with more than 128 tools. The T3 MCP
- * server alone has about 120, so OpenCode asks it to list a few and load the
- * rest through `tool_search`; OpenCode re-lists on `tools/list_changed`.
+ * OpenAI-compatible APIs reject over 128 tools and the T3 MCP server has about 150, so
+ * OpenCode asks it to leave computer use, the browser and rare groups to `tool_search`
+ * (OpenCode re-lists on `tools/list_changed`). Models that never search keep the rest.
  */
 export const openCodeT3McpHeaders = (authorizationHeader: string) => ({
   Authorization: authorizationHeader,
-  [McpProviderSession.MCP_TOOL_EXPOSURE_HEADER]: "deferred",
+  [McpProviderSession.MCP_TOOL_EXPOSURE_HEADER]: "core",
 });
 
 export const OPENCODE_T3_TOOL_SEARCH_INSTRUCTIONS =
-  "Up.computer's MCP server lists only a few of its tools at first. Call `tool_search` to load the others, then call them by name: search `computer` for the `computer_*` tools that see and control apps on this computer (computer use), `browser` for the `preview_*` browser you share with the user, or exact names such as `task_update` or `t3_thread_launch`. After Up.computer restarts, tools you loaded earlier are not listed until you search for them again: when a tool you used before is missing, search for its exact name instead of calling another tool.";
+  "Up.computer's MCP server leaves a few tool groups out of your tool list. Call `tool_search` to load them, then call them by name: search `computer` for the `computer_*` tools that see and control apps on this computer (computer use), `preview` for the `preview_*` browser you share with the user, or `issue`, `pull_request`, `ci`, `device`, `environment`, `theme`, `attachment`, `worktree` or `scheduled` for those tools. Every other Up.computer tool, such as `task_create` or `t3_thread_launch`, is already listed: call it directly. After Up.computer restarts, tools you loaded earlier are not listed until you search for them again: when a tool you used before is missing, search for its exact name instead of calling another tool.";
 
 function openCodeRequiresApproval(
   runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
