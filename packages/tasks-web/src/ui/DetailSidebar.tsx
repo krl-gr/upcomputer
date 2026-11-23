@@ -136,9 +136,11 @@ export function DetailSidebarRow({
       onClick={
         rowIsInteractive
           ? (event) => {
+              const target = event.target;
+              // A pick in the control's portaled popup bubbles here through React; it would reopen it.
+              if (!(target instanceof Node) || !event.currentTarget.contains(target)) return;
               onClick?.();
               if (!controlSelector) return;
-              const target = event.target;
               if (target instanceof Element && target.closest(controlSelector)) return;
               const control = event.currentTarget.querySelector(controlSelector);
               if (control instanceof HTMLButtonElement) control.click();
