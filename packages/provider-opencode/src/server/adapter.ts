@@ -684,7 +684,7 @@ export const openCodeT3McpHeaders = (authorizationHeader: string) => ({
 });
 
 export const OPENCODE_T3_TOOL_SEARCH_INSTRUCTIONS =
-  "Up.computer's MCP server lists only a few of its tools at first. Call `tool_search` to load the others, then call them by name: search `computer` for the `computer_*` tools that see and control apps on this computer (computer use), `browser` for the `preview_*` browser you share with the user, or exact names such as `task_update` or `t3_thread_launch`.";
+  "Up.computer's MCP server lists only a few of its tools at first. Call `tool_search` to load the others, then call them by name: search `computer` for the `computer_*` tools that see and control apps on this computer (computer use), `browser` for the `preview_*` browser you share with the user, or exact names such as `task_update` or `t3_thread_launch`. After Up.computer restarts, tools you loaded earlier are not listed until you search for them again: when a tool you used before is missing, search for its exact name instead of calling another tool.";
 
 /** OpenCode has no OS sandbox; permission rules must enforce non-interactive policies too. */
 export function openCodePermissionRules(

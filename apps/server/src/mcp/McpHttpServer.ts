@@ -1522,7 +1522,11 @@ const layerToolExposure = Layer.effect(
     const server = yield* McpServer.McpServer;
     return McpToolExposure.make(
       () =>
-        server.tools.map(({ tool }) => ({ name: tool.name, description: tool.description ?? "" })),
+        server.tools.map(({ tool, annotations }) => ({
+          name: tool.name,
+          description: tool.description ?? "",
+          enabledWhen: Context.getOrUndefined(annotations, McpSchema.EnabledWhen),
+        })),
       () => server.notifications["notifications/tools/list_changed"]({}),
     );
   }),
@@ -1530,7 +1534,7 @@ const layerToolExposure = Layer.effect(
 
 /**
  * A provider session that sends `MCP_TOOL_EXPOSURE_HEADER: deferred` lists only
- * the direct tools and what its `tool_search` calls loaded. Calls are never
+ * the direct tools and what its thread's `tool_search` calls loaded. Calls are never
  * gated, and every other client lists everything but `tool_search`.
  */
 const layerDeferredListing = McpServer.visibility(
@@ -1540,11 +1544,11 @@ const layerDeferredListing = McpServer.visibility(
     return Effect.fnUntraced(function* ({ method, target, headers }: McpServer.MiddlewareOptions) {
       if (method !== "tools/list") return true;
       const scope = yield* Effect.serviceOption(McpInvocationContext.McpInvocationContext);
-      const providerSessionId = Option.getOrUndefined(scope)?.thread?.providerSessionId;
-      if (headers[MCP_TOOL_EXPOSURE_HEADER] !== "deferred" || providerSessionId === undefined) {
+      const threadId = Option.getOrUndefined(scope)?.thread?.threadId;
+      if (headers[MCP_TOOL_EXPOSURE_HEADER] !== "deferred" || threadId === undefined) {
         return target !== McpToolExposure.TOOL_SEARCH;
       }
-      return exposure.isListed(providerSessionId, target);
+      return exposure.isListed(threadId, target);
     });
   }),
   { global: true },
