@@ -38,6 +38,7 @@ import {
   promptsAfterReload,
 } from "./instructionsSave.ts";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
+import { InstructionUpdatesSection } from "../workflowUpdates/InstructionUpdatesSection.tsx";
 
 // "All chats" edits the core `customInstructions` setting, which every agent
 // harness adds to its prompt. The other tabs edit the Tasks prompt settings.
@@ -208,6 +209,8 @@ function InstructionsSettingsPage() {
           </Button>
         </div>
       ) : null}
+      {/* Shipped defaults are global: a project's additions have no updates. */}
+      {editorTarget.project === null ? <InstructionUpdatesSection /> : null}
       {/* A new target starts a fresh editor, so a save and its conflict check
           never mix two scopes or two checkouts. */}
       <InstructionsEditor
