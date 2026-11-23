@@ -1,17 +1,18 @@
-import { OrchestratorMcpFailure, type ThreadId, TurnItemId } from "@t3tools/contracts";
+import { OrchestratorMcpFailure, TurnItemId } from "@t3tools/contracts";
 import { TaskError } from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { McpSchema, Tool, Toolkit } from "effect/ai";
+import * as Stream from "effect/Stream";
+// oxlint-disable-next-line t3code/no-raw-mcp-registration -- registers nothing: only hides memory tools and sends tools/list_changed
+import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 import {
   hiddenFromOutsideClients,
   McpInvocationContext,
   McpToolAccess,
   resultToolkitRegistration,
   ThreadManagementService,
-  threadToolVisibility,
 } from "../../../../apps/server/src/extensionApi.ts";
 import { agentRunModes, broaderRunMode } from "../agents/runModes.ts";
 import { BotService } from "./BotService.ts";
@@ -220,17 +221,43 @@ const handlers = McpToolAccess.toLayer(
     };
   }),
 );
-/** A bot whose agent keeps its own memory gets no memory tools, in its chat or its task runs. */
-const MemoryToolVisibility = threadToolVisibility(
-  ["bot_memory", "bot_remember", "bot_forget"],
-  Effect.map(BotService, (bots) => ({
-    visible: (threadId: ThreadId) =>
-      bots.forThread(threadId).pipe(
-        Effect.map((bot) => bot?.memoryMode !== "agent"),
-        Effect.orElseSucceed(() => true),
-      ),
-    changes: bots.memoryModeChanges,
-  })),
+const memoryTools = new Set(["bot_memory", "bot_remember", "bot_forget"]);
+
+/**
+ * A bot whose agent keeps its own memory gets no memory tools, in its chat or its task runs: they
+ * are hidden from lists and refused when called. Product tools take no local middleware, so the
+ * check is global and passes every other tool at once.
+ */
+const MemoryToolVisibility = Layer.merge(
+  McpServer.visibility(
+    Effect.map(BotService, (bots) =>
+      // Untraced: it runs once per tool on every list request.
+      Effect.fnUntraced(function* ({ target }: McpServer.MiddlewareOptions) {
+        if (!memoryTools.has(target)) return true;
+        const scope = yield* Effect.serviceOption(McpInvocationContext);
+        const thread = Option.getOrUndefined(scope)?.thread;
+        if (thread === undefined) return true;
+        return yield* bots.forThread(thread.threadId).pipe(
+          Effect.map((bot) => bot?.memoryMode !== "agent"),
+          Effect.orElseSucceed(() => true),
+        );
+      }),
+    ),
+    { global: true },
+  ),
+  // A switch applies on the bot's next turn: open sessions list their tools again.
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      const bots = yield* BotService;
+      const server = yield* McpServer.McpServer;
+      yield* bots.memoryModeChanges.pipe(
+        Stream.runForEach(() =>
+          server.notifications["notifications/tools/list_changed"]({}).pipe(Effect.ignore),
+        ),
+        Effect.forkScoped,
+      );
+    }),
+  ),
 );
 
 export const BotMcpToolsLive = Layer.merge(

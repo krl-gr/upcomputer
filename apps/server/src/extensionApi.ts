@@ -16,7 +16,7 @@ export type { AnyProviderDriver, ProviderDriver } from "@t3tools/provider-core/s
 export type { BuiltInDriversEnv } from "./provider/builtInDrivers.ts";
 export { McpInvocationContext, hiddenFromOutsideClients } from "./mcp/McpInvocationContext.ts";
 export * as McpToolAccess from "./mcp/McpToolAccess.ts";
-export { resultToolkitRegistration, threadToolVisibility } from "./mcp/McpHttpServer.ts";
+export { resultToolkitRegistration } from "./mcp/McpHttpServer.ts";
 export { PreviewAutomationBroker } from "./mcp/PreviewAutomationBroker.ts";
 export { ServerEnvironment } from "./environment/ServerEnvironment.ts";
 export { ProjectStoreV2 } from "./orchestration-v2/ProjectStore.ts";

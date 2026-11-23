@@ -1392,51 +1392,6 @@ export const resultToolkitRegistration = <Tools extends Record<string, Tool.Any>
     ),
   ).pipe(Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)));
 
-/**
- * Hides some of a product's tools from a calling thread, in lists and calls alike, and has open
- * sessions list their tools again when `changes` emits. Product tools take no local middleware,
- * so the check is global and passes every other tool at once.
- */
-export const threadToolVisibility = <RX>(
-  tools: ReadonlyArray<string>,
-  make: Effect.Effect<
-    {
-      readonly visible: (threadId: ThreadId) => Effect.Effect<boolean>;
-      readonly changes: Stream.Stream<void>;
-    },
-    never,
-    RX
-  >,
-) => {
-  const names = new Set(tools);
-  return Layer.merge(
-    McpServer.visibility(
-      Effect.map(make, ({ visible }) =>
-        // Untraced: it runs once per tool on every list request.
-        Effect.fnUntraced(function* ({ target }: McpServer.MiddlewareOptions) {
-          if (!names.has(target)) return true;
-          const scope = yield* Effect.serviceOption(McpInvocationContext.McpInvocationContext);
-          const thread = Option.getOrUndefined(scope)?.thread;
-          return thread === undefined ? true : yield* visible(thread.threadId);
-        }),
-      ),
-      { global: true },
-    ),
-    Layer.effectDiscard(
-      Effect.gen(function* () {
-        const { changes } = yield* make;
-        const server = yield* McpServer.McpServer;
-        yield* changes.pipe(
-          Stream.runForEach(() =>
-            server.notifications["notifications/tools/list_changed"]({}).pipe(Effect.ignore),
-          ),
-          Effect.forkScoped,
-        );
-      }),
-    ),
-  );
-};
-
 export const layerHtmlToolkit = Layer.mergeAll(
   toolkitRegistration(HtmlRenderToolkit, HtmlHandlers.layerRender),
   imageToolRegistration(registerHtmlPreview(), HtmlHandlers.layerPreview),
