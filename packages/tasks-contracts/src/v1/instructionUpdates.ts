@@ -1,8 +1,14 @@
-import { IsoDateTime, TrimmedNonEmptyString } from "@t3tools/contracts";
+import { IsoDateTime, ProjectId, TrimmedNonEmptyString } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 import { LEGACY_TASK_PROMPT_SETTINGS, type TaskPromptField } from "./prompts.ts";
-import { LEGACY_TASK_STATUSES, TASK_STATUSES, type TaskWorkflowVersion } from "./tasks.ts";
+import {
+  LEGACY_TASK_STATUSES,
+  TASK_STATUSES,
+  TaskId,
+  TaskTag,
+  TaskWorkflowVersion,
+} from "./tasks.ts";
 
 /*
  * Instruction updates: every change to the shipped text and settings that steer
@@ -236,6 +242,36 @@ export const InstructionUpdatesUpdateInput = Schema.Struct({
   ),
 });
 export type InstructionUpdatesUpdateInput = typeof InstructionUpdatesUpdateInput.Type;
+
+/** instruction_updates_get: every entry, and with `id` that entry's brief. */
+export const InstructionUpdatesToolGetInput = Schema.Struct({
+  id: Schema.optional(TrimmedNonEmptyString),
+});
+export type InstructionUpdatesToolGetInput = typeof InstructionUpdatesToolGetInput.Type;
+
+export const InstructionUpdateDecideInput = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  state: Schema.Literals(["applied", "kept", "pending"]),
+});
+export type InstructionUpdateDecideInput = typeof InstructionUpdateDecideInput.Type;
+
+export const TASK_STATUS_RENAME_IDS_LIMIT = 5_000;
+
+/** task_status_rename: one status to another on many tasks in one call. */
+export const TaskStatusRenameInput = Schema.Struct({
+  from: TrimmedNonEmptyString,
+  to: TrimmedNonEmptyString,
+  ids: Schema.optional(
+    Schema.Array(TaskId).check(Schema.isMaxLength(TASK_STATUS_RENAME_IDS_LIMIT)),
+  ),
+  projectId: Schema.optional(ProjectId),
+  tags: Schema.optional(Schema.Array(TaskTag)),
+  automationTemplates: Schema.optional(Schema.Boolean),
+});
+export type TaskStatusRenameInput = typeof TaskStatusRenameInput.Type;
+
+export const TaskWorkflowVersionSetInput = Schema.Struct({ version: TaskWorkflowVersion });
+export type TaskWorkflowVersionSetInput = typeof TaskWorkflowVersionSetInput.Type;
 
 const PROMPT_FIELD_LABEL: Record<TaskPromptField, string> = {
   taskCreation: "Task creation instructions (taskCreation)",
