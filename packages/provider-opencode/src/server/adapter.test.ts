@@ -1713,26 +1713,9 @@ describe("OpenCodeAdapterV2", () => {
     ["decline", "Use rg instead", false, [{ reply: "reject", message: "Use rg instead" }]],
     ["decline", undefined, false, [{ reply: "reject", message: DECLINED }]],
     ["cancel", undefined, false, [{ reply: "reject" }]],
-    // OpenCode rejects a session's other pending asks with a plain reject, which stops its loop.
-    [
-      "decline",
-      "Use rg instead",
-      true,
-      [
-        { requestID: "per_sibling", reply: "reject", message: "Use rg instead" },
-        { reply: "reject", message: "Use rg instead" },
-      ],
-    ],
-    [
-      "decline",
-      undefined,
-      true,
-      [
-        { requestID: "per_sibling", reply: "reject", message: DECLINED },
-        { reply: "reject", message: DECLINED },
-      ],
-    ],
-    // Cancel stops the run, so OpenCode's own plain reject of the sibling is wanted.
+    // OpenCode's reject also drops the session's other pending asks; only the target is answered.
+    ["decline", "Use rg instead", true, [{ reply: "reject", message: "Use rg instead" }]],
+    ["decline", undefined, true, [{ reply: "reject", message: DECLINED }]],
     ["cancel", undefined, true, [{ reply: "reject" }]],
   ] as const)(
     "a %s with feedback %s (pending sibling: %s) reaches the model as OpenCode's rejection message",
@@ -1740,6 +1723,7 @@ describe("OpenCodeAdapterV2", () => {
       Effect.gen(function* () {
         const nativeEvents = asyncEventStream();
         const replies: Array<unknown> = [];
+        const pendingAsks = new Set<string>();
         const harness = yield* makeOpenCodeRuntimeHarness(
           `decline-${decision}-${feedback === undefined ? "plain" : "feedback"}-${sibling}`,
           "root",
@@ -1753,8 +1737,15 @@ describe("OpenCodeAdapterV2", () => {
               children: async () => ({ data: [] }),
             },
             permission: {
-              reply: async (input: unknown) => {
+              // Like OpenCode 1.x: an unknown id is NotFound, and a reject drops every pending ask
+              // of the session.
+              reply: async (input: { requestID: string; reply: string }) => {
+                if (!pendingAsks.has(input.requestID)) {
+                  throw new Error(`PermissionNotFoundError: ${input.requestID}`);
+                }
                 replies.push(input);
+                if (input.reply === "reject") pendingAsks.clear();
+                else pendingAsks.delete(input.requestID);
                 return { data: true };
               },
             },
@@ -1772,8 +1763,9 @@ describe("OpenCodeAdapterV2", () => {
           Effect.forkScoped,
         );
         const ask = (id: string, command: string) =>
-          Effect.promise(() =>
-            nativeEvents.push({
+          Effect.promise(() => {
+            pendingAsks.add(id);
+            return nativeEvents.push({
               type: "permission.asked",
               properties: {
                 id,
@@ -1783,8 +1775,8 @@ describe("OpenCodeAdapterV2", () => {
                 always: ["rm *"],
                 metadata: {},
               },
-            }),
-          );
+            });
+          });
         yield* ask("per_bash", "rm -rf build");
         if (sibling) yield* ask("per_sibling", "rm -rf dist");
         const [request] = yield* Fiber.join(surfaced);
