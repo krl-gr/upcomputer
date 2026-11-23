@@ -65,6 +65,7 @@ import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as OpenCode2Client from "./OpenCode2Client.ts";
 import * as OpenCode2Server from "./OpenCode2Server.ts";
 import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
+import { servedAutomaticModel } from "../automaticModels.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import { readableProviderErrorMessage } from "../providerErrorMessage.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -877,8 +878,16 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     const directoryOf = (cwd: string | null | undefined) => cwd ?? host.paths.cwd;
     const windowOf = (cwd: string | null | undefined, model: string) =>
       contextWindows.get(directoryOf(cwd))?.get(model);
-    const listedModelRef = (selection: ModelSelection, cwd: string | null | undefined) =>
-      modelRef(selection, modelVariants.get(directoryOf(cwd))?.get(selection.model));
+    const listedModelRef = (selection: ModelSelection, cwd: string | null | undefined) => {
+      const listed = modelVariants.get(directoryOf(cwd));
+      const model = servedAutomaticModel(selection.model, (slug) =>
+        listed === undefined || listed.size === 0 ? undefined : listed.has(slug),
+      );
+      return modelRef(
+        model === selection.model ? selection : { ...selection, model },
+        listed?.get(model),
+      );
+    };
     const now = yield* DateTime.now;
     let session: OrchestrationV2ProviderSession = {
       id: input.providerSessionId,

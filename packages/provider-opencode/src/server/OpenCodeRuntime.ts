@@ -33,6 +33,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
 import { isWindowsCommandNotFound } from "@t3tools/provider-core/server/snapshotProbe";
 import * as OpenCodeServerLedger from "./OpenCodeServerLedger.ts";
+import { automaticModelStandIns, servedAutomaticModel } from "./automaticModels.ts";
 import { collectStreamAsString } from "@t3tools/provider-core/server/snapshotProbe";
 import * as NetService from "@t3tools/shared/Net";
 import { AgentScope } from "@t3tools/shared/AgentScope";
@@ -282,6 +283,33 @@ export interface OpenCodeCatalogModel {
 
 export type OpenCodeVariantCache = Map<string, OpenCodeCatalogModel | undefined>;
 
+const readProviderList = (client: OpencodeClient, abortSignal: AbortSignal | undefined) =>
+  runOpenCodeSdk("provider.list", (signal) =>
+    client.provider.list(undefined, {
+      signal: abortSignal ? AbortSignal.any([signal, abortSignal]) : signal,
+    }),
+  ).pipe(
+    Effect.timeout("10 seconds"),
+    Effect.map((response) => response.data),
+    Effect.orElseSucceed(() => undefined),
+  );
+
+// Keep only what a model needs; provider.list can return several megabytes.
+function catalogModelEntry(
+  list: ProviderListResponse,
+  model: ParsedOpenCodeModelSlug,
+): OpenCodeCatalogModel | undefined {
+  const catalogModel = list.all.find((provider) => provider.id === model.providerID)?.models[
+    model.modelID
+  ];
+  return (
+    catalogModel && {
+      variants: new Set(Object.keys(catalogModel.variants ?? {})),
+      contextWindow: catalogModel.limit?.input ?? catalogModel.limit?.context,
+    }
+  );
+}
+
 /** The model's catalog entry; a failed read returns undefined and is not cached. */
 export const readOpenCodeCatalogModel = Effect.fnUntraced(function* (
   client: OpencodeClient,
@@ -292,25 +320,40 @@ export const readOpenCodeCatalogModel = Effect.fnUntraced(function* (
   const key = `${model.providerID}/${model.modelID}`;
   if (cache?.has(key)) return cache.get(key);
 
-  const response = yield* runOpenCodeSdk("provider.list", (signal) =>
-    client.provider.list(undefined, {
-      signal: abortSignal ? AbortSignal.any([signal, abortSignal]) : signal,
-    }),
-  ).pipe(
-    Effect.timeout("10 seconds"),
-    Effect.orElseSucceed(() => undefined),
-  );
-  if (response?.data === undefined) return undefined;
-
-  const catalogModel = response.data.all.find((provider) => provider.id === model.providerID)
-    ?.models[model.modelID];
-  const entry: OpenCodeCatalogModel | undefined = catalogModel && {
-    variants: new Set(Object.keys(catalogModel.variants ?? {})),
-    contextWindow: catalogModel.limit?.input ?? catalogModel.limit?.context,
-  };
-  // Keep only what this model needs; provider.list can return several megabytes.
+  const list = yield* readProviderList(client, abortSignal);
+  if (list === undefined) return undefined;
+  const entry = catalogModelEntry(list, model);
   cache?.set(key, entry);
   return entry;
+});
+
+/**
+ * UpComputer: the model to prompt. An automatic free model this server no longer
+ * serves gives way to the next one it does (see automaticModels.ts); a failed
+ * catalog read keeps the selection.
+ */
+export const resolveOpenCodeServedModel = Effect.fnUntraced(function* (
+  client: OpencodeClient,
+  model: ParsedOpenCodeModelSlug,
+  cache: OpenCodeVariantCache,
+  abortSignal?: AbortSignal,
+) {
+  const slug = `${model.providerID}/${model.modelID}`;
+  const standIns = automaticModelStandIns(slug);
+  if (standIns.length === 0) return model;
+  const slugs = [slug, ...standIns];
+  if (slugs.some((candidate) => !cache.has(candidate))) {
+    const list = yield* readProviderList(client, abortSignal);
+    if (list === undefined) return model;
+    for (const candidate of slugs) {
+      const parsed = parseOpenCodeModelSlug(candidate);
+      if (parsed !== null) cache.set(candidate, catalogModelEntry(list, parsed));
+    }
+  }
+  const served = servedAutomaticModel(slug, (candidate) =>
+    cache.has(candidate) ? cache.get(candidate) !== undefined : undefined,
+  );
+  return served === slug ? model : (parseOpenCodeModelSlug(served) ?? model);
 });
 
 export const resolveOpenCodeVariant = Effect.fnUntraced(function* (

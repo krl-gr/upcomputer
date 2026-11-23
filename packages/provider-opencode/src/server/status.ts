@@ -30,6 +30,7 @@ import {
   type ServerProviderDraft,
 } from "@t3tools/provider-core/server/snapshotProbe";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
+import { ZEN_AUTOMATIC_MODELS } from "./automaticModels.ts";
 import type { ProbedOpenCode } from "./versionProbe.ts";
 import type { Agent, ProviderListResponse } from "@opencode-ai/sdk/v2";
 import { ServiceUnavailableError } from "@opencode/protocol/errors";
@@ -405,12 +406,6 @@ function flattenOpenCodeModels(
 }
 
 const ZEN_PROVIDER_ID = "opencode";
-// UpComputer: Zen's free models that keep no data, in the first-run order.
-const ZEN_AUTOMATIC_MODELS = [
-  "opencode/glm-5.3-flash-free",
-  "opencode/deepseek-v4.1-flash-free",
-  "opencode/minimax-m3.1-flash-free",
-];
 // Free while its team collects feedback on it, so only a user's own choice.
 const ZEN_NEVER_AUTOMATIC = "opencode/big-pickle";
 
@@ -419,14 +414,14 @@ const ZEN_NEVER_AUTOMATIC = "opencode/big-pickle";
  * by name, which moves as OpenCode's catalog grows. A provider the user signed
  * in to wins, with OpenCode's own default for it where OpenCode names one. Zen,
  * connected for everyone, names Big Pickle, so it gets a zero-retention free
- * model instead.
+ * model instead. A deprecated or superseded model is never automatic.
  */
 function markOpenCodeDefaultModel(
   models: ReadonlyArray<ServerProviderModel>,
   connected: ReadonlyArray<string>,
   defaults: Readonly<Record<string, string>>,
 ): ReadonlyArray<ServerProviderModel> {
-  const listed = new Set(models.map((model) => model.slug));
+  const listed = new Set(models.filter((model) => !model.isLegacy).map((model) => model.slug));
   const automatic = (slug: string | undefined) =>
     slug !== undefined && listed.has(slug) && slug !== ZEN_NEVER_AUTOMATIC ? slug : undefined;
   const openCodeDefault = (providerId: string) =>
@@ -437,11 +432,17 @@ function markOpenCodeDefaultModel(
   const defaultSlug =
     signedIn.map(openCodeDefault).find((slug) => slug !== undefined) ??
     signedIn
-      .map((providerId) => models.find((model) => model.slug.startsWith(`${providerId}/`))?.slug)
+      .map(
+        (providerId) =>
+          models.find(
+            (model) =>
+              model.slug.startsWith(`${providerId}/`) && automatic(model.slug) !== undefined,
+          )?.slug,
+      )
       .find((slug) => slug !== undefined) ??
     ZEN_AUTOMATIC_MODELS.find((slug) => listed.has(slug)) ??
     openCodeDefault(ZEN_PROVIDER_ID) ??
-    models.find((model) => model.slug !== ZEN_NEVER_AUTOMATIC)?.slug;
+    models.find((model) => automatic(model.slug) !== undefined)?.slug;
   return models.map((model) =>
     model.slug === defaultSlug ? { ...model, isDefault: true } : model,
   );

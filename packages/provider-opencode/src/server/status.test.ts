@@ -792,6 +792,20 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
           ),
           ["opencode/deepseek-v4.1-flash-free"],
         ],
+        // The catalog still lists a model Zen stopped serving, marked deprecated.
+        [
+          {
+            ...noLoginZen,
+            models: {
+              ...noLoginZen.models,
+              "glm-5.3-flash-free": {
+                ...model("glm-5.3-flash-free", "GLM-5.3-Flash Free"),
+                status: "deprecated",
+              },
+            },
+          },
+          ["opencode/deepseek-v4.1-flash-free"],
+        ],
         [
           zen(["big-pickle", "Big Pickle"], ["minimax-m3.1-flash-free", "MiniMax M3.1 Flash Free"]),
           ["opencode/minimax-m3.1-flash-free"],

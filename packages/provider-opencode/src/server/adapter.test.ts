@@ -410,6 +410,55 @@ describe("OpenCodeAdapterV2", () => {
     }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
   );
 
+  it.effect.each([
+    ["opencode/glm-5.3-flash-free", "deepseek-v4.1-flash-free"],
+    ["opencode/gone-free", "gone-free"],
+  ] as const)("prompts %s as %s when the server no longer lists it", ([selected, sent]) =>
+    Effect.gen(function* () {
+      const suffix = `served-${sent.replaceAll(".", "-")}`;
+      const nativeEvents = asyncEventStream();
+      const inputs: Array<Record<string, unknown>> = [];
+      const harness = yield* makeOpenCodeRuntimeHarness(
+        suffix,
+        suffix,
+        {
+          event: {
+            subscribe: async (_input: unknown, options: { signal?: AbortSignal }) => {
+              options.signal?.addEventListener("abort", () => nativeEvents.close(), { once: true });
+              return { stream: nativeEvents.stream };
+            },
+          },
+          provider: {
+            list: async () => ({
+              data: {
+                all: [
+                  {
+                    id: "opencode",
+                    models: {
+                      "deepseek-v4.1-flash-free": { id: "deepseek-v4.1-flash-free", variants: {} },
+                      "minimax-m3.1-flash-free": { id: "minimax-m3.1-flash-free", variants: {} },
+                    },
+                  },
+                ],
+              },
+            }),
+          },
+          session: {
+            create: async () => ({ data: { id: suffix, time: { created: 1, updated: 1 } } }),
+            promptAsync: async (input: Record<string, unknown>) => {
+              inputs.push(input);
+              return { data: true };
+            },
+          },
+        },
+        {},
+        { model: selected, options: [{ id: "variant", value: "medium" }] },
+      );
+      yield* harness.startTurn();
+      assert.deepEqual(inputs[0]?.model, { providerID: "opencode", modelID: sent });
+    }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
+  );
+
   it.effect("reuses successful model variants for the session and retries failed inventories", () =>
     Effect.gen(function* () {
       const sessionId = "variant-cache";

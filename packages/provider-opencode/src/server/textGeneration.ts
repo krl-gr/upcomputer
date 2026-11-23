@@ -255,17 +255,25 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
           ).pipe(Effect.timeout("5 seconds"), Effect.ignore({ log: "Warn" })),
         );
         const selectedAgent = getModelSelectionStringOptionValue(input.modelSelection, "agent");
-        const selectedVariant = yield* OpenCodeRuntime.resolveOpenCodeVariant(
+        const catalog: OpenCodeRuntime.OpenCodeVariantCache = new Map();
+        const model = yield* OpenCodeRuntime.resolveOpenCodeServedModel(
           client,
           parsedModel,
+          catalog,
+        );
+        const selectedVariant = yield* OpenCodeRuntime.resolveOpenCodeVariant(
+          client,
+          model,
           getModelSelectionStringOptionValue(input.modelSelection, "variant"),
+          undefined,
+          catalog,
         );
         const promptContext = {
           operation: input.operation,
           cwd: input.cwd,
           sessionId: session.data.id,
-          providerId: parsedModel.providerID,
-          modelId: parsedModel.modelID,
+          providerId: model.providerID,
+          modelId: model.modelID,
         };
 
         const result = yield* Effect.tryPromise({
@@ -273,7 +281,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
             client.session.prompt(
               {
                 sessionID: session.data.id,
-                model: parsedModel,
+                model,
                 ...(selectedAgent ? { agent: selectedAgent } : {}),
                 ...(selectedVariant ? { variant: selectedVariant } : {}),
                 parts: [{ type: "text", text: input.prompt }, ...fileParts],

@@ -301,7 +301,8 @@ interface ActiveOpenCodeTurn {
   readonly runId: ProviderAdapter.ProviderAdapterV2TurnInput["runId"] | null;
   readonly rootNodeId: ProviderAdapter.ProviderAdapterV2TurnInput["rootNodeId"];
   readonly appThread: OrchestrationV2AppThread;
-  readonly modelSelection: ModelSelection;
+  /** UpComputer: an automatic model the server no longer serves is swapped at the first prompt. */
+  modelSelection: ModelSelection;
   readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
   readonly providerTurnId: OrchestrationV2ProviderTurn["id"];
   readonly providerThreadId: OrchestrationV2ProviderTurn["providerThreadId"];
@@ -3590,16 +3591,31 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           abortController: AbortController,
           messageText: string,
         ) {
-          const { variant, ...payloadWithoutVariant } = inputPayload;
+          const { variant, model: selectedModel, ...payloadWithoutModel } = inputPayload;
+          const model =
+            selectedModel &&
+            (yield* OpenCodeRuntime.resolveOpenCodeServedModel(
+              client,
+              selectedModel,
+              variantCache,
+              abortController.signal,
+            ));
+          if (model !== selectedModel && model !== undefined) {
+            turn.modelSelection = {
+              ...turn.modelSelection,
+              model: `${model.providerID}/${model.modelID}`,
+            };
+          }
           const selectedVariant = yield* OpenCodeRuntime.resolveOpenCodeVariant(
             client,
-            inputPayload.model,
+            model,
             variant,
             abortController.signal,
             variantCache,
           );
           const payload = {
-            ...payloadWithoutVariant,
+            ...payloadWithoutModel,
+            ...(model === undefined ? {} : { model }),
             ...(selectedVariant === undefined ? {} : { variant: selectedVariant }),
           };
           const match = messageText.trim().match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
