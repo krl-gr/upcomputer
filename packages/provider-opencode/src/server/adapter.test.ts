@@ -1612,6 +1612,296 @@ describe("OpenCodeAdapterV2", () => {
     }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
   );
 
+  it.effect.each(["full-access", "approval-required"] as const)(
+    "answers OpenCode's doom-loop ask, which skips session rules, only when approvals are off (%s)",
+    (runtimeMode) =>
+      Effect.gen(function* () {
+        const nativeEvents = asyncEventStream();
+        const replies: Array<unknown> = [];
+        const bothReplied = promiseGate<void>();
+        const harness = yield* makeOpenCodeRuntimeHarness(`doom-loop-${runtimeMode}`, "root", {
+          event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+          session: {
+            create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+            get: async (input: { sessionID: string }) => ({
+              data: { id: input.sessionID, parentID: "root" },
+            }),
+            update: async () => ({ data: { id: "root" } }),
+            promptAsync: async () => ({ data: true }),
+            abort: async () => ({ data: true }),
+            children: async () => ({ data: [] }),
+          },
+          permission: {
+            reply: async (input: unknown) => {
+              if (replies.push(input) === 2) bothReplied.resolve();
+              return { data: true };
+            },
+          },
+        });
+        yield* harness.startTurn(
+          "hello",
+          undefined,
+          runtimePolicy(runtimeMode, { cwd: "/workspace" }),
+        );
+        const surfaced = yield* harness.runtime.events.pipe(
+          Stream.filter((event) => event.type === "runtime_request.updated"),
+          Stream.take(1),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+        yield* Effect.promise(() =>
+          nativeEvents.push({
+            type: "permission.asked",
+            properties: {
+              id: "per_doom",
+              sessionID: "root",
+              permission: "doom_loop",
+              patterns: ["t3-code_task_status"],
+              always: ["t3-code_task_status"],
+              metadata: {},
+            },
+          }),
+        );
+        if (runtimeMode === "full-access") {
+          // A task child's ask belongs to the root turn's policy.
+          yield* Effect.promise(() =>
+            nativeEvents.push({
+              type: "permission.asked",
+              properties: {
+                id: "per_child_doom",
+                sessionID: "ses_child",
+                permission: "doom_loop",
+                patterns: ["read"],
+                always: ["read"],
+                metadata: {},
+              },
+            }),
+          );
+        }
+        yield* Effect.promise(() =>
+          nativeEvents.push({
+            type: "question.asked",
+            properties: {
+              id: "question",
+              sessionID: "root",
+              questions: [{ header: "Next", question: "Next?", options: [] }],
+            },
+          }),
+        );
+        const [request] = yield* Fiber.join(surfaced);
+        if (request?.type !== "runtime_request.updated") throw new Error("Request missing");
+        if (runtimeMode === "full-access") {
+          yield* Effect.promise(() => bothReplied.promise);
+          // Once, not always: OpenCode keeps "always" grants for every session of the server.
+          assert.deepEqual(replies, [
+            { requestID: "per_doom", reply: "once" },
+            { requestID: "per_child_doom", reply: "once" },
+          ]);
+          assert.equal(request.runtimeRequest.kind, "user_input", "the guard never surfaces");
+          return;
+        }
+        // Supervised keeps the guard: a person is there to approve another identical call.
+        assert.equal(request.runtimeRequest.kind, "command");
+      }).pipe(
+        Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+        Effect.scoped,
+      ),
+  );
+
+  const DECLINED = "Continue without it, or ask the user how to proceed.";
+  it.effect.each([
+    ["decline", "Use rg instead", false, [{ reply: "reject", message: "Use rg instead" }]],
+    ["decline", undefined, false, [{ reply: "reject", message: DECLINED }]],
+    ["cancel", undefined, false, [{ reply: "reject" }]],
+    // OpenCode's reject also drops the session's other pending asks; only the target is answered.
+    ["decline", "Use rg instead", true, [{ reply: "reject", message: "Use rg instead" }]],
+    ["decline", undefined, true, [{ reply: "reject", message: DECLINED }]],
+    ["cancel", undefined, true, [{ reply: "reject" }]],
+  ] as const)(
+    "a %s with feedback %s (pending sibling: %s) reaches the model as OpenCode's rejection message",
+    ([decision, feedback, sibling, expected]) =>
+      Effect.gen(function* () {
+        const nativeEvents = asyncEventStream();
+        const replies: Array<unknown> = [];
+        const pendingAsks = new Set<string>();
+        const harness = yield* makeOpenCodeRuntimeHarness(
+          `decline-${decision}-${feedback === undefined ? "plain" : "feedback"}-${sibling}`,
+          "root",
+          {
+            event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+            session: {
+              create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+              update: async () => ({ data: { id: "root" } }),
+              promptAsync: async () => ({ data: true }),
+              abort: async () => ({ data: true }),
+              children: async () => ({ data: [] }),
+            },
+            permission: {
+              // Like OpenCode 1.x: an unknown id is NotFound, and a reject drops every pending ask
+              // of the session.
+              reply: async (input: { requestID: string; reply: string }) => {
+                if (!pendingAsks.has(input.requestID)) {
+                  throw new Error(`PermissionNotFoundError: ${input.requestID}`);
+                }
+                replies.push(input);
+                if (input.reply === "reject") pendingAsks.clear();
+                else pendingAsks.delete(input.requestID);
+                return { data: true };
+              },
+            },
+          },
+        );
+        yield* harness.startTurn(
+          "hello",
+          undefined,
+          runtimePolicy("approval-required", { cwd: "/workspace" }),
+        );
+        const surfaced = yield* harness.runtime.events.pipe(
+          Stream.filter((event) => event.type === "runtime_request.updated"),
+          Stream.take(sibling ? 2 : 1),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+        const ask = (id: string, command: string) =>
+          Effect.promise(() => {
+            pendingAsks.add(id);
+            return nativeEvents.push({
+              type: "permission.asked",
+              properties: {
+                id,
+                sessionID: "root",
+                permission: "bash",
+                patterns: [command],
+                always: ["rm *"],
+                metadata: {},
+              },
+            });
+          });
+        yield* ask("per_bash", "rm -rf build");
+        if (sibling) yield* ask("per_sibling", "rm -rf dist");
+        const [request] = yield* Fiber.join(surfaced);
+        if (request?.type !== "runtime_request.updated") throw new Error("Approval missing");
+        assert.deepInclude(request.runtimeRequest.responseCapability, {
+          type: "live",
+          supportsFeedback: true,
+        });
+        yield* harness.runtime.respondToRuntimeRequest({
+          requestId: request.runtimeRequest.id,
+          decision,
+          ...(feedback === undefined ? {} : { feedback }),
+        });
+        assert.deepEqual(
+          replies,
+          expected.map((reply) => ({ requestID: "per_bash", ...reply })),
+        );
+      }).pipe(
+        Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+        Effect.scoped,
+      ),
+  );
+
+  it.effect("a declined doom-loop guard stops the run and leaves a redirect for the next run", () =>
+    Effect.gen(function* () {
+      const nativeEvents = asyncEventStream();
+      const replies: Array<unknown> = [];
+      const prompts: Array<unknown> = [];
+      const harness = yield* makeOpenCodeRuntimeHarness("doom-loop-decline", "root", {
+        event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+        session: {
+          create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+          update: async () => ({ data: { id: "root" } }),
+          promptAsync: async (input: unknown) => {
+            prompts.push(input);
+            return { data: true };
+          },
+          abort: async () => ({ data: true }),
+          children: async () => ({ data: [] }),
+        },
+        permission: {
+          reply: async (input: unknown) => {
+            replies.push(input);
+            return { data: true };
+          },
+        },
+      });
+      yield* harness.startTurn(
+        "hello",
+        undefined,
+        runtimePolicy("approval-required", { cwd: "/workspace" }),
+      );
+      const surfaced = yield* harness.runtime.events.pipe(
+        Stream.filter((event) => event.type === "runtime_request.updated"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "permission.asked",
+          properties: {
+            id: "per_doom",
+            sessionID: "root",
+            permission: "doom_loop",
+            patterns: ["t3-code_task_status"],
+            always: ["t3-code_task_status"],
+            metadata: {},
+          },
+        }),
+      );
+      const [request] = yield* Fiber.join(surfaced);
+      if (request?.type !== "runtime_request.updated") throw new Error("Approval missing");
+      // OpenCode ends the run on any doom-loop rejection, so a message there never reaches the model.
+      assert.notProperty(request.runtimeRequest.responseCapability, "supportsFeedback");
+      yield* harness.runtime.respondToRuntimeRequest({
+        requestId: request.runtimeRequest.id,
+        decision: "decline",
+      });
+      assert.deepEqual(replies, [{ requestID: "per_doom", reply: "reject" }]);
+      const providerTurnId = request.runtimeRequest.providerTurnId;
+      if (providerTurnId === null) throw new Error("Approval has no turn");
+      const steer = yield* harness.runtime
+        .steerTurn({
+          threadId: harness.threadId,
+          runId: harness.runId,
+          providerThread: harness.providerThread,
+          providerTurnId,
+          message: {
+            messageId: MessageId.make("message-opencode-redirect"),
+            text: "Stop polling and write the report",
+            attachments: [],
+            createdBy: "user",
+            creationSource: "web",
+          },
+        })
+        .pipe(Effect.flip);
+      assert.equal(steer._tag, "ProviderAdapterSteerDeclinedError");
+      assert.equal(prompts.length, 1, "the redirect is not sent into the stopping run");
+      const terminal = yield* harness.runtime.events.pipe(
+        Stream.filter((event) => event.type === "turn.terminal"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "session.error",
+          properties: {
+            sessionID: "root",
+            error: {
+              name: "UnknownError",
+              data: { message: "The user rejected permission to use this specific tool call." },
+            },
+          },
+        }),
+      );
+      const [ended] = yield* Fiber.join(terminal);
+      assert.deepInclude(ended, { status: "interrupted", failure: null });
+    }).pipe(
+      Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+      Effect.scoped,
+    ),
+  );
+
   it.effect(
     "preserves tool lifecycle, approval kinds, and late assistant text without cached tool payloads",
     () =>

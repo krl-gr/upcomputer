@@ -325,6 +325,8 @@ interface ActiveOpenCodeTurn {
   readonly priorWakePromptIds: Set<string>;
   priorWakeSettled: Deferred.Deferred<void> | null;
   interrupted: boolean;
+  /** The user declined a request whose rejection ends OpenCode's run, such as its doom-loop guard. */
+  stoppedByDecline: boolean;
   finalized: boolean;
   contextOverflow: OrchestrationV2ProviderFailure | null;
   /** OpenCode is waiting to retry the model request. */
@@ -672,6 +674,8 @@ const OPENCODE_RESTRICTED_PERMISSIONS = [
 
 const T3_MCP_SERVER_NAME = "t3-code";
 
+const OPENCODE_DECLINED_MESSAGE = "Continue without it, or ask the user how to proceed.";
+
 /**
  * OpenCode sends every MCP tool to the model next to its own, and
  * OpenAI-compatible APIs reject a request with more than 128 tools. The T3 MCP
@@ -686,25 +690,39 @@ export const openCodeT3McpHeaders = (authorizationHeader: string) => ({
 export const OPENCODE_T3_TOOL_SEARCH_INSTRUCTIONS =
   "Up.computer's MCP server lists only a few of its tools at first. Call `tool_search` to load the others, then call them by name: search `computer` for the `computer_*` tools that see and control apps on this computer (computer use), `browser` for the `preview_*` browser you share with the user, or exact names such as `task_update` or `t3_thread_launch`. After Up.computer restarts, tools you loaded earlier are not listed until you search for them again: when a tool you used before is missing, search for its exact name instead of calling another tool.";
 
+function openCodeRequiresApproval(
+  runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+): boolean {
+  const rawApprovalPolicy = runtimePolicy.approvalPolicy;
+  const approvalPolicy = nonEmptyString(rawApprovalPolicy);
+  return approvalPolicy === undefined
+    ? (typeof rawApprovalPolicy === "object" && rawApprovalPolicy !== null) ||
+        runtimePolicy.runtimeMode !== "full-access"
+    : approvalPolicy !== "never";
+}
+
+/** Full access: nothing asks the user, so no OpenCode request should wait for one. */
+function openCodeAllowsEverything(
+  runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+): boolean {
+  const sandboxType = recordString(recordValue(runtimePolicy, "sandboxPolicy"), "type");
+  return (
+    !openCodeRequiresApproval(runtimePolicy) &&
+    (sandboxType === "externalSandbox" ||
+      sandboxType === "dangerFullAccess" ||
+      (sandboxType === undefined && runtimePolicy.runtimeMode === "full-access"))
+  );
+}
+
 /** OpenCode has no OS sandbox; permission rules must enforce non-interactive policies too. */
 export function openCodePermissionRules(
   runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
 ): PermissionRuleset {
   const sandboxPolicy = recordValue(runtimePolicy, "sandboxPolicy");
   const sandboxType = recordString(sandboxPolicy, "type");
-  const rawApprovalPolicy = runtimePolicy.approvalPolicy;
-  const approvalPolicy = nonEmptyString(rawApprovalPolicy);
-  const requiresApproval =
-    approvalPolicy === undefined
-      ? (typeof rawApprovalPolicy === "object" && rawApprovalPolicy !== null) ||
-        runtimePolicy.runtimeMode !== "full-access"
-      : approvalPolicy !== "never";
-  const externallySandboxed = sandboxType === "externalSandbox";
-  const dangerFullAccess = sandboxType === "dangerFullAccess";
-  const implicitFullAccess =
-    sandboxType === undefined && runtimePolicy.runtimeMode === "full-access";
+  const requiresApproval = openCodeRequiresApproval(runtimePolicy);
 
-  if (!requiresApproval && (externallySandboxed || dangerFullAccess || implicitFullAccess)) {
+  if (openCodeAllowsEverything(runtimePolicy)) {
     // Task children copy only external_directory and deny rules before their first tool call.
     return [
       { permission: "*", pattern: "*", action: "allow" },
@@ -987,7 +1005,9 @@ function terminalStatusForError(
   event: Extract<OpenCodeEvent, { type: "session.error" }>,
   turn: ActiveOpenCodeTurn,
 ): TerminalTurnStatus {
-  return turn.interrupted || isMessageAbortedError(event) ? "interrupted" : "failed";
+  return turn.interrupted || turn.stoppedByDecline || isMessageAbortedError(event)
+    ? "interrupted"
+    : "failed";
 }
 
 // Events of one session's work; other events update adapter bookkeeping and are never held.
@@ -1181,6 +1201,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         const commandControllers = new Map<string, Set<AbortController>>();
         const pendingRequests = new Map<string, PendingOpenCodeRequest>();
         const pendingRequestsByNativeId = new Map<string, PendingOpenCodeRequest>();
+        const declineStoppedTurnIds = new Set<string>();
         const subagentsByNativeItemId = new Map<string, OpenCodeSubagentContext>();
         const subagentsByChildSessionId = new Map<string, OpenCodeSubagentContext>();
         const relatedSessionOwners = new Map<string, OpenCodeThreadState>();
@@ -2188,6 +2209,10 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             responseCapability: {
               type: "live",
               providerSessionId: inputProviderSessionId,
+              // A rejection's message reaches the model, except the doom-loop guard's, which ends the run.
+              ...(request.type === "permission" && request.value.permission !== "doom_loop"
+                ? { supportsFeedback: true }
+                : {}),
             },
             createdAt: now,
             resolvedAt: null,
@@ -2335,6 +2360,23 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           return undefined;
         });
 
+        // Full access sets `*: allow`, but OpenCode's doom-loop guard asks with only the agent's
+        // rules, so it still asks. "once": an "always" grant would reach every session of the server.
+        const answerWithoutAsking = (nativeRequestId: string) =>
+          sdkCall("permission.reply", { requestID: nativeRequestId, reply: "once" }, (signal) =>
+            client.permission.reply({ requestID: nativeRequestId, reply: "once" }, { signal }),
+          ).pipe(
+            Effect.timeout("10 seconds"),
+            Effect.as(true),
+            Effect.tap(() => Effect.sync(() => rememberSettledRequest(nativeRequestId))),
+            Effect.catch((cause) =>
+              Effect.logWarning("OpenCode request could not be answered for full access", {
+                nativeRequestId,
+                cause,
+              }).pipe(Effect.as(false)),
+            ),
+          );
+
         const routeRuntimeRequest = Effect.fnUntraced(function* (
           nativeRequestId: string,
           sessionId: string,
@@ -2353,6 +2395,13 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             const state = yield* resolveSessionOwner(sessionId);
             const owner = state === undefined ? undefined : topLevelRequestOwner(state);
             if (owner === undefined) return false;
+            if (
+              request.type === "permission" &&
+              openCodeAllowsEverything(owner.turn.runtimePolicy) &&
+              (yield* answerWithoutAsking(nativeRequestId))
+            ) {
+              return true;
+            }
             yield* emitRuntimeRequest(owner, nativeRequestId, request);
             return true;
           });
@@ -2652,6 +2701,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             priorWakePromptIds: new Set(),
             priorWakeSettled: null,
             interrupted: false,
+            stoppedByDecline: false,
             finalized: false,
             contextOverflow: null,
             providerRetry: null,
@@ -3397,8 +3447,13 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                     text: message,
                     code: error?.name ?? null,
                   });
+              // A run the user's decline ended stops like a Stop, not as an error.
+              const stoppedByDecline = states.some(
+                (state) => state.activeTurn?.stoppedByDecline === true,
+              );
               if (
                 !isMessageAbortedError(event) &&
+                !stoppedByDecline &&
                 (event.properties.sessionID === undefined ||
                   states.some((state) => state.parentSubagent === null))
               ) {
@@ -3483,7 +3538,10 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               abortController.signal.aborted
                 ? Effect.void
                 : Effect.gen(function* () {
-                    const detail = `OpenCode server exited unexpectedly (${code}).`;
+                    const detail =
+                      code === null
+                        ? "OpenCode server stopped unexpectedly."
+                        : `OpenCode server exited unexpectedly (exit code ${code}).`;
                     nativeStreamFailure = makeProviderFailure({
                       message: detail,
                       class: "transport_error",
@@ -3495,7 +3553,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                         yield* finalizeTurn(state, state.activeTurn, "failed", {
                           failure: makeProviderCrashFailure({
                             driver: OPENCODE_PROVIDER,
-                            reason: `exit code ${code}`,
+                            reason: code === null ? undefined : `exit code ${code}`,
                             detail,
                           }),
                           threadDisposition: "broken",
@@ -4032,6 +4090,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 priorWakePromptIds: new Set(),
                 priorWakeSettled: null,
                 interrupted: false,
+                stoppedByDecline: false,
                 finalized: false,
                 contextOverflow: null,
                 providerRetry: null,
@@ -4260,6 +4319,13 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           ),
           steerTurn: Effect.fn("OpencodeAdapter.steerTurn")(
             function* (steerInput) {
+              if (declineStoppedTurnIds.has(String(steerInput.providerTurnId))) {
+                return yield* new ProviderAdapter.ProviderAdapterSteerDeclinedError({
+                  driver: OPENCODE_PROVIDER,
+                  providerThreadId: steerInput.providerThread.id,
+                  providerTurnId: steerInput.providerTurnId,
+                });
+              }
               const sessionId = nativeThreadId(steerInput.providerThread);
               const state = threads.get(sessionId);
               const turn = state?.activeTurn;
@@ -4375,14 +4441,15 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             },
             (effect, steerInput) =>
               effect.pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new ProviderAdapter.ProviderAdapterSteerRunError({
-                      driver: OPENCODE_PROVIDER,
-                      providerThreadId: steerInput.providerThread.id,
-                      providerTurnId: steerInput.providerTurnId,
-                      cause,
-                    }),
+                Effect.mapError((cause) =>
+                  cause._tag === "ProviderAdapterSteerDeclinedError"
+                    ? cause
+                    : new ProviderAdapter.ProviderAdapterSteerRunError({
+                        driver: OPENCODE_PROVIDER,
+                        providerThreadId: steerInput.providerThread.id,
+                        providerTurnId: steerInput.providerTurnId,
+                        cause,
+                      }),
                 ),
               ),
           ),
@@ -4520,17 +4587,29 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 );
               }
               const reply = OpenCodeRuntime.toOpenCodePermissionReply(requestInput.decision);
-              yield* sdkCall(
-                "permission.reply",
-                { requestID: pending.nativeRequestId, reply },
-                (signal) =>
-                  client.permission.reply(
-                    {
-                      requestID: pending.nativeRequestId,
-                      reply,
-                    },
-                    { signal },
-                  ),
+              const stopsRun =
+                reply === "reject" &&
+                (requestInput.decision !== "decline" ||
+                  pending.permission?.permission === "doom_loop");
+              // With a message OpenCode fails only the tool call and the model keeps going.
+              const message = stopsRun
+                ? undefined
+                : reply === "reject"
+                  ? requestInput.feedback?.trim() || OPENCODE_DECLINED_MESSAGE
+                  : undefined;
+              // A redirect sent into a run that is stopping would be lost; it waits for the next run.
+              if (stopsRun && pending.nativeSessionId === pending.state.nativeSessionId) {
+                pending.turn.stoppedByDecline = true;
+                if (declineStoppedTurnIds.size >= 256) declineStoppedTurnIds.clear();
+                declineStoppedTurnIds.add(String(pending.turn.providerTurnId));
+              }
+              const body = {
+                requestID: pending.nativeRequestId,
+                reply,
+                ...(message === undefined ? {} : { message }),
+              };
+              yield* sdkCall("permission.reply", body, (signal) =>
+                client.permission.reply(body, { signal }),
               ).pipe(Effect.timeout("10 seconds"));
             },
             (effect, requestInput) =>
