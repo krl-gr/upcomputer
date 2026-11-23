@@ -91,7 +91,12 @@ export function InstructionUpdatesNotification({ onClose }: { readonly onClose: 
           type: "info",
           title: gt("Saved for later"),
           description: gt("Find it in Settings, under Instructions."),
-          actionProps: { children: gt("Open"), onClick: openSettings },
+          actionProps: {
+            children: gt("Open", {
+              $context: "button that opens the instruction updates in Settings",
+            }),
+            onClick: openSettings,
+          },
         });
       }}
     />

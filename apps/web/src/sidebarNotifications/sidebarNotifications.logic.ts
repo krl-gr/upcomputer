@@ -181,9 +181,12 @@ export function describeSidebarNotificationsButton(
             : gt("downloading update {percent}%", { percent: Math.floor(update.percent) })
           : null,
     instructionUpdates > 0
-      ? gt("{count, plural, one {# instruction update} other {# instruction updates}}", {
-          count: instructionUpdates,
-        })
+      ? gt(
+          "{count, plural, one {{count} instruction update} other {{count} instruction updates}}",
+          {
+            count: instructionUpdates,
+          },
+        )
       : null,
     survey ? gt("survey") : null,
   ].filter((part) => part !== null);

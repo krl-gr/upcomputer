@@ -167,7 +167,7 @@ function UpdateRow({
                       release: entry.release,
                     })
                   : gt(
-                      "Up.computer {release} · {count, plural, one {# change} other {# changes}} · Not applied",
+                      "Up.computer {release} · {count, plural, one {{count} change} other {{count} changes}} · Not applied",
                       { release: entry.release, count: entry.changes.length },
                     )}
             </span>
@@ -176,14 +176,14 @@ function UpdateRow({
         {status.state === "applied" ? (
           <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
             <CheckIcon aria-hidden className="size-3.5 text-success-foreground" />
-            {gt("Applied")}
+            {gt("Applied", { $context: "state of an update whose changes were made" })}
           </span>
         ) : status.state === "kept" ? (
           <span className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
-            {gt("Kept yours")}
+            {gt("Kept yours", { $context: "state of an update closed without applying it" })}
             {canMutate ? (
               <InlineButton tone="muted" onClick={() => void setState("pending")}>
-                {gt("Reopen")}
+                {gt("Reopen", { $context: "button that makes a kept update wait again" })}
               </InlineButton>
             ) : null}
           </span>
