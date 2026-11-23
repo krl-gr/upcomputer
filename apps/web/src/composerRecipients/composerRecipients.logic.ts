@@ -56,18 +56,25 @@ export function withoutComposerRecipientChats<
 export const composerRecipientMention = (value: string) =>
   /^[^\s@"/]+$/u.test(value) ? `@${value} ` : `@"${value.replace(/["\\]/gu, "\\$&")}" `;
 
-/** The recipient a mention chip names, by id first so duplicate names stay distinct, then by name. */
+const sameId = (recipient: NamedRecipient, key: string) =>
+  recipient.id !== undefined && recipient.id.normalize("NFC") === key.normalize("NFC");
+
+/** The recipient a mention names, by id first so duplicate names stay distinct, then by name. */
 export const findComposerRecipient = <R extends NamedRecipient>(
   recipients: ReadonlyArray<R>,
   key: string,
-) => {
-  const normalized = key.normalize("NFC");
-  return (
-    recipients.find(
-      (recipient) => recipient.id !== undefined && recipient.id.normalize("NFC") === normalized,
-    ) ?? recipients.find((recipient) => sameName(recipient.name, normalized))
-  );
-};
+) =>
+  recipients.find((recipient) => sameId(recipient, key)) ??
+  recipients.find((recipient) => sameName(recipient.name, key.normalize("NFC")));
+
+/**
+ * The recipient a mention chip shows: only one picked from the `@` menu, which writes its id.
+ * A typed `@Name` stays an ordinary mention, since it addresses the bot only at the start.
+ */
+export const findComposerRecipientChip = <R extends NamedRecipient>(
+  recipients: ReadonlyArray<R>,
+  key: string,
+) => recipients.find((recipient) => sameId(recipient, key));
 
 const QUOTED_NAME = /^"((?:\\.|[^"\\])*)"/u;
 const WORD_CHARACTER = /[\p{L}\p{N}\p{M}_]/u;
@@ -90,6 +97,8 @@ interface Mention<R> {
   readonly recipient: R;
   readonly start: number;
   readonly end: number;
+  /** Written by the `@` menu as the recipient's id, so it shows as a chip. */
+  readonly picked: boolean;
 }
 
 /** The recipient mentioned at `at`, quoted or not; unquoted, the longest NFC token wins. */
@@ -101,10 +110,11 @@ function mentionAt<R extends NamedRecipient>(
   const quoted = QUOTED_NAME.exec(text.slice(at + 1));
   if (quoted) {
     const end = at + 1 + quoted[0].length;
-    const recipient = findComposerRecipient(recipients, quoted[1]!.replace(/\\(.)/gu, "$1"));
+    const key = quoted[1]!.replace(/\\(.)/gu, "$1");
+    const recipient = findComposerRecipient(recipients, key);
     return recipient === undefined || !endsMention(text, end)
       ? null
-      : { recipient, start: at, end };
+      : { recipient, start: at, end, picked: sameId(recipient, key) };
   }
   const matches: Array<{ readonly recipient: R; readonly length: number; readonly byId: boolean }> =
     [];
@@ -128,18 +138,18 @@ function mentionAt<R extends NamedRecipient>(
   )[0];
   return best === undefined
     ? null
-    : { recipient: best.recipient, start: at, end: at + 1 + best.length };
+    : { recipient: best.recipient, start: at, end: at + 1 + best.length, picked: best.byId };
 }
 
 export type ComposerRecipientMessage<R> =
   | { readonly recipient: R; readonly text: string }
-  /** More than one recipient is mentioned, so the message goes to none of them. */
+  /** More than one recipient is addressed, so the message goes to none of them. */
   | { readonly recipients: ReadonlyArray<R> };
 
 /**
- * The recipient a prompt is addressed to: the one whose `@` mention, quoted or not, appears
- * anywhere in it. A mention that opens the message is dropped with the punctuation after it;
- * elsewhere it stays as the plain name, so "hi @Nova, how are you" reads "hi Nova, how are you".
+ * The recipient a prompt is addressed to: a chip picked from the `@` menu anywhere, or an `@Name`
+ * that opens the message; any other `@Name` is ordinary text. The opening mention is dropped with
+ * the punctuation after it; a chip elsewhere becomes the plain name.
  */
 export function parseComposerRecipientMessage<R extends NamedRecipient>(
   prompt: string,
@@ -155,16 +165,20 @@ export function parseComposerRecipientMessage<R extends NamedRecipient>(
     mentions.push(mention);
     at = mention.end - 1;
   }
-  const named = [...new Set(mentions.map((mention) => mention.recipient))];
+  const opening =
+    mentions[0] !== undefined && text.slice(0, mentions[0].start).trim() === ""
+      ? mentions[0]
+      : null;
+  const addressing = mentions.filter((mention) => mention === opening || mention.picked);
+  const named = [...new Set(addressing.map((mention) => mention.recipient))];
   if (named.length === 0) return null;
   if (named.length > 1) return { recipients: named };
   const recipient = named[0]!;
-  const opening = text.slice(0, mentions[0]!.start).trim() === "";
   let message = "";
   let from = 0;
-  for (const [index, mention] of mentions.entries()) {
+  for (const mention of addressing) {
     message += text.slice(from, mention.start);
-    if (index === 0 && opening) {
+    if (mention === opening) {
       from = mention.end + LEADING_SEPARATOR.exec(text.slice(mention.end))![0].length;
     } else {
       message += recipient.name;

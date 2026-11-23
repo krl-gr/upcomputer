@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   composerRecipientMention,
   findComposerRecipient,
+  findComposerRecipientChip,
   matchComposerRecipients,
   parseComposerRecipientMessage,
   withoutComposerRecipientChats,
@@ -85,18 +86,23 @@ describe("parseComposerRecipientMessage", () => {
     });
   });
 
-  it("finds the mention anywhere, keeping the name in the sentence", () => {
+  it("leaves a typed @name inside the text as ordinary text for the open chat", () => {
     const cerbero = { name: "Cérbero" };
     expect(
       parseComposerRecipientMessage("oi @Cérbero, o que está fazendo?", [inbox, cerbero]),
-    ).toEqual({ recipient: cerbero, text: "oi Cérbero, o que está fazendo?" });
-    expect(parseComposerRecipientMessage("ask @Inbox manager later", [inbox])).toEqual({
-      recipient: inbox,
-      text: "ask Inbox manager later",
-    });
-    expect(parseComposerRecipientMessage('thanks (@"Release helper")', [release])).toEqual({
-      recipient: release,
-      text: "thanks (Release helper)",
+    ).toBeNull();
+    expect(parseComposerRecipientMessage("See the comment from @Inbox manager", [inbox])).toBe(
+      null,
+    );
+    expect(parseComposerRecipientMessage('thanks (@"Release helper")', [release])).toBeNull();
+  });
+
+  it("sends a chip picked from the menu anywhere in the text, as the plain name", () => {
+    const nova = { id: "feature:tasks:bot:nova", name: "Nova" };
+    const prompt = `please check this, ${composerRecipientMention(nova.id)}and reply`;
+    expect(parseComposerRecipientMessage(prompt, [nova])).toEqual({
+      recipient: nova,
+      text: "please check this, Nova and reply",
     });
   });
 
@@ -114,26 +120,33 @@ describe("parseComposerRecipientMessage", () => {
         text: "o que esta fazendo agora?",
       });
     }
-    expect(parseComposerRecipientMessage("is it done @Cérbero?", [cerbero])).toEqual({
-      recipient: cerbero,
-      text: "is it done Cérbero?",
-    });
+    expect(parseComposerRecipientMessage("is it done @Cérbero?", [cerbero])).toBeNull();
   });
 
-  it("sends a message that mentions one recipient twice to it once", () => {
+  it("sends to the opening mention only, leaving later typed names as written", () => {
     expect(parseComposerRecipientMessage("@Inbox manager tell @Inbox manager hi", [inbox])).toEqual(
-      { recipient: inbox, text: "tell Inbox manager hi" },
+      { recipient: inbox, text: "tell @Inbox manager hi" },
     );
-  });
-
-  it("names every recipient when a message mentions more than one, so it goes to none", () => {
     expect(
       parseComposerRecipientMessage("@Inbox manager ask @Research assistant", [
         inbox,
         research,
         release,
       ]),
-    ).toEqual({ recipients: [inbox, research] });
+    ).toEqual({ recipient: inbox, text: "ask @Research assistant" });
+  });
+
+  it("names every recipient when the opening mention and a chip differ, so it goes to none", () => {
+    const nova = { id: "feature:tasks:bot:nova", name: "Nova" };
+    expect(
+      parseComposerRecipientMessage(`@Inbox manager ask ${composerRecipientMention(nova.id)}hi`, [
+        inbox,
+        nova,
+      ]),
+    ).toEqual({ recipients: [inbox, nova] });
+    expect(
+      parseComposerRecipientMessage(`@Nova ask ${composerRecipientMention(nova.id)}hi`, [nova]),
+    ).toEqual({ recipient: nova, text: "ask Nova hi" });
   });
 
   it("matches NFD-stored bot names unquoted with punctuation", () => {
@@ -142,16 +155,15 @@ describe("parseComposerRecipientMessage", () => {
       recipient: nfdCerbero,
       text: "o que está fazendo?",
     });
-    expect(parseComposerRecipientMessage("oi @Cérbero!", [nfdCerbero])).toEqual({
-      recipient: nfdCerbero,
-      text: "oi Ce\u0301rbero!",
-    });
+    expect(parseComposerRecipientMessage("oi @Cérbero!", [nfdCerbero])).toBeNull();
   });
 
   it("resolves duplicate bot names by bot id so both stay reachable", () => {
     const first = { id: "feature:upcomputer.tasks.web:bot:nova-1", name: "Nova" };
     const second = { id: "feature:upcomputer.tasks.web:bot:nova-2", name: "Nova" };
     expect(findComposerRecipient([first, second], second.id)).toBe(second);
+    expect(findComposerRecipientChip([first, second], second.id)).toBe(second);
+    expect(findComposerRecipientChip([first, second], "Nova")).toBeUndefined();
     expect(
       parseComposerRecipientMessage(`${composerRecipientMention(second.id)}check staging`, [
         first,

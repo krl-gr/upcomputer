@@ -101,7 +101,10 @@ export interface ExperimentalWebComposerRecipientContext {
 export interface ExperimentalWebComposerRecipient {
   /** Unique within the feature. */
   readonly id: string;
-  /** A message that mentions `@` and this name anywhere goes to the recipient. */
+  /**
+   * A message goes to the recipient when it opens with `@` and this name, or holds the recipient
+   * picked from the `@` menu.
+   */
   readonly name: string;
   readonly description: string;
   readonly icon?: ComponentType<{ readonly className?: string }>;

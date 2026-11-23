@@ -27,10 +27,12 @@ bot: keep talking in the same one.
 The agent's working memory of the conversation stays bounded, but the full history is kept. The
 bot can search its older messages when it needs them.
 
-To ask a bot from any other chat, including another bot's chat, mention it with `@` and its
-name anywhere in the message, such as `@Release helper prepare version 2.1` or
-`thanks, @Nova, now check the build`. Pick the bot from the `@` menu or type its name. A message
-goes to one bot: mention two and it is not sent. The bot reads the latest messages of that chat and replies right there, while its
+To ask a bot from any other chat, including another bot's chat, pick it from the `@` menu
+anywhere in the message, or start the message with `@` and its name, such as
+`@Release helper prepare version 2.1` or `@Nova, now check the build`. An `@Name` later in the
+text is ordinary text, so "see the comment from @Nova" stays in the open chat. Before you send, the
+composer shows which bot the message goes to. A message goes to one bot: address two and it is not
+sent. The bot reads the latest messages of that chat and replies right there, while its
 own chat keeps the conversation too. Your message and the reply do not start a turn in the chat
 you wrote in; its agent sees the reply the next time you write to it. A busy bot answers once its
 current turn ends. When the bot needs an approval or an answer first, the chat shows a link to

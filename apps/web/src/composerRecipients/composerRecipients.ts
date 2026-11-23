@@ -1,9 +1,11 @@
 import type { NavigateOptions } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { msg } from "gt-react";
-import { useSyncExternalStore } from "react";
+import { msg, useGT } from "gt-react";
+import { BotIcon } from "lucide-react";
+import { createElement, useSyncExternalStore } from "react";
 
 import type { ChatComposerHandle } from "../components/chat/ChatComposer";
+import type { ComposerBannerStackItem } from "../components/chat/ComposerBannerStack";
 import type { ComposerCommandItem } from "../components/chat/ComposerCommandMenu";
 import { errorToastDescription } from "../components/errors/ErrorDetails";
 import { toastManager } from "../components/ui/toast";
@@ -125,6 +127,49 @@ export function useComposerRecipientMenu(
       shells: ReadonlyArray<S>,
     ) => withoutComposerRecipientChats(shells, environmentId, recipients),
   };
+}
+
+const NO_BANNER_ITEMS: ReadonlyArray<ComposerBannerStackItem> = [];
+
+/**
+ * The composer line that says, before sending, that the message goes to a recipient instead of
+ * the open chat, or that it names more than one and goes to none. `enabled` is false where a
+ * send never reroutes, such as while answering a question.
+ */
+export function useComposerRecipientBanner(
+  environmentId: EnvironmentId,
+  threadId: ThreadId | null,
+  prompt: string,
+  enabled: boolean,
+): ReadonlyArray<ComposerBannerStackItem> {
+  const gt = useGT();
+  const recipients = useProductComposerRecipients(environmentId, threadId);
+  const message = enabled ? parseComposerRecipientMessage(prompt, recipients) : null;
+  if (message === null) return NO_BANNER_ITEMS;
+  if ("recipients" in message) {
+    const names = message.recipients.map((recipient) => `@${recipient.name}`).join(", ");
+    return [
+      {
+        id: "composer-recipient",
+        variant: "warning",
+        icon: createElement(BotIcon),
+        title: gt("Mention one bot per message"),
+        description: gt("This message mentions {names}. Send each its own message.", { names }),
+      },
+    ];
+  }
+  const Icon = message.recipient.icon ?? BotIcon;
+  return [
+    {
+      id: "composer-recipient",
+      variant: "info",
+      icon: createElement(Icon),
+      title: gt("Goes to {name}", {
+        name: message.recipient.name,
+        $context: "composer notice: the message being written will be sent to this bot",
+      }),
+    },
+  ];
 }
 
 /** Attachments, context or a reply that a text-only message would lose. */

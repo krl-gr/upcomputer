@@ -4,7 +4,7 @@ import { use } from "react";
 import { ComposerContextActionsContext } from "../components/composerContextActions";
 import { ContextChipShell } from "../components/contextChipParts";
 import { useProductComposerRecipients } from "./composerRecipients";
-import { findComposerRecipient } from "./composerRecipients.logic";
+import { findComposerRecipientChip } from "./composerRecipients.logic";
 
 /**
  * Reactive recipient chip node for the Tiptap mention view: subscribes to the active thread's
@@ -14,7 +14,7 @@ import { findComposerRecipient } from "./composerRecipients.logic";
 export function useComposerRecipientChipNode(path: string, className: string) {
   const actions = use(ComposerContextActionsContext);
   const recipients = useProductComposerRecipients(actions.environmentId, actions.threadId ?? null);
-  const recipient = findComposerRecipient(recipients, path);
+  const recipient = findComposerRecipientChip(recipients, path);
   if (recipient === undefined) return null;
   const Icon = recipient.icon;
   return (

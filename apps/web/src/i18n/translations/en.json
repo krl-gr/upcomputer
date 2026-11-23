@@ -3530,6 +3530,7 @@
   "7e742c98ddfead06": "Couldn't send to {mention}",
   "ccd52e8b10addacd": "Sent to {mention}",
   "5ae1a3264f050d29": "It answers in its own chat.",
+  "0ef4ad5b8caf7388": "Goes to {name}",
   "97e57975f9afd3b5": "Environment added",
   "ca7c5bc8ba0de4b5": "Connecting to {label} through UpComputer Connect.",
   "c72fefe6f5631845": "Could not add {label}",

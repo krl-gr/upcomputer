@@ -3534,6 +3534,7 @@
   "7e742c98ddfead06": "无法发送给 {mention}",
   "ccd52e8b10addacd": "已发送给 {mention}",
   "5ae1a3264f050d29": "它会在自己的对话中回复。",
+  "0ef4ad5b8caf7388": "将发送给 {name}",
   "97e57975f9afd3b5": "已添加环境",
   "ca7c5bc8ba0de4b5": "正在通过 UpComputer Connect 连接 {label}。",
   "c72fefe6f5631845": "无法添加 {label}",
