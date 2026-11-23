@@ -2105,6 +2105,7 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
       });
       const scopes = new Map([
         ["deferringToken", scopeFor("deferringToken")],
+        ["coreToken", scopeFor("coreToken")],
         ["otherToken", scopeFor("otherToken")],
       ]);
       const tool = (name: string, description: string) =>
@@ -2118,6 +2119,7 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
         tool("delegate_task", "Delegates a task."),
         tool("preview_open", "Opens a browser preview."),
         tool("schedule_task", "Schedules a task."),
+        tool("task_create", "Creates a task."),
       );
       const reads = McpToolAccess.reads(() => Effect.succeed({}));
       const serverLayer = McpHttpServer.layerMcpTransport(
@@ -2128,6 +2130,7 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
               delegate_task: reads,
               preview_open: reads,
               schedule_task: reads,
+              task_create: reads,
             }),
           ),
           McpHttpServer.layerToolSearch,
@@ -2145,12 +2148,12 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
         Layer.build,
       );
       const httpClient = yield* HttpClient.HttpClient;
-      const session = (token: string, deferred: boolean) =>
+      const session = (token: string, exposure: "deferred" | "core" | undefined) =>
         Effect.gen(function* () {
           const headers = {
             accept: "application/json, text/event-stream",
             authorization: `Bearer ${token}`,
-            ...(deferred ? { "t3-tool-exposure": "deferred" } : {}),
+            ...(exposure ? { "t3-tool-exposure": exposure } : {}),
           };
           const initialize = yield* httpClient.post("/mcp", {
             headers,
@@ -2198,10 +2201,13 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
           };
         });
 
-      const deferring = yield* session("deferringToken", true);
-      const other = yield* session("otherToken", false);
+      const deferring = yield* session("deferringToken", "deferred");
+      const core = yield* session("coreToken", "core");
+      const other = yield* session("otherToken", undefined);
+      const everything = ["delegate_task", "preview_open", "schedule_task", "task_create"];
       expect(yield* deferring.listed).toEqual(["delegate_task", "tool_search"]);
-      expect(yield* other.listed).toEqual(["delegate_task", "preview_open", "schedule_task"]);
+      expect(yield* core.listed).toEqual(["delegate_task", "task_create", "tool_search"]);
+      expect(yield* other.listed).toEqual(everything);
       // Unlisted tools stay callable.
       expect((yield* deferring.call("schedule_task", {})).structuredContent).toEqual({});
 
@@ -2209,7 +2215,15 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
         (yield* deferring.call("tool_search", { query: "browser" })).structuredContent,
       ).toEqual({ tools: [{ name: "preview_open", description: "Opens a browser preview." }] });
       expect(yield* deferring.listed).toEqual(["delegate_task", "preview_open", "tool_search"]);
-      expect(yield* other.listed).toEqual(["delegate_task", "preview_open", "schedule_task"]);
+      expect(yield* other.listed).toEqual(everything);
+      expect(yield* core.listed).toEqual(["delegate_task", "task_create", "tool_search"]);
+      yield* core.call("tool_search", { query: "browser" });
+      expect(yield* core.listed).toEqual([
+        "delegate_task",
+        "preview_open",
+        "task_create",
+        "tool_search",
+      ]);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

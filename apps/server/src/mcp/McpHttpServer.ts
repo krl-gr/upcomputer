@@ -1534,8 +1534,9 @@ const layerToolExposure = Layer.effect(
 
 /**
  * A provider session that sends `MCP_TOOL_EXPOSURE_HEADER: deferred` lists only
- * the direct tools and what its thread's `tool_search` calls loaded. Calls are never
- * gated, and every other client lists everything but `tool_search`.
+ * the direct tools and what its thread's `tool_search` calls loaded; `core` lists all
+ * but the search-only groups. Calls are never gated, and every other client lists
+ * everything but `tool_search`.
  */
 const layerDeferredListing = McpServer.visibility(
   Effect.gen(function* () {
@@ -1545,10 +1546,11 @@ const layerDeferredListing = McpServer.visibility(
       if (method !== "tools/list") return true;
       const scope = yield* Effect.serviceOption(McpInvocationContext.McpInvocationContext);
       const threadId = Option.getOrUndefined(scope)?.thread?.threadId;
-      if (headers[MCP_TOOL_EXPOSURE_HEADER] !== "deferred" || threadId === undefined) {
+      const mode = headers[MCP_TOOL_EXPOSURE_HEADER];
+      if ((mode !== "deferred" && mode !== "core") || threadId === undefined) {
         return target !== McpToolExposure.TOOL_SEARCH;
       }
-      return exposure.isListed(threadId, target);
+      return exposure.isListed(threadId, target, mode);
     });
   }),
   { global: true },
