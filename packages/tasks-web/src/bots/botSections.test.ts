@@ -1,4 +1,5 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { act, createElement } from "react";
 import { create } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
@@ -37,7 +38,17 @@ vi.mock("../environmentApi.ts", () => {
 
 import { readClientNotices } from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
 import { TaskChangeStreamEnded } from "../rpc/taskChanges.ts";
-import { botsChanged, useBotSectionLists } from "./botData.tsx";
+import {
+  readLocalStorageValue,
+  writeLocalStorageValue,
+} from "../../../../apps/web/src/hooks/useLocalStorage.ts";
+import {
+  BOT_CHATS_STORAGE_KEY,
+  BotChats,
+  botsChanged,
+  rememberedBotChatKeys,
+  useBotSectionLists,
+} from "./botData.tsx";
 
 const botNotices = (environmentId: EnvironmentId) =>
   readClientNotices().filter((notice) => notice.environmentId === environmentId);
@@ -107,6 +118,24 @@ describe("Bots section lists", () => {
     servers.lists.set(slow, () => new Promise(() => {}));
     const { seen, view } = await render([slow]);
     expect(seen.at(-1)).toEqual([]);
+    view.unmount();
+  });
+
+  it("keeps each computer's bot chats out of Threads from the last list until its list loads", async () => {
+    const here = EnvironmentId.make("sections-remembered");
+    const chat = scopedThreadKey(scopeThreadRef(here, ThreadId.make("nova-chat")));
+    writeLocalStorageValue(BOT_CHATS_STORAGE_KEY, { [here]: ["nova-chat"] }, {}, BotChats);
+    let answer: (bots: unknown) => void = () => {};
+    servers.lists.set(here, () => new Promise((resolve) => (answer = resolve)));
+    const { view } = await render([here]);
+    expect(rememberedBotChatKeys([here])).toEqual([chat]);
+
+    // Loaded: the Bots section claims its chats itself, and the next start remembers this list.
+    await act(async () => answer([{ agent: { id: "atlas" }, threadId: "atlas-chat" }]));
+    expect(rememberedBotChatKeys([here])).toEqual([]);
+    expect(readLocalStorageValue(BOT_CHATS_STORAGE_KEY, {}, BotChats)).toEqual({
+      [here]: ["atlas-chat"],
+    });
     view.unmount();
   });
 

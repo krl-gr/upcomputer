@@ -3,6 +3,7 @@ import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environ
 import { describeError } from "@t3tools/client-runtime/errors";
 import { ThreadId, type EnvironmentId } from "@t3tools/contracts";
 import { gtFallback, msg, type useGT } from "gt-react";
+import * as Schema from "effect/Schema";
 import {
   defaultBotAppearance,
   type Bot,
@@ -17,6 +18,10 @@ import { resolveThreadLastVisitedAt } from "../../../../apps/web/src/components/
 import { useUiStateStore } from "../../../../apps/web/src/uiStateStore.ts";
 import { ConfigurableBotCharacter } from "../../../../apps/web/src/components/bot-character-configurable/ConfigurableBotCharacter.tsx";
 import { holdClientNotice } from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
+import {
+  readLocalStorageValue,
+  writeLocalStorageValue,
+} from "../../../../apps/web/src/hooks/useLocalStorage.ts";
 import {
   readTasksWebAccess,
   readTasksWebClient,
@@ -62,6 +67,41 @@ interface BotListStore {
 
 const EMPTY: BotList = { bots: [], loaded: false, failed: false, unsupported: false };
 const stores = new Map<EnvironmentId, BotListStore>();
+
+/** Each computer's bot chat thread ids as its last loaded list had them. */
+export const BOT_CHATS_STORAGE_KEY = "upcomputer:bot-chats";
+export const BotChats = Schema.Record(Schema.String, Schema.Array(Schema.String));
+
+function rememberBotChats(environmentId: EnvironmentId, bots: ReadonlyArray<Bot>) {
+  const threadIds = bots.map((bot) => bot.threadId);
+  const remembered = readLocalStorageValue(BOT_CHATS_STORAGE_KEY, {}, BotChats)[environmentId];
+  if (remembered?.join("\n") === threadIds.join("\n")) return;
+  writeLocalStorageValue(
+    BOT_CHATS_STORAGE_KEY,
+    (current) => ({ ...current, [environmentId]: threadIds }),
+    {},
+    BotChats,
+  );
+}
+
+/**
+ * The scoped keys of the bot chats each computer had when its list last loaded, for those whose
+ * list is loading again, so Threads does not list them until the Bots section does.
+ */
+export function rememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string[] {
+  const loading = environmentIds.filter((environmentId) => {
+    if (!readTasksWebAccess(environmentId).canReadAgents) return false;
+    const { list } = storeFor(environmentId);
+    return !list.loaded && !list.failed;
+  });
+  if (loading.length === 0) return [];
+  const remembered = readLocalStorageValue(BOT_CHATS_STORAGE_KEY, {}, BotChats);
+  return loading.flatMap((environmentId) =>
+    (remembered[environmentId] ?? []).map((threadId) =>
+      scopedThreadKey(scopeThreadRef(environmentId, ThreadId.make(threadId))),
+    ),
+  );
+}
 
 type GT = ReturnType<typeof useGT>;
 
@@ -126,6 +166,7 @@ async function refresh(environmentId: EnvironmentId, store: BotListStore) {
   store.fetching = true;
   try {
     const bots = await readTasksWebClient(environmentId).bots.list({});
+    rememberBotChats(environmentId, bots);
     releaseNotice(store);
     publish(store, { bots, loaded: true, failed: false, unsupported: false });
   } catch (cause) {
