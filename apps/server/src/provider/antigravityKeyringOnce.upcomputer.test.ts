@@ -26,19 +26,32 @@ describe("Antigravity keychain read", () => {
   it.effect("asks once after a refusal and again only after sign-in or sign-out", () =>
     Effect.gen(function* () {
       let reads = 0;
-      const usage = yield* makeAntigravityUsageProbe({
-        profileDirectory: yield* (yield* FileSystem.FileSystem).makeTempDirectoryScoped(),
-        authMethod: "oauth-personal",
-        readKeyringSecret: Effect.suspend(() => {
-          reads++;
-          return Effect.die("User canceled the operation.");
-        }),
-      }).pipe(
-        Effect.provideService(
-          HttpClient.HttpClient,
-          HttpClient.make(() => Effect.die("no request without a sign-in")),
-        ),
+      const makeProbe = (authMethod: "oauth-personal" | "oauth-business") =>
+        Effect.gen(function* () {
+          return yield* makeAntigravityUsageProbe({
+            profileDirectory: yield* (yield* FileSystem.FileSystem).makeTempDirectoryScoped(),
+            authMethod,
+            readKeyringSecret: Effect.suspend(() => {
+              reads++;
+              return Effect.die("User canceled the operation.");
+            }),
+          });
+        }).pipe(
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make(() => Effect.die("no request without a sign-in")),
+          ),
+        );
+      // A Google account instance keeps its sign-in in its profile and never asks the keychain.
+      const personal = yield* makeProbe("oauth-personal");
+      expect((yield* personal.probe).unavailable?.message).toBe(
+        "Sign in with Google to see Antigravity limits.",
       );
+      yield* personal.clear;
+      yield* personal.probe;
+      expect(reads).toBe(0);
+
+      const usage = yield* makeProbe("oauth-business");
       const first = yield* usage.probe;
       const second = yield* usage.probe;
       expect(reads).toBe(1);
