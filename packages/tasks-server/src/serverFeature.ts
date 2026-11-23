@@ -13,6 +13,10 @@ import { TaskSourceWakeLive } from "./agents/TaskSourceWake.ts";
 import { TaskAutomationServiceLive } from "./automations/TaskAutomationService.ts";
 import { TaskToolContextResolverLive } from "./context/TaskToolContextResolver.ts";
 import { InboxProjectLive } from "./inbox/InboxProject.ts";
+import {
+  InstructionUpdatesService,
+  InstructionUpdatesServiceLive,
+} from "./instructionUpdates/InstructionUpdatesService.ts";
 import { TaskMcpToolsLive } from "./mcp/TaskMcpTools.ts";
 import {
   AllChatsInstructionsLive,
@@ -47,6 +51,7 @@ export const TaskServicesLive = TaskToolServiceLive.pipe(
       InboxProjectLive,
       TaskScheduleServiceLive,
       BotMentions.layer.pipe(Layer.provideMerge(Bots.layer)),
+      InstructionUpdatesServiceLive,
     ),
   ),
   Layer.provideMerge(taskAgentsLive),
@@ -57,6 +62,14 @@ const TaskRecoveryLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const agents = yield* TaskAgentService;
     yield* forkParked(retryOperational(agents.recover, { operation: "recover-task-agents" }));
+  }),
+);
+
+/** After activation, records entries this build added and applies them when the install asks for that. */
+const InstructionUpdatesSyncLive = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const updates = yield* InstructionUpdatesService;
+    yield* forkParked(retryOperational(updates.sync, { operation: "sync-instruction-updates" }));
   }),
 );
 
@@ -73,6 +86,7 @@ export const TASKS_SERVER_FEATURE = defineExperimentalServerFeature({
       layer: eraseExperimentalServerLayer(
         Layer.mergeAll(
           TaskRecoveryLive,
+          InstructionUpdatesSyncLive,
           TaskReminderSweeperLive,
           TaskAgentOrchestrationInstructionsLive,
           TaskChatToolHintsLive,

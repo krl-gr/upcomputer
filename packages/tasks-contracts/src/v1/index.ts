@@ -5,3 +5,4 @@ export * from "./prompts.ts";
 export * from "./rpc.ts";
 export * from "./schedule.ts";
 export * from "./tasks.ts";
+export * from "./instructionUpdates.ts";

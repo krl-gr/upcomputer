@@ -38,6 +38,7 @@ import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { TASK_TOOL_SPECS } from "./TaskToolDefinitions.ts";
 import { TaskToolService, TaskToolServiceLive } from "./TaskToolService.ts";
 import type { TaskToolInvocationContext } from "./TaskToolTypes.ts";
+import { InstructionUpdatesService } from "../instructionUpdates/InstructionUpdatesService.ts";
 
 const project = ProjectId.make("project-1");
 const inbox = ProjectId.make("project-inbox");
@@ -173,6 +174,7 @@ function harness(
             } as never),
             Layer.succeed(InboxProject, { ensure: Effect.succeed(inbox) }),
             Layer.succeed(TaskScheduleService, {} as never),
+            Layer.succeed(InstructionUpdatesService, {} as never),
           ),
         ),
       ),

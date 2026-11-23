@@ -3,6 +3,7 @@ import {
   BotAppearanceStyle,
   BotPortraitId,
   TASK_CREATE_BATCH_LIMIT,
+  TASK_STATUS_RENAME_IDS_LIMIT,
 } from "@t3tools/tasks-contracts/v1";
 
 import type { TaskToolSpec } from "./TaskToolTypes.ts";
@@ -697,5 +698,58 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     inputSchema: object({ projectId: instructionsProjectId, changeId: id, reason: id }, [
       "changeId",
     ]),
+  },
+  {
+    type: "function",
+    mutation: "read",
+    name: "instruction_updates_get",
+    description:
+      "Read the instruction updates: changes a new version of Up.computer made to its default instructions, task statuses and workflow, which this install applies or keeps (Settings → Instructions). Returns the mode (ask, or auto: applies an update by itself only when it changes no text the user edited), the install's workflowVersion, the saved statusGroupOrder and statusGroupOpen of the Tasks list, and each update's id, title, state (pending, dismissed: still pending with its notification hidden, applied, kept), editedFields (global instructions the user edited that it would change) and mentions (the user's own texts that name a status it renames). With id: also that update's brief, with both versions of every text and the steps to apply it.",
+    inputSchema: object({ id }),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "instruction_update_decide",
+    description: `Close an instruction update once the user decided: applied (they took it, as shipped or adapted to them, after you made the agreed changes) or kept (they keep their setup and nothing more changes). pending reopens it. Call only after the user agreed in this conversation; this records the decision, it changes no instructions, statuses or tasks itself. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object({ id, state: { type: "string", enum: ["applied", "kept", "pending"] } }, [
+      "id",
+      "state",
+    ]),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "task_status_rename",
+    description: `Rename one task status on many tasks in one call: every task in this environment whose status is from (any letter case), or only those in projectId, with all of tags, or among ids (up to ${TASK_STATUS_RENAME_IDS_LIMIT}). Archived tasks count too. A rename relabels what a status means: it keeps each task's place and trigger time and starts no agent. Person tasks only take To Do and Done and are skipped. automationTemplates: true also renames it in automations' task templates (in projectId when given). Call only when the user agreed to the rename in this conversation. Returns the renamed task ids: task_status_rename back with those ids undoes it. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object(
+      {
+        from: id,
+        to: id,
+        ids: { type: "array", items: id, maxItems: TASK_STATUS_RENAME_IDS_LIMIT },
+        projectId: id,
+        tags,
+        automationTemplates: { type: "boolean" },
+      },
+      ["from", "to"],
+    ),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "task_list_settings_update",
+    description: `Change how the Tasks list shows for this install, on every device: groupByStatus, statusGroupOrder (status group keys, lower case, in order; an empty list follows the workflow's default order) and statusGroupOpen (status key to open or collapsed, merged into the saved keys). instruction_updates_get shows the saved values. Call only when the user asked or agreed. Returns the previous and new values, so a change can be put back. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object({
+      groupByStatus: { type: "boolean" },
+      statusGroupOrder: { type: "array", items: id, maxItems: 200 },
+      statusGroupOpen: { type: "object", additionalProperties: { type: "boolean" } },
+    }),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "task_workflow_version_set",
+    description: `Switch this install's built-in task workflow. 1: Idea, Backlog, To Do, In Progress, In Review, Needs Input, Needs Review, Blocked, Done, Cancelled. 2: Idea, Queued, To Do, In Progress, In Review, Needs You, Blocked, Failed, To Verify, Done, Cancelled, and a task whose worker run crashes moves to Failed. It changes no task, status or instruction text by itself: it picks the statuses the app offers, the default group order, the texts Restore default uses and the Failed behavior. Call it last when applying an instruction update, and only after the user agreed. Returns the previous version, so it can be switched back. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object({ version: { type: "integer", minimum: 1, maximum: 2 } }, ["version"]),
   },
 ];

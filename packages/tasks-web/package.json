@@ -30,6 +30,10 @@
     "./planner": {
       "types": "./src/planner/index.ts",
       "import": "./src/planner/index.ts"
+    },
+    "./workflowUpdates": {
+      "types": "./src/workflowUpdates/index.ts",
+      "import": "./src/workflowUpdates/index.ts"
     }
   },
   "scripts": {

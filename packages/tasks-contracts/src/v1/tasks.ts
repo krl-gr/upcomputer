@@ -498,6 +498,8 @@ export const TaskChange = Schema.Struct({
   agentsChanged: Schema.optional(Schema.Boolean),
   /** The list settings changed; absent when they did not. */
   listSettingsChanged: Schema.optional(Schema.Boolean),
+  /** The instruction updates' mode or an entry's state changed; absent when they did not. */
+  instructionUpdatesChanged: Schema.optional(Schema.Boolean),
 });
 export type TaskChange = typeof TaskChange.Type;
 

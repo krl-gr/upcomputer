@@ -100,6 +100,11 @@ import {
 } from "../context/TaskToolContextResolver.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
 import { BotService } from "../bots/BotService.ts";
+import {
+  callInstructionUpdateTool,
+  isInstructionUpdateTool,
+} from "../instructionUpdates/InstructionUpdateTools.ts";
+import { InstructionUpdatesService } from "../instructionUpdates/InstructionUpdatesService.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
 import {
@@ -548,6 +553,7 @@ const make = Effect.gen(function* () {
   const inbox = yield* InboxProject;
   const schedule = yield* TaskScheduleService;
   const bots = yield* BotService;
+  const instructionUpdates = yield* InstructionUpdatesService;
   const crypto = yield* SecureRandom.SecureRandom;
   const recordFirstUse = yield* makeFirstUseRecorder;
   const now = Effect.map(DateTime.now, DateTime.formatIso);
@@ -1965,6 +1971,24 @@ const make = Effect.gen(function* () {
           };
         }
         default:
+          if (isInstructionUpdateTool(name))
+            return yield* callInstructionUpdateTool(
+              {
+                updates: instructionUpdates,
+                repository,
+                bots,
+                writeRefusal: (tool, caller) =>
+                  Effect.map(instructionsWriteAccess(tool, caller), ({ refusal }) => refusal),
+                actor: (caller) =>
+                  Effect.map(
+                    caller.threadId
+                      ? repository.findActiveAgentRunByThreadId({ threadId: caller.threadId })
+                      : Effect.succeed(Option.none<TaskAgentRun>()),
+                    (run) => toolActor(caller, Option.getOrNull(run)),
+                  ),
+              },
+              { name, args, context, dryRun: isDryRun },
+            );
           return { isError: true, text: `Unknown task tool: ${name}` };
       }
     },

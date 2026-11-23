@@ -28,6 +28,7 @@ import { TaskRepositoryLive } from "../persistence/TaskRepositoryLive.ts";
 import { TASKS_RPC_CONTRIBUTION } from "../rpc/contributions.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { INBOX_FOLDER, InboxProject, InboxProjectLive } from "./InboxProject.ts";
+import { InstructionUpdatesService } from "../instructionUpdates/InstructionUpdatesService.ts";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -159,6 +160,7 @@ it.effect("a task created over RPC without a project goes to the Inbox, at its p
   const services = Layer.mergeAll(
     Layer.succeed(TaskAgentService, { scheduleTaskChanged: () => Effect.void } as never),
     Layer.succeed(TaskScheduleService, {} as never),
+    Layer.succeed(InstructionUpdatesService, {} as never),
     Layer.succeed(TaskPromptSettingsStore, {} as never),
   );
   return Effect.gen(function* () {
