@@ -160,10 +160,12 @@ test(
       const { threadId } = JSON.parse(started) as { threadId: string };
       await t3.open({ threadId });
 
-      await expect(
-        screen.getByText("OpenCode's free limit is reached", { exact: false }).first(),
-      ).toBeVisible({ timeout: 30_000 });
+      // The usage-limit banner offers to resume once the limit resets.
+      await expect(screen.getByText("Usage limit reached")).toBeVisible({ timeout: 30_000 });
+      await expect(screen.getByRole("button", "Resume at reset")).toBeVisible();
       await app.screenshot("free-limit");
+      await screen.getByText("Say hi in one word.").tap();
+      await app.screenshot("free-limit-turn");
     } finally {
       opencode.closeAllConnections();
       opencode.close();
