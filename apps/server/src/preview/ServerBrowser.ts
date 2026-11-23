@@ -96,6 +96,7 @@ import * as PreviewBrowserHost from "./PreviewBrowserHost.ts";
 import { presentAsChrome, ServerBrowserContexts } from "./ServerBrowserContexts.ts";
 import { BrowserControlInterrupted, SessionControl } from "./SessionControl.ts";
 import { installPdfDocumentNavigation, isPdfAssetUrl } from "./PdfDocumentNavigation.ts";
+import { withHiddenTabWarning } from "./HiddenTabSnapshotWarning.ts";
 
 const SERVER_HOST_CLIENT_ID = SERVER_BROWSER_AUTOMATION_CLIENT_ID;
 // Each client's report is capped, but the saved catalog is their union, so it has no cap.
@@ -2875,6 +2876,8 @@ const make = Effect.gen(function* () {
           snapshotInput?.pixelsRequired === false
             ? ServerBrowserPage.snapshotMetadata(rendering)
             : ServerBrowserPage.snapshot(rendering),
+        ).then((s) =>
+          withHiddenTabWarning(s, { desktop: tab.desktop !== null, shown: isVisible(tab) }),
         );
         const loadError = loadErrorOf(tab);
         return loadError ? { ...snapshot, url: loadError.url, loadError } : snapshot;
