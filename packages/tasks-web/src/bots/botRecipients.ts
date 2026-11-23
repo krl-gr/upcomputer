@@ -1,6 +1,8 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { BOTS_RPC_METHODS, type Bot } from "@t3tools/tasks-contracts/v1";
+import { msg } from "gt-react";
 import { BotIcon } from "lucide-react";
+import { m } from "../../../../apps/web/src/i18n/messages.ts";
 import { newMessageId } from "../../../../apps/web/src/lib/utils.ts";
 import {
   readExperimentalFeatureRpcPermission,
@@ -30,22 +32,22 @@ export const addressableBots = <B extends Pick<Bot, "threadId">>(
  */
 export function subscribeBotRecipients(environmentId: EnvironmentId, onChange: () => void) {
   let stopBots: (() => void) | undefined;
-  const sync = () => {
+  const sync = (notify: boolean) => {
     const canRead = readTasksWebAccess(environmentId).canReadAgents;
     if (canRead && stopBots === undefined) stopBots = subscribeBots(environmentId, onChange);
     if (!canRead && stopBots !== undefined) {
       stopBots();
       stopBots = undefined;
     }
-    onChange();
+    if (notify) onChange();
   };
-  const stopAccess = subscribeTasksWebAccess(sync);
+  const stopAccess = subscribeTasksWebAccess(() => sync(true));
   const stopPermission = subscribeExperimentalFeatureRpcPermission(
     environmentId,
     BOTS_RPC_METHODS.mention,
     onChange,
   );
-  sync();
+  sync(false);
   return () => {
     stopAccess();
     stopPermission();
@@ -71,7 +73,7 @@ export function botComposerRecipients({
   return addressableBots(readShownBots(environmentId) ?? [], threadId).map((bot) => ({
     id: bot.agent.id,
     name: bot.agent.name,
-    description: "Ask this bot here",
+    description: m(msg("Ask this bot here")),
     icon: BotIcon,
     chatThreadId: bot.threadId,
     send: (text) =>

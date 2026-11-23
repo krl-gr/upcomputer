@@ -67,13 +67,13 @@ describe("bots a chat can address with @", () => {
 
     const onChange = vi.fn();
     const stop = subscribeBotRecipients(env, onChange);
-    onChange.mockClear();
+    expect(onChange).not.toHaveBeenCalled();
     permissionState.allowed = true;
     for (const listener of permissionState.listeners) listener();
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(
-      botComposerRecipients({ environmentId: env, threadId: chatThread }).map((r) => r.id),
-    ).toEqual([novaBot.agent.id]);
+    const recipients = botComposerRecipients({ environmentId: env, threadId: chatThread });
+    expect(recipients.map((r) => r.id)).toEqual([novaBot.agent.id]);
+    expect(recipients[0]?.description).toBe("Ask this bot here");
 
     stop();
     expect(permissionState.listeners.size).toBe(0);

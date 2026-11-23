@@ -55,11 +55,16 @@ function subscribeBotRecipients(
   environmentId: ExperimentalWebThreadAccessoryProps["environmentId"],
   onChange: () => void,
 ) {
+  if (botRecipients !== undefined) {
+    return botRecipients.subscribeBotRecipients(environmentId, onChange);
+  }
   let stop: (() => void) | undefined;
   let stopped = false;
   void import("./bots/botRecipients.ts").then((module) => {
     botRecipients = module;
-    if (!stopped) stop = module.subscribeBotRecipients(environmentId, onChange);
+    if (stopped) return;
+    stop = module.subscribeBotRecipients(environmentId, onChange);
+    onChange();
   });
   return () => {
     stopped = true;

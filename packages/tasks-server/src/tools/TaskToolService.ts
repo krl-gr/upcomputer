@@ -49,6 +49,7 @@ import {
   TaskUpdateInput,
   type Task,
   type TaskActor,
+  type Bot,
   type BotWriteInput,
   type TaskAgent,
   type TaskAgentRun,
@@ -584,6 +585,27 @@ const make = Effect.gen(function* () {
     const agent = yield* repository.getAgentById({ id: run.value.agentId });
     if (Option.isSome(agent) && (agent.value.config.tools ?? []).includes(name)) return null;
     return `Task-agent run '${run.value.id}' cannot create or edit bots: a run may be acting on untrusted content. This also applies after the run ended. Put the suggested change in your task output instead. A person can allow this agent by adding '${name}' to its tools. This guards against accidental or injected writes; it is not a security boundary.`;
+  });
+  const botEditRefusal = Effect.fn("TaskToolService.botEditRefusal")(function* (
+    context: TaskToolInvocationContext,
+    existingBot: Bot,
+    existingConfig: TaskAgent["config"],
+    nextConfig: TaskAgent["config"],
+  ) {
+    // Check existing config, requested config, and the live chat's current modes (a mode
+    // picked in the bot chat's composer can exceed the saved config).
+    const botChat = yield* threads
+      .getThreadShell(existingBot.threadId)
+      .pipe(Effect.orElseSucceed(() => null));
+    return (
+      runStartRefusal(context, agentRunModes(existingConfig), "Changing a bot") ??
+      runStartRefusal(context, agentRunModes(nextConfig), "Changing a bot") ??
+      runStartRefusal(
+        context,
+        botChat ?? { runtimeMode: "full-access", interactionMode: "default" },
+        "Changing a bot",
+      )
+    );
   });
   /**
    * Task-agent runs read untrusted content, so an injected "add to the
@@ -1281,11 +1303,18 @@ const make = Effect.gen(function* () {
           const existing = yield* repository.getAgentById({ id: input.id });
           if (Option.isNone(existing))
             return { isError: true, text: `Agent '${input.id}' was not found.` };
+          const existingBot = (yield* bots.list).find(
+            (item) => item.agent.id === existing.value.id,
+          );
+          if (existingBot !== undefined) {
+            const writeRefusal = yield* botWriteAccess("agent_update", context);
+            if (writeRefusal !== null) return { isError: true, text: writeRefusal };
+          }
           const { startTags } = existing.value;
           if (
             input.archived === true &&
-            startTags.length === 1 &&
-            startTags[0] === `bot:${input.id}`
+            (existingBot !== undefined ||
+              (startTags.length === 1 && startTags[0] === `bot:${input.id}`))
           )
             return {
               isError: true,
@@ -1372,10 +1401,14 @@ const make = Effect.gen(function* () {
               }),
             };
           // Any edit of an enabled, unarchived agent lets it run again on its matching
-          // tasks (see runsAgain); disabling or archiving it starts nothing.
-          const updateRefusal = agentWorks(agent)
-            ? runStartRefusal(context, agentRunModes(agent.config), "Changing an enabled agent")
-            : null;
+          // tasks (see runsAgain); disabling or archiving it starts nothing. A bot's permanent
+          // chat stays callable regardless of enabled, so bots always enforce the mode ceiling.
+          const updateRefusal =
+            existingBot !== undefined
+              ? yield* botEditRefusal(context, existingBot, existing.value.config, agent.config)
+              : agentWorks(agent)
+                ? runStartRefusal(context, agentRunModes(agent.config), "Changing an enabled agent")
+                : null;
           if (updateRefusal !== null) return { isError: true, text: updateRefusal };
           const saved = yield* repository.upsertAgent(agent);
           yield* taskAgents.scheduleAgentChanged({ agent: saved, reason: "upserted" });
@@ -1534,19 +1567,12 @@ const make = Effect.gen(function* () {
             ...(input.appearance !== undefined ? { appearance: input.appearance } : {}),
           };
           if (isDryRun) return { isError: false, text: json({ dryRun: true, bot }) };
-          // Check existing config, requested config, and the live chat's current modes (a mode
-          // picked in the bot chat's composer can exceed the saved config).
-          const botChat = yield* threads
-            .getThreadShell(existing.threadId)
-            .pipe(Effect.orElseSucceed(() => null));
-          const refusal =
-            runStartRefusal(context, agentRunModes(existing.agent.config), "Changing a bot") ??
-            runStartRefusal(context, agentRunModes(bot.config), "Changing a bot") ??
-            runStartRefusal(
-              context,
-              botChat ?? { runtimeMode: "full-access", interactionMode: "default" },
-              "Changing a bot",
-            );
+          const refusal = yield* botEditRefusal(
+            context,
+            existing,
+            existing.agent.config,
+            bot.config,
+          );
           if (refusal !== null) return { isError: true, text: refusal };
           return { isError: false, text: json({ bot: yield* bots.save(bot) }) };
         }

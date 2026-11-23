@@ -171,6 +171,11 @@ it.effect("Apply automatically applies an untouched install as shipped, starting
     const entry = yield* entryOf;
     assert.strictEqual(entry?.state, "applied");
     assert.deepStrictEqual(entry?.decidedBy, { kind: "auto", name: null });
+    const botGuidance = (yield* updates.get).entries.find(
+      (item) => item.id === "bot-vs-worker-agent-creation",
+    );
+    assert.strictEqual(botGuidance?.state, "applied");
+    assert.deepStrictEqual(botGuidance?.decidedBy, { kind: "auto", name: null });
     const queued = Option.getOrThrow(yield* repository.getById({ id: TaskId.make("queued") }));
     assert.strictEqual(queued.status, "Queued");
     assert.strictEqual(queued.triggerChangedAt, before.triggerChangedAt);
@@ -185,8 +190,10 @@ it.effect("Apply automatically applies an untouched install as shipped, starting
     const details = yield* updates.details;
     assert.strictEqual(details.workflowVersion, 2);
     const sql = yield* SqlClient.SqlClient;
-    const [prompts] = yield* sql<{ taskExecution: string }>`
-      SELECT task_execution AS "taskExecution" FROM task_prompt_settings WHERE id = 1`;
+    const [prompts] = yield* sql<{ agentCreation: string; taskExecution: string }>`
+      SELECT agent_creation AS "agentCreation", task_execution AS "taskExecution"
+      FROM task_prompt_settings WHERE id = 1`;
+    assert.strictEqual(prompts?.agentCreation, DEFAULT_TASK_PROMPT_SETTINGS.agentCreation);
     assert.strictEqual(prompts?.taskExecution, DEFAULT_TASK_PROMPT_SETTINGS.taskExecution);
   }).pipe(Effect.provide(layer())),
 );

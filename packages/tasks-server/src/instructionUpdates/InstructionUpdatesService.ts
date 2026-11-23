@@ -262,22 +262,26 @@ const make = Effect.gen(function* () {
   });
 
   const applyAutomatically = Effect.gen(function* () {
-    const current = yield* details;
-    if (current.mode !== "auto") return [];
+    const mode = yield* readMode;
+    if (mode !== "auto") return [];
+    const rows = yield* readRows;
     const applied: string[] = [];
-    for (const item of current.entries) {
-      if (!isPendingInstructionUpdate(item.state) || item.touchesEditedText) continue;
+    for (const entry of INSTRUCTION_UPDATES) {
+      const row = rows.get(entry.id);
+      if (row === undefined || !isPendingInstructionUpdate(row.state)) continue;
+      // Re-read user texts per entry so chained updates see prompt text written by earlier entries.
+      if (touchesEditedText(editedTextOf(entry, yield* userTexts))) continue;
       // One entry that cannot apply leaves it pending for the user, not the others.
-      const done = yield* applyAsShipped(item.entry).pipe(
+      const done = yield* applyAsShipped(entry).pipe(
         Effect.as(true),
         Effect.catch((cause) =>
           Effect.logWarning("Instruction update did not apply automatically", {
-            entry: item.id,
+            entry: entry.id,
             cause,
           }).pipe(Effect.as(false)),
         ),
       );
-      if (done) applied.push(item.id);
+      if (done) applied.push(entry.id);
     }
     return applied;
   });

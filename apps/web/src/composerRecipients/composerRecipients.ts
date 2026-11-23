@@ -44,6 +44,33 @@ function productComposerRecipients(
 
 let recipientsRevision = 0;
 const readRecipientsRevision = () => recipientsRevision;
+const subscribeNever = () => () => undefined;
+const subscribersByEnvironment = new Map<EnvironmentId, (listener: () => void) => () => void>();
+
+// One stable subscribe function per environment so useSyncExternalStore does not resubscribe
+// even where the React Compiler does not run.
+function subscribeForEnvironment(environmentId: EnvironmentId | null) {
+  if (environmentId === null) return subscribeNever;
+  let subscribe = subscribersByEnvironment.get(environmentId);
+  if (subscribe === undefined) {
+    subscribe = (listener: () => void) => {
+      const onChange = () => {
+        recipientsRevision += 1;
+        listener();
+      };
+      const stops = WEB_PRODUCT.features.flatMap((feature) =>
+        feature.subscribeComposerRecipients
+          ? [feature.subscribeComposerRecipients(environmentId, onChange)]
+          : [],
+      );
+      return () => {
+        for (const stop of stops) stop();
+      };
+    };
+    subscribersByEnvironment.set(environmentId, subscribe);
+  }
+  return subscribe;
+}
 
 /**
  * Who the composer of `threadId` can address, kept current while it is mounted: features load
@@ -53,22 +80,11 @@ export function useProductComposerRecipients(
   environmentId: EnvironmentId | null,
   threadId: ThreadId | null,
 ): ReadonlyArray<ExperimentalWebComposerRecipient> {
-  const subscribe = (listener: () => void) => {
-    if (environmentId === null) return () => undefined;
-    const onChange = () => {
-      recipientsRevision += 1;
-      listener();
-    };
-    const stops = WEB_PRODUCT.features.flatMap((feature) =>
-      feature.subscribeComposerRecipients
-        ? [feature.subscribeComposerRecipients(environmentId, onChange)]
-        : [],
-    );
-    return () => {
-      for (const stop of stops) stop();
-    };
-  };
-  const revision = useSyncExternalStore(subscribe, readRecipientsRevision, readRecipientsRevision);
+  const revision = useSyncExternalStore(
+    subscribeForEnvironment(environmentId),
+    readRecipientsRevision,
+    readRecipientsRevision,
+  );
   return environmentId === null
     ? EMPTY_RECIPIENTS
     : composerRecipientsAt(environmentId, threadId, revision);

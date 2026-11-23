@@ -680,7 +680,7 @@ it.effect("agent_update renaming a bot renames its chat and tells clients", () =
     const result = yield* (yield* TaskToolService).call({
       name: "agent_update",
       args: { id: "bot:named", name: "Up Growth Analyst" },
-      context: chat,
+      context: { ...chat, live: true, runtimeMode: "full-access" },
     });
     assert.isFalse(result.isError, result.text);
     assert.deepStrictEqual(
@@ -821,6 +821,18 @@ it.effect(
       assert.isTrue(hijackUpdate.isError);
       assert.include(hijackUpdate.text, "Changing a bot would need more permissions (full-access)");
 
+      // agent_update enforces the same mode-ceiling check when targeting a bot id.
+      const agentHijackUpdate = yield* call(
+        "agent_update",
+        { id: bot.agent.id, instructions: "Hijacked.", runtimeMode: "approval-required" },
+        supervised,
+      );
+      assert.isTrue(agentHijackUpdate.isError);
+      assert.include(
+        agentHijackUpdate.text,
+        "Changing a bot would need more permissions (full-access)",
+      );
+
       const worker = yield* repository.upsertAgent({
         id: TaskAgentId.make("worker-dev"),
         projectId: null,
@@ -901,6 +913,16 @@ it.effect(
         divergedUpdate.text,
         "Changing a bot would need more permissions (full-access)",
       );
+      const divergedAgentUpdate = yield* call(
+        "agent_update",
+        { id: supervisedBot.agent.id, instructions: "Injected." },
+        supervised,
+      );
+      assert.isTrue(divergedAgentUpdate.isError);
+      assert.include(
+        divergedAgentUpdate.text,
+        "Changing a bot would need more permissions (full-access)",
+      );
 
       // Background task-agent runs cannot call bot_create or bot_update (even after ending).
       const runThread = ThreadId.make("thread-worker-run");
@@ -951,6 +973,13 @@ it.effect(
       );
       assert.isTrue(bgUpdate.isError);
       assert.include(bgUpdate.text, "cannot create or edit bots");
+      const bgAgentUpdate = yield* call(
+        "agent_update",
+        { id: bot.agent.id, instructions: "Bad." },
+        runContext,
+      );
+      assert.isTrue(bgAgentUpdate.isError);
+      assert.include(bgAgentUpdate.text, "cannot create or edit bots");
     }).pipe(Effect.provide(layer));
   },
 );
