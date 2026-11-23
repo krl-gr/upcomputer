@@ -177,6 +177,65 @@ Reviewer, started by its own tag or status:
       "Last, switch the workflow with task_workflow_version_set and version 2. It changes no task or text by itself: the Tasks list, the status pickers and Restore default then use the new statuses and texts, and a task whose run crashes moves to Failed.",
     ],
   },
+  {
+    id: "bot-vs-worker-agent-creation",
+    release: "0.0.40",
+    title: "Agent creation guidance now explains bots vs. workers",
+    briefName: "Bot vs worker guidance update",
+    summary: "Tells agents when to create a bot instead of a background worker.",
+    why: "Agents can now create and edit bots with bot_create and bot_update. Without this note in the agent creation guidance, a chat asked to make a bot could still create a background worker with agent_create instead.",
+    changes: [
+      {
+        kind: "prompt",
+        field: "agentCreation",
+        before: `Create narrowly scoped agents with a clear role, explicit responsibilities, and trigger statuses or tags that do not overlap accidentally. Choose and explicitly pass a model appropriate for the work the agent will perform, along with appropriate runtime permissions. Project, current-thread, and server defaults are contextual fallbacks, not suitability recommendations; use modelAlias: "project" only when deliberately choosing the project default. Recommend strong models for orchestration and review, and fast or cheap ones for bulk work. Offer only providers and models that task_context reports as available; never assume one is installed.
+
+Adapt these templates for the agent's instructions.
+
+Queue worker (developer), started by its tag in its start status, e.g. To Do:
+- Work only on tasks with your tag in your start status.
+- At start: set In Progress and read the repository's AGENTS.md or CLAUDE.md. The run prompt carries the task, its output and its recent events, and the run already holds it, so do not call task_get at the start.
+- Make the smallest coherent change; verify it with tests, typecheck and lint.
+- Commit only your own files, and only if the user allowed commits.
+- Run every command in the foreground with a timeout; start no background processes.
+- Keep the task output current.
+- Queue hand-off, before the final update: if no other task with your tag is in your start status or In Progress, move the bottom Queued task with your tag to your start status: task_search with your tag, status Queued, from "bottom" and limit 1 returns it. Never more than one.
+- Final mutation: a single task_update to the review status, e.g. To Verify, with assigneeAgentRunId: null. When a person must decide something first, the same update with status Needs You and the question at the top of the output. When blocked, status Blocked and the blocker in the output.
+
+Reviewer, started by its own tag or status:
+- Read the full diff and run the verification yourself.
+- Never edit; report findings by severity with file:line and evidence.
+- End with one task_update that hands the task to a person: To Verify, your trigger tag removed, and assigneeAgentRunId: null.`,
+        after: `Bot or worker: a bot has one permanent chat, its own memory and a place under Bots; create it with bot_create. A worker has no chat: it picks up tasks by its start statuses and tags and is listed under Workers; create it with agent_create. When the user asks for a bot, use bot_create.
+
+Create narrowly scoped agents with a clear role, explicit responsibilities, and trigger statuses or tags that do not overlap accidentally. Choose and explicitly pass a model appropriate for the work the agent will perform, along with appropriate runtime permissions. Project, current-thread, and server defaults are contextual fallbacks, not suitability recommendations; use modelAlias: "project" only when deliberately choosing the project default. Recommend strong models for orchestration and review, and fast or cheap ones for bulk work. Offer only providers and models that task_context reports as available; never assume one is installed.
+
+Adapt these templates for the agent's instructions.
+
+Queue worker (developer), started by its tag in its start status, e.g. To Do:
+- Work only on tasks with your tag in your start status.
+- At start: set In Progress and read the repository's AGENTS.md or CLAUDE.md. The run prompt carries the task, its output and its recent events, and the run already holds it, so do not call task_get at the start.
+- Make the smallest coherent change; verify it with tests, typecheck and lint.
+- Commit only your own files, and only if the user allowed commits.
+- Run every command in the foreground with a timeout; start no background processes.
+- Keep the task output current.
+- Queue hand-off, before the final update: if no other task with your tag is in your start status or In Progress, move the bottom Queued task with your tag to your start status: task_search with your tag, status Queued, from "bottom" and limit 1 returns it. Never more than one.
+- Final mutation: a single task_update to the review status, e.g. To Verify, with assigneeAgentRunId: null. When a person must decide something first, the same update with status Needs You and the question at the top of the output. When blocked, status Blocked and the blocker in the output.
+
+Reviewer, started by its own tag or status:
+- Read the full diff and run the verification yourself.
+- Never edit; report findings by severity with file:line and evidence.
+- End with one task_update that hands the task to a person: To Verify, your trigger tag removed, and assigneeAgentRunId: null.`,
+      },
+    ],
+    look: [
+      "Call instruction_updates_get to see whether the user edited agentCreation (editedFields).",
+      "Call instructions_get to read the current global agentCreation text.",
+    ],
+    apply: [
+      "If editedFields does not list agentCreation, save the After text above with instructions_update. If the user edited agentCreation, add the opening Bot or worker paragraph at the top and keep the rest of their text.",
+    ],
+  },
 ];
 
 export function instructionUpdateById(id: string): InstructionUpdateEntry | undefined {

@@ -82,6 +82,7 @@ describe("command permissions", () => {
           "rejectProposal",
           "assign",
           "extract",
+          "mention",
         ]) {
           const bot = createCommandPermissions(runtime, `upcomputer.bots.v1.${name}`);
           registry.set(sessions(env), AsyncResult.success(grant(false)));

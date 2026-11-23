@@ -128,6 +128,7 @@ import { FileTagChipContent } from "./chat/FileTagChip";
 import { SkillChipPopover, skillPopoverDescription } from "./chat/SkillInlineText";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { ModelMentionChip, modelMentionKey, modelMentionKeysAtom } from "./chat/ModelMentionChip";
+import { useComposerRecipientChipNode } from "../composerRecipients/ComposerRecipientChip";
 import { getTimelinePageScrollKey } from "./chat/pageScrollController";
 import { ContextChip } from "./ContextChip";
 import {
@@ -293,6 +294,8 @@ function ComposerMentionNodeView({ node }: NodeViewProps) {
   const nativeDrag = useNativeFileDrag(actions.environmentId, () =>
     resolvePathLinkTarget(path, actions.cwd ?? ""),
   );
+  const recipientNode = useComposerRecipientChipNode(path, CHIP_NODE_SELECTION_CLASS_NAME);
+  if (recipientNode) return recipientNode;
   const chip = (
     <ContextChip
       {...nativeDrag}

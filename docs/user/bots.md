@@ -14,6 +14,8 @@ helper" or "Research assistant", and say in the instructions what the job covers
 - From an existing chat: right-click the chat in the sidebar, or click its title in the chat
   header, and choose **Turn into bot**. The chat keeps its history, model and permissions. A chat
   that is still running, archived, or a worker's run can't become a bot.
+- By asking: tell a bot or any chat to create a bot, such as "make me a release helper bot".
+  The agent creates it with the same settings, and can also change bots when you ask.
 
 ## One permanent chat
 
@@ -24,6 +26,17 @@ bot: keep talking in the same one.
 
 The agent's working memory of the conversation stays bounded, but the full history is kept. The
 bot can search its older messages when it needs them.
+
+To ask a bot from any other chat, including another bot's chat, pick it from the `@` menu
+anywhere in the message, or start the message with `@` and its name, such as
+`@Release helper prepare version 2.1` or `@Nova, now check the build`. An `@Name` later in the
+text is ordinary text, so "see the comment from @Nova" stays in the open chat. Before you send, the
+composer shows which bot the message goes to. A message goes to one bot: address two and it is not
+sent. The bot reads the latest messages of that chat and replies right there, while its
+own chat keeps the conversation too. Your message and the reply do not start a turn in the chat
+you wrote in; its agent sees the reply the next time you write to it. A busy bot answers once its
+current turn ends. When the bot needs an approval or an answer first, the chat shows a link to
+the bot's chat, where you give it.
 
 A bot's chat uses a compact one-line composer. To get the full composer with its model controls,
 turn on **Settings → Chat → Full composer in bot chats**.

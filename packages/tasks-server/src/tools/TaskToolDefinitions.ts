@@ -1,4 +1,11 @@
-import { TASK_CREATE_BATCH_LIMIT, TASK_STATUS_RENAME_IDS_LIMIT } from "@t3tools/tasks-contracts/v1";
+import {
+  BotAppearance,
+  BotAppearanceStyle,
+  BotMemoryMode,
+  BotPortraitId,
+  TASK_CREATE_BATCH_LIMIT,
+  TASK_STATUS_RENAME_IDS_LIMIT,
+} from "@t3tools/tasks-contracts/v1";
 
 import type { TaskToolSpec } from "./TaskToolTypes.ts";
 
@@ -25,6 +32,55 @@ const modelSelection = object(
   },
   ["instanceId", "model"],
 );
+
+const botRuntimeMode = {
+  type: "string",
+  enum: ["approval-required", "auto-accept-edits", "auto", "full-access"],
+} as const;
+const interactionMode = {
+  type: "string",
+  enum: ["default", "plan"],
+} as const;
+const literals = (values: ReadonlyArray<string>) => ({ type: "string", enum: [...values] });
+const botAppearance = {
+  ...object(
+    {
+      style: literals(BotAppearanceStyle.literals),
+      portrait: literals(BotPortraitId.literals),
+      shape: literals(BotAppearance.fields.shape.literals),
+      color: literals(BotAppearance.fields.color.literals),
+      accessory: literals(BotAppearance.fields.accessory.literals),
+    },
+    ["shape", "color", "accessory"],
+  ),
+  type: ["object", "null"],
+  description:
+    "The bot's face: a portrait (style portrait) or a shape character (style character). Leave it out for the default look; null resets it.",
+};
+/** bot_create's and bot_update's settings besides id, name and instructions. */
+const botFields = {
+  projectId: {
+    ...id,
+    description:
+      "The bot's working project, where its chat lives. Without it and workspaceRoot, the calling chat's project.",
+  },
+  workspaceRoot: id,
+  modelSelection,
+  modelAlias: id,
+  role: id,
+  runtimeMode: {
+    ...botRuntimeMode,
+    description:
+      "The permissions of the bot's chat and background tasks. Leave it out for full-access, the default for a new bot.",
+  },
+  interactionMode,
+  appearance: botAppearance,
+  memoryMode: {
+    ...literals(BotMemoryMode.literals),
+    description:
+      "Who keeps the bot's memory: upcomputer (default) or agent (for agents with a memory of their own).",
+  },
+} as const;
 
 const runStatuses = {
   type: "array",
@@ -408,7 +464,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "agent_create",
     description:
-      'Create a task-agent definition (users see task agents as workers). Call task_context with include ["agentCreation", "providers"] first and follow its agentCreation guidance and triggerRules. Replies with the agent without its instructions text, only their length; verbose: true returns the whole agent.',
+      'Create a task-agent definition (users see task agents as workers). A worker has no chat of its own: it starts on tasks by its start statuses and tags, and is listed under Workers. When the user asks for a bot, use bot_create instead. Call task_context with include ["agentCreation", "providers"] first and follow its agentCreation guidance and triggerRules. Replies with the agent without its instructions text, only their length; verbose: true returns the whole agent.',
     inputSchema: object(
       {
         id,
@@ -480,6 +536,20 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     name: "agent_delete",
     description: "Delete one task-agent definition.",
     inputSchema: object({ id }, ["id"]),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "bot_create",
+    description: `Create a bot, as the user does with + next to Bots: a personal assistant with one permanent chat, its own memory, and a place under Bots in the sidebar. It also takes background tasks tagged bot:<id>. Use it when the user asks for a bot; for an agent that only picks up tasks by tag and status, use agent_create. Call task_context with include ["providers"] first and pass a model the bot suits. The instructions say what the bot does and how. Returns the bot with its id and chat (threadId). ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object({ id, name: id, instructions: id, ...botFields }, ["name", "instructions"]),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "bot_update",
+    description: `Change a bot's settings, as its settings page does. Fields left out stay as they are. A change of working project or provider waits until the bot is idle. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object({ id, name: id, instructions: id, ...botFields }, ["id"]),
   },
   {
     type: "function",

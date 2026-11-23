@@ -101,6 +101,7 @@ const CLIENT_GUARDED_FEATURE_RPC_SCOPES = {
   "upcomputer.bots.v1.rejectProposal": AuthOrchestrationOperateScope,
   "upcomputer.bots.v1.assign": AuthOrchestrationOperateScope,
   "upcomputer.bots.v1.extract": AuthOrchestrationOperateScope,
+  "upcomputer.bots.v1.mention": AuthOrchestrationOperateScope,
   "upcomputer.user-surveys.v1.report": AuthOrchestrationOperateScope,
   "upcomputer.user-surveys.v1.feedback": AuthOrchestrationOperateScope,
 } as const;

@@ -53,6 +53,8 @@ import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
 import { formatComposerModelMention } from "@t3tools/client-runtime/composer-model-mentions";
+import { composerRecipientMention } from "../../composerRecipients/composerRecipients.logic";
+import { useComposerRecipientBanner } from "../../composerRecipients/composerRecipients";
 import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
@@ -751,6 +753,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const previewFile = composerFiles.find((file) => file.id === previewFileId);
   const composerContextActions = {
     environmentId,
+    threadId: activeThreadId,
     cwd: gitCwd ?? undefined,
     projectId: activeProjectId ?? undefined,
     expandImage: (imageId: string) => {
@@ -2179,9 +2182,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
       return;
     }
-    if (item.type === "model") {
+    if (item.type === "model" || item.type === "recipient") {
       if (trigger.kind !== "path") return;
-      const replacement = `${formatComposerModelMention(item.instanceId, item.model)} `;
+      const replacement =
+        item.type === "recipient"
+          ? composerRecipientMention(item.recipientId)
+          : `${formatComposerModelMention(item.instanceId, item.model)} `;
       const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
         snapshot.value,
         trigger.rangeEnd,
@@ -2690,6 +2696,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // An open question owns the space above the composer. Only a machine problem,
   // which is why an answer could not go through, stays beside it.
   const replyTo = composerDraft?.replyTo ?? null;
+  const recipientBannerItems = useComposerRecipientBanner(
+    environmentId,
+    activeThreadId,
+    prompt,
+    !activePendingProgress && !isEditingQueuedMessage,
+  );
   const draftRunsLocally = composerRunsDraftLocally({
     text: prompt,
     holdsOnlyText:
@@ -2738,10 +2750,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : [];
   const bannerItems: readonly ComposerBannerStackItem[] =
     runtimeModeCeilingDenial === undefined || activePendingProgress
-      ? [...props.bannerItems, ...replyBannerItems]
+      ? [...props.bannerItems, ...replyBannerItems, ...recipientBannerItems]
       : [
           ...props.bannerItems,
           ...replyBannerItems,
+          ...recipientBannerItems,
           {
             id: "managed-runtime-mode",
             variant: "warning",

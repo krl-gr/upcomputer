@@ -35,6 +35,15 @@ export function instructionUpdateCopy(
           "To Verify": gt("was Needs Review"),
         },
       };
+    case "bot-vs-worker-agent-creation":
+      return {
+        title: gt("Agent creation guidance now explains bots vs. workers"),
+        summary: gt("Tells agents when to create a bot instead of a background worker."),
+        why: gt(
+          "Agents can now create and edit bots with bot_create and bot_update. Without this note in the agent creation guidance, a chat asked to make a bot could still create a background worker with agent_create instead.",
+        ),
+        statusNotes: {},
+      };
     default:
       return { title: entry.title, summary: entry.summary, why: entry.why, statusNotes: {} };
   }

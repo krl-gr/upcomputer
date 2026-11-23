@@ -16,6 +16,10 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { Link } from "@tanstack/react-router";
 import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-execution";
 import { TaskRunsNotificationCard } from "./TaskRunsNotificationCard";
+import {
+  hasProductNotificationCard,
+  ProductNotificationCard,
+} from "../../product/ProductNotificationCard";
 import { providerFailureActions } from "@t3tools/client-runtime/state/turn-item-presentation";
 import { ErrorDetails } from "~/components/errors/ErrorDetails";
 import {
@@ -245,6 +249,9 @@ export const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEn
         timestampFormat={ctx.timestampFormat}
       />
     );
+  }
+  if (item?.type === "notification" && hasProductNotificationCard(item.source.kind)) {
+    return <ProductNotificationCard item={item} createdAt={props.workEntry.createdAt} />;
   }
   const childThreadId =
     item?.type === "notification" ? notificationChildThreadId(item.source) : undefined;

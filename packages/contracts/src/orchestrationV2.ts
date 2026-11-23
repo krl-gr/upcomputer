@@ -1493,6 +1493,15 @@ export const OrchestrationV2NotificationSource = kindUnionWithFallback(
     // A change to an agent's memory, shown to the user. The model learns memory changes from
     // its turn context, so these are not repeated to it as notifications.
     Schema.Struct({ kind: Schema.Literal("memory") }),
+    // A bot the person addressed with `@` from this thread: their message, a question the bot
+    // asks in its own chat, and its reply. Recording these starts no turn here.
+    Schema.Struct({
+      kind: Schema.Literal("bot_mention"),
+      agentId: TrimmedNonEmptyString,
+      name: TrimmedNonEmptyString,
+      botThreadId: ThreadId,
+      step: Schema.Literals(["sent", "request", "reply"]),
+    }),
   ],
   (kind) => Schema.Struct({ kind }),
   () => ({ kind: "background_task" }),

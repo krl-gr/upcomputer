@@ -34,6 +34,7 @@ import {
   getProviderSlashCommandsForSlashMenu,
 } from "@t3tools/client-runtime/providerSkills";
 import { searchProviderSkills } from "../../providerSkillSearch";
+import { useComposerRecipientMenu } from "../../composerRecipients/composerRecipients";
 import { useVisibleThreadShells } from "~/state/entities";
 import { useEnvironmentIdentities, useEnvironmentMachines } from "~/state/environments";
 import { offersLinkedEnvironmentsAtom } from "~/state/peerLinks";
@@ -125,6 +126,7 @@ export function useComposerMenuItems({
   const settledPullRequestTextQuery =
     pullRequestTextQuery === debouncedPullRequestTextQuery ? pullRequestTextQuery : null;
   const isPathTrigger = composerTriggerKind === "path";
+  const recipientMenu = useComposerRecipientMenu(environmentId, activeThreadId);
   const environmentThreadShells = useVisibleThreadShells(isPathTrigger);
   // Mounts older settled threads matching the mention, here and on linked machines, which shells
   // may leave out.
@@ -212,9 +214,10 @@ export function useComposerMenuItems({
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
       return [
+        ...recipientMenu.items(composerTrigger.query, questionAttachmentTarget === null),
         ...matchComposerThreadItems(
           {
-            shells: environmentThreadShells,
+            shells: recipientMenu.filterThreads(environmentThreadShells),
             environmentId,
             linkedEnvironments,
             excludeThreadId: activeThreadId,

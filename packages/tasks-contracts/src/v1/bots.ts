@@ -1,4 +1,13 @@
-import { IsoDateTime, ProjectId, ThreadId, TrimmedNonEmptyString } from "@t3tools/contracts";
+import {
+  IsoDateTime,
+  MessageId,
+  ModelSelection,
+  ProjectId,
+  ProviderInteractionMode,
+  RuntimeMode,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -174,6 +183,35 @@ export const BotWriteInput = Schema.Struct({
 });
 export type BotWriteInput = typeof BotWriteInput.Type;
 
+/** The bot_create and bot_update tools' settings; the model fields work as agent_create's. */
+const BotToolFields = {
+  projectId: Schema.optional(ProjectId),
+  workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  modelSelection: Schema.optional(ModelSelection),
+  modelAlias: Schema.optional(TrimmedNonEmptyString),
+  role: Schema.optional(TrimmedNonEmptyString),
+  runtimeMode: Schema.optional(RuntimeMode),
+  interactionMode: Schema.optional(ProviderInteractionMode),
+  appearance: Schema.optional(Schema.NullOr(BotAppearance)),
+  memoryMode: Schema.optional(BotMemoryMode),
+};
+
+export const BotCreateInput = Schema.Struct({
+  id: Schema.optional(TaskAgentId),
+  name: TrimmedNonEmptyString,
+  instructions: TrimmedNonEmptyString,
+  ...BotToolFields,
+});
+export type BotCreateInput = typeof BotCreateInput.Type;
+
+export const BotUpdateInput = Schema.Struct({
+  id: TaskAgentId,
+  name: Schema.optional(TrimmedNonEmptyString),
+  instructions: Schema.optional(TrimmedNonEmptyString),
+  ...BotToolFields,
+});
+export type BotUpdateInput = typeof BotUpdateInput.Type;
+
 export const BotMemory = Schema.Struct({
   id: TrimmedNonEmptyString,
   agentId: TaskAgentId,
@@ -242,6 +280,19 @@ export const BotMemoryWriteInput = Schema.Struct({
   source: BotMemory.fields.source,
 });
 export type BotMemoryWriteInput = typeof BotMemoryWriteInput.Type;
+/** The person's `@bot` message from `threadId`; the bot's reply comes back to that thread. */
+export const BotMentionInput = Schema.Struct({
+  agentId: TaskAgentId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  text: TrimmedNonEmptyString,
+});
+export type BotMentionInput = typeof BotMentionInput.Type;
+export const BotMentionResult = Schema.Struct({
+  /** False when the reply stays in the bot's chat, as for a chat the server has not created yet. */
+  repliesHere: Schema.Boolean,
+});
+export type BotMentionResult = typeof BotMentionResult.Type;
 
 export const BOTS_RPC_NAMESPACE = "upcomputer.bots.v1";
 export const BOTS_RPC_METHODS = {
@@ -256,6 +307,7 @@ export const BOTS_RPC_METHODS = {
   rejectProposal: `${BOTS_RPC_NAMESPACE}.rejectProposal`,
   assign: `${BOTS_RPC_NAMESPACE}.assign`,
   extract: `${BOTS_RPC_NAMESPACE}.extract`,
+  mention: `${BOTS_RPC_NAMESPACE}.mention`,
 } as const;
 const agentInput = Schema.Struct({ agentId: TaskAgentId });
 const entryInput = Schema.Struct({ ...agentInput.fields, id: TrimmedNonEmptyString });
@@ -293,6 +345,11 @@ export const BotsRpcGroup = RpcGroup.make(
     error: TaskError,
   }),
   Rpc.make(BOTS_RPC_METHODS.rejectProposal, { payload: entryInput, error: TaskError }),
+  Rpc.make(BOTS_RPC_METHODS.mention, {
+    payload: BotMentionInput,
+    success: BotMentionResult,
+    error: TaskError,
+  }),
   Rpc.make(BOTS_RPC_METHODS.assign, {
     payload: Schema.Struct({
       ...agentInput.fields,

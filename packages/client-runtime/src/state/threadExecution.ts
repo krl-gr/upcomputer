@@ -850,6 +850,7 @@ export function notificationChildThreadId(
     case "background_task":
     case "system":
     case "memory":
+    case "bot_mention":
       return undefined;
     default:
       source satisfies never;

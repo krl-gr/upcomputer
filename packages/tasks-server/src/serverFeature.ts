@@ -31,6 +31,7 @@ import { TaskScheduleServiceLive } from "./schedule/TaskScheduleService.ts";
 import { TaskToolServiceLive } from "./tools/TaskToolService.ts";
 import { TaskFeatureCountsLive } from "./telemetry/featureCounts.ts";
 import * as Bots from "./bots/BotService.ts";
+import * as BotMentions from "./bots/BotMentions.ts";
 import { BotContextLive, BOTS_RPC_CONTRIBUTION } from "./bots/contributions.ts";
 import { BotMcpToolsLive } from "./bots/BotMcpTools.ts";
 
@@ -49,7 +50,7 @@ export const TaskServicesLive = TaskToolServiceLive.pipe(
       TaskSourceWakeLive,
       InboxProjectLive,
       TaskScheduleServiceLive,
-      Bots.layer,
+      BotMentions.layer.pipe(Layer.provideMerge(Bots.layer)),
       InstructionUpdatesServiceLive,
     ),
   ),

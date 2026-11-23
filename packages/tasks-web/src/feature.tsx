@@ -14,6 +14,7 @@ import { msg } from "gt-react";
 // may reach web state at module load. The UI below loads on first render.
 import {
   defineExperimentalWebFeature,
+  type ExperimentalWebNotificationCardProps,
   type ExperimentalWebThreadAccessoryProps,
   type ExperimentalWebThreadRowAccessoryProps,
 } from "../../../apps/web/src/product/WebFeature.ts";
@@ -48,6 +49,28 @@ const LazySidebarBots = lazy(() =>
     return { default: bots.SidebarBots };
   }),
 );
+// The composer's `@` asks synchronously too; an open composer loads this module and the list.
+let botRecipients: typeof import("./bots/botRecipients.ts") | undefined;
+function subscribeBotRecipients(
+  environmentId: ExperimentalWebThreadAccessoryProps["environmentId"],
+  onChange: () => void,
+) {
+  if (botRecipients !== undefined) {
+    return botRecipients.subscribeBotRecipients(environmentId, onChange);
+  }
+  let stop: (() => void) | undefined;
+  let stopped = false;
+  void import("./bots/botRecipients.ts").then((module) => {
+    botRecipients = module;
+    if (stopped) return;
+    stop = module.subscribeBotRecipients(environmentId, onChange);
+    onChange();
+  });
+  return () => {
+    stopped = true;
+    stop?.();
+  };
+}
 /**
  * A bot's own chat, once the Bots section has loaded. It stays in its bot's working project,
  * so other features leave out moving it.
@@ -57,6 +80,20 @@ export const isBotChatThread = (thread: ExperimentalWebThreadAccessoryProps) =>
 const LazyBotHeader = lazy(() =>
   import("./bots/Bots.tsx").then((module) => ({ default: module.BotHeader })),
 );
+
+const LazyBotMentionNotificationCard = lazy(() =>
+  import("./bots/BotMentionNotificationCard.tsx").then((module) => ({
+    default: module.BotMentionNotificationCard,
+  })),
+);
+
+function BotMentionNotificationCardSlot(props: ExperimentalWebNotificationCardProps) {
+  return (
+    <Suspense fallback={null}>
+      <LazyBotMentionNotificationCard {...props} />
+    </Suspense>
+  );
+}
 
 function SidebarBots() {
   return (
@@ -116,6 +153,12 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   threadRowAccessory: ThreadRowRunCounts,
   chatHeaderAccessory: ChatHeaderRunCounts,
   threadActions: (thread) => botMenu?.botThreadActions(thread) ?? [],
+  composerRecipients: (context) => botRecipients?.botComposerRecipients(context) ?? [],
+  subscribeComposerRecipients: subscribeBotRecipients,
+  notificationCard: {
+    kinds: ["bot_mention"],
+    component: BotMentionNotificationCardSlot,
+  },
   sidebarSection: SidebarBots,
   coordinator: TaskReminders,
   settings: [

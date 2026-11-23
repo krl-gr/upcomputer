@@ -72,6 +72,7 @@ import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { newMessageId, newThreadId } from "~/lib/utils";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { buildThreadRouteParams } from "../../threadRoutes";
+import { trySendComposerRecipient } from "../../composerRecipients/composerRecipients";
 import {
   beginBackgroundDraftSubmissionByRef,
   clearBackgroundDraftSubmissionByRef,
@@ -710,6 +711,21 @@ export function useComposerSend(input: ComposerSendInput) {
       }
       return;
     }
+    const recipientHandled = await trySendComposerRecipient({
+      sendContext: sendCtx,
+      blocked: answeringQuestion || Boolean(directAnnotation) || queuedRunEdit.isEditing,
+      prompt: promptAtSend,
+      environmentId,
+      threadId: activeThread.id,
+      draftTarget: composerDraftTarget,
+      routeThreadKey,
+      currentRouteThreadKeyRef,
+      promptRef,
+      composerRef,
+      setPrompt: setComposerDraftPrompt,
+      navigate: (options) => navigate(options),
+    });
+    if (recipientHandled) return;
     if (answeringQuestion) {
       if (directAnnotation) {
         notifyDirectAnnotationAttached();
