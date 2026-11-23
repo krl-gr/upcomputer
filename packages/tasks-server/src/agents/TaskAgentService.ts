@@ -172,13 +172,33 @@ export function marksCrashedRunsFailed(version: TaskWorkflowVersion): boolean {
 /** Longest task output a blocked release copies into its result event. */
 const RELEASE_SUMMARY_MAX_LENGTH = 2_000;
 
-/** What an agent can do about a run that ended without a result. */
+/** What an agent can do about a run that ended without a result (workflow 1). */
 export const TASK_AGENT_RUN_RECOVERY_HINT =
   "Review the run, then continue it with agent_run_message, or change the task's status, tags or notBefore to retry.";
 
-/** The same advice in words for the person reading the task output. */
+/** The same advice in words for the person reading the task output (workflow 1). */
 const TASK_AGENT_RUN_PERSON_HINT =
   "Open the run to see what happened, then send it a message to continue, or change the task's status or tags to start over.";
+
+/**
+ * Workflow 2 can move the task to Failed, where a tag or notBefore change
+ * starts nothing: a retry has to bring it back to a start status.
+ */
+const TASK_AGENT_RUN_RECOVERY_HINT_V2 =
+  "Review the run, then continue it with agent_run_message, or move the task back to a status its agent starts on to retry.";
+
+const TASK_AGENT_RUN_PERSON_HINT_V2 =
+  "Open the run to see what happened, then send it a message to continue, or move the task back to the status its worker starts on to start over.";
+
+/** Retry advice for a run that ended without a result, in the install's workflow. */
+export function taskAgentRunRecoveryHints(version: TaskWorkflowVersion): {
+  readonly agent: string;
+  readonly person: string;
+} {
+  return marksCrashedRunsFailed(version)
+    ? { agent: TASK_AGENT_RUN_RECOVERY_HINT_V2, person: TASK_AGENT_RUN_PERSON_HINT_V2 }
+    : { agent: TASK_AGENT_RUN_RECOVERY_HINT, person: TASK_AGENT_RUN_PERSON_HINT };
+}
 
 const RUN_CUT_OFF_REASON =
   "Up.computer closed or restarted while this run was starting or finishing, so it ended early. Retry to run it again.";
@@ -826,11 +846,13 @@ const make = Effect.gen(function* () {
       readonly interrupt: boolean;
     }) {
       const timestamp = yield* now;
+      const workflowVersion = yield* repository.workflowVersion();
+      const hints = taskAgentRunRecoveryHints(workflowVersion);
       let taskOutput: string | null | undefined;
       const events = [];
       if (input.task !== null) {
-        const recovery = TASK_AGENT_RUN_RECOVERY_HINT;
-        const recoveryNote = `Run ${input.status === "failed" ? "failed" : "was interrupted"}: ${input.reason} ${TASK_AGENT_RUN_PERSON_HINT} (run ${input.run.id})`;
+        const recovery = hints.agent;
+        const recoveryNote = `Run ${input.status === "failed" ? "failed" : "was interrupted"}: ${input.reason} ${hints.person} (run ${input.run.id})`;
         const existingOutput = input.task.output?.trim() ?? "";
         taskOutput = existingOutput.includes(recoveryNote)
           ? existingOutput
@@ -851,7 +873,7 @@ const make = Effect.gen(function* () {
           createdAt: timestamp,
         });
       }
-      const marksFailed = marksCrashedRunsFailed(yield* repository.workflowVersion());
+      const marksFailed = marksCrashedRunsFailed(workflowVersion);
       const finalized = yield* finalizeRun({
         run: input.run,
         finalizingStatus: `finalizing:${input.status}`,

@@ -61,6 +61,7 @@ import { TaskToolServiceLive } from "../tools/TaskToolService.ts";
 import { TaskToolService } from "../tools/TaskToolServiceTag.ts";
 import type { TaskToolInvocationContext } from "../tools/TaskToolTypes.ts";
 import {
+  TASK_AGENT_RUN_RECOVERY_HINT,
   TaskAgentService,
   TaskAgentServiceLive,
   type TaskAgentServiceShape,
@@ -1125,6 +1126,18 @@ test("a run-status agent handles each failure once and a failed run is not repla
       const failedTask = Option.getOrThrow(yield* repository.getById({ id: task.id }));
       NodeAssert.equal(failedTask.status, "Failed");
       NodeAssert.equal(failedTask.triggerChangedAt, task.triggerChangedAt);
+      // A tag or notBefore change starts nothing in Failed, so the advice
+      // says to bring the task back to a start status.
+      const {
+        events: [failure],
+      } = yield* repository.events({ taskId: task.id, kinds: ["task.agent-failed"] });
+      const recovery = (failure?.payload as { readonly recovery?: string } | undefined)?.recovery;
+      NodeAssert.match(recovery ?? "", /move the task back to a status its agent starts on/);
+      NodeAssert.doesNotMatch(recovery ?? "", /notBefore/);
+      NodeAssert.match(
+        failedTask.output ?? "",
+        /move the task back to the status its worker starts on/,
+      );
 
       // The doctor fails too: nobody starts again.
       endRun(doctorRun.threadId, "failed", { lastError: "quota exhausted" });
@@ -1185,6 +1198,14 @@ test("on workflow 1 a crashed run leaves its task's status, and a continuation k
       const current = () =>
         repository.getById({ id: task.id }).pipe(Effect.map((found) => Option.getOrThrow(found)));
       NodeAssert.equal((yield* current()).status, "To Do");
+      // The task stays in its start status, so the old advice still works.
+      const {
+        events: [failure],
+      } = yield* repository.events({ taskId: task.id, kinds: ["task.agent-failed"] });
+      NodeAssert.equal(
+        (failure?.payload as { readonly recovery?: string } | undefined)?.recovery,
+        TASK_AGENT_RUN_RECOVERY_HINT,
+      );
 
       // Failed is a plain status on workflow 1: continuing the run leaves it.
       yield* repository.update({ actor, id: task.id, status: "Failed" });
