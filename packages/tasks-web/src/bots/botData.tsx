@@ -3,6 +3,7 @@ import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environ
 import { describeError } from "@t3tools/client-runtime/errors";
 import { ThreadId, type EnvironmentId } from "@t3tools/contracts";
 import { gtFallback, msg, type useGT } from "gt-react";
+import * as Schema from "effect/Schema";
 import {
   defaultBotAppearance,
   type Bot,
@@ -17,6 +18,10 @@ import { resolveThreadLastVisitedAt } from "../../../../apps/web/src/components/
 import { useUiStateStore } from "../../../../apps/web/src/uiStateStore.ts";
 import { ConfigurableBotCharacter } from "../../../../apps/web/src/components/bot-character-configurable/ConfigurableBotCharacter.tsx";
 import { holdClientNotice } from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
+import {
+  readLocalStorageValue,
+  writeLocalStorageValue,
+} from "../../../../apps/web/src/hooks/useLocalStorage.ts";
 import {
   readTasksWebAccess,
   readTasksWebClient,
@@ -62,6 +67,43 @@ interface BotListStore {
 
 const EMPTY: BotList = { bots: [], loaded: false, failed: false, unsupported: false };
 const stores = new Map<EnvironmentId, BotListStore>();
+
+/** Each computer's bot chat thread ids as its last loaded list had them. */
+export const BOT_CHATS_STORAGE_KEY = "upcomputer:bot-chats";
+export const BotChats = Schema.Record(Schema.String, Schema.Array(Schema.String));
+
+function rememberBotChats(environmentId: EnvironmentId, bots: ReadonlyArray<Bot>) {
+  const threadIds = bots.map((bot) => bot.threadId);
+  const remembered = readLocalStorageValue(BOT_CHATS_STORAGE_KEY, {}, BotChats)[environmentId];
+  if (remembered?.join("\n") === threadIds.join("\n")) return;
+  writeLocalStorageValue(
+    BOT_CHATS_STORAGE_KEY,
+    (current) => ({ ...current, [environmentId]: threadIds }),
+    {},
+    BotChats,
+  );
+}
+
+/**
+ * The scoped keys of the bot chats each computer had when its list last loaded, for those whose
+ * list is loading again, so Threads does not list them until the Bots section does. A computer
+ * whose Tasks access is still being checked counts as loading: at startup that check comes first.
+ */
+export function rememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string[] {
+  const loading = environmentIds.filter((environmentId) => {
+    const access = readTasksWebAccess(environmentId);
+    if (access.availability !== "loading" && !access.canReadAgents) return false;
+    const { list } = storeFor(environmentId);
+    return !list.loaded && !list.failed;
+  });
+  if (loading.length === 0) return [];
+  const remembered = readLocalStorageValue(BOT_CHATS_STORAGE_KEY, {}, BotChats);
+  return loading.flatMap((environmentId) =>
+    (remembered[environmentId] ?? []).map((threadId) =>
+      scopedThreadKey(scopeThreadRef(environmentId, ThreadId.make(threadId))),
+    ),
+  );
+}
 
 type GT = ReturnType<typeof useGT>;
 
@@ -126,6 +168,7 @@ async function refresh(environmentId: EnvironmentId, store: BotListStore) {
   store.fetching = true;
   try {
     const bots = await readTasksWebClient(environmentId).bots.list({});
+    rememberBotChats(environmentId, bots);
     releaseNotice(store);
     publish(store, { bots, loaded: true, failed: false, unsupported: false });
   } catch (cause) {
@@ -235,16 +278,10 @@ export interface BotSectionList {
   readonly loaded: boolean;
 }
 
-/**
- * The lists, in the given environments' order, that the one Bots section merges: those that
- * answered, or failed in a way worth showing. One still loading or whose server predates bots
- * adds nothing.
- */
-export function useBotSectionLists(
-  environmentIds: ReadonlyArray<EnvironmentId>,
-): ReadonlyArray<BotSectionList> {
+/** Follows the given computers' Tasks access and, where it allows, their bot lists. */
+function useSubscribeBotSectionLists(environmentIds: ReadonlyArray<EnvironmentId>) {
   const key = environmentIds.join("\n");
-  const subscribe = useCallback(
+  return useCallback(
     (listener: () => void) => {
       const ids = key ? (key.split("\n") as Array<EnvironmentId>) : [];
       // Lists are read only where Tasks access allows it, which can change while subscribed.
@@ -272,6 +309,27 @@ export function useBotSectionLists(
     },
     [key],
   );
+}
+
+/**
+ * `rememberedBotChatKeys` as a store snapshot, one key per line, so it is read again when a
+ * computer's access is decided or its list loads.
+ */
+export function useRememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string {
+  const subscribe = useSubscribeBotSectionLists(environmentIds);
+  const read = () => rememberedBotChatKeys(environmentIds).join("\n");
+  return useSyncExternalStore(subscribe, read, read);
+}
+
+/**
+ * The lists, in the given environments' order, that the one Bots section merges: those that
+ * answered, or failed in a way worth showing. One still loading or whose server predates bots
+ * adds nothing.
+ */
+export function useBotSectionLists(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): ReadonlyArray<BotSectionList> {
+  const subscribe = useSubscribeBotSectionLists(environmentIds);
   const read = () =>
     environmentIds
       .flatMap((environmentId) => {

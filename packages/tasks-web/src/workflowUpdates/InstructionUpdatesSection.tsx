@@ -7,7 +7,7 @@ import {
 } from "@t3tools/tasks-contracts/v1";
 import { useGT, useLocale } from "gt-react";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import {
   SettingsRow,
@@ -123,13 +123,26 @@ function UpdateRow({
   const decided = status.state === "applied" || status.state === "kept";
   const waitsFor =
     status.waitsFor === undefined ? undefined : instructionUpdateById(status.waitsFor);
-  const setState = (state: "pending" | "kept") =>
-    updateInstructionUpdates(environmentId, { entries: [{ id: entry.id, state }] }).catch(() =>
-      toastManager.add({
-        type: "error",
-        title: gt("Couldn't save this change. Try again."),
-      }),
+  // The clicked button unmounts with the state it sets. Its replacement takes focus, or the
+  // app's focus recovery would move it to the instructions editor below.
+  const focusReplacement = useRef(false);
+  const takeFocus = (button: HTMLButtonElement | null) => {
+    if (!button || !focusReplacement.current) return;
+    focusReplacement.current = false;
+    button.focus({ preventScroll: true });
+  };
+  const setState = (state: "pending" | "kept") => {
+    focusReplacement.current = true;
+    return updateInstructionUpdates(environmentId, { entries: [{ id: entry.id, state }] }).catch(
+      () => {
+        focusReplacement.current = false;
+        toastManager.add({
+          type: "error",
+          title: gt("Couldn't save this change. Try again."),
+        });
+      },
     );
+  };
   return (
     <Collapsible
       open={open}
@@ -193,7 +206,7 @@ function UpdateRow({
           <span className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
             {gt("Kept yours", { $context: "state of an update closed without applying it" })}
             {canMutate ? (
-              <InlineButton tone="muted" onClick={() => void setState("pending")}>
+              <InlineButton ref={takeFocus} tone="muted" onClick={() => void setState("pending")}>
                 {gt("Reopen", { $context: "button that makes a kept update wait again" })}
               </InlineButton>
             ) : null}
@@ -203,6 +216,7 @@ function UpdateRow({
           <span className="flex items-center gap-2 pl-6 @min-[32rem]/updates:pl-0">
             {canMutate ? (
               <Button
+                ref={takeFocus}
                 size="sm"
                 variant="ghost-muted"
                 data-track="instruction-updates.keep-mine"

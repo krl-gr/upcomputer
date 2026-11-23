@@ -44,8 +44,11 @@ interface MentionRow {
 
 const shortHash = (value: string) =>
   NodeCrypto.createHash("sha256").update(value).digest("hex").slice(0, 24);
+// The label says the cut is the excerpt's, so a bot never reads the message as truncated.
 const clip = (text: string, length: number) =>
-  text.length > length ? `${text.slice(0, length - 1)}…` : text;
+  text.length > length
+    ? `${text.slice(0, length)}\n[Up.computer shortened this message for the excerpt: ${text.length - length} more characters not shown. The original message is complete.]`
+    : text;
 const asError = (cause: unknown) =>
   cause instanceof TaskError
     ? cause

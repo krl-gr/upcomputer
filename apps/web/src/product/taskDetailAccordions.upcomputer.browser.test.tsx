@@ -1,7 +1,7 @@
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { TasksView, type TasksViewProps } from "@t3tools/tasks-web";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { render } from "../../test/render";
@@ -435,5 +435,29 @@ describe("task detail accordions", () => {
     await expect
       .element(lateScreen.getByRole("button", { name: "Description" }))
       .toHaveAttribute("aria-expanded", "true");
+  });
+});
+
+describe("task detail status picker", () => {
+  it("closes after a status is picked", async () => {
+    const task = makeTask("task-status-picker");
+    const onUpdate = vi.fn(async (input: { readonly id: string; readonly status?: string }) => ({
+      ...task,
+      status: input.status ?? task.status,
+    }));
+    await using screen = await renderDetail({
+      task,
+      client: makeClient(async () => task, onUpdate),
+    });
+
+    const status = screen.getByRole("combobox", { name: "Task status" });
+    await userEvent.click(status);
+    const done = page.getByRole("option", { name: "Done", exact: true });
+    await expect.element(done).toBeVisible();
+
+    await userEvent.click(done);
+    await vi.waitFor(() => expect(onUpdate).toHaveBeenCalledWith({ id: task.id, status: "Done" }));
+    await expect.element(status).toHaveAttribute("aria-expanded", "false");
+    await expect.element(page.getByRole("listbox")).not.toBeInTheDocument();
   });
 });

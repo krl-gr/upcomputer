@@ -115,6 +115,7 @@ import {
   useBots,
   useBotSectionLists,
   useBotStatus,
+  useRememberedBotChatKeys,
   type BotSectionList,
 } from "./botData.tsx";
 
@@ -128,12 +129,19 @@ function useBotLists() {
   const connected = useConnectedEnvironmentIds();
   const primary = usePrimaryEnvironmentId();
   const computerScope = useSidebarComputerScope();
-  return useBotSectionLists(
-    filterIdsToComputerScope(
-      [...new Set([...(primary ? [primary] : []), ...connected])],
-      computerScope,
-    ),
+  const environmentIds = filterIdsToComputerScope(
+    [...new Set([...(primary ? [primary] : []), ...connected])],
+    computerScope,
   );
+  const lists = useBotSectionLists(environmentIds);
+  // A loaded computer's chats are the Bots section's own claim; these cover the rest.
+  const remembered = useRememberedBotChatKeys(environmentIds);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the claims registry entry while mounted
+  useEffect(
+    () => claimSidebarThreads("bots:remembered", remembered ? remembered.split("\n") : []),
+    [remembered],
+  );
+  return lists;
 }
 
 /** Each computer's bots the sidebar's Projects filter leaves, merged in the lists' order. */
