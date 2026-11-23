@@ -3483,7 +3483,10 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               abortController.signal.aborted
                 ? Effect.void
                 : Effect.gen(function* () {
-                    const detail = `OpenCode server exited unexpectedly (${code}).`;
+                    const detail =
+                      code === null
+                        ? "OpenCode server stopped unexpectedly."
+                        : `OpenCode server exited unexpectedly (exit code ${code}).`;
                     nativeStreamFailure = makeProviderFailure({
                       message: detail,
                       class: "transport_error",
@@ -3495,7 +3498,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                         yield* finalizeTurn(state, state.activeTurn, "failed", {
                           failure: makeProviderCrashFailure({
                             driver: OPENCODE_PROVIDER,
-                            reason: `exit code ${code}`,
+                            reason: code === null ? undefined : `exit code ${code}`,
                             detail,
                           }),
                           threadDisposition: "broken",

@@ -93,14 +93,15 @@ export interface OpenCodeServerProcess {
   readonly serverPassword?: string;
   readonly version: string;
   readonly isRunning: Effect.Effect<boolean>;
-  readonly exitCode: Effect.Effect<number, never>;
+  /** null when no exit code exists, as for a process killed by a signal. */
+  readonly exitCode: Effect.Effect<number | null, never>;
 }
 
 export interface OpenCodeServerConnection {
   readonly url: string;
   readonly serverPassword?: string;
   readonly version: string;
-  readonly exitCode: Effect.Effect<number, never> | null;
+  readonly exitCode: Effect.Effect<number | null, never> | null;
   readonly external: boolean;
 }
 
@@ -793,9 +794,10 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       ...(serverPassword !== undefined ? { serverPassword } : {}),
       version,
       isRunning: child.isRunning.pipe(Effect.orElseSucceed(() => false)),
+      // Effect fails `exitCode` for a process a signal ended.
       exitCode: child.exitCode.pipe(
         Effect.map(Number),
-        Effect.orElseSucceed(() => 0),
+        Effect.orElseSucceed(() => null),
       ),
     } satisfies OpenCodeServerProcess;
   });

@@ -378,4 +378,56 @@ describe.skipIf(observedPlatforms.length === 0)("OpenCode server startup", () =>
       expect(groupExists(pgid)).toBe(false);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
+
+  it.effect("reports no exit code for a server killed by a signal", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-opencode-killed-" });
+      const binaryPath = path.join(tempDir, "opencode");
+      yield* fs.writeFileString(
+        binaryPath,
+        [
+          "#!/bin/sh",
+          'echo "opencode server listening on http://127.0.0.1:4096"',
+          "exec sleep 600",
+          "",
+        ].join("\n"),
+      );
+      yield* fs.chmod(binaryPath, 0o755);
+
+      const tracked = yield* Deferred.make<number>();
+      const layerRuntime = OpenCodeRuntime.layer.pipe(
+        Layer.provide(
+          Layer.succeed(
+            OpenCodeServerLedger.OpenCodeServerLedger,
+            OpenCodeServerLedger.OpenCodeServerLedger.of({
+              track: (server) => Deferred.succeed(tracked, server.pid).pipe(Effect.as(Effect.void)),
+            }),
+          ),
+        ),
+      );
+
+      const serverScope = yield* Scope.make();
+      yield* Effect.addFinalizer(() => Scope.close(serverScope, Exit.void));
+      const server = yield* OpenCodeRuntime.OpenCodeRuntime.pipe(
+        Effect.flatMap((runtime) =>
+          runtime.startOpenCodeServerProcess({
+            binaryPath,
+            directory: tempDir,
+            port: 4096,
+            verify: () => Effect.succeed("1.0.0"),
+          }),
+        ),
+        Effect.provideService(Scope.Scope, serverScope),
+        Effect.provide(layerRuntime),
+      );
+      const pgid = yield* Deferred.await(tracked);
+      yield* Effect.addFinalizer(() => killGroup(pgid));
+
+      yield* killGroup(pgid);
+
+      expect(yield* server.exitCode).toBeNull();
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 });
