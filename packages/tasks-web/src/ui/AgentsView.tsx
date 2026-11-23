@@ -20,8 +20,9 @@ import type {
 } from "@t3tools/contracts";
 import {
   DEFAULT_TASK_STATUS,
-  TASK_STATUSES,
+  taskStatusesFor,
   type TaskAgentRunTriggerStatus,
+  type TaskWorkflowVersion,
 } from "@t3tools/tasks-contracts/v1";
 
 import type { TasksWebRpcClient } from "../rpc/index.ts";
@@ -95,6 +96,8 @@ export interface AgentsViewProps {
   readonly status: "loading" | "ready" | "error" | "offline";
   readonly initialSelectedAgentKey?: string;
   readonly canMutateEnvironment: (environmentId: EnvironmentId) => boolean;
+  /** Decides the standard statuses offered as start statuses. */
+  readonly workflowVersion: TaskWorkflowVersion;
   readonly providerCatalogByEnvironment: ReadonlyMap<
     EnvironmentId,
     {
@@ -439,8 +442,14 @@ export function AgentsView(props: AgentsViewProps) {
   ]);
   const statusOptions = useMemo(
     () =>
-      uniqueStatuses([...TASK_STATUSES, ...props.agents.flatMap((agent) => agent.startStatuses)]),
-    [props.agents],
+      uniqueStatuses(
+        [
+          ...taskStatusesFor(props.workflowVersion),
+          ...props.agents.flatMap((agent) => agent.startStatuses),
+        ],
+        props.workflowVersion,
+      ),
+    [props.agents, props.workflowVersion],
   );
   const tagOptions = useMemo(
     () => unique(listedAgents.flatMap((agent) => agent.startTags)),

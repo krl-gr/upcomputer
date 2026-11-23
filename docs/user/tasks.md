@@ -29,16 +29,23 @@ To create one by hand:
 ## Statuses
 
 A status is plain text. Up.computer does not force a fixed set, and the status menu in a task's
-details offers the statuses your tasks already use. By default, agents use these:
+details offers the statuses your tasks already use. By default, agents use these (an install set
+up before these statuses keeps its earlier ones, such as **Backlog** and **Needs Review**, and its
+instructions):
 
-| Status       | Meaning                                                       |
-| ------------ | ------------------------------------------------------------- |
-| Backlog      | Waiting its turn. Workers usually don't start on it.          |
-| To Do        | Ready. A worker that starts on To Do picks it up.             |
-| In Progress  | A worker is on it.                                            |
-| Needs Review | The worker is done. Check the output and the work.            |
-| Blocked      | The worker needs you. The chat that created the task is told. |
-| Done         | Finished.                                                     |
+| Status      | Meaning                                                              |
+| ----------- | -------------------------------------------------------------------- |
+| Idea        | Not approved yet. No worker starts on it.                            |
+| Queued      | Approved, waiting its turn in a worker's queue.                      |
+| To Do       | Ready. A worker that starts on To Do picks it up.                    |
+| In Progress | A worker is on it.                                                   |
+| In Review   | A reviewer worker is checking it.                                    |
+| Needs You   | The worker stopped for your decision. Its question is in the output. |
+| Blocked     | The worker can't continue. The chat that created the task is told.   |
+| Failed      | The worker's run crashed. Up.computer sets this status itself.       |
+| To Verify   | The workers are done. Check the output and the work.                 |
+| Done        | Finished.                                                            |
+| Cancelled   | Dropped.                                                             |
 
 What a status means for workers depends on their triggers. A worker starts on a task when the task
 has one of the worker's start statuses and all its required tags. See
@@ -46,6 +53,10 @@ has one of the worker's start statuses and all its required tags. See
 
 **Blocked** is special: a worker that sets it ends its run as blocked, and the chat that created
 the task always wakes up to tell you, even when **Wake chat when tasks complete** is off.
+
+**Failed** is set by Up.computer when a worker's run fails or is interrupted while it holds the
+task (not on an install that keeps the earlier statuses). Message the run to continue it, and the task goes back to **In Progress**, or set another
+status to retry.
 
 ## Tags and projects
 

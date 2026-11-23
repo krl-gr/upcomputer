@@ -1,5 +1,10 @@
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import { sameTaskStatus, TASK_STATUSES, type Task } from "@t3tools/tasks-contracts/v1";
+import {
+  sameTaskStatus,
+  taskStatusesFor,
+  type Task,
+  type TaskWorkflowVersion,
+} from "@t3tools/tasks-contracts/v1";
 
 import type { ProjectFaviconProject } from "../../../../apps/web/src/components/ProjectFavicon.tsx";
 
@@ -19,12 +24,18 @@ export interface TasksWebProject {
   readonly pickId: ProjectId;
 }
 
-/** Each status once, ignoring case and spacing; the canonical spelling wins over a respelling. */
-export function uniqueStatuses(statuses: readonly string[]): string[] {
+/**
+ * Each status once, ignoring case and spacing; the spelling of the workflow's
+ * standard status wins over a respelling.
+ */
+export function uniqueStatuses(
+  statuses: readonly string[],
+  workflowVersion: TaskWorkflowVersion,
+): string[] {
+  const standard = taskStatusesFor(workflowVersion);
   const unique: string[] = [];
   for (const value of statuses) {
-    const status =
-      TASK_STATUSES.find((canonical) => sameTaskStatus(canonical, value)) ?? value.trim();
+    const status = standard.find((canonical) => sameTaskStatus(canonical, value)) ?? value.trim();
     if (status && !unique.some((seen) => sameTaskStatus(seen, status))) unique.push(status);
   }
   return unique;

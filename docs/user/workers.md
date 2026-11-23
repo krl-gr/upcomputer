@@ -57,8 +57,8 @@ task waits.
 Up.computer starts every worker whose triggers match, so a worker could run on several tasks at
 once. By default, chats and workers keep each worker to one task at a time:
 
-- A chat creates the first task in the worker's start status and the rest in **Backlog**.
-- When a worker finishes a task, it moves the bottom **Backlog** task with its tag to its start
+- A chat creates the first task in the worker's start status and the rest in **Queued**.
+- When a worker finishes a task, it moves the bottom **Queued** task with its tag to its start
   status, so the next one starts.
 
 This is set by **Task creation** and the worker's own instructions, which you can change. Ask for
@@ -79,8 +79,9 @@ A run shows its state, such as **Working**, **Approval** (it waits for your perm
 ## When a run ends
 
 By default a worker ends by writing a summary in the task's **Output** and setting the status to
-**Needs Review**. Read the output, check the work, and set the task to **Done**, or tell the worker
-what to change.
+**To Verify**. Read the output, check the work, and set the task to **Done**, or tell the worker
+what to change. When the worker needs a decision from you first, it sets **Needs You** and puts
+the question at the top of the output.
 
 If a worker can't continue, it sets **Blocked** and writes what it needs in the output. The chat
 that created the task always wakes up and tells you.
