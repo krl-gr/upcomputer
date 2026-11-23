@@ -1210,6 +1210,120 @@ describe("OpenCodeAdapterV2", () => {
     }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
   );
 
+  // UpComputer: Zen's free limit kept a turn on "Thinking" for minutes with no reason shown.
+  it.effect(
+    "shows OpenCode's retries while a turn waits, and ends them when the model answers",
+    () =>
+      Effect.gen(function* () {
+        const nativeEvents = asyncEventStream();
+        let promptId = "";
+        const harness = yield* makeOpenCodeRuntimeHarness("retrying", "root", {
+          event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+          session: {
+            create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+            promptAsync: async (input: { messageID: string }) => {
+              promptId = input.messageID;
+              return { data: true };
+            },
+            abort: async () => ({ data: true }),
+            children: async () => ({ data: [] }),
+          },
+        });
+        yield* harness.startTurn();
+        const received = yield* harness.runtime.events.pipe(
+          Stream.takeUntil((event) => event.type === "turn.terminal"),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+        const push = (event: unknown) => Effect.promise(() => nativeEvents.push(event));
+        const retry = (attempt: number) => ({
+          type: "session.status",
+          properties: {
+            sessionID: "root",
+            status: {
+              type: "retry",
+              attempt,
+              message: "Free limit reached",
+              action: {
+                reason: "free_tier_limit",
+                provider: "opencode",
+                title: "Free limit reached",
+                message: "You reached the free usage limit. Try again later.",
+                label: "Upgrade",
+              },
+              next: 30_000,
+            },
+          },
+        });
+        yield* push({
+          type: "message.updated",
+          properties: {
+            sessionID: "root",
+            info: { id: promptId, role: "user", time: { created: 1 } },
+          },
+        });
+        yield* push({
+          type: "session.status",
+          properties: { sessionID: "root", status: { type: "busy" } },
+        });
+        yield* push(retry(1));
+        yield* push(retry(2));
+        yield* push({
+          type: "message.part.updated",
+          properties: {
+            sessionID: "root",
+            part: {
+              id: "answer",
+              sessionID: "root",
+              messageID: "assistant",
+              type: "text",
+              text: "Here it is",
+              time: { start: 2 },
+            },
+          },
+        });
+        yield* push({
+          type: "message.updated",
+          properties: {
+            sessionID: "root",
+            info: {
+              id: "assistant",
+              sessionID: "root",
+              role: "assistant",
+              time: { created: 2, completed: 3 },
+              parentID: promptId,
+            },
+          },
+        });
+        yield* push({
+          type: "session.status",
+          properties: { sessionID: "root", status: { type: "idle" } },
+        });
+
+        const events = Array.from(yield* Fiber.join(received));
+        const retries = events.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "error"
+            ? [event.turnItem]
+            : [],
+        );
+        assert.deepEqual(
+          retries.map((item) => [item.status, item.retry?.attempt, item.retry?.retryDelayMs]),
+          [
+            ["running", 1, 30_000],
+            ["running", 2, 30_000],
+            ["completed", 2, 30_000],
+          ],
+        );
+        assert.equal(
+          retries[0]?.failure.message,
+          "You reached the free usage limit. Try again later.",
+        );
+        assert.equal(retries[0]?.failure.class, "usage_limit");
+        assert.equal(new Set(retries.map((item) => item.id)).size, 1);
+        assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "completed");
+      }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
+  );
+
   it.effect("drops context usage carried over from before a completed compaction", () =>
     Effect.gen(function* () {
       const nativeEvents = asyncEventStream();

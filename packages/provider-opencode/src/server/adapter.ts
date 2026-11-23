@@ -59,6 +59,7 @@ import { brokenVersionDetail } from "@t3tools/provider-core/server/compatibility
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresentation";
 import { resolveOpenCodeServedModel, type ServedModelCache } from "./automaticModels.ts";
+import { openCodeRetryTurnItem } from "./openCodeRetry.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
@@ -1286,6 +1287,27 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           return ordinal;
         };
 
+        // UpComputer: OpenCode's retry status as the provider retry item (openCodeRetry.ts).
+        const emitRetry = Effect.fnUntraced(function* (
+          turn: ActiveOpenCodeTurn | null | undefined,
+          update: Pick<Parameters<typeof openCodeRetryTurnItem>[0], "retry" | "status">,
+        ) {
+          if (turn === null || turn === undefined) return;
+          const turnItem = openCodeRetryTurnItem({
+            driver: OPENCODE_PROVIDER,
+            turn,
+            itemOrdinal: (nativeItemId) => itemOrdinal(turn, nativeItemId),
+            now: yield* DateTime.now,
+            ...update,
+          });
+          if (turnItem === undefined) return;
+          yield* emitProviderEvent({
+            type: "turn_item.updated",
+            driver: OPENCODE_PROVIDER,
+            turnItem,
+          });
+        });
+
         const emitProviderTurn = (
           state: OpenCodeThreadState,
           turn: ActiveOpenCodeTurn,
@@ -2356,6 +2378,10 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                   ),
                 ).pipe(Effect.exit);
               }
+              if (status !== "failed")
+                yield* emitRetry(turn, {
+                  status: status === "completed" ? "completed" : "interrupted",
+                });
               yield* emitProviderTurn(state, turn, status, completedAt);
               const threadDisposition = terminal?.threadDisposition ?? "reusable";
               yield* updateProviderThread(state, {
@@ -3095,9 +3121,11 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               return;
             }
             case "message.part.updated":
+              yield* emitRetry(threads.get(event.properties.part.sessionID)?.activeTurn, {});
               yield* handlePartUpdated(event);
               return;
             case "message.part.delta":
+              yield* emitRetry(threads.get(event.properties.sessionID)?.activeTurn, {});
               yield* handlePartDelta(event);
               return;
             case "todo.updated": {
@@ -3164,6 +3192,8 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               }
               const state = threads.get(sessionId);
               if (state === undefined) return;
+              if (event.properties.status.type === "retry")
+                yield* emitRetry(state.activeTurn, { retry: event.properties.status });
               if (state.activeTurn?.admissionPending) {
                 state.activeTurn.admissionStatusSequence++;
               }
