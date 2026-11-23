@@ -140,6 +140,7 @@ function Side({
           <p
             // oxlint-disable-next-line react/no-array-index-key -- lines repeat and never reorder
             key={index}
+            data-changed={line.changed}
             className={cn(
               "rounded-sm px-1.5 py-0.5 wrap-break-word",
               line.changed &&
@@ -214,8 +215,16 @@ function BeforeAfterColumns({
   const gt = useGT();
   return (
     <div className="grid gap-2 @min-[32rem]/updates:grid-cols-2">
-      <Side title={gt("Before")} lines={lines.before} tone="removed" />
-      <Side title={gt("After")} lines={lines.after} tone="added" />
+      <Side
+        title={gt("Before", { $context: "column heading: the old version of a text" })}
+        lines={lines.before}
+        tone="removed"
+      />
+      <Side
+        title={gt("After", { $context: "column heading: the new version of a text" })}
+        lines={lines.after}
+        tone="added"
+      />
     </div>
   );
 }
