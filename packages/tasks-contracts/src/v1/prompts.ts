@@ -8,6 +8,10 @@ import * as Schema from "effect/Schema";
 
 import { LEGACY_TASK_WORKFLOW_VERSION, type TaskWorkflowVersion } from "./tasks.ts";
 
+// Shipped defaults reach existing installs only as instruction updates: change one together
+// with a new entry in instructionUpdates.ts, never with a migration that rewrites stored texts.
+// See docs/internals/instruction-updates.md.
+
 /** User-editable guidance layered on top of the Tasks machine protocol. */
 export const TaskPromptSettings = Schema.Struct({
   taskCreation: Schema.String,

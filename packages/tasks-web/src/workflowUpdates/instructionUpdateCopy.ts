@@ -14,7 +14,7 @@ export interface InstructionUpdateCopy {
 
 /**
  * The entries' copy, written out so it can be translated. An entry missing
- * here shows its English text (instructionUpdateCopy.test.ts asks for it).
+ * here shows its English text (workflowUpdates.test.ts asks for it).
  */
 export function instructionUpdateCopy(
   gt: GT,
