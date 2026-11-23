@@ -4,12 +4,16 @@ import { DEFAULT_TASK_PROMPT_SETTINGS, instructionUpdateById } from "@t3tools/ta
 import { editedTextOf } from "./instructionUpdateRules.ts";
 
 const workerMentions = (instructions: string) =>
-  editedTextOf(instructionUpdateById("task-statuses-v2")!, {
-    prompts: DEFAULT_TASK_PROMPT_SETTINGS,
-    allChats: "",
-    projects: [],
-    workers: [{ id: "w", name: "Worker", instructions }],
-  }).mentions.flatMap((mention) => mention.statuses);
+  editedTextOf(
+    instructionUpdateById("task-statuses-v2")!,
+    {
+      prompts: DEFAULT_TASK_PROMPT_SETTINGS,
+      allChats: "",
+      projects: [],
+      workers: [{ id: "w", name: "Worker", instructions }],
+    },
+    new Map(),
+  ).mentions.flatMap((mention) => mention.statuses);
 
 it("a status mention is the whole status name, not a file name or the plain word", () => {
   const cases: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [

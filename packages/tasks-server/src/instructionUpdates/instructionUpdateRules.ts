@@ -1,6 +1,10 @@
 import {
+  INSTRUCTION_UPDATES,
+  isPendingInstructionUpdate,
   sameTaskStatus,
+  type InstructionUpdateChange,
   type InstructionUpdateEntry,
+  type InstructionUpdateState,
   type TaskPromptField,
   type TaskPromptSettings,
 } from "@t3tools/tasks-contracts/v1";
@@ -57,16 +61,67 @@ function namedStatuses(text: string, statuses: ReadonlyArray<string>): string[] 
   return statuses.filter((status) => statusPattern(status).test(text));
 }
 
+type PromptChange = Extract<InstructionUpdateChange, { kind: "prompt" }>;
+
+/** Entry id to its state on this install. */
+export type InstructionUpdateStates = ReadonlyMap<string, InstructionUpdateState>;
+
+/**
+ * Where a field's text stands for an entry. A default an earlier entry ships
+ * from (the 0.0.39 text, say) is not edited: the entry waits for that earlier
+ * one while it is pending. Once it was kept or applied, that text is the user's.
+ */
+function promptTextOf(
+  entry: InstructionUpdateEntry,
+  change: PromptChange,
+  texts: UserTexts,
+  states: InstructionUpdateStates,
+): { readonly kind: "shipped" | "edited" } | { readonly kind: "waits"; readonly on: string } {
+  const { field } = change;
+  const current = texts.prompts[field];
+  if (current === change.before || current === change.after) return { kind: "shipped" };
+  const earlier = INSTRUCTION_UPDATES.slice(
+    0,
+    INSTRUCTION_UPDATES.findIndex((item) => item.id === entry.id),
+  ).find((item) =>
+    item.changes.some(
+      (other) => other.kind === "prompt" && other.field === field && other.before === current,
+    ),
+  );
+  const state = earlier === undefined ? undefined : states.get(earlier.id);
+  return earlier !== undefined && state !== undefined && isPendingInstructionUpdate(state)
+    ? { kind: "waits", on: earlier.id }
+    : { kind: "edited" };
+}
+
+/** The pending earlier entry this one waits for, when its texts are still that entry's defaults. */
+export function waitsForOf(
+  entry: InstructionUpdateEntry,
+  texts: UserTexts,
+  states: InstructionUpdateStates,
+): string | undefined {
+  for (const change of entry.changes) {
+    if (change.kind !== "prompt") continue;
+    const text = promptTextOf(entry, change, texts, states);
+    if (text.kind === "waits") return text.on;
+  }
+  return undefined;
+}
+
 /**
  * The texts an entry would change that the user wrote or edited. Shipped
  * defaults the user left alone are not counted: replacing those is the update.
  */
-export function editedTextOf(entry: InstructionUpdateEntry, texts: UserTexts): EditedText {
+export function editedTextOf(
+  entry: InstructionUpdateEntry,
+  texts: UserTexts,
+  states: InstructionUpdateStates,
+): EditedText {
   const editedFields: TaskPromptField[] = [];
   for (const change of entry.changes) {
     if (change.kind !== "prompt") continue;
-    const current = texts.prompts[change.field];
-    if (current !== change.before && current !== change.after) editedFields.push(change.field);
+    if (promptTextOf(entry, change, texts, states).kind === "edited")
+      editedFields.push(change.field);
   }
   const old = Object.keys(entry.statusRenames ?? {});
   const mentions: Array<EditedText["mentions"][number]> = [];

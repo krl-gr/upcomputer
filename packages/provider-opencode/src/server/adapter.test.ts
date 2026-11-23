@@ -803,6 +803,201 @@ describe("OpenCodeAdapterV2", () => {
     }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
   );
 
+  it.effect.each(["busy", "output"] as const)(
+    "shows OpenCode's retry while it waits, and settles it on the next %s",
+    (recovery) =>
+      Effect.gen(function* () {
+        const nativeEvents = asyncEventStream();
+        let promptId = "";
+        const harness = yield* makeOpenCodeRuntimeHarness("retry", "root", {
+          event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+          session: {
+            create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+            promptAsync: async (input: { messageID: string }) => {
+              promptId = input.messageID;
+              return { data: true };
+            },
+            abort: async () => ({ data: true }),
+            children: async () => ({ data: [] }),
+          },
+        });
+        yield* harness.startTurn();
+        const received = yield* harness.runtime.events.pipe(
+          Stream.takeUntil((event) => event.type === "turn.terminal"),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+        const now = DateTime.toEpochMillis(yield* DateTime.now);
+        const push = (event: unknown) => Effect.promise(() => nativeEvents.push(event));
+        yield* push({
+          type: "message.updated",
+          properties: {
+            sessionID: "root",
+            info: { id: promptId, role: "user", time: { created: 1 } },
+          },
+        });
+        yield* push({
+          type: "session.status",
+          properties: { sessionID: "root", status: { type: "busy" } },
+        });
+        yield* push({
+          type: "session.status",
+          properties: {
+            sessionID: "root",
+            status: {
+              type: "retry",
+              attempt: 2,
+              message: "Provider is overloaded",
+              next: now + 4_000,
+            },
+          },
+        });
+        if (recovery === "busy")
+          yield* push({
+            type: "session.status",
+            properties: { sessionID: "root", status: { type: "busy" } },
+          });
+        const answer = {
+          id: "msg_answer",
+          sessionID: "root",
+          role: "assistant",
+          parentID: promptId,
+          time: { created: 2 },
+        };
+        yield* push({ type: "message.updated", properties: { sessionID: "root", info: answer } });
+        yield* push({
+          type: "message.part.updated",
+          properties: {
+            sessionID: "root",
+            part: {
+              id: "prt_answer",
+              sessionID: "root",
+              messageID: "msg_answer",
+              type: "text",
+              text: "Recovered answer",
+              time: { start: 2 },
+            },
+          },
+        });
+        yield* push({
+          type: "message.updated",
+          properties: {
+            sessionID: "root",
+            info: { ...answer, time: { created: 2, completed: 3 } },
+          },
+        });
+        yield* push({
+          type: "session.status",
+          properties: { sessionID: "root", status: { type: "idle" } },
+        });
+
+        const events = Array.from(yield* Fiber.join(received));
+        const retries = events.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "error"
+            ? [event.turnItem]
+            : [],
+        );
+        assert.deepEqual(
+          retries.map((item) => item.status),
+          ["running", "completed"],
+        );
+        // The row settles once OpenCode works again, not when the turn ends.
+        const settledAt = events.findIndex(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "error" &&
+            event.turnItem.status === "completed",
+        );
+        const answeredAt = events.findIndex(
+          (event) =>
+            event.type === "turn_item.updated" && event.turnItem.type === "assistant_message",
+        );
+        assert.isAbove(answeredAt, -1);
+        assert.isBelow(settledAt, answeredAt);
+        assert.deepEqual(retries[0]?.retry, { attempt: 2, maxAttempts: null, retryDelayMs: 4_000 });
+        assert.equal(retries[0]?.failure.message, "Provider is overloaded.");
+        assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "completed");
+      }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
+  );
+
+  it.effect("ends the turn with a usage limit when OpenCode's free limit is reached", () =>
+    Effect.gen(function* () {
+      const nativeEvents = asyncEventStream();
+      const aborted: string[] = [];
+      let promptId = "";
+      const harness = yield* makeOpenCodeRuntimeHarness("free-limit", "root", {
+        event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+        session: {
+          create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+          promptAsync: async (input: { messageID: string }) => {
+            promptId = input.messageID;
+            return { data: true };
+          },
+          abort: async (input: { sessionID: string }) => {
+            aborted.push(input.sessionID);
+            await nativeEvents.push({
+              type: "session.status",
+              properties: { sessionID: "root", status: { type: "idle" } },
+            });
+            return { data: true };
+          },
+          children: async () => ({ data: [] }),
+        },
+      });
+      yield* harness.startTurn();
+      const received = yield* harness.runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      const next = DateTime.toEpochMillis(yield* DateTime.now) + 10 * 60 * 60 * 1_000;
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "message.updated",
+          properties: {
+            sessionID: "root",
+            info: { id: promptId, role: "user", time: { created: 1 } },
+          },
+        }),
+      );
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "session.status",
+          properties: {
+            sessionID: "root",
+            status: {
+              type: "retry",
+              attempt: 1,
+              message: "Free usage exceeded, subscribe to Go",
+              action: {
+                reason: "free_tier_limit",
+                provider: "opencode",
+                title: "Free limit reached",
+                message: "Subscribe to OpenCode Go to keep going.",
+                label: "Subscribe",
+                link: "https://opencode.ai/go",
+              },
+              next,
+            },
+          },
+        }),
+      );
+
+      const terminal = Array.from(yield* Fiber.join(received)).find(
+        (event) => event.type === "turn.terminal",
+      );
+      // OpenCode would otherwise retry hours later, unasked.
+      assert.deepEqual(aborted, ["root"]);
+      assert.equal(terminal?.status, "failed");
+      assert.equal(terminal?.failure?.class, "usage_limit");
+      assert.equal(terminal?.failure?.resetAt, DateTime.formatIso(DateTime.makeUnsafe(next)));
+      assert.equal(
+        terminal?.failure?.message,
+        "OpenCode's free limit is reached. Switch to another provider to keep working now, or upgrade at https://opencode.ai/go.",
+      );
+    }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
+  );
+
   it.effect("applies a changed runtime policy to the session on resume and turn start", () =>
     Effect.gen(function* () {
       const updates: Array<{ sessionID: string; permission: unknown }> = [];
@@ -1208,120 +1403,6 @@ describe("OpenCodeAdapterV2", () => {
         ),
       );
     }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
-  );
-
-  // UpComputer: Zen's free limit kept a turn on "Thinking" for minutes with no reason shown.
-  it.effect(
-    "shows OpenCode's retries while a turn waits, and ends them when the model answers",
-    () =>
-      Effect.gen(function* () {
-        const nativeEvents = asyncEventStream();
-        let promptId = "";
-        const harness = yield* makeOpenCodeRuntimeHarness("retrying", "root", {
-          event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
-          session: {
-            create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
-            promptAsync: async (input: { messageID: string }) => {
-              promptId = input.messageID;
-              return { data: true };
-            },
-            abort: async () => ({ data: true }),
-            children: async () => ({ data: [] }),
-          },
-        });
-        yield* harness.startTurn();
-        const received = yield* harness.runtime.events.pipe(
-          Stream.takeUntil((event) => event.type === "turn.terminal"),
-          Stream.runCollect,
-          Effect.forkScoped,
-        );
-        const push = (event: unknown) => Effect.promise(() => nativeEvents.push(event));
-        const retry = (attempt: number) => ({
-          type: "session.status",
-          properties: {
-            sessionID: "root",
-            status: {
-              type: "retry",
-              attempt,
-              message: "Free limit reached",
-              action: {
-                reason: "free_tier_limit",
-                provider: "opencode",
-                title: "Free limit reached",
-                message: "You reached the free usage limit. Try again later.",
-                label: "Upgrade",
-              },
-              next: 30_000,
-            },
-          },
-        });
-        yield* push({
-          type: "message.updated",
-          properties: {
-            sessionID: "root",
-            info: { id: promptId, role: "user", time: { created: 1 } },
-          },
-        });
-        yield* push({
-          type: "session.status",
-          properties: { sessionID: "root", status: { type: "busy" } },
-        });
-        yield* push(retry(1));
-        yield* push(retry(2));
-        yield* push({
-          type: "message.part.updated",
-          properties: {
-            sessionID: "root",
-            part: {
-              id: "answer",
-              sessionID: "root",
-              messageID: "assistant",
-              type: "text",
-              text: "Here it is",
-              time: { start: 2 },
-            },
-          },
-        });
-        yield* push({
-          type: "message.updated",
-          properties: {
-            sessionID: "root",
-            info: {
-              id: "assistant",
-              sessionID: "root",
-              role: "assistant",
-              time: { created: 2, completed: 3 },
-              parentID: promptId,
-            },
-          },
-        });
-        yield* push({
-          type: "session.status",
-          properties: { sessionID: "root", status: { type: "idle" } },
-        });
-
-        const events = Array.from(yield* Fiber.join(received));
-        const retries = events.flatMap((event) =>
-          event.type === "turn_item.updated" && event.turnItem.type === "error"
-            ? [event.turnItem]
-            : [],
-        );
-        assert.deepEqual(
-          retries.map((item) => [item.status, item.retry?.attempt, item.retry?.retryDelayMs]),
-          [
-            ["running", 1, 30_000],
-            ["running", 2, 30_000],
-            ["completed", 2, 30_000],
-          ],
-        );
-        assert.equal(
-          retries[0]?.failure.message,
-          "You reached the free usage limit. Try again later.",
-        );
-        assert.equal(retries[0]?.failure.class, "usage_limit");
-        assert.equal(new Set(retries.map((item) => item.id)).size, 1);
-        assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "completed");
-      }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
   );
 
   it.effect("drops context usage carried over from before a completed compaction", () =>
@@ -2612,7 +2693,21 @@ describe("OpenCodeAdapterV2", () => {
             Stream.take(1),
             Stream.runDrain,
           );
-          yield* TestClock.adjust(0);
+          // The session ends, so the next turn opens a fresh OpenCode server.
+          const ended = yield* harness.runtime.events.pipe(
+            Stream.runDrain,
+            Effect.as(true),
+            Effect.timeoutOrElse({ duration: "1 second", orElse: () => Effect.succeed(false) }),
+            Effect.forkChild,
+          );
+          yield* TestClock.adjust("1 second");
+          assert.isTrue(yield* Fiber.join(ended), "the session's events end with the server");
+          const restart = yield* harness.startTurn("again").pipe(Effect.flip);
+          assert.instanceOf(restart.cause, ProviderAdapter.ProviderAdapterProtocolError);
+          assert.equal(
+            restart.cause.detail,
+            "OpenCode's server stopped; it starts again with your next message",
+          );
           assert.isFalse(yield* harness.runtime.hasPendingBackgroundWork!);
           yield* offers[0]!.onRunEndedWithoutStarting!();
           assert.deepEqual(aborted, [], "failed-session callbacks cannot abort a replacement");
