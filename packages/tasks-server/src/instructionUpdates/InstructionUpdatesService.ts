@@ -33,6 +33,7 @@ import {
   appliedAtInstall,
   editedTextOf,
   renamedGroupKey,
+  shippedGroupOrder,
   renamedStatuses,
   touchesEditedText,
   type EditedText,
@@ -241,20 +242,20 @@ const make = Effect.gen(function* () {
         });
         yield* agents.scheduleAgentChanged({ agent: saved, reason: "upserted" });
       }
-      const list = yield* repository.listSettings();
-      const order = list.statusGroupOrder.map((key) => renamedGroupKey(key, renames));
-      const open = Object.fromEntries(
-        Object.entries(list.statusGroupOpen).map(([key, value]) => [
-          renamedGroupKey(key, renames),
-          value,
-        ]),
-      );
-      if (
-        order.some((key, index) => key !== list.statusGroupOrder[index]) ||
-        Object.keys(open).some((key) => !(key in list.statusGroupOpen))
-      )
-        yield* repository.updateListSettings({ statusGroupOrder: order, statusGroupOpen: open });
     }
+    const list = yield* repository.listSettings();
+    const order = shippedGroupOrder(list.statusGroupOrder, entry);
+    const open = Object.fromEntries(
+      Object.entries(list.statusGroupOpen).map(([key, value]) => [
+        renamedGroupKey(key, renames),
+        value,
+      ]),
+    );
+    if (
+      order.some((key, index) => key !== list.statusGroupOrder[index]) ||
+      Object.keys(open).some((key) => !(key in list.statusGroupOpen))
+    )
+      yield* repository.updateListSettings({ statusGroupOrder: order, statusGroupOpen: open });
     if (entry.workflowVersion !== undefined)
       yield* repository.setWorkflowVersion({ version: entry.workflowVersion });
     yield* writeRow(entry.id, "applied", { kind: "auto", name: null });

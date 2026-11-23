@@ -179,7 +179,7 @@ it.effect("Apply automatically applies an untouched install as shipped, starting
     const agent = Option.getOrThrow(yield* repository.getAgentById({ id: worker("").id }));
     assert.deepStrictEqual(agent.startStatuses, ["To Verify", "In Review"]);
     const list = yield* repository.listSettings();
-    assert.deepStrictEqual(list.statusGroupOrder, ["needs you", "queued", "to do"]);
+    assert.deepStrictEqual(list.statusGroupOrder, ["needs you", "failed", "queued", "to do"]);
     assert.strictEqual(list.statusGroupOpen.queued, false);
     assert.strictEqual(list.workflowVersion, 2);
     const details = yield* updates.details;

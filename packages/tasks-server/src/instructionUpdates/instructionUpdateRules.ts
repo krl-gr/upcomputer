@@ -83,6 +83,30 @@ export function renamedGroupKey(key: string, renames: Readonly<Record<string, st
   return key;
 }
 
+/**
+ * A saved group order as the entry ships it: renamed keys keep their places, and
+ * groups the entry adds go right after the group before them in its new order,
+ * since the Tasks list puts unsaved keys below every saved one. An empty order
+ * follows the default and stays empty.
+ */
+export function shippedGroupOrder(
+  saved: ReadonlyArray<string>,
+  entry: InstructionUpdateEntry,
+): string[] {
+  const renames = entry.statusRenames ?? {};
+  const order = saved.map((key) => renamedGroupKey(key, renames));
+  const change = entry.changes.find((item) => item.kind === "groupOrder");
+  if (order.length === 0 || change?.kind !== "groupOrder") return order;
+  const before = new Set(change.before.map((status) => renamedGroupKey(groupKey(status), renames)));
+  const after = change.after.map(groupKey);
+  after.forEach((key, index) => {
+    if (before.has(key) || order.includes(key)) return;
+    const previous = after.slice(0, index).findLast((earlier) => order.includes(earlier));
+    order.splice(previous === undefined ? 0 : order.indexOf(previous) + 1, 0, key);
+  });
+  return order;
+}
+
 /** As the Tasks list keys its groups (statusGroupKey in tasks-web). */
 const groupKey = (status: string) => status.trim().toLowerCase();
 
