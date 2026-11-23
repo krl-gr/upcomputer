@@ -65,7 +65,12 @@ import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as OpenCode2Client from "./OpenCode2Client.ts";
 import * as OpenCode2Server from "./OpenCode2Server.ts";
 import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
-import { servedAutomaticModel } from "../automaticModels.ts";
+import {
+  isFreeZenModel,
+  servedZenModel,
+  ZEN_PROVIDER_ID,
+  type ZenModel,
+} from "../automaticModels.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import { readableProviderErrorMessage } from "../providerErrorMessage.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -878,14 +883,17 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     const directoryOf = (cwd: string | null | undefined) => cwd ?? host.paths.cwd;
     const windowOf = (cwd: string | null | undefined, model: string) =>
       contextWindows.get(directoryOf(cwd))?.get(model);
+    const zenModels = new Map<string, ReadonlyArray<ZenModel>>();
     const listedModelRef = (selection: ModelSelection, cwd: string | null | undefined) => {
-      const listed = modelVariants.get(directoryOf(cwd));
-      const model = servedAutomaticModel(selection.model, (slug) =>
-        listed === undefined || listed.size === 0 ? undefined : listed.has(slug),
-      );
+      const zen = zenModels.get(directoryOf(cwd));
+      // OpenCode 2 names no defaults; an unread catalog keeps the selection.
+      const model =
+        zen === undefined || zen.length === 0
+          ? selection.model
+          : servedZenModel(selection.model, zen, undefined);
       return modelRef(
         model === selection.model ? selection : { ...selection, model },
-        listed?.get(model),
+        modelVariants.get(directoryOf(cwd))?.get(model),
       );
     };
     const now = yield* DateTime.now;
@@ -4077,6 +4085,16 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
                 windows.set(slug, model.limit.input ?? model.limit.context);
                 variants.set(slug, new Set(model.variants.map((variant) => variant.id)));
               }
+              zenModels.set(
+                directory,
+                models.data
+                  .filter((model) => model.providerID === ZEN_PROVIDER_ID)
+                  .map((model) => ({
+                    slug: `${ZEN_PROVIDER_ID}/${model.id}`,
+                    free: isFreeZenModel(model.id, model.cost),
+                    live: model.status !== "deprecated",
+                  })),
+              );
             }),
           ),
           Effect.ignore({ log: true }),

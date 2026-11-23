@@ -410,10 +410,42 @@ describe("OpenCodeAdapterV2", () => {
     }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
   );
 
+  const zenModel = (id: string, cost = 0, status?: "deprecated") => ({
+    id,
+    variants: {},
+    cost: { input: cost, output: cost },
+    ...(status === undefined ? {} : { status }),
+  });
   it.effect.each([
-    ["opencode/glm-5.3-flash-free", "deepseek-v4.1-flash-free"],
-    ["opencode/gone-free", "gone-free"],
-  ] as const)("prompts %s as %s when the server no longer lists it", ([selected, sent]) =>
+    [
+      "the next preferred free model",
+      "opencode/glm-5.3-flash-free",
+      [
+        zenModel("glm-5.3-flash-free", 0, "deprecated"),
+        zenModel("deepseek-v4.1-flash-free"),
+        zenModel("iceman-free"),
+      ],
+      "deepseek-v4.1-flash-free",
+    ],
+    [
+      "any live free model when no preferred one is left",
+      "opencode/glm-5.3-flash-free",
+      [
+        zenModel("minimax-m3.1-flash-free", 0, "deprecated"),
+        zenModel("big-pickle"),
+        zenModel("gpt-6", 5),
+        zenModel("iceman-free"),
+      ],
+      "iceman-free",
+    ],
+    [
+      "Zen's default when no free model is left, never a paid one",
+      "opencode/iceman-free",
+      [zenModel("big-pickle"), zenModel("gpt-6", 5)],
+      "big-pickle",
+    ],
+    ["a paid model the user picked as chosen", "opencode/gone", [zenModel("iceman-free")], "gone"],
+  ] as const)("prompts a missing selection as %s", ([, selected, models, sent]) =>
     Effect.gen(function* () {
       const suffix = `served-${sent.replaceAll(".", "-")}`;
       const nativeEvents = asyncEventStream();
@@ -434,12 +466,10 @@ describe("OpenCodeAdapterV2", () => {
                 all: [
                   {
                     id: "opencode",
-                    models: {
-                      "deepseek-v4.1-flash-free": { id: "deepseek-v4.1-flash-free", variants: {} },
-                      "minimax-m3.1-flash-free": { id: "minimax-m3.1-flash-free", variants: {} },
-                    },
+                    models: Object.fromEntries(models.map((model) => [model.id, model])),
                   },
                 ],
+                default: { opencode: "big-pickle" },
               },
             }),
           },
@@ -456,6 +486,49 @@ describe("OpenCodeAdapterV2", () => {
       );
       yield* harness.startTurn();
       assert.deepEqual(inputs[0]?.model, { providerID: "opencode", modelID: sent });
+    }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
+  );
+
+  it.effect("compacts a missing free selection with its stand-in", () =>
+    Effect.gen(function* () {
+      const nativeEvents = asyncEventStream();
+      const summarizeCalls: Array<Record<string, unknown>> = [];
+      const harness = yield* makeOpenCodeRuntimeHarness(
+        "served-compact",
+        "served-compact",
+        {
+          event: {
+            subscribe: async (_input: unknown, options: { signal?: AbortSignal }) => {
+              options.signal?.addEventListener("abort", () => nativeEvents.close(), { once: true });
+              return { stream: nativeEvents.stream };
+            },
+          },
+          provider: {
+            list: async () => ({
+              data: {
+                all: [{ id: "opencode", models: { "iceman-free": zenModel("iceman-free") } }],
+                default: { opencode: "big-pickle" },
+              },
+            }),
+          },
+          session: {
+            create: async () => ({
+              data: { id: "served-compact", time: { created: 1, updated: 1 } },
+            }),
+            summarize: async (input: Record<string, unknown>) => {
+              summarizeCalls.push(input);
+              return { data: true };
+            },
+          },
+        },
+        {},
+        { model: "opencode/glm-5.3-flash-free" },
+      );
+      yield* harness.startTurn("/compact");
+      assert.deepEqual(
+        summarizeCalls.map(({ providerID, modelID }) => `${providerID}/${modelID}`),
+        ["opencode/iceman-free"],
+      );
     }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
   );
 

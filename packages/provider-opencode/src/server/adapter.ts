@@ -58,6 +58,7 @@ import * as Stream from "effect/Stream";
 import { brokenVersionDetail } from "@t3tools/provider-core/server/compatibility";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresentation";
+import { resolveOpenCodeServedModel, type ServedModelCache } from "./automaticModels.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
@@ -301,7 +302,7 @@ interface ActiveOpenCodeTurn {
   readonly runId: ProviderAdapter.ProviderAdapterV2TurnInput["runId"] | null;
   readonly rootNodeId: ProviderAdapter.ProviderAdapterV2TurnInput["rootNodeId"];
   readonly appThread: OrchestrationV2AppThread;
-  /** UpComputer: an automatic model the server no longer serves is swapped at the first prompt. */
+  /** UpComputer: a free Zen model the server no longer serves is swapped when prompted. */
   modelSelection: ModelSelection;
   readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
   readonly providerTurnId: OrchestrationV2ProviderTurn["id"];
@@ -1143,6 +1144,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         let nativeStreamFailure: OrchestrationV2ProviderFailure | null = null;
         const threads = new Map<string, OpenCodeThreadState>();
         const variantCache: OpenCodeRuntime.OpenCodeVariantCache = new Map();
+        const servedModels: ServedModelCache = new Map();
         const commandReceipts = new Map<string, Deferred.Deferred<void>>();
         const commandControllers = new Map<string, Set<AbortController>>();
         const pendingRequests = new Map<string, PendingOpenCodeRequest>();
@@ -3594,10 +3596,10 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           const { variant, model: selectedModel, ...payloadWithoutModel } = inputPayload;
           const model =
             selectedModel &&
-            (yield* OpenCodeRuntime.resolveOpenCodeServedModel(
+            (yield* resolveOpenCodeServedModel(
               client,
               selectedModel,
-              variantCache,
+              servedModels,
               abortController.signal,
             ));
           if (model !== selectedModel && model !== undefined) {
@@ -4002,15 +4004,23 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 }
               }
               if (isCompaction) {
-                yield* sdkCall(
-                  "session.summarize",
-                  { sessionID: sessionId, ...parsedModel, auto: false },
-                  (signal) =>
-                    client.session.summarize(
-                      { sessionID: sessionId, ...parsedModel, auto: false },
-                      { signal: AbortSignal.any([signal, admissionAbortController!.signal]) },
-                    ),
+                yield* resolveOpenCodeServedModel(
+                  client,
+                  parsedModel,
+                  servedModels,
+                  admissionAbortController!.signal,
                 ).pipe(
+                  Effect.flatMap((model) =>
+                    sdkCall(
+                      "session.summarize",
+                      { sessionID: sessionId, ...model, auto: false },
+                      (signal) =>
+                        client.session.summarize(
+                          { sessionID: sessionId, ...model, auto: false },
+                          { signal: AbortSignal.any([signal, admissionAbortController!.signal]) },
+                        ),
+                    ),
+                  ),
                   Effect.tap(() =>
                     turn.interrupted ||
                     turn.finalized ||

@@ -14,6 +14,7 @@ import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
+import { resolveOpenCodeServedModel } from "./automaticModels.ts";
 import * as OpenCodeServerOwner from "./OpenCodeServerOwner.ts";
 
 const GENERATION_TIMEOUT = "3 minutes";
@@ -255,18 +256,11 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
           ).pipe(Effect.timeout("5 seconds"), Effect.ignore({ log: "Warn" })),
         );
         const selectedAgent = getModelSelectionStringOptionValue(input.modelSelection, "agent");
-        const catalog: OpenCodeRuntime.OpenCodeVariantCache = new Map();
-        const model = yield* OpenCodeRuntime.resolveOpenCodeServedModel(
-          client,
-          parsedModel,
-          catalog,
-        );
+        const model = yield* resolveOpenCodeServedModel(client, parsedModel);
         const selectedVariant = yield* OpenCodeRuntime.resolveOpenCodeVariant(
           client,
           model,
           getModelSelectionStringOptionValue(input.modelSelection, "variant"),
-          undefined,
-          catalog,
         );
         const promptContext = {
           operation: input.operation,
