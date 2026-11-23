@@ -1,11 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { ChevronRightIcon } from "lucide-react";
 
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "../../../../apps/web/src/components/ui/collapsible.tsx";
+import { cn } from "../../../../apps/web/src/lib/utils.ts";
 
 /**
  * The right Details column of the task, agent and automation views. It has no
@@ -38,26 +34,65 @@ export function DetailSidebarSection({
   title,
   count,
   defaultOpen = true,
+  contentReady = true,
   children,
 }: {
   readonly title: string;
   readonly count?: number | undefined;
   readonly defaultOpen?: boolean | undefined;
+  /** False while a lazy child (such as the description editor) is still mounting its initial DOM. */
+  readonly contentReady?: boolean | undefined;
   readonly children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const [mounted, setMounted] = useState(defaultOpen);
+  const [settledOpen, setSettledOpen] = useState(defaultOpen);
+  if (open && !mounted) setMounted(true);
+  // A section that starts collapsed waits for async child DOM before its first slide open, avoiding a mid-motion height jump.
+  const expanded = open && (settledOpen || contentReady);
+  if (expanded && !settledOpen) setSettledOpen(true);
+  const warm = !mounted ? () => setMounted(true) : undefined;
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="flex h-8 w-full cursor-pointer items-center gap-2 px-2 text-left text-sm font-normal leading-relaxed tracking-normal text-muted-foreground transition-colors hover:text-foreground">
+    <div>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        onPointerEnter={warm}
+        onFocus={warm}
+        className="flex h-8 w-full cursor-pointer items-center gap-2 px-2 text-left text-sm font-normal leading-relaxed tracking-normal text-muted-foreground transition-colors hover:text-foreground"
+      >
         <span className="min-w-0 truncate">{title}</span>
         <ChevronRightIcon
-          className={`size-4 shrink-0 text-muted-foreground transition-transform duration-150 ${open ? "rotate-90" : ""}`}
+          aria-hidden="true"
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-drawer motion-reduce:transition-none",
+            expanded && "rotate-90",
+          )}
         />
         {count === undefined ? null : <span className="ml-auto text-sm tabular-nums">{count}</span>}
-      </CollapsibleTrigger>
-      <CollapsibleContent className="pb-3">{children}</CollapsibleContent>
-    </Collapsible>
+      </button>
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-200 ease-drawer motion-reduce:transition-none",
+          expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+        )}
+        data-detail-sidebar-section-panel=""
+        data-open={expanded}
+        inert={!expanded}
+      >
+        {/* Hidden only once the closing motion ends: content-visibility switches discretely. */}
+        <div
+          className={cn(
+            "min-h-0 min-w-0 overflow-clip transition-[content-visibility] transition-discrete duration-200 motion-reduce:transition-none",
+            !expanded && "[content-visibility:hidden]",
+          )}
+        >
+          <div className="min-w-0 pb-3">{mounted ? children : null}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 

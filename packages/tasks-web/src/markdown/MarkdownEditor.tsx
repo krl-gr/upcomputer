@@ -20,6 +20,8 @@ export interface MarkdownEditorProps {
   /** Called on every edit, never for opening, focusing or scrolling the text. */
   readonly onChange: (value: string) => void;
   readonly onBlur?: () => void;
+  /** Called once Milkdown has mounted its initial document DOM. */
+  readonly onReady?: (() => void) | undefined;
   readonly placeholder?: string;
   readonly ariaLabel: string;
   readonly disabled?: boolean;
@@ -111,6 +113,14 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
       propsRef.current.autoFocus,
     );
     sessionRef.current = session;
+    void session.ready.then(
+      () => {
+        if (!disposed) propsRef.current.onReady?.();
+      },
+      () => {
+        if (!disposed) propsRef.current.onReady?.();
+      },
+    );
     return () => {
       disposed = true;
       sessionRef.current = null;
