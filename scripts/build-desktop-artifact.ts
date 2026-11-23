@@ -51,6 +51,7 @@ import {
   type WebAssetBrand,
 } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
+import { verifyWindowsComputerUseSidecar } from "./lib/windows-computer-use-sidecar.ts";
 import {
   findInlinedExternalPackages,
   selectCliRuntimeExternalDependencies,
@@ -4253,7 +4254,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   }
 
   if (options.platform === "win") {
-    yield* validateWindowsPackagedPayload({
+    const windowsPayload = yield* validateWindowsPackagedPayload({
       stageDistDir,
       appExecutableName: `${resolveDesktopProductName(appVersion)}.exe`,
       targetArch: options.arch,
@@ -4264,6 +4265,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       }),
       verbose: options.verbose,
     });
+    yield* verifyWindowsComputerUseSidecar({ ...windowsPayload, targetArch: options.arch });
   }
   // The probe runs on the host Node, so a cross-arch build skips it.
   if (
