@@ -39,6 +39,7 @@ import {
   TaskPageInput,
   TaskPageResult,
   TaskListSettings,
+  TaskWorkflowVersion,
   TaskListSettingsUpdateInput,
   TaskStatusCountsInput,
   TaskStatusCountsResult,
@@ -159,6 +160,12 @@ export interface FinalizeTaskAgentRunInput {
   readonly completedAt: IsoDateTime;
   readonly taskId: TaskId;
   readonly taskStatus?: Task["status"];
+  /**
+   * Set only while this run still holds an agent task, and without moving
+   * triggerChangedAt: the server reports how the run ended, it does not hand
+   * the task on. Ignored when `taskStatus` is set.
+   */
+  readonly heldTaskStatus?: Task["status"];
   readonly taskOutput?: string | null;
   readonly releaseAssignment: boolean;
   readonly events: ReadonlyArray<PersistTaskEventInput>;
@@ -240,6 +247,16 @@ export interface TaskRepositoryShape {
   readonly updateListSettings: (
     input: TaskListSettingsUpdateInput,
   ) => Effect.Effect<TaskListSettings, TaskRepositoryError>;
+  /** The install's workflow (see TaskWorkflowVersion); list settings carry it to clients. */
+  readonly workflowVersion: () => Effect.Effect<TaskWorkflowVersion, TaskRepositoryError>;
+  /**
+   * Moves the install to a workflow and announces it like a list settings
+   * change. It changes no task, status or instruction text: the workflow
+   * update applies those itself.
+   */
+  readonly setWorkflowVersion: (input: {
+    readonly version: TaskWorkflowVersion;
+  }) => Effect.Effect<void, TaskRepositoryError>;
   readonly items: (
     input: TaskListItemsInput,
   ) => Effect.Effect<TaskListItemsResult, TaskRepositoryError>;
@@ -362,7 +379,14 @@ export interface TaskRepositoryShape {
    * they ignore notBefore, audience and kind, as they ignore triggers.
    */
   readonly startAgentRun: (
-    input: PersistTaskAgentRunInput & { readonly startableAt: string | null },
+    input: PersistTaskAgentRunInput & {
+      readonly startableAt: string | null;
+      /**
+       * When the run starts on an agent task in status `from`, the task moves
+       * to `to` without moving triggerChangedAt.
+       */
+      readonly reopenTaskStatus?: { readonly from: string; readonly to: string };
+    },
   ) => Effect.Effect<Option.Option<TaskAgentRun>, TaskRepositoryError>;
   readonly getAgentRunById: (input: {
     readonly id: TaskAgentRunId;

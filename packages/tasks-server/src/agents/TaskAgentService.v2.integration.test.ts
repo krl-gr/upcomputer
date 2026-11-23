@@ -1221,6 +1221,16 @@ it.live("a person's message in a failed run's thread continues it as a new run",
         `;
         assert.lengthOf(results, 1);
         assert.include(results[0]?.payload_json ?? "", continuation.id);
+        // The failed run left the task Failed; its continuation took it back.
+        const statuses = yield* sql<{ readonly payload_json: string }>`
+          SELECT payload_json FROM task_events
+          WHERE task_id = ${task.id} AND kind = 'task.status-changed'
+          ORDER BY created_at, rowid
+        `;
+        assert.deepStrictEqual(
+          statuses.map((row) => JSON.parse(row.payload_json).to),
+          ["Failed", "In Progress", "Needs Review"],
+        );
       }),
   ),
 );

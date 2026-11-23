@@ -1,4 +1,4 @@
-import { DEFAULT_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
+import { LEGACY_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -62,7 +62,7 @@ export const UpdateDefaultQueuePromptsMigration = Effect.gen(function* () {
   for (const field of UPDATED_FIELDS) {
     const previous = row[field];
     if (previous !== PREVIOUS_DEFAULTS[field]) continue;
-    next[field] = DEFAULT_TASK_PROMPT_SETTINGS[field];
+    next[field] = LEGACY_TASK_PROMPT_SETTINGS[field];
     next.revision += 1;
     yield* sql`
       INSERT INTO task_prompt_settings_changes (

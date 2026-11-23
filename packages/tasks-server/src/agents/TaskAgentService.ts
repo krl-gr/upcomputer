@@ -1,5 +1,7 @@
 import {
   sameTaskStatus,
+  LEGACY_TASK_WORKFLOW_VERSION,
+  type TaskWorkflowVersion,
   TaskAgentRunId,
   TaskEventId,
   type Task,
@@ -148,6 +150,23 @@ export const BLOCKED_TASK_STATUS = "Blocked";
 
 export function isBlockedTaskStatus(status: string): boolean {
   return sameTaskStatus(status, BLOCKED_TASK_STATUS);
+}
+
+/**
+ * The status the server sets on an agent task whose run failed or was
+ * interrupted while holding it, when the install's workflow marks crashed
+ * runs. A continuation of the run moves the task back to RESUMED_TASK_STATUS.
+ */
+export const FAILED_TASK_STATUS = "Failed";
+export const RESUMED_TASK_STATUS = "In Progress";
+
+export function isFailedTaskStatus(status: string): boolean {
+  return sameTaskStatus(status, FAILED_TASK_STATUS);
+}
+
+/** Workflow 1 leaves a crashed run's task as it was. */
+export function marksCrashedRunsFailed(version: TaskWorkflowVersion): boolean {
+  return version !== LEGACY_TASK_WORKFLOW_VERSION;
 }
 
 /** Longest task output a blocked release copies into its result event. */
@@ -622,6 +641,7 @@ const make = Effect.gen(function* () {
     /** Interrupt the run's in-flight v2 work before recording the end. */
     readonly interrupt: boolean;
     readonly taskOutput?: string | null;
+    readonly heldTaskStatus?: string;
     readonly events?: ReadonlyArray<{
       readonly id: TaskEventId;
       readonly taskId: Task["id"];
@@ -671,6 +691,7 @@ const make = Effect.gen(function* () {
           completedAt: timestamp,
           taskId: input.run.taskId,
           ...(input.taskOutput !== undefined ? { taskOutput: input.taskOutput } : {}),
+          ...(input.heldTaskStatus !== undefined ? { heldTaskStatus: input.heldTaskStatus } : {}),
           releaseAssignment: true,
           events: input.events ?? [],
         });
@@ -830,6 +851,7 @@ const make = Effect.gen(function* () {
           createdAt: timestamp,
         });
       }
+      const marksFailed = marksCrashedRunsFailed(yield* repository.workflowVersion());
       const finalized = yield* finalizeRun({
         run: input.run,
         finalizingStatus: `finalizing:${input.status}`,
@@ -837,6 +859,7 @@ const make = Effect.gen(function* () {
         reasonCode: input.reasonCode,
         interrupt: input.interrupt,
         ...(taskOutput !== undefined ? { taskOutput } : {}),
+        ...(marksFailed ? { heldTaskStatus: FAILED_TASK_STATUS } : {}),
         events,
       });
       if (finalized && input.task !== null) yield* scheduleRunFinished(input.task.id);
@@ -1464,6 +1487,10 @@ const make = Effect.gen(function* () {
         const active = yield* findActive;
         if (Option.isSome(active)) return activeRefusal(active.value);
         const timestamp = message.type === "adopted" ? message.startedAt : yield* now;
+        const reopensFailed =
+          task.audience === "agent" &&
+          isFailedTaskStatus(task.status) &&
+          marksCrashedRunsFailed(yield* repository.workflowVersion());
         // Unarchived task and enabled agent are re-checked inside the insert, so a
         // close, disable or delete committed since the checks above wins.
         const created = yield* repository
@@ -1480,6 +1507,9 @@ const make = Effect.gen(function* () {
             continuesRunId: run.id,
             // Explicit messages ignore notBefore.
             startableAt: null,
+            ...(reopensFailed
+              ? { reopenTaskStatus: { from: FAILED_TASK_STATUS, to: RESUMED_TASK_STATUS } }
+              : {}),
           })
           .pipe(
             Effect.map((continuation) => ({
