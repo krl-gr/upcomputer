@@ -1370,7 +1370,7 @@ describe("OpenCode automatic model", () => {
   });
 
   it("keeps a saved model that OpenCode no longer lists, marked unavailable", () => {
-    const saved = createModelSelection(OPENCODE, "opencode/deepseek-v4.1-flash-free");
+    const saved = createModelSelection(OPENCODE, "opencode/kimi-k3");
     expect(
       shownModel({
         providers: [openCode([BIG_PICKLE, GLM])],
@@ -1378,6 +1378,17 @@ describe("OpenCode automatic model", () => {
         threadModelSelection: saved,
       }),
     ).toBe(saved.model);
+  });
+
+  it("shows Automatic's model for a dropped free Zen model, which the server swaps the same way", () => {
+    const saved = createModelSelection(OPENCODE, "opencode/deepseek-v4.1-flash-free");
+    expect(
+      shownModel({
+        providers: [openCode([BIG_PICKLE, GLM])],
+        draftKey: "dropped",
+        threadModelSelection: saved,
+      }),
+    ).toBe(GLM);
   });
 
   it("keeps an explicit choice, even one never picked automatically", () => {

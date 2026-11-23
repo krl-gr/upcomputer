@@ -38,6 +38,7 @@ import {
   resolveProjectDefaultProviderModelSelection,
 } from "./providerInstances";
 import { sortModelsForProviderInstance } from "./modelOrdering";
+import { isDroppedFreeZenModel } from "./product/openCodeZenModels";
 import { resolveModelShortName } from "@t3tools/client-runtime/provider-clients";
 
 export const MAX_CUSTOM_MODEL_LENGTH = 256;
@@ -272,6 +273,7 @@ export function resolveAppModelSelectionForInstance(
     (candidate) => candidate.instanceId === instanceId,
   );
   if (!entry) return null;
+  if (isDroppedFreeZenModel(entry.driverKind, selectedModel, entry.models)) selectedModel = null;
   const options = getAppModelOptionsForInstance(
     settings,
     entry,
