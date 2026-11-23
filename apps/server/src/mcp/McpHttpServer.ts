@@ -1522,7 +1522,11 @@ const layerToolExposure = Layer.effect(
     const server = yield* McpServer.McpServer;
     return McpToolExposure.make(
       () =>
-        server.tools.map(({ tool }) => ({ name: tool.name, description: tool.description ?? "" })),
+        server.tools.map(({ tool, annotations }) => ({
+          name: tool.name,
+          description: tool.description ?? "",
+          enabledWhen: Context.getOrUndefined(annotations, McpSchema.EnabledWhen),
+        })),
       () => server.notifications["notifications/tools/list_changed"]({}),
     );
   }),

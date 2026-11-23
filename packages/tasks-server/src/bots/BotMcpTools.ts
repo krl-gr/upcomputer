@@ -11,6 +11,7 @@ import {
   hiddenFromOutsideClients,
   McpInvocationContext,
   McpToolAccess,
+  registerToolSearchFilter,
   resultToolkitRegistration,
   ThreadManagementService,
 } from "../../../../apps/server/src/extensionApi.ts";
@@ -225,25 +226,32 @@ const memoryTools = new Set(["bot_memory", "bot_remember", "bot_forget"]);
 
 /**
  * A bot whose agent keeps its own memory gets no memory tools, in its chat or its task runs: they
- * are hidden from lists and refused when called. Product tools take no local middleware, so the
- * check is global and passes every other tool at once.
+ * are hidden from lists and `tool_search`, and refused when called. Product tools take no local
+ * middleware, so the check is global and passes every other tool at once.
  */
-const MemoryToolVisibility = Layer.merge(
+const memoryToolShown = (bots: BotService["Service"]) =>
+  // Untraced: it runs once per tool on every list request.
+  Effect.fnUntraced(function* (target: string) {
+    if (!memoryTools.has(target)) return true;
+    const scope = yield* Effect.serviceOption(McpInvocationContext);
+    const thread = Option.getOrUndefined(scope)?.thread;
+    if (thread === undefined) return true;
+    return yield* bots.forThread(thread.threadId).pipe(
+      Effect.map((bot) => bot?.memoryMode !== "agent"),
+      Effect.orElseSucceed(() => true),
+    );
+  });
+
+const MemoryToolVisibility = Layer.mergeAll(
   McpServer.visibility(
-    Effect.map(BotService, (bots) =>
-      // Untraced: it runs once per tool on every list request.
-      Effect.fnUntraced(function* ({ target }: McpServer.MiddlewareOptions) {
-        if (!memoryTools.has(target)) return true;
-        const scope = yield* Effect.serviceOption(McpInvocationContext);
-        const thread = Option.getOrUndefined(scope)?.thread;
-        if (thread === undefined) return true;
-        return yield* bots.forThread(thread.threadId).pipe(
-          Effect.map((bot) => bot?.memoryMode !== "agent"),
-          Effect.orElseSucceed(() => true),
-        );
-      }),
-    ),
+    Effect.map(BotService, (bots) => {
+      const shown = memoryToolShown(bots);
+      return ({ target }: McpServer.MiddlewareOptions) => shown(target);
+    }),
     { global: true },
+  ),
+  Layer.effectDiscard(
+    Effect.flatMap(BotService, (bots) => registerToolSearchFilter(memoryToolShown(bots))),
   ),
   // A switch applies on the bot's next turn: open sessions list their tools again.
   Layer.effectDiscard(

@@ -21,6 +21,7 @@ import * as McpHttpServer from "./McpHttpServer.ts";
 import type * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as McpToolAccessTestkit from "./McpToolAccess.testkit.ts";
+import * as McpToolExposure from "./McpToolExposure.ts";
 
 /** Each token is one MCP credential; the registry issues a new one when a provider restarts. */
 const credential = (
@@ -46,6 +47,7 @@ const credentials = new Map(
     credential("before-restart", "thread-restarted"),
     credential("after-restart", "thread-restarted"),
     credential("other-thread", "thread-other"),
+    credential("subagent", "thread-subagent", true),
   ].map((scope) => [scope.requestNamespace, scope]),
 );
 
@@ -169,6 +171,26 @@ describe("deferred tool listing", () => {
         expect(yield* after.listed).toContain("link_pull_request");
         // Another thread did not search, so it does not list the tool.
         expect(yield* (yield* connect("other-thread")).listed).not.toContain("link_pull_request");
+      }),
+    ),
+  );
+
+  it.effect("finds only tools the session may list", () =>
+    withServer(
+      Effect.gen(function* () {
+        const subagent = yield* connect("subagent");
+        const found = yield* subagent.search("watch_pull_request unwatch_pull_request");
+        expect(found).not.toContain("watch_pull_request");
+        expect(found).not.toContain("unwatch_pull_request");
+        expect(yield* subagent.listed).not.toContain("watch_pull_request");
+
+        // A feature's own visibility registers the same check for search.
+        const hideLink = (tool: string) => Effect.succeed(tool !== "link_pull_request");
+        const other = yield* connect("other-thread");
+        yield* McpToolExposure.registerToolSearchFilter(hideLink);
+        const filtered = yield* other.search("link_pull_request link_pull_requests");
+        expect(filtered).toContain("link_pull_requests");
+        expect(filtered).not.toContain("link_pull_request");
       }),
     ),
   );
