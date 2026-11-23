@@ -2498,7 +2498,21 @@ describe("OpenCodeAdapterV2", () => {
             Stream.take(1),
             Stream.runDrain,
           );
-          yield* TestClock.adjust(0);
+          // The session ends, so the next turn opens a fresh OpenCode server.
+          const ended = yield* harness.runtime.events.pipe(
+            Stream.runDrain,
+            Effect.as(true),
+            Effect.timeoutOrElse({ duration: "1 second", orElse: () => Effect.succeed(false) }),
+            Effect.forkChild,
+          );
+          yield* TestClock.adjust("1 second");
+          assert.isTrue(yield* Fiber.join(ended), "the session's events end with the server");
+          const restart = yield* harness.startTurn("again").pipe(Effect.flip);
+          assert.instanceOf(restart.cause, ProviderAdapter.ProviderAdapterProtocolError);
+          assert.equal(
+            restart.cause.detail,
+            "OpenCode's server stopped; it starts again with your next message",
+          );
           assert.isFalse(yield* harness.runtime.hasPendingBackgroundWork!);
           yield* offers[0]!.onRunEndedWithoutStarting!();
           assert.deepEqual(aborted, [], "failed-session callbacks cannot abort a replacement");

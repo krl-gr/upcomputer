@@ -3367,6 +3367,9 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                         });
                       }
                     }
+                    // The SDK's event stream retries a dead port forever. Ending the session
+                    // lets the next turn start a fresh server instead of reusing this one.
+                    yield* Queue.end(events);
                   }),
             ),
             Effect.forkIn(scope),
@@ -3705,6 +3708,17 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           );
         });
 
+        // Ending the session lets the next message start a fresh OpenCode server.
+        const endedSessionError = Effect.suspend(() =>
+          (closing ? Effect.void : Queue.end(events)).pipe(
+            Effect.andThen(
+              Effect.fail(
+                protocolError("OpenCode's server stopped; it starts again with your next message"),
+              ),
+            ),
+          ),
+        );
+
         const runtimeSession: ProviderAdapter.ProviderAdapterV2SessionRuntime = {
           instanceId: options.instanceId,
           driver: OPENCODE_PROVIDER,
@@ -3806,11 +3820,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           resumeTurn: (input) => runtimeSession.startTurn(ProviderAdapter.resumeTurnInput(input)),
           startTurn: Effect.fn("OpencodeAdapter.startTurn")(
             function* (turnInput) {
-              if (closing || nativeStreamFailure !== null) {
-                return yield* protocolError(
-                  "OpenCode event stream has ended; reconnect the provider session before starting another turn.",
-                );
-              }
+              if (closing || nativeStreamFailure !== null) return yield* endedSessionError;
               const sessionId = nativeThreadId(turnInput.providerThread);
               const state = threads.get(sessionId);
               if (state === undefined) {
@@ -3922,11 +3932,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                   yield* eventPermit.withPermit(
                     Effect.gen(function* () {
                       // Do not yield before turn installation; EOF may otherwise finish scanning before registration.
-                      if (closing || nativeStreamFailure !== null) {
-                        return yield* protocolError(
-                          "OpenCode event stream has ended; reconnect the provider session before starting another turn.",
-                        );
-                      }
+                      if (closing || nativeStreamFailure !== null) return yield* endedSessionError;
                       if (state.activeTurn !== null) {
                         return yield* new ProviderAdapter.ProviderAdapterProtocolError({
                           driver: OPENCODE_PROVIDER,
