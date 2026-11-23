@@ -1,26 +1,32 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import { NodeViewWrapper } from "@tiptap/react";
+import { use } from "react";
 
+import { ComposerContextActionsContext } from "../components/composerContextActions";
 import { ContextChipShell } from "../components/contextChipParts";
-import { productComposerRecipients } from "./composerRecipients";
+import { useProductComposerRecipients } from "./composerRecipients";
 import { findComposerRecipient } from "./composerRecipients.logic";
 
 /**
- * A recipient's chip in place of the file chip the editor draws for an `@` mention, or null
- * when the mention names no recipient.
+ * Reactive recipient chip node for the Tiptap mention view: subscribes to the active thread's
+ * addressable recipients so restored drafts update once bots load and a bot's own chat leaves
+ * its name as a normal token.
  */
-export function composerRecipientChip(environmentId: EnvironmentId | null, name: string) {
-  if (environmentId === null) return null;
-  const recipient = findComposerRecipient(productComposerRecipients(environmentId, null), name);
+export function useComposerRecipientChipNode(path: string, className: string) {
+  const actions = use(ComposerContextActionsContext);
+  const recipients = useProductComposerRecipients(actions.environmentId, actions.threadId ?? null);
+  const recipient = findComposerRecipient(recipients, path);
   if (recipient === undefined) return null;
   const Icon = recipient.icon;
   return (
-    <ContextChipShell
-      kind="neutral"
-      icon={Icon ? <Icon className="size-[1em] shrink-0" /> : null}
-      label={recipient.name}
-      tooltip={recipient.description}
-      contentEditable={false}
-      spellCheck={false}
-    />
+    <NodeViewWrapper as="span" className={className}>
+      <ContextChipShell
+        kind="neutral"
+        icon={Icon ? <Icon className="size-[1em] shrink-0" /> : null}
+        label={recipient.name}
+        tooltip={recipient.description}
+        contentEditable={false}
+        spellCheck={false}
+      />
+    </NodeViewWrapper>
   );
 }

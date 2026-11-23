@@ -72,10 +72,7 @@ import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { newMessageId, newThreadId } from "~/lib/utils";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { buildThreadRouteParams } from "../../threadRoutes";
-import {
-  parseProductComposerRecipientMessage,
-  sendComposerRecipientMessage,
-} from "../../composerRecipients/composerRecipients";
+import { trySendComposerRecipient } from "../../composerRecipients/composerRecipients";
 import {
   beginBackgroundDraftSubmissionByRef,
   clearBackgroundDraftSubmissionByRef,
@@ -714,28 +711,21 @@ export function useComposerSend(input: ComposerSendInput) {
       }
       return;
     }
-    const recipientMessage =
-      sendCtx && !answeringQuestion && !directAnnotation && !queuedRunEdit.isEditing
-        ? parseProductComposerRecipientMessage(promptAtSend, environmentId, activeThread.id)
-        : null;
-    if (sendCtx && recipientMessage) {
-      const sent = await sendComposerRecipientMessage({
-        message: recipientMessage,
-        sendContext: sendCtx,
-        draftTarget: composerDraftTarget,
-        navigate: (options) => navigate(options),
-      });
-      if (
-        sent &&
-        currentRouteThreadKeyRef.current === routeThreadKey &&
-        promptRef.current === promptAtSend
-      ) {
-        promptRef.current = "";
-        setComposerDraftPrompt(composerDraftTarget, "");
-        composerRef.current?.resetCursorState();
-      }
-      return;
-    }
+    const recipientHandled = await trySendComposerRecipient({
+      sendContext: sendCtx,
+      blocked: answeringQuestion || Boolean(directAnnotation) || queuedRunEdit.isEditing,
+      prompt: promptAtSend,
+      environmentId,
+      threadId: activeThread.id,
+      draftTarget: composerDraftTarget,
+      routeThreadKey,
+      currentRouteThreadKeyRef,
+      promptRef,
+      composerRef,
+      setPrompt: setComposerDraftPrompt,
+      navigate: (options) => navigate(options),
+    });
+    if (recipientHandled) return;
     if (answeringQuestion) {
       if (directAnnotation) {
         notifyDirectAnnotationAttached();

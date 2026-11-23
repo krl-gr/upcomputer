@@ -1,6 +1,7 @@
 const MAX_MENU_RECIPIENTS = 8;
 
 interface NamedRecipient {
+  readonly id?: string | undefined;
   readonly name: string;
 }
 
@@ -49,17 +50,24 @@ export function withoutComposerRecipientChats<
 }
 
 /**
- * What the composer writes for a chosen recipient: quoted when the name has a space, as the
- * editor's `@"…"` mention, so the whole name shows as one chip.
+ * What the composer writes for a chosen recipient: quoted when the token has a space, slash, or
+ * quote, as the editor's `@"…"` mention, so the whole token shows as one chip.
  */
-export const composerRecipientMention = (name: string) =>
-  /^[^\s@"]+$/u.test(name) ? `@${name} ` : `@"${name.replace(/["\\]/gu, "\\$&")}" `;
+export const composerRecipientMention = (value: string) =>
+  /^[^\s@"/]+$/u.test(value) ? `@${value} ` : `@"${value.replace(/["\\]/gu, "\\$&")}" `;
 
-/** The recipient a mention chip names, by the name the chip shows. */
+/** The recipient a mention chip names, by id first so duplicate names stay distinct, then by name. */
 export const findComposerRecipient = <R extends NamedRecipient>(
   recipients: ReadonlyArray<R>,
-  name: string,
-) => recipients.find((recipient) => sameName(recipient.name, name));
+  key: string,
+) => {
+  const normalized = key.normalize("NFC");
+  return (
+    recipients.find(
+      (recipient) => recipient.id !== undefined && recipient.id.normalize("NFC") === normalized,
+    ) ?? recipients.find((recipient) => sameName(recipient.name, normalized))
+  );
+};
 
 const QUOTED_NAME = /^"((?:\\.|[^"\\])*)"/u;
 const WORD_CHARACTER = /[\p{L}\p{N}\p{M}_]/u;
@@ -84,7 +92,7 @@ interface Mention<R> {
   readonly end: number;
 }
 
-/** The recipient mentioned at `at`, quoted or not; unquoted, the longest name wins. */
+/** The recipient mentioned at `at`, quoted or not; unquoted, the longest NFC token wins. */
 function mentionAt<R extends NamedRecipient>(
   text: string,
   at: number,
@@ -98,15 +106,29 @@ function mentionAt<R extends NamedRecipient>(
       ? null
       : { recipient, start: at, end };
   }
-  const recipient = recipients
-    .filter((candidate) => {
-      const end = at + 1 + candidate.name.length;
-      return sameName(text.slice(at + 1, end), candidate.name) && endsMention(text, end);
-    })
-    .toSorted((left, right) => right.name.length - left.name.length)[0];
-  return recipient === undefined
+  const matches: Array<{ readonly recipient: R; readonly length: number; readonly byId: boolean }> =
+    [];
+  for (const candidate of recipients) {
+    if (candidate.id !== undefined) {
+      const normalizedId = candidate.id.normalize("NFC");
+      const idEnd = at + 1 + normalizedId.length;
+      if (text.slice(at + 1, idEnd) === normalizedId && endsMention(text, idEnd)) {
+        matches.push({ recipient: candidate, length: normalizedId.length, byId: true });
+        continue;
+      }
+    }
+    const normalizedName = candidate.name.normalize("NFC");
+    const nameEnd = at + 1 + normalizedName.length;
+    if (sameName(text.slice(at + 1, nameEnd), normalizedName) && endsMention(text, nameEnd)) {
+      matches.push({ recipient: candidate, length: normalizedName.length, byId: false });
+    }
+  }
+  const best = matches.toSorted(
+    (left, right) => right.length - left.length || Number(right.byId) - Number(left.byId),
+  )[0];
+  return best === undefined
     ? null
-    : { recipient, start: at, end: at + 1 + recipient.name.length };
+    : { recipient: best.recipient, start: at, end: at + 1 + best.length };
 }
 
 export type ComposerRecipientMessage<R> =

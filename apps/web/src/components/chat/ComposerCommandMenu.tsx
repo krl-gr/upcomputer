@@ -108,6 +108,7 @@ export type ComposerCommandItem =
   | {
       id: string;
       type: "recipient";
+      recipientId: string;
       name: string;
       icon: ComponentType<{ readonly className?: string }> | undefined;
       label: string;

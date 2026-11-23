@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   composerRecipientMention,
+  findComposerRecipient,
   matchComposerRecipients,
   parseComposerRecipientMessage,
   withoutComposerRecipientChats,
@@ -133,6 +134,43 @@ describe("parseComposerRecipientMessage", () => {
         release,
       ]),
     ).toEqual({ recipients: [inbox, research] });
+  });
+
+  it("matches NFD-stored bot names unquoted with punctuation", () => {
+    const nfdCerbero = { id: "bot:cerbero", name: "Ce\u0301rbero" };
+    expect(parseComposerRecipientMessage("@Cérbero, o que está fazendo?", [nfdCerbero])).toEqual({
+      recipient: nfdCerbero,
+      text: "o que está fazendo?",
+    });
+    expect(parseComposerRecipientMessage("oi @Cérbero!", [nfdCerbero])).toEqual({
+      recipient: nfdCerbero,
+      text: "oi Ce\u0301rbero!",
+    });
+  });
+
+  it("resolves duplicate bot names by bot id so both stay reachable", () => {
+    const first = { id: "feature:upcomputer.tasks.web:bot:nova-1", name: "Nova" };
+    const second = { id: "feature:upcomputer.tasks.web:bot:nova-2", name: "Nova" };
+    expect(findComposerRecipient([first, second], second.id)).toBe(second);
+    expect(
+      parseComposerRecipientMessage(`${composerRecipientMention(second.id)}check staging`, [
+        first,
+        second,
+      ]),
+    ).toEqual({ recipient: second, text: "check staging" });
+    expect(
+      parseComposerRecipientMessage(`ask ${composerRecipientMention(second.id)}please`, [
+        first,
+        second,
+      ]),
+    ).toEqual({ recipient: second, text: "ask Nova please" });
+    expect(
+      parseComposerRecipientMessage(
+        `${composerRecipientMention(first.id)}and ${composerRecipientMention(second.id)}hi`,
+        [first, second],
+      ),
+    ).toEqual({ recipients: [first, second] });
+    expect(composerRecipientMention("team/bot")).toBe('@"team/bot" ');
   });
 
   it("leaves other prompts for the open chat", () => {

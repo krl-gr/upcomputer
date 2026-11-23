@@ -1,5 +1,12 @@
 import type { ComponentType, ReactNode } from "react";
-import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  OrchestrationV2NotificationSource,
+  OrchestrationV2TurnItem,
+  ProjectId,
+  ThreadId,
+} from "@t3tools/contracts";
+import type { TimestampFormat } from "@t3tools/contracts/settings";
 import type { NavigateOptions } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
@@ -109,11 +116,19 @@ export interface ExperimentalWebComposerRecipient {
   readonly open: (context: ExperimentalWebThreadActionContext) => void;
 }
 
-/** An agent's face where the timeline shows something it wrote, such as a bot's reply. */
-export interface ExperimentalWebAgentAvatarProps {
+/** A feature-rendered timeline card for its own notification kinds, such as bot mentions. */
+export interface ExperimentalWebNotificationCardProps {
   readonly environmentId: EnvironmentId;
-  readonly agentId: string;
-  readonly size: number;
+  readonly notification: Extract<OrchestrationV2TurnItem, { type: "notification" }>;
+  readonly createdAt: string;
+  readonly timestampFormat: TimestampFormat;
+  readonly onOpenThread: (threadId: ThreadId) => void;
+  readonly renderMarkdown: (text: string) => ReactNode;
+}
+
+export interface ExperimentalWebNotificationCardContribution {
+  readonly kinds: ReadonlyArray<OrchestrationV2NotificationSource["kind"]>;
+  readonly component: ComponentType<ExperimentalWebNotificationCardProps>;
 }
 
 export interface ExperimentalWebThreadRowAccessoryProps extends ExperimentalWebThreadAccessoryProps {
@@ -183,8 +198,8 @@ export interface ExperimentalWebFeatureContribution {
     environmentId: EnvironmentId,
     onChange: () => void,
   ) => () => void;
-  /** Renders null for an agent the feature does not know. */
-  readonly agentAvatar?: ComponentType<ExperimentalWebAgentAvatarProps>;
+  /** Renders timeline cards for the declared notification source kinds. */
+  readonly notificationCard?: ExperimentalWebNotificationCardContribution;
   readonly sidebarSection?: ComponentType;
   /**
    * Mounted once in the app shell while the primary environment is signed in,

@@ -752,6 +752,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const previewFile = composerFiles.find((file) => file.id === previewFileId);
   const composerContextActions = {
     environmentId,
+    threadId: activeThreadId,
     cwd: gitCwd ?? undefined,
     projectId: activeProjectId ?? undefined,
     expandImage: (imageId: string) => {
@@ -2184,7 +2185,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (trigger.kind !== "path") return;
       const replacement =
         item.type === "recipient"
-          ? composerRecipientMention(item.name)
+          ? composerRecipientMention(item.recipientId)
           : `${formatComposerModelMention(item.instanceId, item.model)} `;
       const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
         snapshot.value,

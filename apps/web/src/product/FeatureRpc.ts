@@ -100,10 +100,32 @@ export async function requestExperimentalFeatureRpc<Group extends RpcGroup.Any, 
   throw isFeatureRpcFailure(failure) ? failure.error : failure;
 }
 
+const permissionsByMethod = new Map<string, ReturnType<typeof createCommandPermissions>>();
+
+function featureRpcPermissions(method: string) {
+  let permissions = permissionsByMethod.get(method);
+  if (permissions === undefined) {
+    permissions = createCommandPermissions(connectionAtomRuntime, method);
+    permissionsByMethod.set(method, permissions);
+  }
+  return permissions;
+}
+
 export const useExperimentalFeatureRpcPermission = (
   environmentId: EnvironmentId | null,
   method: string,
+) => useAtomValue(featureRpcPermissions(method).permissionAtom(environmentId));
+
+export const readExperimentalFeatureRpcPermission = (
+  environmentId: EnvironmentId | null,
+  method: string,
+) => appAtomRegistry.get(featureRpcPermissions(method).permissionAtom(environmentId));
+
+export const subscribeExperimentalFeatureRpcPermission = (
+  environmentId: EnvironmentId | null,
+  method: string,
+  listener: () => void,
 ) =>
-  useAtomValue(
-    createCommandPermissions(connectionAtomRuntime, method).permissionAtom(environmentId),
+  appAtomRegistry.subscribe(featureRpcPermissions(method).permissionAtom(environmentId), () =>
+    listener(),
   );

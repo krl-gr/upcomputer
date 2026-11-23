@@ -14,7 +14,7 @@ import { msg } from "gt-react";
 // may reach web state at module load. The UI below loads on first render.
 import {
   defineExperimentalWebFeature,
-  type ExperimentalWebAgentAvatarProps,
+  type ExperimentalWebNotificationCardProps,
   type ExperimentalWebThreadAccessoryProps,
   type ExperimentalWebThreadRowAccessoryProps,
 } from "../../../apps/web/src/product/WebFeature.ts";
@@ -76,14 +76,16 @@ const LazyBotHeader = lazy(() =>
   import("./bots/Bots.tsx").then((module) => ({ default: module.BotHeader })),
 );
 
-const LazyBotAgentAvatar = lazy(() =>
-  import("./bots/Bots.tsx").then((module) => ({ default: module.BotAgentAvatar })),
+const LazyBotMentionNotificationCard = lazy(() =>
+  import("./bots/BotMentionNotificationCard.tsx").then((module) => ({
+    default: module.BotMentionNotificationCard,
+  })),
 );
 
-function BotAgentAvatar(props: ExperimentalWebAgentAvatarProps) {
+function BotMentionNotificationCardSlot(props: ExperimentalWebNotificationCardProps) {
   return (
     <Suspense fallback={null}>
-      <LazyBotAgentAvatar {...props} />
+      <LazyBotMentionNotificationCard {...props} />
     </Suspense>
   );
 }
@@ -148,7 +150,10 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   threadActions: (thread) => botMenu?.botThreadActions(thread) ?? [],
   composerRecipients: (context) => botRecipients?.botComposerRecipients(context) ?? [],
   subscribeComposerRecipients: subscribeBotRecipients,
-  agentAvatar: BotAgentAvatar,
+  notificationCard: {
+    kinds: ["bot_mention"],
+    component: BotMentionNotificationCardSlot,
+  },
   sidebarSection: SidebarBots,
   coordinator: TaskReminders,
   settings: [

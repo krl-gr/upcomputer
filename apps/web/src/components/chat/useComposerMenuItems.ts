@@ -34,11 +34,7 @@ import {
   getProviderSlashCommandsForSlashMenu,
 } from "@t3tools/client-runtime/providerSkills";
 import { searchProviderSkills } from "../../providerSkillSearch";
-import {
-  composerRecipientItems,
-  useProductComposerRecipients,
-} from "../../composerRecipients/composerRecipients";
-import { withoutComposerRecipientChats } from "../../composerRecipients/composerRecipients.logic";
+import { useComposerRecipientMenu } from "../../composerRecipients/composerRecipients";
 import { useVisibleThreadShells } from "~/state/entities";
 import { useEnvironmentIdentities, useEnvironmentMachines } from "~/state/environments";
 import { offersLinkedEnvironmentsAtom } from "~/state/peerLinks";
@@ -130,7 +126,7 @@ export function useComposerMenuItems({
   const settledPullRequestTextQuery =
     pullRequestTextQuery === debouncedPullRequestTextQuery ? pullRequestTextQuery : null;
   const isPathTrigger = composerTriggerKind === "path";
-  const recipients = useProductComposerRecipients(environmentId, activeThreadId);
+  const recipientMenu = useComposerRecipientMenu(environmentId, activeThreadId);
   const environmentThreadShells = useVisibleThreadShells(isPathTrigger);
   // Mounts older settled threads matching the mention, here and on linked machines, which shells
   // may leave out.
@@ -218,16 +214,10 @@ export function useComposerMenuItems({
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
       return [
-        ...(questionAttachmentTarget === null
-          ? composerRecipientItems(recipients, composerTrigger.query)
-          : []),
+        ...recipientMenu.items(composerTrigger.query, questionAttachmentTarget === null),
         ...matchComposerThreadItems(
           {
-            shells: withoutComposerRecipientChats(
-              environmentThreadShells,
-              environmentId,
-              recipients,
-            ),
+            shells: recipientMenu.filterThreads(environmentThreadShells),
             environmentId,
             linkedEnvironments,
             excludeThreadId: activeThreadId,

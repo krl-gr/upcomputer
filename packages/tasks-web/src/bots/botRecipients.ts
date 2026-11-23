@@ -1,13 +1,15 @@
-import { AuthOrchestrationOperateScope, type ThreadId } from "@t3tools/contracts";
-import type { Bot } from "@t3tools/tasks-contracts/v1";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { BOTS_RPC_METHODS, type Bot } from "@t3tools/tasks-contracts/v1";
 import { BotIcon } from "lucide-react";
 import { newMessageId } from "../../../../apps/web/src/lib/utils.ts";
-import { readEnvironmentScope } from "../../../../apps/web/src/state/session.ts";
+import {
+  readExperimentalFeatureRpcPermission,
+  subscribeExperimentalFeatureRpcPermission,
+} from "../../../../apps/web/src/extensionApi.ts";
 import type {
   ExperimentalWebComposerRecipient,
   ExperimentalWebComposerRecipientContext,
 } from "../../../../apps/web/src/product/WebFeature.ts";
-import type { EnvironmentId } from "@t3tools/contracts";
 import {
   readTasksWebAccess,
   readTasksWebClient,
@@ -22,8 +24,9 @@ export const addressableBots = <B extends Pick<Bot, "threadId">>(
 ) => bots.filter((bot) => bot.threadId !== threadId);
 
 /**
- * Follows the environment's bot list while a composer is open, so `@` offers the bots with the
- * sidebar closed or showing other computers. The list is the one the Bots section shares.
+ * Follows the environment's bot list and mention permission while a composer is open, so `@`
+ * offers the bots with the sidebar closed or showing other computers, and reacts when session
+ * scopes settle. The list is the one the Bots section shares.
  */
 export function subscribeBotRecipients(environmentId: EnvironmentId, onChange: () => void) {
   let stopBots: (() => void) | undefined;
@@ -37,9 +40,15 @@ export function subscribeBotRecipients(environmentId: EnvironmentId, onChange: (
     onChange();
   };
   const stopAccess = subscribeTasksWebAccess(sync);
+  const stopPermission = subscribeExperimentalFeatureRpcPermission(
+    environmentId,
+    BOTS_RPC_METHODS.mention,
+    onChange,
+  );
   sync();
   return () => {
     stopAccess();
+    stopPermission();
     stopBots?.();
   };
 }
@@ -55,7 +64,7 @@ export function botComposerRecipients({
 }: ExperimentalWebComposerRecipientContext): ReadonlyArray<ExperimentalWebComposerRecipient> {
   if (
     !readTasksWebAccess(environmentId).canReadAgents ||
-    !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)
+    !readExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.mention)
   ) {
     return [];
   }
