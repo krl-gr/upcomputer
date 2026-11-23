@@ -15,6 +15,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 import { COMPOSER_DRAFT_STORAGE_KEY, useComposerDraftStore } from "../composerDraftStore";
 import { SidebarMenu, SidebarProvider } from "../components/ui/sidebar";
 import { ToastProvider } from "../components/ui/toast";
+import { createWorkspaceFocusController, workspaceAreaProps } from "../lib/workspaceFocus";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import { SidebarNotifications } from "../sidebarNotifications/SidebarNotifications";
 import { bot } from "../uiStates/sidebarRowFixtures";
@@ -223,21 +224,41 @@ describe("Discuss", () => {
 });
 
 describe("Settings → Instructions updates", () => {
-  it("keeps the user's setup, then offers to reopen it", async () => {
+  it("keeps the user's setup, then offers to reopen it, with focus staying on the row", async () => {
     const environmentId = setup("settings-keep", {
       updates: { mode: "ask", entries: [pending()] },
     });
-    await using screen = await render(<Section environmentId={environmentId} />);
+    // The Instructions page: the updates above the editor (a contenteditable), in the Settings area.
+    await using screen = await render(
+      <div {...workspaceAreaProps("settings", 1, "Settings content")}>
+        <Section environmentId={environmentId} />
+        <div
+          contentEditable
+          role="textbox"
+          aria-label="All chats instructions"
+          className="min-h-8"
+        />
+      </div>,
+    );
+    const focus = createWorkspaceFocusController(document);
+    using _focus = { [Symbol.dispose]: focus.dispose };
     await expect
       .element(screen.getByRole("combobox", { name: "Instruction updates" }))
       .toHaveTextContent("Ask me");
+    const editor = screen.getByRole("textbox", { name: "All chats instructions" });
+    await expect.element(editor).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: "Keep mine" }));
     expect(source.saved).toEqual([{ entries: [{ id: "task-statuses-v2", state: "kept" }] }]);
-    await expect.element(screen.getByRole("button", { name: "Reopen" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "Reopen" })).toHaveFocus();
     const row = screen.container.querySelector<HTMLElement>("#instruction-update-task-statuses-v2");
     expect(row).toHaveAttribute("data-instruction-update", "kept");
     expect(row?.textContent).toContain("Kept yours");
+
+    await userEvent.click(screen.getByRole("button", { name: "Reopen" }));
+    await expect.element(screen.getByRole("button", { name: "Keep mine" })).toHaveFocus();
+    expect(row).toHaveAttribute("data-instruction-update", "pending");
+    expect(editor).not.toHaveFocus();
   });
 
   it("says an update that touches edited text waits in auto mode, and marks only real changes", async () => {
