@@ -803,6 +803,156 @@ describe("OpenCodeAdapterV2", () => {
     }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
   );
 
+  it.effect("shows OpenCode's retry while it waits, and settles it when the turn recovers", () =>
+    Effect.gen(function* () {
+      const nativeEvents = asyncEventStream();
+      let promptId = "";
+      const harness = yield* makeOpenCodeRuntimeHarness("retry", "root", {
+        event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+        session: {
+          create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+          promptAsync: async (input: { messageID: string }) => {
+            promptId = input.messageID;
+            return { data: true };
+          },
+          abort: async () => ({ data: true }),
+          children: async () => ({ data: [] }),
+        },
+      });
+      yield* harness.startTurn();
+      const received = yield* harness.runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      const now = DateTime.toEpochMillis(yield* DateTime.now);
+      const push = (event: unknown) => Effect.promise(() => nativeEvents.push(event));
+      yield* push({
+        type: "message.updated",
+        properties: {
+          sessionID: "root",
+          info: { id: promptId, role: "user", time: { created: 1 } },
+        },
+      });
+      yield* push({
+        type: "session.status",
+        properties: { sessionID: "root", status: { type: "busy" } },
+      });
+      yield* push({
+        type: "session.status",
+        properties: {
+          sessionID: "root",
+          status: {
+            type: "retry",
+            attempt: 2,
+            message: "Provider is overloaded",
+            next: now + 4_000,
+          },
+        },
+      });
+      yield* push({
+        type: "session.status",
+        properties: { sessionID: "root", status: { type: "busy" } },
+      });
+      yield* push({
+        type: "session.status",
+        properties: { sessionID: "root", status: { type: "idle" } },
+      });
+
+      const events = Array.from(yield* Fiber.join(received));
+      const retries = events.flatMap((event) =>
+        event.type === "turn_item.updated" && event.turnItem.type === "error"
+          ? [event.turnItem]
+          : [],
+      );
+      assert.deepEqual(
+        retries.map((item) => item.status),
+        ["running", "completed"],
+      );
+      assert.deepEqual(retries[0]?.retry, { attempt: 2, maxAttempts: null, retryDelayMs: 4_000 });
+      assert.equal(retries[0]?.failure.message, "Provider is overloaded.");
+      assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "completed");
+    }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
+  );
+
+  it.effect("ends the turn with a usage limit when OpenCode's free limit is reached", () =>
+    Effect.gen(function* () {
+      const nativeEvents = asyncEventStream();
+      const aborted: string[] = [];
+      let promptId = "";
+      const harness = yield* makeOpenCodeRuntimeHarness("free-limit", "root", {
+        event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+        session: {
+          create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+          promptAsync: async (input: { messageID: string }) => {
+            promptId = input.messageID;
+            return { data: true };
+          },
+          abort: async (input: { sessionID: string }) => {
+            aborted.push(input.sessionID);
+            await nativeEvents.push({
+              type: "session.status",
+              properties: { sessionID: "root", status: { type: "idle" } },
+            });
+            return { data: true };
+          },
+          children: async () => ({ data: [] }),
+        },
+      });
+      yield* harness.startTurn();
+      const received = yield* harness.runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      const next = DateTime.toEpochMillis(yield* DateTime.now) + 10 * 60 * 60 * 1_000;
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "message.updated",
+          properties: {
+            sessionID: "root",
+            info: { id: promptId, role: "user", time: { created: 1 } },
+          },
+        }),
+      );
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "session.status",
+          properties: {
+            sessionID: "root",
+            status: {
+              type: "retry",
+              attempt: 1,
+              message: "Free usage exceeded, subscribe to Go",
+              action: {
+                reason: "free_tier_limit",
+                provider: "opencode",
+                title: "Free limit reached",
+                message: "Subscribe to OpenCode Go to keep going.",
+                label: "Subscribe",
+                link: "https://opencode.ai/go",
+              },
+              next,
+            },
+          },
+        }),
+      );
+
+      const terminal = Array.from(yield* Fiber.join(received)).find(
+        (event) => event.type === "turn.terminal",
+      );
+      // OpenCode would otherwise retry hours later, unasked.
+      assert.deepEqual(aborted, ["root"]);
+      assert.equal(terminal?.status, "failed");
+      assert.equal(terminal?.failure?.class, "usage_limit");
+      assert.equal(terminal?.failure?.resetAt, DateTime.formatIso(DateTime.makeUnsafe(next)));
+      assert.equal(
+        terminal?.failure?.message,
+        "OpenCode's free limit is reached. Switch to another provider to keep working now, or upgrade at https://opencode.ai/go.",
+      );
+    }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
+  );
+
   it.effect("applies a changed runtime policy to the session on resume and turn start", () =>
     Effect.gen(function* () {
       const updates: Array<{ sessionID: string; permission: unknown }> = [];
