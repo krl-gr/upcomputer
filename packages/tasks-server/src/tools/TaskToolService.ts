@@ -1498,6 +1498,7 @@ const make = Effect.gen(function* () {
               patch: input,
             }),
             ...(input.appearance !== undefined ? { appearance: input.appearance } : {}),
+            ...(input.memoryMode !== undefined ? { memoryMode: input.memoryMode } : {}),
           };
           if (isDryRun) return { isError: false, text: json({ dryRun: true, bot }) };
           // The bot's own tag starts it on tasks right away, as an enabled agent's would.
@@ -1565,6 +1566,7 @@ const make = Effect.gen(function* () {
                 })
               : existing.agent.config,
             ...(input.appearance !== undefined ? { appearance: input.appearance } : {}),
+            ...(input.memoryMode !== undefined ? { memoryMode: input.memoryMode } : {}),
           };
           if (isDryRun) return { isError: false, text: json({ dryRun: true, bot }) };
           const refusal = yield* botEditRefusal(

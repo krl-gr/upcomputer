@@ -783,6 +783,7 @@ it.effect(
       assert.match(bot.agent.id, /^bot:/);
       assert.equal(bot.projectId, project);
       assert.equal(bot.threadId, `bot-chat:${bot.agent.id}`);
+      assert.equal(bot.memoryMode, "upcomputer");
       assert.deepStrictEqual(yield* botRows, [{ agentId: bot.agent.id, threadId: bot.threadId }]);
       const agent = yield* repository.getAgentById({ id: bot.agent.id });
       assert.isTrue(Option.isSome(agent));
@@ -861,14 +862,16 @@ it.effect(
       assert.isTrue(workerUpdate.isError);
       assert.equal(workerUpdate.text, "Worker is a worker, not a bot. Use agent_update for it.");
 
-      // bot_update updates name, model, and syncs interactionMode to the bot's chat thread.
+      // bot_update updates name, model, memoryMode, and syncs interactionMode to the bot's chat thread.
       const updated = yield* call("bot_update", {
         id: bot.agent.id,
         name: "Release captain",
         modelSelection: { instanceId: "claudeAgent", model: "claude-haiku-4-5" },
         interactionMode: "plan",
+        memoryMode: "agent",
       });
       assert.isFalse(updated.isError, updated.text);
+      assert.equal(JSON.parse(updated.text).bot.memoryMode, "agent");
       const saved = yield* repository.getAgentById({ id: bot.agent.id });
       assert.isTrue(Option.isSome(saved));
       if (Option.isSome(saved)) {
@@ -893,12 +896,14 @@ it.effect(
           name: "Supervised bot",
           instructions: "Ask first.",
           runtimeMode: "approval-required",
+          memoryMode: "agent",
           modelSelection,
         },
         supervised,
       );
       assert.isFalse(supervisedBotRes.isError, supervisedBotRes.text);
       const supervisedBot = JSON.parse(supervisedBotRes.text).bot;
+      assert.equal(supervisedBot.memoryMode, "agent");
       threadModes.set(supervisedBot.threadId, {
         runtimeMode: "full-access",
         interactionMode: "default",

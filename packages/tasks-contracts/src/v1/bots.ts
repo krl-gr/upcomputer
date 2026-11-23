@@ -193,6 +193,7 @@ const BotToolFields = {
   runtimeMode: Schema.optional(RuntimeMode),
   interactionMode: Schema.optional(ProviderInteractionMode),
   appearance: Schema.optional(Schema.NullOr(BotAppearance)),
+  memoryMode: Schema.optional(BotMemoryMode),
 };
 
 export const BotCreateInput = Schema.Struct({

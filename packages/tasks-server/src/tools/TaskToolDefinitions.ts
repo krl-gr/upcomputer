@@ -1,6 +1,7 @@
 import {
   BotAppearance,
   BotAppearanceStyle,
+  BotMemoryMode,
   BotPortraitId,
   TASK_CREATE_BATCH_LIMIT,
   TASK_STATUS_RENAME_IDS_LIMIT,
@@ -74,6 +75,11 @@ const botFields = {
   },
   interactionMode,
   appearance: botAppearance,
+  memoryMode: {
+    ...literals(BotMemoryMode.literals),
+    description:
+      "Who keeps the bot's memory: upcomputer (default) or agent (for agents with a memory of their own).",
+  },
 } as const;
 
 const runStatuses = {
