@@ -465,6 +465,100 @@ it.effect("only a person's message that starts with remember and a colon saves m
   ),
 );
 
+it.effect(
+  "a bot whose agent keeps its memory gets none of Up.computer's, switching either way",
+  () =>
+    runRecorded(() =>
+      Effect.gen(function* () {
+        const bots = yield* BotService;
+        const repository = yield* TaskRepository;
+        yield* seedBot;
+        const switches = yield* bots.memoryModeChanges.pipe(
+          Stream.take(2),
+          Stream.runCollect,
+          Effect.forkChild({ startImmediately: true }),
+        );
+        const saved = Effect.map(bots.memory(botId), (entries) =>
+          entries.map((entry) => entry.text),
+        );
+        const seeded = { id: botId, projectId: project, allowedProjectIds: [project], config };
+        const save = (memoryMode?: "upcomputer" | "agent") =>
+          bots.save({ ...seeded, name: "Seeded bot", ...(memoryMode ? { memoryMode } : {}) });
+        yield* bots.context(turn(botThread, "remember: user likes tea"));
+        const before = yield* bots.context(turn(botThread, "Hello"));
+        assert.include(before.text, "user likes tea");
+        assert.equal((yield* bots.list)[0]?.memoryMode, "upcomputer");
+
+        assert.equal((yield* save("agent")).memoryMode, "agent");
+        const switched = yield* bots.context({
+          ...turn(botThread, "Remember: user likes coffee"),
+          deliveredMarker: before.marker!,
+        });
+        // The whole block again, so the conversation drops the snapshot it holds.
+        assert.isUndefined(switched.update);
+        assert.include(switched.text, "<upcomputer_bot>");
+        assert.include(switched.text, "you manage your own memory");
+        assert.include(switched.text, "Instructions:\nHelp.");
+        for (const absent of [
+          "user likes tea",
+          "bot_remember",
+          "bot_memory",
+          "memory snapshot follows",
+        ])
+          assert.notInclude(switched.text, absent);
+        // The line reaches the agent as text; the saved facts stay.
+        assert.deepStrictEqual(yield* saved, ["user likes tea"]);
+        const next = yield* bots.context({
+          ...turn(botThread, "Hi"),
+          deliveredMarker: switched.marker!,
+        });
+        assert.equal(next.update, "");
+        // A save that leaves the mode out keeps it.
+        assert.equal((yield* save()).memoryMode, "agent");
+        const task = yield* bots.assign({
+          agentId: botId,
+          requestId: "request-1",
+          title: "Background",
+          description: "",
+        });
+        yield* repository.createAgentRun({
+          id: TaskAgentRunId.make("run-bot"),
+          taskId: task.id,
+          agentId: botId,
+          threadId: taskThread,
+          modelSelection,
+          status: "running",
+          startedAt: timestamp,
+          completedAt: null,
+          triggerRunId: null,
+          continuesRunId: null,
+        });
+        const background = (yield* bots.context(turn(taskThread, "Work"))).text;
+        assert.include(background, "you manage your own memory");
+        assert.notInclude(background, "bot_remember");
+        assert.notInclude(background, "user likes tea");
+        assert.notInclude(background, "memory is read-only");
+        const refused = yield* bots.extract(botId, "request-1").pipe(Effect.flip);
+        assert.include(refused.message, "manages its own memory");
+
+        assert.equal((yield* save("upcomputer")).memoryMode, "upcomputer");
+        const back = yield* bots.context({
+          ...turn(botThread, "Hello"),
+          deliveredMarker: next.marker!,
+        });
+        assert.isUndefined(back.update);
+        assert.include(back.text, "user likes tea");
+        assert.include(back.text, "use bot_remember");
+        const after = yield* bots.context({
+          ...turn(botThread, "Hi"),
+          deliveredMarker: back.marker!,
+        });
+        assert.equal(after.update, "");
+        assert.lengthOf(yield* Fiber.join(switches), 2);
+      }),
+    ),
+);
+
 it.effect("a new bot and its chat get full access, like a new thread", () =>
   runRecorded((dispatched) =>
     Effect.gen(function* () {

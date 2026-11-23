@@ -132,8 +132,17 @@ export const defaultBotAppearance = (id: string): BotAppearance => ({
   accessory: "none",
 });
 
+/**
+ * Who keeps the bot's memory. "agent": an agent with a memory of its own keeps it, and
+ * Up.computer neither captures, sends nor offers memory tools; saved facts stay for a switch back.
+ */
+export const BotMemoryMode = Schema.Literals(["upcomputer", "agent"]);
+export type BotMemoryMode = typeof BotMemoryMode.Type;
+
 export const Bot = Schema.Struct({
   agent: TaskAgent,
+  /** Absent from older servers, which always keep the memory. */
+  memoryMode: Schema.optional(BotMemoryMode),
   /** Missing or null draws `defaultBotAppearance` for older bots and servers. */
   appearance: Schema.optional(Schema.NullOr(BotAppearance)),
   threadId: ThreadId,
@@ -169,6 +178,8 @@ export const BotWriteInput = Schema.Struct({
   config: TaskAgentConfig,
   /** Omitted preserves the saved style. Null clears it back to `defaultBotAppearance`. */
   appearance: Schema.optional(Schema.NullOr(BotAppearance)),
+  /** Omitted keeps the saved mode; a new bot starts with "upcomputer". */
+  memoryMode: Schema.optional(BotMemoryMode),
 });
 export type BotWriteInput = typeof BotWriteInput.Type;
 

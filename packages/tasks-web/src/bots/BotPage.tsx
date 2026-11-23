@@ -27,6 +27,7 @@ import {
   type Bot,
   type BotAppearance,
   type BotMemory,
+  type BotMemoryMode,
   type BotWriteInput,
   defaultBotAppearance,
 } from "@t3tools/tasks-contracts/v1";
@@ -235,6 +236,13 @@ function BotForm({
       projectOptions[0]?.defaultModelSelection ??
       undefined,
   );
+  const [memoryMode, setMemoryMode] = useState<BotMemoryMode>(bot?.memoryMode ?? "upcomputer");
+  // A switch made elsewhere, such as by an agent, shows here; left stale, the next save undoes it.
+  const [savedMemoryMode, setSavedMemoryMode] = useState(bot?.memoryMode);
+  if (bot && bot.memoryMode !== savedMemoryMode) {
+    setSavedMemoryMode(bot.memoryMode);
+    if (bot.memoryMode !== undefined) setMemoryMode(bot.memoryMode);
+  }
   // A chat turned into a bot keeps its permissions; a new bot gets a new thread's.
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>(
     bot?.agent.config.runtimeMode ?? source?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
@@ -291,6 +299,7 @@ function BotForm({
           allowedProjectIds: [projectId],
           name,
           appearance,
+          memoryMode,
           config: {
             ...bot?.agent.config,
             // Task agents require a role; bots describe themselves through instructions.
@@ -331,7 +340,7 @@ function BotForm({
     retrySave.current = () => autosave.schedule(0);
   }, [autosave]);
   const textKey = JSON.stringify([name, instructions]);
-  const choiceKey = JSON.stringify([appearance, selection, runtimeMode, projectId]);
+  const choiceKey = JSON.stringify([appearance, selection, runtimeMode, projectId, memoryMode]);
   // Text saves after a pause in typing or when the field loses focus; a pick saves at once.
   useEffect(() => {
     autosave.schedule(800);
@@ -634,7 +643,13 @@ function BotForm({
 
         {bot ? (
           <>
-            <MemorySections bot={bot} environmentId={environmentId} />
+            <MemorySections
+              bot={bot}
+              environmentId={environmentId}
+              memoryMode={memoryMode}
+              editable={editable}
+              onMemoryModeChange={setMemoryMode}
+            />
             <SettingsSection
               title={gt("Remove", { $context: "settings section that removes a bot" })}
             >
@@ -887,11 +902,30 @@ function AppearancePicker({
 function MemorySections({
   bot,
   environmentId,
+  memoryMode,
+  editable,
+  onMemoryModeChange,
 }: {
   readonly bot: Bot;
   readonly environmentId: EnvironmentId;
+  readonly memoryMode: BotMemoryMode;
+  readonly editable: boolean;
+  readonly onMemoryModeChange: (mode: BotMemoryMode) => void;
 }) {
   const gt = useGT();
+  const modes: Record<BotMemoryMode, { label: string; description: string }> = {
+    upcomputer: {
+      label: gt("Up.computer memory"),
+      description: gt("Up.computer saves facts and gives them to the bot in every chat."),
+    },
+    agent: {
+      label: gt("Managed by the agent"),
+      description: gt(
+        "For agents with a memory of their own. Up.computer doesn't save or send facts.",
+      ),
+    },
+  };
+  const managed = memoryMode === "agent";
   const client = readTasksWebClient(environmentId).bots;
   const canWrite = useExperimentalFeatureRpcPermission(environmentId, BOTS_RPC_METHODS.remember);
   const thread = useThreadShell(scopeThreadRef(environmentId, bot.threadId));
@@ -941,7 +975,44 @@ function MemorySections({
         </InfoTip>
       }
     >
-      {context.selected.length < context.entries.length ? (
+      <SettingsRow
+        title={gt("Who keeps memory")}
+        description={modes[memoryMode].description}
+        control={
+          <Select
+            value={memoryMode}
+            disabled={!editable}
+            onValueChange={(value) => {
+              if (value) onMemoryModeChange(value);
+            }}
+          >
+            <SelectTrigger size="sm" aria-label={gt("Who keeps memory")}>
+              <SelectValue>{modes[memoryMode].label}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              {(["upcomputer", "agent"] as const).map((mode) => (
+                <SelectItem key={mode} value={mode} className="min-w-64">
+                  <div className="grid gap-0.5">
+                    <span className="font-medium">{modes[mode].label}</span>
+                    <span className="text-xs leading-4 text-muted-foreground">
+                      {modes[mode].description}
+                    </span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        }
+      />
+      {managed ? (
+        context.entries.length > 0 ? (
+          <p className="px-3 pt-3 pb-1 text-xs text-muted-foreground sm:px-4">
+            {gt(
+              "The agent manages its own memory. Facts saved before stay here, and the bot gets them again if you switch back to Up.computer memory.",
+            )}
+          </p>
+        ) : null
+      ) : context.selected.length < context.entries.length ? (
         <p className="px-3 pt-3 pb-1 text-xs text-muted-foreground sm:px-4">
           {gt(
             "{outside} of {count, plural, one {# fact} other {# facts}} {outside, plural, one {doesn't fit the chat's context. The bot can still look it up.} other {don't fit the chat's context. The bot can still look them up.}}",
@@ -956,7 +1027,7 @@ function MemorySections({
         <MemoryEntry
           key={`${entry.id}:${entry.updatedAt}`}
           entry={entry}
-          inContext={inContext.has(entry.id)}
+          inContext={!managed && inContext.has(entry.id)}
           disabled={!canWrite}
           onSave={(value) => {
             void mutate(() => client.remember({ ...entry, text: value }));
@@ -974,7 +1045,7 @@ function MemorySections({
           }}
         />
       ))}
-      {entries?.length === 0 ? (
+      {entries?.length === 0 && !managed ? (
         <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
           {gt("No memories yet. Say “Remember: …” in the chat.")}
         </p>

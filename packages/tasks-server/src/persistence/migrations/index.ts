@@ -10,7 +10,8 @@ import { TaskAgentArchiveMigration } from "./041_TaskAgentArchive.ts";
 import { ActiveTaskListIndexMigration } from "./042_ActiveTaskListIndex.ts";
 import { TaskWorkflowVersionMigration } from "./043_TaskWorkflowVersion.ts";
 import { InstructionUpdatesMigration } from "./044_InstructionUpdates.ts";
-import { BotMentionsMigration } from "./045_BotMentions.ts";
+import { BotMemoryModeMigration } from "./045_BotMemoryMode.ts";
+import { BotMentionsMigration } from "./046_BotMentions.ts";
 import { TasksNewestFirstMigration } from "./031_TasksNewestFirst.ts";
 import { BotsMigration } from "./033_Bots.ts";
 import { UpdateDefaultFeedOrderPromptsMigration } from "./030_UpdateDefaultFeedOrderPrompts.ts";
@@ -151,6 +152,7 @@ export const TASK_MIGRATION_CONTRIBUTION = {
     { version: 42, name: "ActiveTaskListIndex", run: ActiveTaskListIndexMigration },
     { version: 43, name: "TaskWorkflowVersion", run: TaskWorkflowVersionMigration },
     { version: 44, name: "InstructionUpdates", run: InstructionUpdatesMigration },
-    { version: 45, name: "BotMentions", run: BotMentionsMigration },
+    { version: 45, name: "BotMemoryMode", run: BotMemoryModeMigration },
+    { version: 46, name: "BotMentions", run: BotMentionsMigration },
   ],
 } as const;

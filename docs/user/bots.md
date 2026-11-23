@@ -73,6 +73,15 @@ A bot keeps up to 200 facts. Each new conversation with the model gets as many a
 12,000 characters, your facts first, then the newest. The page dims the facts that don't fit; the
 bot can still look them up.
 
+### Agents with their own memory
+
+Some agents keep a memory of their own, such as one you connect as a Local ACP command. Then
+Up.computer's memory would be a second one that drifts apart from it. In the bot's **Memory**
+section, set **Who keeps memory** to **Managed by the agent**. From the bot's next message,
+Up.computer stops saving and sending facts, a **Remember:** message reaches the agent as normal
+text, and the agent gets no memory tools. Facts saved before stay on the page, where you can still
+delete them, and the bot gets them again if you switch back to **Up.computer memory**.
+
 ## Background work
 
 Ask the bot for something bigger and it works on it in the background, so its chat stays free:

@@ -2565,6 +2565,21 @@ it.live(
           createdBy: "user",
         });
         assert.notInclude(chat.text, injected);
+        // An agent that keeps its own memory gets no memory tools, in the chat or a run.
+        yield* bots.save({ ...input, memoryMode: "agent" });
+        for (const threadId of [bot.threadId, taskTurn!.threadId])
+          for (const [name, args] of [
+            ["bot_memory", {}],
+            ["bot_remember", { id: "fact", text: "A fact" }],
+            ["bot_forget", { id: "task-fact" }],
+          ] as const)
+            assert.include(
+              (yield* callTaskTool(threadId, name, args).pipe(Effect.flip)).message,
+              name,
+            );
+        assert.isTrue((yield* bots.memory(bot.agent.id)).some((entry) => entry.id === "task-fact"));
+        yield* bots.save({ ...input, memoryMode: "upcomputer" });
+        assert.isFalse((yield* callTaskTool(bot.threadId, "bot_memory", {})).isError);
         const refused = yield* bots.save({ ...input, allowedProjectIds: [] }).pipe(Effect.result);
         assert.equal(refused._tag, "Failure");
       }),
