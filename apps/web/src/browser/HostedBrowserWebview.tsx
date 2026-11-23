@@ -13,7 +13,7 @@ import {
 } from "~/components/preview/thumbButtons";
 import { usePreviewBridge } from "~/components/preview/usePreviewBridge";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
-import { cn, isMacPlatform } from "~/lib/utils";
+import { cn, isMacPlatform, isWindowsPlatform } from "~/lib/utils";
 import { useHiddenBrowserBackdrop } from "~/sidebarVibrancy/hiddenBrowserBackdrop";
 
 import { resolveBrowserSurfacePanelRect, useBrowserSurfaceStore } from "./browserSurfaceStore";
@@ -347,8 +347,10 @@ export function HostedBrowserWebview(props: {
   const wrapperStyle = resolveHostedBrowserWebviewWrapperStyle({
     active,
     renderingActive,
-    // Electron 43 can permanently blank a macOS webview after `visibility: hidden`.
-    keepPaintableWhenInactive: isMacPlatform(navigator.platform),
+    // Electron 43 can permanently blank a macOS webview after `visibility: hidden`; Windows guests
+    // hidden that way missed agent screenshots taken while their thread was off screen.
+    keepPaintableWhenInactive:
+      isMacPlatform(navigator.platform) || isWindowsPlatform(navigator.platform),
     cornerRadius: presentation.cornerRadius,
     zIndex: presentation.zIndex,
     rect: lastRect,
