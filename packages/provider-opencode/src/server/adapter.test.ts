@@ -803,76 +803,121 @@ describe("OpenCodeAdapterV2", () => {
     }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
   );
 
-  it.effect("shows OpenCode's retry while it waits, and settles it when the turn recovers", () =>
-    Effect.gen(function* () {
-      const nativeEvents = asyncEventStream();
-      let promptId = "";
-      const harness = yield* makeOpenCodeRuntimeHarness("retry", "root", {
-        event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
-        session: {
-          create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
-          promptAsync: async (input: { messageID: string }) => {
-            promptId = input.messageID;
-            return { data: true };
+  it.effect.each(["busy", "output"] as const)(
+    "shows OpenCode's retry while it waits, and settles it on the next %s",
+    (recovery) =>
+      Effect.gen(function* () {
+        const nativeEvents = asyncEventStream();
+        let promptId = "";
+        const harness = yield* makeOpenCodeRuntimeHarness("retry", "root", {
+          event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+          session: {
+            create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+            promptAsync: async (input: { messageID: string }) => {
+              promptId = input.messageID;
+              return { data: true };
+            },
+            abort: async () => ({ data: true }),
+            children: async () => ({ data: [] }),
           },
-          abort: async () => ({ data: true }),
-          children: async () => ({ data: [] }),
-        },
-      });
-      yield* harness.startTurn();
-      const received = yield* harness.runtime.events.pipe(
-        Stream.takeUntil((event) => event.type === "turn.terminal"),
-        Stream.runCollect,
-        Effect.forkScoped,
-      );
-      const now = DateTime.toEpochMillis(yield* DateTime.now);
-      const push = (event: unknown) => Effect.promise(() => nativeEvents.push(event));
-      yield* push({
-        type: "message.updated",
-        properties: {
-          sessionID: "root",
-          info: { id: promptId, role: "user", time: { created: 1 } },
-        },
-      });
-      yield* push({
-        type: "session.status",
-        properties: { sessionID: "root", status: { type: "busy" } },
-      });
-      yield* push({
-        type: "session.status",
-        properties: {
-          sessionID: "root",
-          status: {
-            type: "retry",
-            attempt: 2,
-            message: "Provider is overloaded",
-            next: now + 4_000,
+        });
+        yield* harness.startTurn();
+        const received = yield* harness.runtime.events.pipe(
+          Stream.takeUntil((event) => event.type === "turn.terminal"),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+        const now = DateTime.toEpochMillis(yield* DateTime.now);
+        const push = (event: unknown) => Effect.promise(() => nativeEvents.push(event));
+        yield* push({
+          type: "message.updated",
+          properties: {
+            sessionID: "root",
+            info: { id: promptId, role: "user", time: { created: 1 } },
           },
-        },
-      });
-      yield* push({
-        type: "session.status",
-        properties: { sessionID: "root", status: { type: "busy" } },
-      });
-      yield* push({
-        type: "session.status",
-        properties: { sessionID: "root", status: { type: "idle" } },
-      });
+        });
+        yield* push({
+          type: "session.status",
+          properties: { sessionID: "root", status: { type: "busy" } },
+        });
+        yield* push({
+          type: "session.status",
+          properties: {
+            sessionID: "root",
+            status: {
+              type: "retry",
+              attempt: 2,
+              message: "Provider is overloaded",
+              next: now + 4_000,
+            },
+          },
+        });
+        if (recovery === "busy")
+          yield* push({
+            type: "session.status",
+            properties: { sessionID: "root", status: { type: "busy" } },
+          });
+        const answer = {
+          id: "msg_answer",
+          sessionID: "root",
+          role: "assistant",
+          parentID: promptId,
+          time: { created: 2 },
+        };
+        yield* push({ type: "message.updated", properties: { sessionID: "root", info: answer } });
+        yield* push({
+          type: "message.part.updated",
+          properties: {
+            sessionID: "root",
+            part: {
+              id: "prt_answer",
+              sessionID: "root",
+              messageID: "msg_answer",
+              type: "text",
+              text: "Recovered answer",
+              time: { start: 2 },
+            },
+          },
+        });
+        yield* push({
+          type: "message.updated",
+          properties: {
+            sessionID: "root",
+            info: { ...answer, time: { created: 2, completed: 3 } },
+          },
+        });
+        yield* push({
+          type: "session.status",
+          properties: { sessionID: "root", status: { type: "idle" } },
+        });
 
-      const events = Array.from(yield* Fiber.join(received));
-      const retries = events.flatMap((event) =>
-        event.type === "turn_item.updated" && event.turnItem.type === "error"
-          ? [event.turnItem]
-          : [],
-      );
-      assert.deepEqual(
-        retries.map((item) => item.status),
-        ["running", "completed"],
-      );
-      assert.deepEqual(retries[0]?.retry, { attempt: 2, maxAttempts: null, retryDelayMs: 4_000 });
-      assert.equal(retries[0]?.failure.message, "Provider is overloaded.");
-      assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "completed");
-    }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
+        const events = Array.from(yield* Fiber.join(received));
+        const retries = events.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "error"
+            ? [event.turnItem]
+            : [],
+        );
+        assert.deepEqual(
+          retries.map((item) => item.status),
+          ["running", "completed"],
+        );
+        // The row settles once OpenCode works again, not when the turn ends.
+        const settledAt = events.findIndex(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "error" &&
+            event.turnItem.status === "completed",
+        );
+        const answeredAt = events.findIndex(
+          (event) =>
+            event.type === "turn_item.updated" && event.turnItem.type === "assistant_message",
+        );
+        assert.isAbove(answeredAt, -1);
+        assert.isBelow(settledAt, answeredAt);
+        assert.deepEqual(retries[0]?.retry, { attempt: 2, maxAttempts: null, retryDelayMs: 4_000 });
+        assert.equal(retries[0]?.failure.message, "Provider is overloaded.");
+        assert.equal(events.find((event) => event.type === "turn.terminal")?.status, "completed");
+      }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
   );
 
   it.effect("ends the turn with a usage limit when OpenCode's free limit is reached", () =>

@@ -1957,6 +1957,14 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             }),
           });
 
+        // OpenCode sends nothing when a retry goes through; busy again or new output marks it.
+        const settleProviderRetry = Effect.fnUntraced(function* (turn: ActiveOpenCodeTurn) {
+          const retry = turn.providerRetry;
+          if (retry === null || turn.finalized) return;
+          turn.providerRetry = null;
+          yield* emitProviderRetry(turn, retry, "completed", yield* DateTime.now);
+        });
+
         const emitTodo = Effect.fnUntraced(function* (
           state: OpenCodeThreadState,
           turn: ActiveOpenCodeTurn,
@@ -2882,9 +2890,11 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           switch (part.type) {
             case "text":
             case "reasoning":
+              yield* settleProviderRetry(turn);
               yield* emitTextPart(state, turn, part);
               return;
             case "tool":
+              yield* settleProviderRetry(turn);
               yield* emitToolPart(state, turn, part);
               return;
             default:
@@ -3292,6 +3302,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 return;
               }
               if (event.properties.status.type === "busy") {
+                if (state.activeTurn !== null) yield* settleProviderRetry(state.activeTurn);
                 yield* updateProviderThread(state, { status: "active" });
                 return;
               }
