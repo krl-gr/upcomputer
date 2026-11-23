@@ -23,6 +23,7 @@ import {
   wrapInHeadingCommand,
 } from "@milkdown/preset-commonmark";
 import { insertTableCommand } from "@milkdown/preset-gfm";
+import type { Node as ProseNode } from "@milkdown/prose/model";
 import { EditorState, Plugin, PluginKey, TextSelection } from "@milkdown/prose/state";
 import { Decoration, DecorationSet, type EditorView } from "@milkdown/prose/view";
 
@@ -217,24 +218,30 @@ function createMarkdownEditor(
 // Stored texts have no final newline; remark-stringify always adds one.
 const withoutFinalNewline = (markdown: string) => markdown.replace(/\n$/, "");
 
+function currentDoc(editor: Editor): ProseNode {
+  return editor.action((ctx) => ctx.get(editorViewCtx).state.doc);
+}
+
+function serializeDoc(editor: Editor, doc: ProseNode): string {
+  return editor.action((ctx) => withoutFinalNewline(ctx.get(serializerCtx)(doc)));
+}
+
 function serializeMarkdown(editor: Editor): string {
-  return editor.action((ctx) =>
-    withoutFinalNewline(ctx.get(serializerCtx)(ctx.get(editorViewCtx).state.doc)),
-  );
+  return serializeDoc(editor, currentDoc(editor));
 }
 
 /**
  * Shows `value` as a fresh document: no undo back into the old text. Returns
- * the markdown the editor writes for it, which can differ in formatting.
+ * the immutable parsed doc so normalization can wait until the first edit.
  */
-function replaceMarkdown(editor: Editor, value: string): string {
+function replaceMarkdown(editor: Editor, value: string): ProseNode {
   return editor.action((ctx) => {
     const view = ctx.get(editorViewCtx);
     const doc = ctx.get(parserCtx)(value);
     view.updateState(
       EditorState.create({ schema: view.state.schema, doc, plugins: view.state.plugins }),
     );
-    return withoutFinalNewline(ctx.get(serializerCtx)(doc));
+    return doc;
   });
 }
 
@@ -341,11 +348,14 @@ export class MarkdownEditorSession {
   readonly editor: Editor;
   readonly ready: Promise<void>;
   readonly #hooks: MarkdownSessionHooks;
-  // `raw` is the value the editor loaded, `normalized` how Milkdown writes it,
-  // `reported` the value the owner has from or gave to the editor.
+  // `raw` is the value the editor loaded, `normalized` how Milkdown writes it
+  // (computed lazily on first edit from the immutable `initialDoc`), `reported`
+  // the value the owner has from or gave to the editor.
   #raw: string;
+  #initialDoc: ProseNode | null = null;
   #normalized: string | null = null;
   #reported: string;
+  #ready = false;
   #applying = false;
   #focused = false;
   #destroyed = false;
@@ -383,7 +393,9 @@ export class MarkdownEditorSession {
     );
     this.ready = this.editor.create().then(() => {
       if (this.#destroyed) return;
-      this.#normalized = serializeMarkdown(this.editor);
+      this.#ready = true;
+      this.#initialDoc = currentDoc(this.editor);
+      this.#normalized = null;
       // The owner's value may have changed while Milkdown loaded.
       this.valueChanged();
       if (autoFocus) focusEditor(this.editor);
@@ -393,10 +405,11 @@ export class MarkdownEditorSession {
   /** Call when the owner's value may have changed. */
   valueChanged() {
     const value = this.#hooks.value();
-    if (this.#normalized === null || this.#focused || value === this.#reported) return;
+    if (!this.#ready || this.#focused || value === this.#reported) return;
     this.#applying = true;
     try {
-      this.#normalized = replaceMarkdown(this.editor, value);
+      this.#initialDoc = replaceMarkdown(this.editor, value);
+      this.#normalized = null;
     } finally {
       this.#applying = false;
     }
@@ -406,15 +419,18 @@ export class MarkdownEditorSession {
 
   destroy() {
     this.#destroyed = true;
+    this.#ready = false;
+    this.#initialDoc = null;
     this.#normalized = null;
     void this.ready.then(() => this.editor.destroy()).catch(() => undefined);
   }
 
   #report() {
-    if (this.#normalized === null) return;
+    if (!this.#ready || this.#initialDoc === null) return;
+    const normalized = (this.#normalized ??= serializeDoc(this.editor, this.#initialDoc));
     const markdown = serializeMarkdown(this.editor);
     // Only trailing whitespace differs when the editor adds an empty last paragraph.
-    const next = markdown.trimEnd() === this.#normalized.trimEnd() ? this.#raw : markdown;
+    const next = markdown.trimEnd() === normalized.trimEnd() ? this.#raw : markdown;
     if (next === this.#reported) return;
     this.#reported = next;
     this.#hooks.onChange(next);

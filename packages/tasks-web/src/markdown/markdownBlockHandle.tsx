@@ -3,6 +3,7 @@ import type { Ctx } from "@milkdown/ctx";
 import { BlockProvider, block, blockConfig } from "@milkdown/plugin-block";
 import { findParent } from "@milkdown/prose";
 import type { PluginView } from "@milkdown/prose/state";
+import type { EditorView } from "@milkdown/prose/view";
 import { GripVerticalIcon, PlusIcon } from "lucide-react";
 import { useGT } from "gt-react";
 import { createRoot, type Root } from "react-dom/client";
@@ -45,10 +46,14 @@ class BlockHandleView implements PluginView {
   readonly #root: Root;
   readonly #provider: BlockProvider;
   readonly #ctx: Ctx;
+  readonly #editorDom: HTMLElement;
   readonly #onOpenMenu: (menu: SlashMenuState) => void;
+  readonly #showObserver: MutationObserver;
+  readonly #inertObserver: MutationObserver;
 
-  constructor(ctx: Ctx, onOpenMenu: (menu: SlashMenuState) => void) {
+  constructor(ctx: Ctx, editorView: EditorView, onOpenMenu: (menu: SlashMenuState) => void) {
     this.#ctx = ctx;
+    this.#editorDom = editorView.dom;
     this.#onOpenMenu = onOpenMenu;
     this.#content.className = "markdown-block-handle";
     this.#root = createRoot(this.#content);
@@ -69,19 +74,50 @@ class BlockHandleView implements PluginView {
         return blockDom.getBoundingClientRect().height < height ? "left-start" : "left";
       },
     });
+    this.#syncVisibility();
+    // Keep the body-portaled handle hidden and out of the tab order when hidden or when an ancestor (like a collapsed accordion) becomes inert.
+    this.#showObserver = new MutationObserver(() => this.#syncVisibility());
+    this.#showObserver.observe(this.#content, { attributes: true, attributeFilter: ["data-show"] });
+    this.#inertObserver = new MutationObserver(() => this.#syncVisibility());
+    for (let node: HTMLElement | null = this.#editorDom; node; node = node.parentElement) {
+      this.#inertObserver.observe(node, { attributes: true, attributeFilter: ["inert"] });
+    }
+    this.#editorDom.addEventListener("pointerleave", this.#handlePointerLeave);
+    this.#content.addEventListener("pointerleave", this.#handlePointerLeave);
     this.#provider.update();
   }
 
   update = () => this.#provider.update();
 
   destroy = () => {
+    this.#showObserver.disconnect();
+    this.#inertObserver.disconnect();
+    this.#editorDom.removeEventListener("pointerleave", this.#handlePointerLeave);
+    this.#content.removeEventListener("pointerleave", this.#handlePointerLeave);
     this.#provider.destroy();
     this.#content.remove();
     // Unmounting a root during the editor's own teardown render warns in React.
     queueMicrotask(() => this.#root.unmount());
   };
 
+  #syncVisibility = () => {
+    const editorInert = this.#editorDom.closest("[inert]") !== null;
+    if (editorInert && this.#content.dataset.show !== "false") {
+      this.#provider.hide();
+    }
+    this.#content.inert = editorInert || this.#content.dataset.show !== "true";
+  };
+
+  #handlePointerLeave = (event: PointerEvent) => {
+    const next = event.relatedTarget;
+    if (next instanceof Node && (this.#editorDom.contains(next) || this.#content.contains(next))) {
+      return;
+    }
+    this.#provider.hide();
+  };
+
   #add = () => {
+    if (this.#editorDom.closest("[inert]") !== null) return;
     const view = this.#ctx.get(editorViewCtx);
     const active = this.#provider.active;
     if (!active) return;
@@ -99,5 +135,5 @@ export function configureBlockHandle(ctx: Ctx, onOpenMenu: (menu: SlashMenuState
     filterNodes: (pos) =>
       !findParent((node) => ["table", "blockquote"].includes(node.type.name))(pos),
   });
-  ctx.set(block.key, { view: () => new BlockHandleView(ctx, onOpenMenu) });
+  ctx.set(block.key, { view: (editorView) => new BlockHandleView(ctx, editorView, onOpenMenu) });
 }

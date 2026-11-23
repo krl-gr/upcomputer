@@ -20,6 +20,8 @@ export interface MarkdownEditorProps {
   /** Called on every edit, never for opening, focusing or scrolling the text. */
   readonly onChange: (value: string) => void;
   readonly onBlur?: () => void;
+  /** Called once Milkdown has mounted its initial document DOM. */
+  readonly onReady?: (() => void) | undefined;
   readonly placeholder?: string;
   readonly ariaLabel: string;
   readonly disabled?: boolean;
@@ -71,46 +73,62 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
       setActiveIndex(0);
       setMenu(state ? { state, insertBelow } : null);
     };
-    const session = new MarkdownEditorSession(
-      root,
-      {
-        value: () => propsRef.current.value,
-        onChange: (value) => propsRef.current.onChange(value),
-        onEdit: () => setMenu((open) => (open?.insertBelow ? null : open)),
-        onBlur: () => {
-          setMenu(null);
-          propsRef.current.onBlur?.();
-        },
-        onSlashMenu: (state) => openMenu(state, false),
-        onKey: (event) => {
-          const latest = latestRef.current;
-          if (!latest.menu) return false;
-          if (event.key === "Escape") {
+    let session: MarkdownEditorSession;
+    try {
+      session = new MarkdownEditorSession(
+        root,
+        {
+          value: () => propsRef.current.value,
+          onChange: (value) => propsRef.current.onChange(value),
+          onEdit: () => setMenu((open) => (open?.insertBelow ? null : open)),
+          onBlur: () => {
             setMenu(null);
-            return true;
-          }
-          if (latest.items.length === 0) return false;
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            const step = event.key === "ArrowDown" ? 1 : -1;
-            setActiveIndex((latest.activeIndex + step + latest.items.length) % latest.items.length);
-            return true;
-          }
-          if (event.key === "Enter" || event.key === "Tab") {
-            const command = latest.items[latest.activeIndex] ?? latest.items[0];
-            if (command) latest.runCommand(command.id);
-            return true;
-          }
-          return false;
+            propsRef.current.onBlur?.();
+          },
+          onSlashMenu: (state) => openMenu(state, false),
+          onKey: (event) => {
+            const latest = latestRef.current;
+            if (!latest.menu) return false;
+            if (event.key === "Escape") {
+              setMenu(null);
+              return true;
+            }
+            if (latest.items.length === 0) return false;
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              const step = event.key === "ArrowDown" ? 1 : -1;
+              setActiveIndex(
+                (latest.activeIndex + step + latest.items.length) % latest.items.length,
+              );
+              return true;
+            }
+            if (event.key === "Enter" || event.key === "Tab") {
+              const command = latest.items[latest.activeIndex] ?? latest.items[0];
+              if (command) latest.runCommand(command.id);
+              return true;
+            }
+            return false;
+          },
+          onOpenLink: (href) => void readLocalApi()?.shell.openExternal(href),
+          isEditable: () => propsRef.current.disabled !== true,
+          placeholder: () => propsRef.current.placeholder ?? "",
+          ariaLabel: () => propsRef.current.ariaLabel,
         },
-        onOpenLink: (href) => void readLocalApi()?.shell.openExternal(href),
-        isEditable: () => propsRef.current.disabled !== true,
-        placeholder: () => propsRef.current.placeholder ?? "",
-        ariaLabel: () => propsRef.current.ariaLabel,
-      },
-      (ctx) => configureBlockHandle(ctx, (state) => openMenu(state, true)),
-      propsRef.current.autoFocus,
-    );
+        (ctx) => configureBlockHandle(ctx, (state) => openMenu(state, true)),
+        propsRef.current.autoFocus,
+      );
+    } catch (error) {
+      if (!disposed) propsRef.current.onReady?.();
+      throw error;
+    }
     sessionRef.current = session;
+    void session.ready.then(
+      () => {
+        if (!disposed) propsRef.current.onReady?.();
+      },
+      () => {
+        if (!disposed) propsRef.current.onReady?.();
+      },
+    );
     return () => {
       disposed = true;
       sessionRef.current = null;

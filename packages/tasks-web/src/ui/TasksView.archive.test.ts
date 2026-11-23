@@ -97,7 +97,10 @@ vi.mock("./WorkspaceViewLayout.tsx", () => ({
 vi.mock("./TaskThreadLink.tsx", () => ({ TaskThreadLink: () => null }));
 // Milkdown reads `document.documentElement` when it loads, which the stubbed
 // document lacks; whether the lazy editor loaded during a test was timing.
-vi.mock("../markdown/LazyMarkdownEditor.tsx", () => ({ LazyMarkdownEditor: () => null }));
+vi.mock("../markdown/LazyMarkdownEditor.tsx", () => ({
+  LazyMarkdownEditor: () => null,
+  preloadMarkdownEditor: () => undefined,
+}));
 vi.mock("./agentModelOptions.ts", () => ({
   getTaskRunAgentPresentation: () => ({ agentName: "Agent", modelLabel: "Model" }),
 }));

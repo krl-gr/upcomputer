@@ -106,7 +106,7 @@ import { TaskHistory, taskHistoryEntries } from "./TaskHistory.tsx";
 import { TaskTagChips } from "./TaskTagChips.tsx";
 import { TagChipsField } from "./TagChipsField.tsx";
 import { tagSuggestions } from "./tagSuggestions.ts";
-import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
+import { LazyMarkdownEditor, preloadMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import {
   splitListInput,
   taskKey,
@@ -366,6 +366,7 @@ function DetailSourceThreadRow(props: {
 function DetailDescriptionEditor(props: {
   readonly value: string;
   readonly disabled: boolean;
+  readonly onReady?: (() => void) | undefined;
   readonly onSave: (description: string) => void;
 }) {
   const gt = useGT();
@@ -382,6 +383,7 @@ function DetailDescriptionEditor(props: {
       placeholder={gt("Description…")}
       ariaLabel={gt("Task description")}
       className={DETAIL_DESCRIPTION_EDITOR_CLASS}
+      onReady={props.onReady}
       onChange={(next) => {
         textRef.current = next;
         setDraft({ base: props.value, text: next });
@@ -391,6 +393,58 @@ function DetailDescriptionEditor(props: {
         if (description !== undefined && description !== props.value) props.onSave(description);
       }}
     />
+  );
+}
+
+function TaskDescriptionSection(props: {
+  readonly title: string;
+  readonly defaultOpen: boolean;
+  readonly text: string | null;
+  readonly canEdit: boolean;
+  readonly disabled: boolean;
+  readonly onSave: (description: string) => void;
+}) {
+  const gt = useGT();
+  const [startedCollapsed] = useState(!props.defaultOpen);
+  const usesEditor = props.text !== null && props.canEdit;
+  const [editorReady, setEditorReady] = useState(false);
+  const [prevUsesEditor, setPrevUsesEditor] = useState(usesEditor);
+  if (prevUsesEditor !== usesEditor) {
+    setPrevUsesEditor(usesEditor);
+    if (editorReady) setEditorReady(false);
+  }
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- schedules post-paint chunk preload for a collapsed description editor
+  useEffect(() => {
+    if (!startedCollapsed || !usesEditor) return;
+    const timer = setTimeout(() => preloadMarkdownEditor(), 0);
+    return () => clearTimeout(timer);
+  }, [startedCollapsed, usesEditor]);
+
+  return (
+    <DetailSidebarSection
+      title={props.title}
+      defaultOpen={props.defaultOpen}
+      contentReady={!startedCollapsed || !usesEditor || editorReady}
+      onWarm={startedCollapsed && usesEditor ? preloadMarkdownEditor : undefined}
+    >
+      {props.text === null ? (
+        <p className="px-3 py-1.5 text-sm text-muted-foreground">{gt("Loading task…")}</p>
+      ) : props.canEdit ? (
+        <DetailDescriptionEditor
+          value={props.text}
+          disabled={props.disabled}
+          onReady={startedCollapsed ? () => setEditorReady(true) : undefined}
+          onSave={props.onSave}
+        />
+      ) : props.text.trim() ? (
+        <p className="whitespace-pre-wrap px-3 py-1.5 text-sm leading-relaxed text-foreground">
+          {props.text}
+        </p>
+      ) : (
+        <p className="px-3 py-1.5 text-sm text-muted-foreground">{gt("No description.")}</p>
+      )}
+    </DetailSidebarSection>
   );
 }
 
@@ -1390,32 +1444,17 @@ export function TasksView(props: TasksViewProps) {
                 onSave={(title) => updateTaskInline(selectedTask, "title", { title })}
               />
               {/* Opens once the text arrives, collapsed when the task has output, as before. */}
-              <DetailSidebarSection
+              <TaskDescriptionSection
                 key={`${taskKey(selectedTask)}:description:${selectedTaskText === null ? "loading" : "loaded"}`}
                 title={gt("Description")}
                 defaultOpen={selectedTaskText !== null && !hasSelectedTaskOutput}
-              >
-                {selectedTaskText === null ? (
-                  <p className="px-3 py-1.5 text-sm text-muted-foreground">{gt("Loading task…")}</p>
-                ) : props.canMutateEnvironment(selectedTask.environmentId) ? (
-                  <DetailDescriptionEditor
-                    key={`${taskKey(selectedTask)}:description-editor`}
-                    value={selectedTaskText.description}
-                    disabled={updatingField === "description"}
-                    onSave={(description) =>
-                      void updateTaskInline(selectedTask, "description", { description })
-                    }
-                  />
-                ) : selectedTaskText.description.trim() ? (
-                  <p className="whitespace-pre-wrap px-3 py-1.5 text-sm leading-relaxed text-foreground">
-                    {selectedTaskText.description}
-                  </p>
-                ) : (
-                  <p className="px-3 py-1.5 text-sm text-muted-foreground">
-                    {gt("No description.")}
-                  </p>
-                )}
-              </DetailSidebarSection>
+                text={selectedTaskText === null ? null : selectedTaskText.description}
+                canEdit={props.canMutateEnvironment(selectedTask.environmentId)}
+                disabled={updatingField === "description"}
+                onSave={(description) =>
+                  void updateTaskInline(selectedTask, "description", { description })
+                }
+              />
               {hasSelectedTaskOutput ? (
                 <DetailSidebarSection
                   key={`${taskKey(selectedTask)}:output`}
