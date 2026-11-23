@@ -9,14 +9,19 @@ const servers = vi.hoisted(() => ({
   lists: new Map<string, () => Promise<unknown>>(),
   /** Reports a stream failure, as the real one does to a listener that has had no event yet. */
   dropStream: undefined as (() => void) | undefined,
+  /** Every computer's Tasks access; at a real start it is "loading" until the server answers. */
+  access: { availability: "enabled", canReadAgents: true },
+  accessListeners: new Set<() => void>(),
 }));
 
 vi.mock("../environmentApi.ts", () => {
-  const access = { availability: "enabled", canReadAgents: true };
   return {
-    readTasksWebAccess: () => access,
-    useTasksWebAccess: () => access,
-    subscribeTasksWebAccess: () => () => {},
+    readTasksWebAccess: () => servers.access,
+    useTasksWebAccess: () => servers.access,
+    subscribeTasksWebAccess: (listener: () => void) => {
+      servers.accessListeners.add(listener);
+      return () => servers.accessListeners.delete(listener);
+    },
     readTasksWebClient: (environmentId: string) => ({
       bots: {
         list: () => servers.lists.get(environmentId)!(),
@@ -40,6 +45,7 @@ import { readClientNotices } from "../../../../apps/web/src/sidebarNotifications
 import { TaskChangeStreamEnded } from "../rpc/taskChanges.ts";
 import {
   readLocalStorageValue,
+  removeLocalStorageItem,
   writeLocalStorageValue,
 } from "../../../../apps/web/src/hooks/useLocalStorage.ts";
 import {
@@ -48,6 +54,7 @@ import {
   botsChanged,
   rememberedBotChatKeys,
   useBotSectionLists,
+  useRememberedBotChatKeys,
 } from "./botData.tsx";
 
 const botNotices = (environmentId: EnvironmentId) =>
@@ -68,9 +75,16 @@ async function render(environmentIds: ReadonlyArray<EnvironmentId>) {
   return { seen, view };
 }
 
+function setAccess(availability: "loading" | "unavailable" | "enabled") {
+  servers.access = { availability, canReadAgents: availability === "enabled" };
+  for (const listener of servers.accessListeners) listener();
+}
+
 afterEach(() => {
   servers.lists.clear();
   servers.dropStream = undefined;
+  servers.access = { availability: "enabled", canReadAgents: true };
+  removeLocalStorageItem(BOT_CHATS_STORAGE_KEY);
 });
 
 describe("Bots section lists", () => {
@@ -137,6 +151,40 @@ describe("Bots section lists", () => {
       [here]: ["atlas-chat"],
     });
     view.unmount();
+  });
+
+  it("keeps the remembered bot chats claimed while the computer's Tasks access is checked", async () => {
+    const here = EnvironmentId.make("sections-remembered-at-start");
+    const chat = scopedThreadKey(scopeThreadRef(here, ThreadId.make("nova-chat")));
+    writeLocalStorageValue(BOT_CHATS_STORAGE_KEY, { [here]: ["nova-chat"] }, {}, BotChats);
+    let answer: (bots: unknown) => void = () => {};
+    servers.lists.set(here, () => new Promise((resolve) => (answer = resolve)));
+    setAccess("loading");
+    const claims = [] as string[];
+    function Claims() {
+      claims.push(useRememberedBotChatKeys([here]));
+      return null;
+    }
+    const view = await act(async () => create(createElement(Claims)));
+    expect(claims.at(-1)).toBe(chat);
+
+    // Access decided: the list starts loading, and the chats stay claimed meanwhile.
+    await act(async () => setAccess("enabled"));
+    expect(claims.at(-1)).toBe(chat);
+
+    // Loaded: the Bots section claims the chats it lists itself.
+    await act(async () => answer([{ agent: { id: "nova" }, threadId: "nova-chat" }]));
+    expect(claims.at(-1)).toBe("");
+    view.unmount();
+  });
+
+  it("drops the remembered bot chats of a computer that turns out not to serve Tasks", async () => {
+    const older = EnvironmentId.make("sections-remembered-no-tasks");
+    writeLocalStorageValue(BOT_CHATS_STORAGE_KEY, { [older]: ["nova-chat"] }, {}, BotChats);
+    setAccess("loading");
+    expect(rememberedBotChatKeys([older])).toHaveLength(1);
+    setAccess("unavailable");
+    expect(rememberedBotChatKeys([older])).toEqual([]);
   });
 
   it("merges every computer's bots, in order", async () => {

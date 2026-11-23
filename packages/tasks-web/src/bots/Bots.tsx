@@ -112,10 +112,10 @@ import {
   errorReason,
   readBotsUnsupported,
   readShownBots,
-  rememberedBotChatKeys,
   useBots,
   useBotSectionLists,
   useBotStatus,
+  useRememberedBotChatKeys,
   type BotSectionList,
 } from "./botData.tsx";
 
@@ -134,8 +134,8 @@ function useBotLists() {
     computerScope,
   );
   const lists = useBotSectionLists(environmentIds);
-  // Re-read whenever a list arrives: a loaded computer's chats are the Bots section's claim.
-  const remembered = rememberedBotChatKeys(environmentIds).join("\n");
+  // A loaded computer's chats are the Bots section's own claim; these cover the rest.
+  const remembered = useRememberedBotChatKeys(environmentIds);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the claims registry entry while mounted
   useEffect(
     () => claimSidebarThreads("bots:remembered", remembered ? remembered.split("\n") : []),

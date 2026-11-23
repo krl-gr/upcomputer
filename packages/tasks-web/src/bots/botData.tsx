@@ -86,11 +86,13 @@ function rememberBotChats(environmentId: EnvironmentId, bots: ReadonlyArray<Bot>
 
 /**
  * The scoped keys of the bot chats each computer had when its list last loaded, for those whose
- * list is loading again, so Threads does not list them until the Bots section does.
+ * list is loading again, so Threads does not list them until the Bots section does. A computer
+ * whose Tasks access is still being checked counts as loading: at startup that check comes first.
  */
 export function rememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string[] {
   const loading = environmentIds.filter((environmentId) => {
-    if (!readTasksWebAccess(environmentId).canReadAgents) return false;
+    const access = readTasksWebAccess(environmentId);
+    if (access.availability !== "loading" && !access.canReadAgents) return false;
     const { list } = storeFor(environmentId);
     return !list.loaded && !list.failed;
   });
@@ -276,16 +278,10 @@ export interface BotSectionList {
   readonly loaded: boolean;
 }
 
-/**
- * The lists, in the given environments' order, that the one Bots section merges: those that
- * answered, or failed in a way worth showing. One still loading or whose server predates bots
- * adds nothing.
- */
-export function useBotSectionLists(
-  environmentIds: ReadonlyArray<EnvironmentId>,
-): ReadonlyArray<BotSectionList> {
+/** Follows the given computers' Tasks access and, where it allows, their bot lists. */
+function useSubscribeBotSectionLists(environmentIds: ReadonlyArray<EnvironmentId>) {
   const key = environmentIds.join("\n");
-  const subscribe = useCallback(
+  return useCallback(
     (listener: () => void) => {
       const ids = key ? (key.split("\n") as Array<EnvironmentId>) : [];
       // Lists are read only where Tasks access allows it, which can change while subscribed.
@@ -313,6 +309,27 @@ export function useBotSectionLists(
     },
     [key],
   );
+}
+
+/**
+ * `rememberedBotChatKeys` as a store snapshot, one key per line, so it is read again when a
+ * computer's access is decided or its list loads.
+ */
+export function useRememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string {
+  const subscribe = useSubscribeBotSectionLists(environmentIds);
+  const read = () => rememberedBotChatKeys(environmentIds).join("\n");
+  return useSyncExternalStore(subscribe, read, read);
+}
+
+/**
+ * The lists, in the given environments' order, that the one Bots section merges: those that
+ * answered, or failed in a way worth showing. One still loading or whose server predates bots
+ * adds nothing.
+ */
+export function useBotSectionLists(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): ReadonlyArray<BotSectionList> {
+  const subscribe = useSubscribeBotSectionLists(environmentIds);
   const read = () =>
     environmentIds
       .flatMap((environmentId) => {
