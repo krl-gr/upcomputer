@@ -69,6 +69,10 @@ const clientFor = vi.hoisted(() => {
   };
 });
 
+// The instruction updates group has its own browser tests.
+vi.mock("../workflowUpdates/InstructionUpdatesSection.tsx", () => ({
+  InstructionUpdatesSection: () => null,
+}));
 // The Milkdown editor has its own tests; here it is a field with its props.
 vi.mock("../markdown/LazyMarkdownEditor.tsx", () => ({
   LazyMarkdownEditor: (props: {

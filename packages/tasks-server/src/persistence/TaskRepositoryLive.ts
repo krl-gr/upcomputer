@@ -98,6 +98,8 @@ import {
   TaskRepository,
   TouchTaskInput,
   type SetTasksArchivedInput,
+  type RenameTaskStatusInput,
+  type RenameTaskStatusResult,
   type SetTasksArchivedResult,
   type TaskRepositoryShape,
 } from "./TaskRepository.ts";
@@ -2476,6 +2478,93 @@ const makeTaskRepository = Effect.gen(function* () {
         ),
       );
 
+  const renameTaskStatus = (input: RenameTaskStatusInput) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const timestamp = yield* nowIso;
+          const tags = [...new Set(input.tags ?? [])];
+          const candidates = yield* sql<{ id: string }>`
+            SELECT id FROM tasks
+            WHERE lower(trim(status)) = ${input.from.trim().toLowerCase()}
+              AND (${input.projectId ?? null} IS NULL OR project_id = ${input.projectId ?? null})
+              AND (${input.ids === undefined ? null : JSON.stringify(input.ids)} IS NULL
+                OR id IN (SELECT value FROM json_each(${input.ids === undefined ? "[]" : JSON.stringify(input.ids)})))
+              AND (${tags.length} = 0 OR id IN (
+                SELECT task_id FROM task_tags
+                WHERE tag IN (SELECT value FROM json_each(${JSON.stringify(tags)}))
+                GROUP BY task_id
+                HAVING COUNT(DISTINCT tag) = ${tags.length}
+              ))
+            ORDER BY rank DESC
+          `;
+          const renamed: TaskId[] = [];
+          const skipped: Array<RenameTaskStatusResult["skipped"][number]> = [];
+          for (const { id: rawId } of candidates) {
+            const id = TaskId.make(rawId);
+            const task = Option.getOrNull(yield* getById({ id }));
+            if (task === null || !sameTaskStatus(task.status, input.from)) continue;
+            if (sameTaskStatus(task.status, input.to) && task.status === input.to) continue;
+            const invalid = personTaskStatusError(task.audience, input.to);
+            if (invalid !== null) {
+              skipped.push({ id, reason: invalid });
+              continue;
+            }
+            renamed.push(id);
+            if (input.dryRun) continue;
+            yield* sql`UPDATE tasks SET status = ${input.to}, updated_at = ${timestamp} WHERE id = ${id}`;
+            yield* followTask({
+              taskId: id,
+              kind: task.kind,
+              from: { status: task.status, archived: task.archivedAt !== null },
+              to: { status: input.to, archived: task.archivedAt !== null },
+              at: timestamp,
+            });
+            yield* insertHistoryEvent({
+              taskId: id,
+              kind: TASK_STATUS_CHANGED_EVENT,
+              payload: { from: task.status, to: input.to, actor: input.actor, rename: true },
+              createdAt: timestamp,
+            });
+          }
+          const automations: string[] = [];
+          if (input.automationTemplates) {
+            const rows = yield* sql<{ id: string; status: string }>`
+              SELECT id, json_extract(template_json, '$.status') AS status FROM task_automations
+              WHERE ${input.projectId ?? null} IS NULL OR project_id = ${input.projectId ?? null}
+            `;
+            for (const row of rows) {
+              if (typeof row.status !== "string" || !sameTaskStatus(row.status, input.from))
+                continue;
+              automations.push(row.id);
+              if (input.dryRun) continue;
+              yield* sql`UPDATE task_automations
+                SET template_json = json_set(template_json, '$.status', ${input.to}),
+                  updated_at = ${timestamp}
+                WHERE id = ${row.id}`;
+            }
+          }
+          return { renamed, skipped, automations } satisfies RenameTaskStatusResult;
+        }),
+      )
+      .pipe(
+        Effect.mapError(
+          toSqlOrDecodeError(
+            "TaskRepository.renameTaskStatus:query",
+            "TaskRepository.renameTaskStatus:decodeRows",
+          ),
+        ),
+      );
+
+  const announceInstructionUpdatesChanged = () =>
+    publishChange({
+      taskIds: [],
+      rootThreadIds: [],
+      listChanged: false,
+      runsChanged: false,
+      instructionUpdatesChanged: true,
+    }).pipe(Effect.asVoid);
+
   const taskEventRows = SqlSchema.findAll({
     Request: Schema.Struct({
       taskId: TaskId,
@@ -3952,6 +4041,9 @@ const makeTaskRepository = Effect.gen(function* () {
         (results) => results.flatMap(({ id, task }) => (task === null ? [] : [id])),
         true,
       ),
+    renameTaskStatus: (input) =>
+      withChanges(renameTaskStatus(input), (result) => (input.dryRun ? [] : result.renamed)),
+    announceInstructionUpdatesChanged,
     reorder: (input) => withChanges(reorder(input), () => [input.id]),
     reorderMany: (input) => withChanges(reorderMany(input), (tasks) => tasks.map(({ id }) => id)),
     deleteTask: (input) =>

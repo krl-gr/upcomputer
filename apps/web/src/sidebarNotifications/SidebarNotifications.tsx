@@ -1,5 +1,9 @@
 import type { BackgroundNotice, DesktopUpdateState, EnvironmentId } from "@t3tools/contracts";
 import { connectionErrorText } from "@t3tools/client-runtime/connection";
+import {
+  InstructionUpdatesNotification,
+  useInstructionUpdatesNoticeCount,
+} from "@t3tools/tasks-web/workflowUpdates";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
@@ -188,6 +192,7 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
   const updates = useSidebarUpdates();
   const { notices, dismiss } = useBackgroundNotices();
   const userSurvey = useUserSurvey();
+  const instructionUpdates = useInstructionUpdatesNoticeCount();
   const [open, setOpen] = useState(false);
   const [surveyOpen, setSurveyOpen] = useState(false);
   const surveyForm = useSurveyForm(
@@ -216,6 +221,7 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
     {
       severities: notices.map((notice) => notice.severity),
       survey: userSurvey !== null,
+      instructionUpdates,
       update: updates.signal,
       updateFailed: hasFailedUpdate({
         app: updates.state ? describeAppUpdateCard(updates.state, updates.action, gt) : null,
@@ -292,6 +298,7 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
                   updates={updates}
                   notices={notices}
                   dismiss={dismiss}
+                  instructionUpdates={instructionUpdates > 0}
                   surveyCard={
                     userSurvey ? (
                       <UserSurveyCard
@@ -411,6 +418,7 @@ function NotificationsPanel({
   updates,
   notices,
   dismiss,
+  instructionUpdates,
   surveyCard,
   onClose,
   onSendFeedback,
@@ -418,6 +426,8 @@ function NotificationsPanel({
   readonly updates: SidebarUpdates;
   readonly notices: ReturnType<typeof useBackgroundNotices>["notices"];
   readonly dismiss: (keys: ReadonlyArray<string>) => void;
+  /** A release's instruction updates wait for a decision; they rank with the updates. */
+  readonly instructionUpdates: boolean;
   /** The survey the server offers, as its card; it ranks with the notices. */
   readonly surveyCard: ReactNode;
   readonly onClose: () => void;
@@ -636,6 +646,15 @@ function NotificationsPanel({
         ),
       });
     }
+  }
+
+  if (instructionUpdates) {
+    cards.push({
+      key: "instruction-updates",
+      rank: "update",
+      occurredAt: null,
+      node: <InstructionUpdatesNotification onClose={onClose} />,
+    });
   }
 
   if (surveyCard) {

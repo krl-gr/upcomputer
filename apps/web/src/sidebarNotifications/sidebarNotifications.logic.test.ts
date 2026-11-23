@@ -171,7 +171,7 @@ describe("describeSidebarNotificationsButton", () => {
     ).toEqual({ dot, label });
   });
 
-  it("shows a waiting survey with a neutral dot that never outranks an alert", () => {
+  it("shows a waiting survey or instruction updates with a neutral dot that never outranks an alert", () => {
     expect(
       describeSidebarNotificationsButton(
         {
@@ -192,6 +192,12 @@ describe("describeSidebarNotificationsButton", () => {
         gtFallback,
       ),
     ).toEqual({ dot: "warning", label: "1 notification, survey" });
+    expect(
+      describeSidebarNotificationsButton(
+        { severities: [], update: { kind: "none" }, instructionUpdates: 2 },
+        gtFallback,
+      ),
+    ).toEqual({ dot: "neutral", label: "2 instruction updates" });
   });
 });
 

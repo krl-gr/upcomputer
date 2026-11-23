@@ -31,7 +31,7 @@ To create one by hand:
 A status is plain text. Up.computer does not force a fixed set, and the status menu in a task's
 details offers the statuses your tasks already use. By default, agents use these (an install set
 up before these statuses keeps its earlier ones, such as **Backlog** and **Needs Review**, and its
-instructions):
+instructions, until you apply the update: see [Instruction updates](#instruction-updates)):
 
 | Status      | Meaning                                                              |
 | ----------- | -------------------------------------------------------------------- |
@@ -133,3 +133,17 @@ the planner. Reminders are on by default, 10 minutes before.
 
 Edit them to match how you work. Choose a project in the settings scope to add text for that
 project only.
+
+### Instruction updates
+
+A new version of Up.computer can change these default instructions, the task statuses and their
+order. It never changes them for you by itself. The bell shows the update instead, and it waits
+in **Settings → Instructions** until you decide:
+
+- **Discuss** opens a chat with your bot (or a new chat) with the update attached. The bot looks at
+  your tasks, workers and instructions first, suggests what to change and what to keep, and
+  changes nothing until you agree. Then it applies the update and marks it applied.
+- **Keep mine** closes the update without changing anything. **Reopen** brings it back.
+
+Set **Instruction updates** to **Apply automatically** to take updates as they ship. An update
+that would change text you edited still waits for you, and Settings says so.

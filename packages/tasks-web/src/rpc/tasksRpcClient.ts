@@ -81,6 +81,10 @@ export interface TasksWebRpcClient {
     >;
     readonly getListSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.getListSettings>;
     readonly updateListSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.updateListSettings>;
+    readonly getInstructionUpdates: RpcUnaryMethod<typeof TASKS_RPC_METHODS.getInstructionUpdates>;
+    readonly updateInstructionUpdates: RpcUnaryMethod<
+      typeof TASKS_RPC_METHODS.updateInstructionUpdates
+    >;
   };
   readonly agents: {
     readonly upsert: RpcUnaryMethod<typeof TASK_AGENTS_RPC_METHODS.upsert>;
@@ -280,6 +284,20 @@ export function createTasksWebRpcClient(
           "tasks.updateListSettings",
           "canMutateTasks",
           TASKS_RPC_METHODS.updateListSettings,
+          input,
+        ),
+      getInstructionUpdates: (input) =>
+        request(
+          "tasks.getInstructionUpdates",
+          "canReadTasks",
+          TASKS_RPC_METHODS.getInstructionUpdates,
+          input,
+        ),
+      updateInstructionUpdates: (input) =>
+        request(
+          "tasks.updateInstructionUpdates",
+          "canMutateTasks",
+          TASKS_RPC_METHODS.updateInstructionUpdates,
           input,
         ),
     },

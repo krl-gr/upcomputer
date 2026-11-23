@@ -39,6 +39,7 @@ import {
 } from "../automations/automationWrites.ts";
 import { BotService } from "../bots/BotService.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
+import { InstructionUpdatesService } from "../instructionUpdates/InstructionUpdatesService.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { TaskPromptSettingsStore } from "../persistence/TaskPromptSettingsStore.ts";
@@ -108,6 +109,8 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [TASKS_RPC_METHODS.updateScheduleSettings]: operate,
     [TASKS_RPC_METHODS.getListSettings]: read,
     [TASKS_RPC_METHODS.updateListSettings]: operate,
+    [TASKS_RPC_METHODS.getInstructionUpdates]: read,
+    [TASKS_RPC_METHODS.updateInstructionUpdates]: operate,
   },
   handlers: () =>
     TasksRpcGroup.toLayer(
@@ -398,6 +401,10 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
           asTaskRpc(
             Effect.flatMap(TaskRepository, (repository) => repository.updateListSettings(input)),
           ),
+        [TASKS_RPC_METHODS.getInstructionUpdates]: () =>
+          asTaskRpc(Effect.flatMap(InstructionUpdatesService, (updates) => updates.get)),
+        [TASKS_RPC_METHODS.updateInstructionUpdates]: (input) =>
+          asTaskRpc(Effect.flatMap(InstructionUpdatesService, (updates) => updates.update(input))),
       }),
     ),
 });

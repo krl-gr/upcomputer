@@ -67,6 +67,7 @@ import {
   type TaskAgentServiceShape,
 } from "./TaskAgentService.ts";
 import { BotService } from "../bots/BotService.ts";
+import { InstructionUpdatesService } from "../instructionUpdates/InstructionUpdatesService.ts";
 
 const directories: string[] = [];
 const project = ProjectId.make("project-1");
@@ -1337,6 +1338,7 @@ test("task_create with a tasks list starts one run per task created in a start s
               Layer.succeed(ProjectStoreV2, {} as never),
               Layer.succeed(InboxProject, {} as never),
               Layer.succeed(TaskScheduleService, {} as never),
+              Layer.succeed(InstructionUpdatesService, {} as never),
               Layer.succeed(BotService, {} as never),
               deterministicCrypto(),
             ),
@@ -1400,6 +1402,7 @@ test("an agent made broader just before an agent's unarchive commits keeps the t
               Layer.succeed(ProjectStoreV2, {} as never),
               Layer.succeed(InboxProject, {} as never),
               Layer.succeed(TaskScheduleService, {} as never),
+              Layer.succeed(InstructionUpdatesService, {} as never),
               Layer.succeed(BotService, {} as never),
               deterministicCrypto(),
             ),
