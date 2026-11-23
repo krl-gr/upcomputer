@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
+import { taskWorkflowVersionOf } from "@t3tools/tasks-contracts/v1";
 
 import { usePrimarySettings } from "../../../../apps/web/src/hooks/useSettings.ts";
 import {
@@ -14,6 +15,7 @@ import {
 import { useEnvironmentProviders } from "../../../../apps/web/src/state/environments.ts";
 
 import { AgentsView } from "./AgentsView.tsx";
+import { useTaskListSettings } from "./useTaskListSettings.ts";
 import { useTasksWorkspaceData } from "./useWorkspaceData.ts";
 
 export default function AgentsRoute() {
@@ -26,6 +28,7 @@ export default function AgentsRoute() {
     },
   });
   const data = useTasksWorkspaceData();
+  const { settings: listSettings } = useTaskListSettings(data.taskTargets);
   const providersByEnvironment = useEnvironmentProviders();
   const settings = usePrimarySettings();
   const providerCatalogByEnvironment = useMemo(() => {
@@ -76,6 +79,7 @@ export default function AgentsRoute() {
       status={data.agentsStatus}
       {...(selectedAgentKey === undefined ? {} : { initialSelectedAgentKey: selectedAgentKey })}
       canMutateEnvironment={data.canMutateAgents}
+      workflowVersion={taskWorkflowVersionOf(listSettings)}
       providerCatalogByEnvironment={providerCatalogByEnvironment}
       getClient={data.getClient}
       onReload={data.reload}

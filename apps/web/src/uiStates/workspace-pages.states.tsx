@@ -155,6 +155,7 @@ function states(frame: Frame): ReadonlyArray<UiState> {
         runs={[]}
         status="ready"
         canMutateEnvironment={() => true}
+        workflowVersion={2}
         providerCatalogByEnvironment={new Map()}
         getClient={() => null}
         onReload={noop}

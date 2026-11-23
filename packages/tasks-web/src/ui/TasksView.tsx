@@ -16,7 +16,8 @@ import {
   DEFAULT_TASK_STATUS,
   sameTaskStatus,
   TASK_HISTORY_EVENT_KINDS,
-  TASK_STATUSES,
+  taskStatusesFor,
+  taskWorkflowVersionOf,
   TaskId,
   type TaskArchiveFilter,
   type TaskEvent,
@@ -106,7 +107,7 @@ import { TaskHistory, taskHistoryEntries } from "./TaskHistory.tsx";
 import { TaskTagChips } from "./TaskTagChips.tsx";
 import { TagChipsField } from "./TagChipsField.tsx";
 import { tagSuggestions } from "./tagSuggestions.ts";
-import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
+import { LazyMarkdownEditor, preloadMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import {
   splitListInput,
   taskKey,
@@ -125,10 +126,20 @@ const GROUP_FIRST_ROWS = 20;
 const GROUP_MORE_ROWS = 50;
 const LIST_ONLY: ReadonlySet<string> = new Set([""]);
 
-/** The canonical statuses in workflow order, with Restore's status next to To Do. */
-const STATUS_ORDER = TASK_STATUSES.flatMap((status) =>
-  status === DEFAULT_TASK_STATUS ? [status, AGENT_RESTORED_STATUS] : [status],
-);
+/** Orders statuses as the workflow's standard ones go, with Restore's status next to To Do. */
+function statusComparator(standard: readonly string[]) {
+  const order = standard.flatMap((status) =>
+    status === DEFAULT_TASK_STATUS ? [status, AGENT_RESTORED_STATUS] : [status],
+  );
+  return (left: string, right: string): number => {
+    const leftIndex = order.findIndex((status) => sameTaskStatus(status, left));
+    const rightIndex = order.findIndex((status) => sameTaskStatus(status, right));
+    if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
+    if (leftIndex === -1) return 1;
+    if (rightIndex === -1) return -1;
+    return leftIndex - rightIndex;
+  };
+}
 
 type InlineTaskUpdate = Partial<
   Pick<ScopedTask, "title" | "description" | "status" | "tags" | "audience" | "projectId">
@@ -366,6 +377,7 @@ function DetailSourceThreadRow(props: {
 function DetailDescriptionEditor(props: {
   readonly value: string;
   readonly disabled: boolean;
+  readonly onReady?: (() => void) | undefined;
   readonly onSave: (description: string) => void;
 }) {
   const gt = useGT();
@@ -382,6 +394,7 @@ function DetailDescriptionEditor(props: {
       placeholder={gt("Description…")}
       ariaLabel={gt("Task description")}
       className={DETAIL_DESCRIPTION_EDITOR_CLASS}
+      onReady={props.onReady}
       onChange={(next) => {
         textRef.current = next;
         setDraft({ base: props.value, text: next });
@@ -394,13 +407,56 @@ function DetailDescriptionEditor(props: {
   );
 }
 
-function compareStatuses(left: string, right: string): number {
-  const leftIndex = STATUS_ORDER.findIndex((status) => sameTaskStatus(status, left));
-  const rightIndex = STATUS_ORDER.findIndex((status) => sameTaskStatus(status, right));
-  if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
-  if (leftIndex === -1) return 1;
-  if (rightIndex === -1) return -1;
-  return leftIndex - rightIndex;
+function TaskDescriptionSection(props: {
+  readonly title: string;
+  readonly defaultOpen: boolean;
+  readonly text: string | null;
+  readonly canEdit: boolean;
+  readonly disabled: boolean;
+  readonly onSave: (description: string) => void;
+}) {
+  const gt = useGT();
+  const [startedCollapsed] = useState(!props.defaultOpen);
+  const usesEditor = props.text !== null && props.canEdit;
+  const [editorReady, setEditorReady] = useState(false);
+  const [prevUsesEditor, setPrevUsesEditor] = useState(usesEditor);
+  if (prevUsesEditor !== usesEditor) {
+    setPrevUsesEditor(usesEditor);
+    if (editorReady) setEditorReady(false);
+  }
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- schedules post-paint chunk preload for a collapsed description editor
+  useEffect(() => {
+    if (!startedCollapsed || !usesEditor) return;
+    const timer = setTimeout(() => preloadMarkdownEditor(), 0);
+    return () => clearTimeout(timer);
+  }, [startedCollapsed, usesEditor]);
+
+  return (
+    <DetailSidebarSection
+      title={props.title}
+      defaultOpen={props.defaultOpen}
+      contentReady={!startedCollapsed || !usesEditor || editorReady}
+      onWarm={startedCollapsed && usesEditor ? preloadMarkdownEditor : undefined}
+    >
+      {props.text === null ? (
+        <p className="px-3 py-1.5 text-sm text-muted-foreground">{gt("Loading task…")}</p>
+      ) : props.canEdit ? (
+        <DetailDescriptionEditor
+          value={props.text}
+          disabled={props.disabled}
+          onReady={startedCollapsed ? () => setEditorReady(true) : undefined}
+          onSave={props.onSave}
+        />
+      ) : props.text.trim() ? (
+        <p className="whitespace-pre-wrap px-3 py-1.5 text-sm leading-relaxed text-foreground">
+          {props.text}
+        </p>
+      ) : (
+        <p className="px-3 py-1.5 text-sm text-muted-foreground">{gt("No description.")}</p>
+      )}
+    </DetailSidebarSection>
+  );
 }
 
 export function TaskReorderHandle(props: {
@@ -548,14 +604,22 @@ export function TasksView(props: TasksViewProps) {
     () => (selectedProject ? pickerProjectFor(projectOptions, selectedProject) : undefined),
     [projectOptions, selectedProject],
   );
+  const workflowVersion = taskWorkflowVersionOf(props.grouping?.settings ?? {});
+  const compareStatuses = useMemo(
+    () => statusComparator(taskStatusesFor(workflowVersion)),
+    [workflowVersion],
+  );
   const statusOptions = useMemo(
     () =>
-      uniqueStatuses([
-        ...props.statuses,
-        ...(statusFilter === ALL_FILTER ? [] : [statusFilter]),
-        ...(selectedTask ? [selectedTask.status] : []),
-      ]).sort(compareStatuses),
-    [props.statuses, selectedTask, statusFilter],
+      uniqueStatuses(
+        [
+          ...props.statuses,
+          ...(statusFilter === ALL_FILTER ? [] : [statusFilter]),
+          ...(selectedTask ? [selectedTask.status] : []),
+        ],
+        workflowVersion,
+      ).sort(compareStatuses),
+    [compareStatuses, props.statuses, selectedTask, statusFilter, workflowVersion],
   );
   // The server applies the last-run filter; an older one does not, so the loaded rows are checked too.
   const filteredTasks = useMemo(
@@ -573,8 +637,9 @@ export function TasksView(props: TasksViewProps) {
         statusFilter: statusFilter === ALL_FILTER ? null : statusFilter,
         order: grouping?.settings.statusGroupOrder ?? [],
         open: grouping?.settings.statusGroupOpen ?? {},
+        workflowVersion,
       }),
-    [filteredTasks, grouped, grouping, props.statuses, statusFilter],
+    [filteredTasks, grouped, grouping, props.statuses, statusFilter, workflowVersion],
   );
   // Open groups whose rows are loaded: only a task that shows up in one of these is new.
   const readyGroups = useMemo(
@@ -1390,32 +1455,17 @@ export function TasksView(props: TasksViewProps) {
                 onSave={(title) => updateTaskInline(selectedTask, "title", { title })}
               />
               {/* Opens once the text arrives, collapsed when the task has output, as before. */}
-              <DetailSidebarSection
+              <TaskDescriptionSection
                 key={`${taskKey(selectedTask)}:description:${selectedTaskText === null ? "loading" : "loaded"}`}
                 title={gt("Description")}
                 defaultOpen={selectedTaskText !== null && !hasSelectedTaskOutput}
-              >
-                {selectedTaskText === null ? (
-                  <p className="px-3 py-1.5 text-sm text-muted-foreground">{gt("Loading task…")}</p>
-                ) : props.canMutateEnvironment(selectedTask.environmentId) ? (
-                  <DetailDescriptionEditor
-                    key={`${taskKey(selectedTask)}:description-editor`}
-                    value={selectedTaskText.description}
-                    disabled={updatingField === "description"}
-                    onSave={(description) =>
-                      void updateTaskInline(selectedTask, "description", { description })
-                    }
-                  />
-                ) : selectedTaskText.description.trim() ? (
-                  <p className="whitespace-pre-wrap px-3 py-1.5 text-sm leading-relaxed text-foreground">
-                    {selectedTaskText.description}
-                  </p>
-                ) : (
-                  <p className="px-3 py-1.5 text-sm text-muted-foreground">
-                    {gt("No description.")}
-                  </p>
-                )}
-              </DetailSidebarSection>
+                text={selectedTaskText === null ? null : selectedTaskText.description}
+                canEdit={props.canMutateEnvironment(selectedTask.environmentId)}
+                disabled={updatingField === "description"}
+                onSave={(description) =>
+                  void updateTaskInline(selectedTask, "description", { description })
+                }
+              />
               {hasSelectedTaskOutput ? (
                 <DetailSidebarSection
                   key={`${taskKey(selectedTask)}:output`}

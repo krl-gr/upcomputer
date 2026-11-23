@@ -1,6 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import { DEFAULT_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
+import { LEGACY_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -21,7 +21,7 @@ const previousTaskExecution = PREVIOUS_DEFAULTS.taskExecution;
 it.layer(database)("UpdateDefaultRunStartPrompts migration", (it) => {
   it.effect("updates an unedited default and keeps an edited one", () =>
     Effect.gen(function* () {
-      assert.notEqual(previousTaskExecution, DEFAULT_TASK_PROMPT_SETTINGS.taskExecution);
+      assert.notEqual(previousTaskExecution, LEGACY_TASK_PROMPT_SETTINGS.taskExecution);
       const sql = yield* SqlClient.SqlClient;
       yield* sql`
         UPDATE task_prompt_settings
@@ -41,7 +41,7 @@ it.layer(database)("UpdateDefaultRunStartPrompts migration", (it) => {
         SELECT task_execution AS "taskExecution", agent_creation AS "agentCreation", revision
         FROM task_prompt_settings WHERE id = 1
       `;
-      assert.equal(row?.taskExecution, DEFAULT_TASK_PROMPT_SETTINGS.taskExecution);
+      assert.equal(row?.taskExecution, LEGACY_TASK_PROMPT_SETTINGS.taskExecution);
       assert.equal(row?.agentCreation, "My own agents.");
       assert.equal(row?.revision, before!.revision + 1);
       const changes = yield* sql<{ readonly field: string }>`

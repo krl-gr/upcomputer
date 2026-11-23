@@ -1,6 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import { DEFAULT_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
+import { LEGACY_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -63,8 +63,8 @@ it.layer(database)("UpdateDefaultBlockedReleasePrompts migration", (it) => {
       yield* UpdateDefaultBlockedReleasePromptsMigration;
       yield* UpdateDefaultBlockedReleasePromptsMigration;
       const after = yield* settings;
-      assert.equal(after.agentCreation, DEFAULT_TASK_PROMPT_SETTINGS.agentCreation);
-      assert.equal(after.taskExecution, DEFAULT_TASK_PROMPT_SETTINGS.taskExecution);
+      assert.equal(after.agentCreation, LEGACY_TASK_PROMPT_SETTINGS.agentCreation);
+      assert.equal(after.taskExecution, LEGACY_TASK_PROMPT_SETTINGS.taskExecution);
       assert.include(after.taskExecution, "status Blocked");
       assert.equal(after.revision, before.revision + 2);
       assert.deepStrictEqual(yield* changes(27), ["agentCreation", "taskExecution"]);
@@ -78,7 +78,7 @@ it.layer(database)("UpdateDefaultBlockedReleasePrompts migration", (it) => {
       const between = yield* settings;
       yield* UpdateDefaultBlockedReleasePromptsMigration;
       assert.deepStrictEqual(yield* settings, between);
-      assert.equal(between.taskExecution, DEFAULT_TASK_PROMPT_SETTINGS.taskExecution);
+      assert.equal(between.taskExecution, LEGACY_TASK_PROMPT_SETTINGS.taskExecution);
       assert.deepStrictEqual(yield* changes(26), ["agentCreation", "taskExecution"]);
       assert.deepStrictEqual(yield* changes(27), []);
     }),
@@ -90,7 +90,7 @@ it.layer(database)("UpdateDefaultBlockedReleasePrompts migration", (it) => {
       yield* UpdateDefaultBlockedReleasePromptsMigration;
       const after = yield* settings;
       assert.equal(after.agentCreation, "My own agents.");
-      assert.equal(after.taskExecution, DEFAULT_TASK_PROMPT_SETTINGS.taskExecution);
+      assert.equal(after.taskExecution, LEGACY_TASK_PROMPT_SETTINGS.taskExecution);
       assert.deepStrictEqual(yield* changes(27), ["taskExecution"]);
     }),
   );

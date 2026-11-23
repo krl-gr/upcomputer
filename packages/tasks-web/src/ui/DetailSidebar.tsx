@@ -1,11 +1,10 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { ChevronRightIcon } from "lucide-react";
 
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "../../../../apps/web/src/components/ui/collapsible.tsx";
+import { cn } from "../../../../apps/web/src/lib/utils.ts";
+
+/** Max time a collapsed section waits for async child readiness before sliding open anyway. */
+export const DETAIL_SECTION_READY_FALLBACK_MS = 300;
 
 /**
  * The right Details column of the task, agent and automation views. It has no
@@ -38,26 +37,79 @@ export function DetailSidebarSection({
   title,
   count,
   defaultOpen = true,
+  contentReady = true,
+  onWarm,
   children,
 }: {
   readonly title: string;
   readonly count?: number | undefined;
   readonly defaultOpen?: boolean | undefined;
+  /** False while a lazy child (such as the description editor) is still mounting its initial DOM. */
+  readonly contentReady?: boolean | undefined;
+  /** Called on pointer enter or focus while unmounted to preload async assets without mounting children. */
+  readonly onWarm?: (() => void) | undefined;
   readonly children: ReactNode;
 }) {
+  const panelId = useId();
   const [open, setOpen] = useState(defaultOpen);
+  const [mounted, setMounted] = useState(defaultOpen);
+  const [settledOpen, setSettledOpen] = useState(defaultOpen);
+  if (open && !mounted) setMounted(true);
+  // A section that starts collapsed waits for async child DOM before its first slide open, avoiding a mid-motion height jump.
+  const expanded = open && (settledOpen || contentReady);
+  if (expanded && !settledOpen) setSettledOpen(true);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases the first-open readiness gate after 300ms if an async child stalls
+  useEffect(() => {
+    if (!open || settledOpen || contentReady) return;
+    const timer = setTimeout(() => setSettledOpen(true), DETAIL_SECTION_READY_FALLBACK_MS);
+    return () => clearTimeout(timer);
+  }, [open, settledOpen, contentReady]);
+
+  const warm = !mounted ? onWarm : undefined;
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="flex h-8 w-full cursor-pointer items-center gap-2 px-2 text-left text-sm font-normal leading-relaxed tracking-normal text-muted-foreground transition-colors hover:text-foreground">
+    <div>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={panelId}
+        onClick={() => setOpen((current) => !current)}
+        onPointerEnter={warm}
+        onFocus={warm}
+        className="flex h-8 w-full cursor-pointer items-center gap-2 px-2 text-left text-sm font-normal leading-relaxed tracking-normal text-muted-foreground transition-colors hover:text-foreground"
+      >
         <span className="min-w-0 truncate">{title}</span>
         <ChevronRightIcon
-          className={`size-4 shrink-0 text-muted-foreground transition-transform duration-150 ${open ? "rotate-90" : ""}`}
+          aria-hidden="true"
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-drawer motion-reduce:transition-none",
+            expanded && "rotate-90",
+          )}
         />
         {count === undefined ? null : <span className="ml-auto text-sm tabular-nums">{count}</span>}
-      </CollapsibleTrigger>
-      <CollapsibleContent className="pb-3">{children}</CollapsibleContent>
-    </Collapsible>
+      </button>
+      <div
+        id={panelId}
+        className={cn(
+          "grid transition-[grid-template-rows] duration-200 ease-drawer motion-reduce:transition-none",
+          expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+        )}
+        data-detail-sidebar-section-panel=""
+        data-open={expanded}
+        inert={!expanded}
+      >
+        {/* Hidden only once the closing motion ends: content-visibility switches discretely. */}
+        <div
+          className={cn(
+            "min-h-0 min-w-0 overflow-clip transition-[content-visibility] transition-discrete duration-200 motion-reduce:transition-none",
+            !expanded && "[content-visibility:hidden]",
+          )}
+        >
+          <div className="min-w-0 pb-3">{mounted ? children : null}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 

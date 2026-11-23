@@ -25,6 +25,10 @@ import {
   type TaskSearchInput,
   type TaskPageInput,
   type TaskListSettings as TaskListSettingsValue,
+  type TaskWorkflowVersion,
+  CURRENT_TASK_WORKFLOW_VERSION,
+  LEGACY_TASK_WORKFLOW_VERSION,
+  taskWorkflowVersionOf,
   type TaskThreadTasksInput,
   TASK_LAST_RUN_NONE,
   TaskListSettings,
@@ -316,6 +320,12 @@ const ListConditionFields = Schema.Struct({
 });
 
 const decodeListSettings = Schema.decodeUnknownOption(Schema.fromJsonString(TaskListSettings));
+
+/** A version a newer build stored reads as this build's newest workflow. */
+const workflowVersionOf = (stored: number | undefined): TaskWorkflowVersion =>
+  stored === undefined || stored <= LEGACY_TASK_WORKFLOW_VERSION
+    ? LEGACY_TASK_WORKFLOW_VERSION
+    : CURRENT_TASK_WORKFLOW_VERSION;
 
 /** The audience, kind and excluded statuses of a list, with their defaults. */
 function listFilters(input: TaskSearchInput) {
@@ -2265,11 +2275,43 @@ const makeTaskRepository = Effect.gen(function* () {
   // A row a newer build wrote, or none yet, reads as the defaults.
   const readListSettings = sql<{
     json: string | null;
-  }>`SELECT list_settings_json AS json FROM task_settings WHERE id = 1`.pipe(
-    Effect.map(([row]) =>
-      Option.getOrElse(decodeListSettings(row?.json ?? null), () => DEFAULT_TASK_LIST_SETTINGS),
-    ),
+    workflowVersion: number;
+  }>`SELECT list_settings_json AS json, workflow_version AS "workflowVersion"
+    FROM task_settings WHERE id = 1`.pipe(
+    Effect.map(([row]): TaskListSettingsValue => {
+      const stored = Option.getOrElse(
+        decodeListSettings(row?.json ?? null),
+        () => DEFAULT_TASK_LIST_SETTINGS,
+      );
+      return {
+        groupByStatus: stored.groupByStatus,
+        statusGroupOrder: stored.statusGroupOrder,
+        statusGroupOpen: stored.statusGroupOpen,
+        workflowVersion: workflowVersionOf(row?.workflowVersion),
+      };
+    }),
   );
+
+  const workflowVersion: TaskRepositoryShape["workflowVersion"] = () =>
+    readListSettings.pipe(
+      Effect.map(taskWorkflowVersionOf),
+      Effect.mapError(toTaskPersistenceSqlError("TaskRepository.workflowVersion:query")),
+    );
+
+  const setWorkflowVersion: TaskRepositoryShape["setWorkflowVersion"] = (input) =>
+    sql`UPDATE task_settings SET workflow_version = ${input.version} WHERE id = 1`.pipe(
+      Effect.tap(() =>
+        publishChange({
+          taskIds: [],
+          rootThreadIds: [],
+          listChanged: false,
+          runsChanged: false,
+          listSettingsChanged: true,
+        }),
+      ),
+      Effect.asVoid,
+      Effect.mapError(toTaskPersistenceSqlError("TaskRepository.setWorkflowVersion:query")),
+    );
 
   const listSettings: TaskRepositoryShape["listSettings"] = () =>
     readListSettings.pipe(
@@ -2288,7 +2330,7 @@ const makeTaskRepository = Effect.gen(function* () {
           };
           yield* sql`UPDATE task_settings SET list_settings_json = ${JSON.stringify(next)}
             WHERE id = 1`;
-          return next;
+          return { ...next, workflowVersion: current.workflowVersion };
         }),
       )
       .pipe(
@@ -3247,12 +3289,67 @@ const makeTaskRepository = Effect.gen(function* () {
         ),
       );
 
+  /** Moves an agent task out of `from` for a run starting on it; triggers stay as they were. */
+  const reopenTask = Effect.fn("TaskRepositoryLive.reopenTask")(function* (input: {
+    readonly runId: TaskAgentRunId;
+    readonly taskId: TaskId;
+    readonly from: string;
+    readonly to: string;
+    readonly at: string;
+  }) {
+    const [before] = yield* sql<{
+      status: string;
+      kind: TaskKind;
+      audience: TaskAudience;
+      archivedAt: string | null;
+    }>`SELECT status, kind, audience, archived_at AS "archivedAt" FROM tasks
+      WHERE id = ${input.taskId}`;
+    if (
+      before === undefined ||
+      before.audience !== "agent" ||
+      !sameTaskStatus(before.status, input.from)
+    )
+      return;
+    yield* sql`
+      UPDATE tasks SET status = ${input.to}, updated_at = ${input.at}
+      WHERE id = ${input.taskId}
+    `;
+    const archived = before.archivedAt !== null;
+    yield* followTask({
+      taskId: input.taskId,
+      kind: before.kind,
+      from: { status: before.status, archived },
+      to: { status: input.to, archived },
+      at: input.at,
+    });
+    yield* insertHistoryEvent({
+      id: `${input.runId}:task-status-reopened`,
+      taskId: input.taskId,
+      kind: TASK_STATUS_CHANGED_EVENT,
+      payload: {
+        from: before.status,
+        to: input.to,
+        actor: { type: "server" } satisfies TaskActor,
+      },
+      createdAt: input.at,
+    });
+  });
+
   const startAgentRun: TaskRepositoryShape["startAgentRun"] = (input) =>
     sql
       .withTransaction(
         Effect.gen(function* () {
-          const inserted = yield* startAgentRunRow(input);
+          const { reopenTaskStatus, ...row } = input;
+          const inserted = yield* startAgentRunRow(row);
           if (inserted.length === 0) return Option.none<TaskAgentRun>();
+          if (reopenTaskStatus !== undefined) {
+            yield* reopenTask({
+              runId: input.id,
+              taskId: input.taskId,
+              at: input.startedAt,
+              ...reopenTaskStatus,
+            });
+          }
           // The run holds its task from the start, unless another active run
           // holds it; the agent does not spend a turn claiming it.
           yield* sql`
@@ -3358,22 +3455,35 @@ const makeTaskRepository = Effect.gen(function* () {
           if (completed.length === 0) return false;
 
           const statusBefore =
-            input.taskStatus === undefined
+            input.taskStatus === undefined && input.heldTaskStatus === undefined
               ? []
               : yield* sql<{
                   status: string;
                   kind: TaskKind;
                   audience: TaskAudience;
                   archivedAt: string | null;
-                }>`SELECT status, kind, audience, archived_at AS "archivedAt" FROM tasks
+                  assigneeAgentRunId: string | null;
+                }>`SELECT status, kind, audience, archived_at AS "archivedAt",
+                    assignee_worker_id AS "assigneeAgentRunId" FROM tasks
                   WHERE id = ${input.taskId}`;
+          const held = statusBefore[0];
           // A run's status is an agent status: a task a person took back meanwhile keeps its own.
-          const taskStatus =
+          const reportedStatus =
             input.taskStatus !== undefined &&
-            statusBefore[0] !== undefined &&
-            personTaskStatusError(statusBefore[0].audience, input.taskStatus) !== null
+            held !== undefined &&
+            personTaskStatusError(held.audience, input.taskStatus) !== null
               ? undefined
               : input.taskStatus;
+          const heldStatus =
+            input.taskStatus === undefined &&
+            input.heldTaskStatus !== undefined &&
+            held !== undefined &&
+            held.audience === "agent" &&
+            held.assigneeAgentRunId === input.id &&
+            !sameTaskStatus(held.status, input.heldTaskStatus)
+              ? input.heldTaskStatus
+              : undefined;
+          const taskStatus = reportedStatus ?? heldStatus;
           if (
             taskStatus !== undefined ||
             input.taskOutput !== undefined ||
@@ -3396,7 +3506,7 @@ const makeTaskRepository = Effect.gen(function* () {
                 ELSE assignee_worker_id
               END,
               trigger_changed_at = CASE
-                WHEN ${taskStatus ?? null} IS NOT NULL AND ${taskStatus ?? null} <> status
+                WHEN ${reportedStatus ?? null} IS NOT NULL AND ${reportedStatus ?? null} <> status
                   THEN ${input.completedAt}
                 ELSE trigger_changed_at
               END,
@@ -3404,7 +3514,7 @@ const makeTaskRepository = Effect.gen(function* () {
             WHERE id = ${input.taskId}
           `;
           }
-          const before = statusBefore[0];
+          const before = held;
           const from = before?.status;
           if (before !== undefined && taskStatus !== undefined) {
             const archived = before.archivedAt !== null;
@@ -3424,7 +3534,9 @@ const makeTaskRepository = Effect.gen(function* () {
               payload: {
                 from,
                 to: taskStatus,
-                actor: { type: "agent-run", agentRunId: input.id } satisfies TaskActor,
+                actor: (reportedStatus === undefined
+                  ? { type: "server" }
+                  : { type: "agent-run", agentRunId: input.id }) satisfies TaskActor,
               },
               createdAt: input.completedAt,
             });
@@ -3821,6 +3933,8 @@ const makeTaskRepository = Effect.gen(function* () {
     page,
     statusCounts,
     listSettings,
+    workflowVersion,
+    setWorkflowVersion,
     updateListSettings,
     items,
     changes,
