@@ -20,7 +20,6 @@ import type {
 } from "@t3tools/contracts";
 import {
   DEFAULT_TASK_STATUS,
-  taskStatusesFor,
   type TaskAgentRunTriggerStatus,
   type TaskWorkflowVersion,
 } from "@t3tools/tasks-contracts/v1";
@@ -64,7 +63,7 @@ import { WorkspaceViewLayout } from "./WorkspaceViewLayout.tsx";
 import { SHOW_MANUAL_CREATE_ACTIONS } from "./manualCreation.ts";
 import { preferredProject } from "./projectFilter.ts";
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
-import { splitListInput, uniqueStatuses, type TasksWebProject } from "./shared.ts";
+import { splitListInput, taskStatusOptions, type TasksWebProject } from "./shared.ts";
 import { pickerProjectFor, pickerProjects } from "./taskProjects.ts";
 import { ListEmptyState } from "./ListEmptyState.tsx";
 import { GroupCount } from "./TaskStatusGroups.tsx";
@@ -442,11 +441,8 @@ export function AgentsView(props: AgentsViewProps) {
   ]);
   const statusOptions = useMemo(
     () =>
-      uniqueStatuses(
-        [
-          ...taskStatusesFor(props.workflowVersion),
-          ...props.agents.flatMap((agent) => agent.startStatuses),
-        ],
+      taskStatusOptions(
+        props.agents.flatMap((agent) => agent.startStatuses),
         props.workflowVersion,
       ),
     [props.agents, props.workflowVersion],
@@ -1472,6 +1468,7 @@ export function AgentsView(props: AgentsViewProps) {
                     <DetailAutocompleteInput
                       ariaLabel={gt("Auto-run statuses")}
                       className={DETAIL_INPUT_CLASS}
+                      maxSuggestions={statusOptions.length}
                       onChange={(value) =>
                         setForm((current) => ({ ...current, startStatuses: value }))
                       }
