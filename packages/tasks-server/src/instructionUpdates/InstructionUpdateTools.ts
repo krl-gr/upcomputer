@@ -103,9 +103,17 @@ export const callInstructionUpdateTool = Effect.fn("InstructionUpdateTools.call"
   switch (name) {
     case "instruction_update_decide": {
       const request = yield* decoders.instruction_update_decide(args);
-      const known = (yield* deps.updates.details).entries.some((item) => item.id === request.id);
-      if (!known)
+      const details = yield* deps.updates.details;
+      const found = details.entries.find((item) => item.id === request.id);
+      if (found === undefined)
         return { isError: true, text: `Instruction update '${request.id}' was not found.` };
+      const needed = found.entry.workflowVersion;
+      // A person cannot reopen an applied entry, so it must not close half done.
+      if (request.state === "applied" && needed !== undefined && details.workflowVersion < needed)
+        return {
+          isError: true,
+          text: `This install is still on workflow ${details.workflowVersion}. Call task_workflow_version_set with version ${needed} first, then mark '${request.id}' applied.`,
+        };
       if (dryRun) return result({ id: request.id, state: request.state });
       const bot = context.threadId ? yield* deps.bots.forThread(context.threadId) : null;
       const status = yield* deps.updates.decide({

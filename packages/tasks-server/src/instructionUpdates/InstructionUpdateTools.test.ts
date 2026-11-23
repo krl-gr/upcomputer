@@ -203,6 +203,10 @@ describe("instruction update tools", () => {
         assert.deepStrictEqual(order.previous.statusGroupOrder, []);
         assert.deepStrictEqual(order.current.statusGroupOrder, ["needs you", "queued"]);
 
+        const early = yield* call("instruction_update_decide", { id: ENTRY, state: "applied" });
+        assert.isTrue(early.isError);
+        assert.include(early.text, "task_workflow_version_set with version 2");
+
         assert.deepStrictEqual(yield* ok("task_workflow_version_set", { version: 2 }), {
           previous: 1,
           version: 2,
