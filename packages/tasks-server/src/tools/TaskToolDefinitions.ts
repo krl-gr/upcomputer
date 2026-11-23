@@ -686,6 +686,6 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "task_workflow_version_set",
     description: `Switch this install's built-in task workflow. 1: Idea, Backlog, To Do, In Progress, In Review, Needs Input, Needs Review, Blocked, Done, Cancelled. 2: Idea, Queued, To Do, In Progress, In Review, Needs You, Blocked, Failed, To Verify, Done, Cancelled, and a task whose worker run crashes moves to Failed. It changes no task, status or instruction text by itself: it picks the statuses the app offers, the default group order, the texts Restore default uses and the Failed behavior. Call it last when applying an instruction update, and only after the user agreed. Returns the previous version, so it can be switched back. ${INSTRUCTIONS_WRITE_ACCESS}`,
-    inputSchema: object({ version: { type: "integer", enum: [1, 2] } }, ["version"]),
+    inputSchema: object({ version: { type: "integer", minimum: 1, maximum: 2 } }, ["version"]),
   },
 ];
