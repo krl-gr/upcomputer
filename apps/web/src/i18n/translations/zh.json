@@ -1656,6 +1656,7 @@
   "64ab5f58b0818b06": "今天已在聊天中应用",
   "51f94c63888ece8a": "已于 {date} 在聊天中应用",
   "98dabfa5c252418c": "Up.computer {release} · 会更改你编辑过的文本，因此等待你决定",
+  "0d060caa70a7f5bd": "Up.computer {release} · “{update}”应用后会自动应用",
   "4ff3fcbbc05deb52": "Up.computer {release} · {count, plural, other {{count} 项更改}} · 未应用",
   "a863c2f59f209e24": "已应用",
   "8783ac6f51f72c70": "已保留你的设置",

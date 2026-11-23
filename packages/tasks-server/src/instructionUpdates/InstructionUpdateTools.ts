@@ -92,6 +92,7 @@ export const callInstructionUpdateTool = Effect.fn("InstructionUpdateTools.call"
         decidedBy: item.decidedBy,
         editedFields: item.edited.editedFields,
         mentions: item.edited.mentions,
+        ...(item.waitsFor === undefined ? {} : { waitsFor: item.waitsFor }),
       })),
       ...(found === undefined ? {} : { brief: instructionUpdatesBrief([found.entry]) }),
     });
