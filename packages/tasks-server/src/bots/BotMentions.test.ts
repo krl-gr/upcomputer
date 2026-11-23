@@ -182,8 +182,15 @@ const harness = Effect.gen(function* () {
 
 it.effect("posts the bot's reply in bot A's chat as a notification, so A does not run", () =>
   Effect.gen(function* () {
-    const { sends, timelineCalls, domainEvents, dependencies, service, notifications } =
+    const { chat, sends, timelineCalls, domainEvents, dependencies, service, notifications } =
       yield* harness;
+    const longId = MessageId.make("origin-2");
+    const longReply = Array.from({ length: 40 }, (_, i) => `Line ${i + 1} of the plan.`).join("\n");
+    chat.timelineItems.push({
+      sourceThreadId: botAThread,
+      item: { type: "assistant_message", messageId: longId },
+    });
+    chat.messagesByThread.get(botAThread)!.set(longId, { role: "assistant", text: longReply });
     yield* Effect.gen(function* () {
       const mentions = yield* BotMentions;
       const relay = yield* Effect.forkChild(mentions.relay);
@@ -213,6 +220,13 @@ it.effect("posts the bot's reply in bot A's chat as a notification, so A does no
       assert.include(note, JSON.stringify("Planning"));
       assert.include(note, JSON.stringify(botAThread));
       assert.include(note, "We pick a launch date.");
+      // A long message is shortened with a label saying Up.computer did it, not its author.
+      assert.include(note, "Line 1 of the plan.");
+      assert.notInclude(note, "Line 40 of the plan.");
+      assert.include(
+        note,
+        `[Up.computer shortened this message for the excerpt: ${longReply.length - 600} more characters not shown. The original message is complete.]`,
+      );
 
       // Bot B is busy: its run waits in the queue, then answers.
       yield* Queue.offer(domainEvents, runEvent("run.created", run("queued")));
