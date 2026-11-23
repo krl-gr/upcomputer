@@ -64,7 +64,7 @@ background chat, so your chat stays free.
   off **Settings → Threads → Wake chat when tasks complete**. Blocked or failed runs still wake the
   chat.
 
-A finished task usually ends in **Needs Review** with a summary in its **Output**. Read it, check
+A finished task usually ends in **To Verify** with a summary in its **Output**. Read it, check
 the work, and set the status to **Done**.
 
 ## Next steps

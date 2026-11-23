@@ -383,7 +383,14 @@ it.layer(TestLayer)("TaskRepository list settings", (it) => {
         Effect.forkScoped,
       );
       assert.equal((yield* Queue.take(changes)).kind, "sync");
-      assert.deepStrictEqual(yield* repository.listSettings(), DEFAULT_TASK_LIST_SETTINGS);
+      // A new install follows the current workflow.
+      assert.deepStrictEqual(yield* repository.listSettings(), {
+        ...DEFAULT_TASK_LIST_SETTINGS,
+        workflowVersion: 2,
+      });
+      yield* repository.setWorkflowVersion({ version: 1 });
+      assert.isTrue((yield* Queue.take(changes)).listSettingsChanged);
+      assert.equal(yield* repository.workflowVersion(), 1);
 
       yield* repository.updateListSettings({
         statusGroupOrder: ["done", "to do"],
@@ -400,6 +407,7 @@ it.layer(TestLayer)("TaskRepository list settings", (it) => {
         groupByStatus: false,
         statusGroupOrder: ["done", "to do"],
         statusGroupOpen: { done: true, backlog: false },
+        workflowVersion: 1 as const,
       };
       assert.deepStrictEqual(saved, expected);
       assert.deepStrictEqual(yield* repository.listSettings(), expected);

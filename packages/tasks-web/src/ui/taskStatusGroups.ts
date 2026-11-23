@@ -1,5 +1,10 @@
-/** The standard statuses, in the order their groups show by default. */
-export const DEFAULT_STATUS_GROUP_ORDER = [
+import {
+  LEGACY_TASK_WORKFLOW_VERSION,
+  type TaskWorkflowVersion,
+} from "@t3tools/tasks-contracts/v1";
+
+/** Workflow 1's standard statuses, in the order their groups show by default. */
+export const LEGACY_STATUS_GROUP_ORDER = [
   "Needs Input",
   "Needs Review",
   "In Review",
@@ -11,6 +16,27 @@ export const DEFAULT_STATUS_GROUP_ORDER = [
   "Done",
   "Cancelled",
 ] as const;
+
+/** The standard statuses, in the order their groups show by default. */
+export const DEFAULT_STATUS_GROUP_ORDER = [
+  "Needs You",
+  "Failed",
+  "Blocked",
+  "In Review",
+  "In Progress",
+  "To Do",
+  "Queued",
+  "To Verify",
+  "Idea",
+  "Done",
+  "Cancelled",
+] as const;
+
+export function defaultStatusGroupOrder(version: TaskWorkflowVersion): readonly string[] {
+  return version === LEGACY_TASK_WORKFLOW_VERSION
+    ? LEGACY_STATUS_GROUP_ORDER
+    : DEFAULT_STATUS_GROUP_ORDER;
+}
 
 /** Groups that start collapsed until the user opens them. */
 const START_COLLAPSED: ReadonlySet<string> = new Set(["done", "cancelled"]);
@@ -72,9 +98,13 @@ export function taskStatusGroups<T extends { readonly status: string }>(input: {
   readonly statusFilter: string | null;
   readonly order: readonly string[];
   readonly open: Readonly<Record<string, boolean>>;
+  readonly workflowVersion: TaskWorkflowVersion;
 }): { readonly groups: readonly TaskStatusGroup<T>[]; readonly order: readonly string[] } {
   const titles = new Map<string, string>(
-    DEFAULT_STATUS_GROUP_ORDER.map((status) => [statusGroupKey(status), status]),
+    defaultStatusGroupOrder(input.workflowVersion).map((status) => [
+      statusGroupKey(status),
+      status,
+    ]),
   );
   const custom = new Map<string, string>();
   for (const status of [...input.statuses, ...input.tasks.map((task) => task.status)]) {

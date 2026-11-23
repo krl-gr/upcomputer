@@ -20,6 +20,7 @@ export function applyTaskListSettings(
   patch: TaskListSettingsUpdateInput,
 ): TaskListSettings {
   return {
+    ...current,
     groupByStatus: patch.groupByStatus ?? current.groupByStatus,
     statusGroupOrder: patch.statusGroupOrder ?? current.statusGroupOrder,
     statusGroupOpen: { ...current.statusGroupOpen, ...patch.statusGroupOpen },

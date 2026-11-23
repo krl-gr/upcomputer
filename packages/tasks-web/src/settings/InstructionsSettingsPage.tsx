@@ -1,8 +1,11 @@
 import {
-  DEFAULT_TASK_PROMPT_SETTINGS,
+  defaultTaskPromptSettings,
   EMPTY_TASK_PROMPT_SETTINGS,
+  LEGACY_TASK_WORKFLOW_VERSION,
+  taskWorkflowVersionOf,
   type InstructionsField,
   type TaskPromptSettings,
+  type TaskWorkflowVersion,
 } from "@t3tools/tasks-contracts/v1";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
@@ -70,8 +73,12 @@ const TABS = [ALL_CHATS_TAB, ...PROMPT_TABS] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
-function promptDefaultsFor(project: object | null): TaskPromptSettings {
-  return project === null ? DEFAULT_TASK_PROMPT_SETTINGS : EMPTY_TASK_PROMPT_SETTINGS;
+/** Global texts restore to the install's workflow defaults; project additions clear. */
+function promptDefaultsFor(
+  project: object | null,
+  workflowVersion: TaskWorkflowVersion,
+): TaskPromptSettings {
+  return project === null ? defaultTaskPromptSettings(workflowVersion) : EMPTY_TASK_PROMPT_SETTINGS;
 }
 
 function sameSettings(left: TaskPromptSettings, right: TaskPromptSettings): boolean {
@@ -254,11 +261,16 @@ function InstructionsEditor({
   const [activeTab, setActiveTab] = useState<TabId>(ALL_CHATS_TAB.id);
   // The latest server texts, for Cancel; `saved` is each field's base, which
   // stays the loaded text while the field is edited.
-  const [serverPrompts, setServerPrompts] = useState(promptDefaultsFor(project));
+  const [serverPrompts, setServerPrompts] = useState(
+    promptDefaultsFor(project, LEGACY_TASK_WORKFLOW_VERSION),
+  );
   const [{ saved, draft }, setPrompts] = useState<PromptDrafts>(() => ({
-    saved: promptDefaultsFor(project),
-    draft: promptDefaultsFor(project),
+    saved: promptDefaultsFor(project, LEGACY_TASK_WORKFLOW_VERSION),
+    draft: promptDefaultsFor(project, LEGACY_TASK_WORKFLOW_VERSION),
   }));
+  const [workflowVersion, setWorkflowVersion] = useState<TaskWorkflowVersion>(
+    LEGACY_TASK_WORKFLOW_VERSION,
+  );
   // `undefined` shows the saved value, so it follows settings changes until edited.
   const [customInstructionsDraft, setCustomInstructionsDraft] = useState<AllChatsDraft>();
   const [loading, setLoading] = useState(true);
@@ -277,7 +289,7 @@ function InstructionsEditor({
   const tabs = project === null ? TABS : PROMPT_TABS;
   const tab = tabs.find(({ id }) => id === activeTab) ?? tabs[0];
   const editingAllChats = tab.id === ALL_CHATS_TAB.id;
-  const promptDefaults = promptDefaultsFor(project);
+  const promptDefaults = promptDefaultsFor(project, workflowVersion);
 
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
@@ -296,11 +308,14 @@ function InstructionsEditor({
     void Promise.all([
       api.tasks.getPromptSettings(projectId === null ? {} : { projectId }),
       projectId === null ? undefined : api.tasks.getPromptSettings({}),
+      // A server without list settings is on workflow 1.
+      api.tasks.getListSettings({}).catch(() => ({})),
     ]).then(
-      ([settings, global]) => {
+      ([settings, global, listSettings]) => {
         if (cancelled) return;
         setServerPrompts(settings);
         setGlobalPrompts(global);
+        setWorkflowVersion(taskWorkflowVersionOf(listSettings));
         setPrompts((current) => promptsAfterReload(current, settings));
         setLoading(false);
       },

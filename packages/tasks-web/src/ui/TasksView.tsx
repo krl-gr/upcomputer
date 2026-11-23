@@ -16,7 +16,8 @@ import {
   DEFAULT_TASK_STATUS,
   sameTaskStatus,
   TASK_HISTORY_EVENT_KINDS,
-  TASK_STATUSES,
+  taskStatusesFor,
+  taskWorkflowVersionOf,
   TaskId,
   type TaskArchiveFilter,
   type TaskEvent,
@@ -125,10 +126,20 @@ const GROUP_FIRST_ROWS = 20;
 const GROUP_MORE_ROWS = 50;
 const LIST_ONLY: ReadonlySet<string> = new Set([""]);
 
-/** The canonical statuses in workflow order, with Restore's status next to To Do. */
-const STATUS_ORDER = TASK_STATUSES.flatMap((status) =>
-  status === DEFAULT_TASK_STATUS ? [status, AGENT_RESTORED_STATUS] : [status],
-);
+/** Orders statuses as the workflow's standard ones go, with Restore's status next to To Do. */
+function statusComparator(standard: readonly string[]) {
+  const order = standard.flatMap((status) =>
+    status === DEFAULT_TASK_STATUS ? [status, AGENT_RESTORED_STATUS] : [status],
+  );
+  return (left: string, right: string): number => {
+    const leftIndex = order.findIndex((status) => sameTaskStatus(status, left));
+    const rightIndex = order.findIndex((status) => sameTaskStatus(status, right));
+    if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
+    if (leftIndex === -1) return 1;
+    if (rightIndex === -1) return -1;
+    return leftIndex - rightIndex;
+  };
+}
 
 type InlineTaskUpdate = Partial<
   Pick<ScopedTask, "title" | "description" | "status" | "tags" | "audience" | "projectId">
@@ -448,15 +459,6 @@ function TaskDescriptionSection(props: {
   );
 }
 
-function compareStatuses(left: string, right: string): number {
-  const leftIndex = STATUS_ORDER.findIndex((status) => sameTaskStatus(status, left));
-  const rightIndex = STATUS_ORDER.findIndex((status) => sameTaskStatus(status, right));
-  if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
-  if (leftIndex === -1) return 1;
-  if (rightIndex === -1) return -1;
-  return leftIndex - rightIndex;
-}
-
 export function TaskReorderHandle(props: {
   readonly task: ScopedTaskRow;
   /** Translated by the caller, which has `useGT()`. */
@@ -602,14 +604,22 @@ export function TasksView(props: TasksViewProps) {
     () => (selectedProject ? pickerProjectFor(projectOptions, selectedProject) : undefined),
     [projectOptions, selectedProject],
   );
+  const workflowVersion = taskWorkflowVersionOf(props.grouping?.settings ?? {});
+  const compareStatuses = useMemo(
+    () => statusComparator(taskStatusesFor(workflowVersion)),
+    [workflowVersion],
+  );
   const statusOptions = useMemo(
     () =>
-      uniqueStatuses([
-        ...props.statuses,
-        ...(statusFilter === ALL_FILTER ? [] : [statusFilter]),
-        ...(selectedTask ? [selectedTask.status] : []),
-      ]).sort(compareStatuses),
-    [props.statuses, selectedTask, statusFilter],
+      uniqueStatuses(
+        [
+          ...props.statuses,
+          ...(statusFilter === ALL_FILTER ? [] : [statusFilter]),
+          ...(selectedTask ? [selectedTask.status] : []),
+        ],
+        workflowVersion,
+      ).sort(compareStatuses),
+    [compareStatuses, props.statuses, selectedTask, statusFilter, workflowVersion],
   );
   // The server applies the last-run filter; an older one does not, so the loaded rows are checked too.
   const filteredTasks = useMemo(
@@ -627,8 +637,9 @@ export function TasksView(props: TasksViewProps) {
         statusFilter: statusFilter === ALL_FILTER ? null : statusFilter,
         order: grouping?.settings.statusGroupOrder ?? [],
         open: grouping?.settings.statusGroupOpen ?? {},
+        workflowVersion,
       }),
-    [filteredTasks, grouped, grouping, props.statuses, statusFilter],
+    [filteredTasks, grouped, grouping, props.statuses, statusFilter, workflowVersion],
   );
   // Open groups whose rows are loaded: only a task that shows up in one of these is new.
   const readyGroups = useMemo(

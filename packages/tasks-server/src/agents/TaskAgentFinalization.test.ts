@@ -11,11 +11,13 @@ import {
   TaskAgentRunId,
   TaskEventId,
   TaskId,
+  TASK_STATUS_CHANGED_EVENT,
   type Task,
 } from "@t3tools/tasks-contracts/v1";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
@@ -209,4 +211,111 @@ test("finalization ownership and task truth commit atomically and idempotently",
     "actionable recovery",
   );
   db.close();
+});
+
+test("a crashed run marks only the agent task it still holds as Failed, and moves no trigger", async () => {
+  const sql = NodeSqliteClient.layer({ filename: ":memory:" });
+  const later = "2026-09-15T11:00:00.000Z";
+  const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" };
+  const projectId = ProjectId.make("project-failed");
+  const agentId = TaskAgentId.make("agent-failed");
+  const cases = [
+    { id: "held", audience: "agent", holder: "self", status: "Failed" },
+    { id: "person", audience: "person", holder: "self", status: "To Do" },
+    { id: "reassigned", audience: "agent", holder: "other", status: "In Progress" },
+    { id: "released", audience: "agent", holder: "none", status: "In Progress" },
+  ] as const;
+
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      yield* runExperimentalFeatureMigrations([TASK_MIGRATION_CONTRIBUTION]);
+      const repository = yield* TaskRepository;
+      yield* repository.upsertAgent({
+        id: agentId,
+        projectId,
+        name: "Agent",
+        enabled: true,
+        startStatuses: [],
+        startTags: ["dev"],
+        config: { role: "Developer", modelSelection, instructions: "Test" },
+        startRunStatuses: [],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        archivedAt: null,
+      });
+      for (const [index, { id, audience, holder }] of cases.entries()) {
+        const runId = TaskAgentRunId.make(`run-${id}`);
+        const taskId = TaskId.make(`task-${id}`);
+        yield* repository.upsert({
+          id: taskId,
+          rank: `000000010000000${index}` as Task["rank"],
+          projectId,
+          title: id,
+          description: "",
+          output: null,
+          status: audience === "person" ? "To Do" : "In Progress",
+          priority: null,
+          createdBy: "agent",
+          assigneeAgentRunId:
+            holder === "self" ? runId : holder === "other" ? `run-${id}-other` : null,
+          sourceThreadId: null,
+          sourceRunId: null,
+          rootThreadId: null,
+          parentTaskId: null,
+          parentRunId: null,
+          metadata: null,
+          tags: ["dev"],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          archivedAt: null,
+          notBefore: null,
+          triggerChangedAt: timestamp,
+          audience,
+          kind: "task",
+        });
+        yield* repository.createAgentRun({
+          id: runId,
+          taskId,
+          agentId,
+          threadId: ThreadId.make(`thread-${id}`),
+          modelSelection,
+          status: "running",
+          startedAt: timestamp,
+          completedAt: null,
+          triggerRunId: null,
+          continuesRunId: null,
+        });
+        yield* repository.claimAgentRunFinalization({
+          id: runId,
+          finalizingStatus: "finalizing:failed",
+        });
+        const finalized = yield* repository.finalizeAgentRun({
+          id: runId,
+          finalizingStatus: "finalizing:failed",
+          status: "failed",
+          completedAt: later,
+          taskId,
+          heldTaskStatus: "Failed",
+          releaseAssignment: true,
+          events: [],
+        });
+        NodeAssert.equal(finalized, true, id);
+      }
+      for (const { id, status } of cases) {
+        const task = Option.getOrThrow(
+          yield* repository.getById({ id: TaskId.make(`task-${id}`) }),
+        );
+        NodeAssert.equal(task.status, status, id);
+        NodeAssert.equal(task.triggerChangedAt, timestamp, id);
+      }
+      const { events } = yield* repository.events({
+        taskId: TaskId.make("task-held"),
+        kinds: [TASK_STATUS_CHANGED_EVENT],
+      });
+      NodeAssert.deepEqual(
+        events.map((event) => event.payload),
+        [{ from: "In Progress", to: "Failed", actor: { type: "server" } }],
+      );
+    }).pipe(Effect.provide(TaskRepositoryLive.pipe(Layer.provideMerge(sql)))),
+  );
 });

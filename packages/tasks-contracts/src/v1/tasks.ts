@@ -47,10 +47,18 @@ export const TaskKind = Schema.Literals(["task", "routine"]);
 export type TaskKind = typeof TaskKind.Type;
 
 /**
- * The statuses the UI offers and defaults to, in workflow order. Statuses are
- * free strings; these spellings keep "done" and "Done" from becoming two.
+ * Which built-in workflow an install follows: its standard statuses, their
+ * default group order, its default instructions and whether the server marks
+ * crashed runs Failed. Installs from before workflow versions stay on 1 until
+ * they opt in; new installs start on the current one.
  */
-export const TASK_STATUSES = [
+export const TaskWorkflowVersion = Schema.Literals([1, 2]);
+export type TaskWorkflowVersion = typeof TaskWorkflowVersion.Type;
+export const LEGACY_TASK_WORKFLOW_VERSION = 1 as const satisfies TaskWorkflowVersion;
+export const CURRENT_TASK_WORKFLOW_VERSION = 2 as const satisfies TaskWorkflowVersion;
+
+/** Workflow 1's standard statuses, in workflow order. */
+export const LEGACY_TASK_STATUSES = [
   "Idea",
   "Backlog",
   "To Do",
@@ -62,7 +70,29 @@ export const TASK_STATUSES = [
   "Done",
   "Cancelled",
 ] as const;
+
+/**
+ * The statuses the UI offers and defaults to, in workflow order. Statuses are
+ * free strings; these spellings keep "done" and "Done" from becoming two.
+ */
+export const TASK_STATUSES = [
+  "Idea",
+  "Queued",
+  "To Do",
+  "In Progress",
+  "In Review",
+  "Needs You",
+  "Blocked",
+  "Failed",
+  "To Verify",
+  "Done",
+  "Cancelled",
+] as const;
 export const DEFAULT_TASK_STATUS = "To Do" as const;
+
+export function taskStatusesFor(version: TaskWorkflowVersion): readonly string[] {
+  return version === LEGACY_TASK_WORKFLOW_VERSION ? LEGACY_TASK_STATUSES : TASK_STATUSES;
+}
 
 /** Status names compare without case or spacing: "done" only respells "Done". */
 export function sameTaskStatus(left: string, right: string): boolean {
@@ -381,8 +411,19 @@ export const TaskListSettings = Schema.Struct({
   statusGroupOrder: Schema.Array(Schema.String).check(Schema.isMaxLength(200)),
   /** Status key to open; a status missing here takes its default. */
   statusGroupOpen: Schema.Record(Schema.String, Schema.Boolean),
+  /**
+   * The install's workflow, set by the server only. A server from before
+   * workflow versions leaves it out: it follows workflow 1.
+   */
+  workflowVersion: Schema.optional(TaskWorkflowVersion),
 });
 export type TaskListSettings = typeof TaskListSettings.Type;
+
+export function taskWorkflowVersionOf(settings: {
+  readonly workflowVersion?: TaskWorkflowVersion | undefined;
+}): TaskWorkflowVersion {
+  return settings.workflowVersion ?? LEGACY_TASK_WORKFLOW_VERSION;
+}
 export const DEFAULT_TASK_LIST_SETTINGS: TaskListSettings = {
   groupByStatus: true,
   statusGroupOrder: [],
