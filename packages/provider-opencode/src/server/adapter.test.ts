@@ -1708,25 +1708,40 @@ describe("OpenCodeAdapterV2", () => {
       ),
   );
 
+  const DECLINED = "Continue without it, or ask the user how to proceed.";
   it.effect.each([
-    ["decline", "Use rg instead", { reply: "reject", message: "Use rg instead" }],
+    ["decline", "Use rg instead", false, [{ reply: "reject", message: "Use rg instead" }]],
+    ["decline", undefined, false, [{ reply: "reject", message: DECLINED }]],
+    ["cancel", undefined, false, [{ reply: "reject" }]],
+    // OpenCode rejects a session's other pending asks with a plain reject, which stops its loop.
+    [
+      "decline",
+      "Use rg instead",
+      true,
+      [
+        { requestID: "per_sibling", reply: "reject", message: "Use rg instead" },
+        { reply: "reject", message: "Use rg instead" },
+      ],
+    ],
     [
       "decline",
       undefined,
-      {
-        reply: "reject",
-        message: "Continue without it, or ask the user how to proceed.",
-      },
+      true,
+      [
+        { requestID: "per_sibling", reply: "reject", message: DECLINED },
+        { reply: "reject", message: DECLINED },
+      ],
     ],
-    ["cancel", undefined, { reply: "reject" }],
+    // Cancel stops the run, so OpenCode's own plain reject of the sibling is wanted.
+    ["cancel", undefined, true, [{ reply: "reject" }]],
   ] as const)(
-    "a %s with feedback %s reaches the model as OpenCode's rejection message",
-    ([decision, feedback, expected]) =>
+    "a %s with feedback %s (pending sibling: %s) reaches the model as OpenCode's rejection message",
+    ([decision, feedback, sibling, expected]) =>
       Effect.gen(function* () {
         const nativeEvents = asyncEventStream();
         const replies: Array<unknown> = [];
         const harness = yield* makeOpenCodeRuntimeHarness(
-          `decline-${decision}-${feedback === undefined ? "plain" : "feedback"}`,
+          `decline-${decision}-${feedback === undefined ? "plain" : "feedback"}-${sibling}`,
           "root",
           {
             event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
@@ -1752,23 +1767,26 @@ describe("OpenCodeAdapterV2", () => {
         );
         const surfaced = yield* harness.runtime.events.pipe(
           Stream.filter((event) => event.type === "runtime_request.updated"),
-          Stream.take(1),
+          Stream.take(sibling ? 2 : 1),
           Stream.runCollect,
           Effect.forkScoped,
         );
-        yield* Effect.promise(() =>
-          nativeEvents.push({
-            type: "permission.asked",
-            properties: {
-              id: "per_bash",
-              sessionID: "root",
-              permission: "bash",
-              patterns: ["rm -rf build"],
-              always: ["rm *"],
-              metadata: {},
-            },
-          }),
-        );
+        const ask = (id: string, command: string) =>
+          Effect.promise(() =>
+            nativeEvents.push({
+              type: "permission.asked",
+              properties: {
+                id,
+                sessionID: "root",
+                permission: "bash",
+                patterns: [command],
+                always: ["rm *"],
+                metadata: {},
+              },
+            }),
+          );
+        yield* ask("per_bash", "rm -rf build");
+        if (sibling) yield* ask("per_sibling", "rm -rf dist");
         const [request] = yield* Fiber.join(surfaced);
         if (request?.type !== "runtime_request.updated") throw new Error("Approval missing");
         assert.deepInclude(request.runtimeRequest.responseCapability, {
@@ -1780,7 +1798,10 @@ describe("OpenCodeAdapterV2", () => {
           decision,
           ...(feedback === undefined ? {} : { feedback }),
         });
-        assert.deepEqual(replies, [{ requestID: "per_bash", ...expected }]);
+        assert.deepEqual(
+          replies,
+          expected.map((reply) => ({ requestID: "per_bash", ...reply })),
+        );
       }).pipe(
         Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
         Effect.scoped,

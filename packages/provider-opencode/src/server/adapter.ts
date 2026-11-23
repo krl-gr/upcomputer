@@ -4603,6 +4603,26 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 if (declineStoppedTurnIds.size >= 256) declineStoppedTurnIds.clear();
                 declineStoppedTurnIds.add(String(pending.turn.providerTurnId));
               }
+              // OpenCode then rejects the session's other pending asks without a message, which stops
+              // its loop; rejecting them first with the message keeps the model going.
+              if (message !== undefined) {
+                for (const sibling of Array.from(pendingRequests.values())) {
+                  if (
+                    sibling === pending ||
+                    sibling.permission === undefined ||
+                    sibling.nativeSessionId !== pending.nativeSessionId
+                  )
+                    continue;
+                  const siblingBody = {
+                    requestID: sibling.nativeRequestId,
+                    reply: "reject" as const,
+                    message,
+                  };
+                  yield* sdkCall("permission.reply", siblingBody, (signal) =>
+                    client.permission.reply(siblingBody, { signal }),
+                  ).pipe(Effect.timeout("10 seconds"), Effect.ignore({ log: true }));
+                }
+              }
               const body = {
                 requestID: pending.nativeRequestId,
                 reply,
