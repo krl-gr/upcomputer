@@ -216,8 +216,10 @@ function InstructionsSettingsPage() {
           </Button>
         </div>
       ) : null}
-      {/* Shipped defaults are global: a project's additions have no updates. */}
-      {editorTarget.project === null ? <InstructionUpdatesSection /> : null}
+      {/* Shipped defaults belong to the install: a project's additions have no updates. */}
+      {editorTarget.project === null && editorTarget.environmentId !== null ? (
+        <InstructionUpdatesSection environmentId={editorTarget.environmentId} />
+      ) : null}
       {/* A new target starts a fresh editor, so a save and its conflict check
           never mix two scopes or two checkouts. */}
       <InstructionsEditor

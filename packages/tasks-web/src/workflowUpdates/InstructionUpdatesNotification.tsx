@@ -8,54 +8,63 @@ import {
   NotificationButton,
   NotificationCard,
 } from "../../../../apps/web/src/sidebarNotifications/NotificationCard.tsx";
+import { usePrimaryEnvironmentId } from "../../../../apps/web/src/state/environments.ts";
 import { DiscussUpdatesButton } from "./DiscussUpdatesButton.tsx";
+import { instructionUpdateCopy } from "./instructionUpdateCopy.ts";
 import { INSTRUCTION_UPDATES_ID, instructionUpdateRowId } from "./InstructionUpdatesSection.tsx";
-import { dismissInstructionUpdatesNotice, useInstructionUpdates } from "./workflowUpdates.ts";
+import { updateInstructionUpdates, useInstructionUpdates } from "./workflowUpdates.ts";
 
-/** How many updates the bell shows a card for: none once dismissed or decided. */
+/** How many updates the bell's card holds: none once they are dismissed or decided. */
 export function useInstructionUpdatesNoticeCount(): number {
-  const { pending, noticeShown } = useInstructionUpdates();
-  return noticeShown ? pending.length : 0;
+  return useInstructionUpdates(usePrimaryEnvironmentId()).notice.length;
 }
 
 /**
- * The bell's card for a release's instruction updates: one card however many there are.
- * Dismissing it leaves the updates in Settings → Instructions.
+ * The bell's card for the install's instruction updates: one card however many
+ * there are. Dismissing it leaves them waiting in Settings → Instructions.
  */
 export function InstructionUpdatesNotification({ onClose }: { readonly onClose: () => void }) {
   const gt = useGT();
   const navigate = useNavigate();
-  const { pending, noticeShown } = useInstructionUpdates();
-  const first = pending[0];
-  if (!noticeShown || !first) return null;
-  const single = pending.length === 1;
+  const environmentId = usePrimaryEnvironmentId();
+  const { notice } = useInstructionUpdates(environmentId);
+  const first = notice[0];
+  if (environmentId === null || !first) return null;
+  const single = notice.length === 1;
+  const release = notice.at(-1)?.entry.release ?? first.entry.release;
   const openSettings = () => {
     onClose();
     void navigate({
-      href: `/settings/instructions#${single ? instructionUpdateRowId(first.id) : INSTRUCTION_UPDATES_ID}`,
+      href: `/settings/instructions#${single ? instructionUpdateRowId(first.entry.id) : INSTRUCTION_UPDATES_ID}`,
     });
   };
   return (
     <NotificationCard
       tone="info"
       icon={<WorkflowIcon />}
-      title={single ? first.title : gt("{count} instruction updates", { count: pending.length })}
+      title={
+        single
+          ? instructionUpdateCopy(gt, first.entry).title
+          : gt("{count} instruction updates", { count: notice.length })
+      }
       detail={
         single
-          ? gt("{summary} Nothing changes until you decide.", { summary: first.summary })
+          ? gt("{summary} Nothing changes until you decide.", {
+              summary: instructionUpdateCopy(gt, first.entry).summary,
+            })
           : gt("Up.computer {release} changed its defaults. Nothing changes until you decide.", {
-              release: first.release,
+              release,
             })
       }
       below={
         single ? null : (
           <ul className="space-y-1 text-xs leading-4 text-foreground/85">
-            {pending.map((entry) => (
+            {notice.map(({ entry }) => (
               <li key={entry.id} className="flex gap-1.5">
                 <span aria-hidden className="text-muted-foreground">
                   •
                 </span>
-                {entry.title}
+                {instructionUpdateCopy(gt, entry).title}
               </li>
             ))}
           </ul>
@@ -64,7 +73,8 @@ export function InstructionUpdatesNotification({ onClose }: { readonly onClose: 
       links={
         <>
           <DiscussUpdatesButton
-            entries={pending}
+            environmentId={environmentId}
+            entries={notice.map(({ entry }) => entry)}
             render={<NotificationButton tone="primary" />}
             onOpened={onClose}
           />
@@ -74,7 +84,9 @@ export function InstructionUpdatesNotification({ onClose }: { readonly onClose: 
         </>
       }
       onDismiss={() => {
-        dismissInstructionUpdatesNotice();
+        void updateInstructionUpdates(environmentId, {
+          entries: notice.map(({ entry }) => ({ id: entry.id, state: "dismissed" })),
+        }).catch(() => undefined);
         toastManager.add({
           type: "info",
           title: gt("Saved for later"),

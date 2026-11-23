@@ -1,4 +1,10 @@
-import { useGT } from "gt-react";
+import type { EnvironmentId } from "@t3tools/contracts";
+import type {
+  InstructionUpdateChange,
+  InstructionUpdatesMode,
+  InstructionUpdateStatus,
+} from "@t3tools/tasks-contracts/v1";
+import { useGT, useLocale } from "gt-react";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -8,7 +14,7 @@ import {
   useSettingsSearchTarget,
   useSettingsSearchTargetId,
 } from "../../../../apps/web/src/components/settings/settingsLayout.tsx";
-import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
+import { Button, InlineButton } from "../../../../apps/web/src/components/ui/button.tsx";
 import {
   Collapsible,
   CollapsiblePanel,
@@ -21,28 +27,88 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../../apps/web/src/components/ui/select.tsx";
+import { toastManager } from "../../../../apps/web/src/components/ui/toast.tsx";
 import { cn } from "../../../../apps/web/src/lib/utils.ts";
-import { BeforeAfterText } from "./BeforeAfterText.tsx";
+import { useTasksWebAccess } from "../environmentApi.ts";
+import { BeforeAfterList, BeforeAfterText } from "./BeforeAfterText.tsx";
 import { DiscussUpdatesButton } from "./DiscussUpdatesButton.tsx";
+import { instructionUpdateChangeLabel, instructionUpdateCopy } from "./instructionUpdateCopy.ts";
 import {
-  type InstructionUpdateEntry,
-  type InstructionUpdateMode,
-  setInstructionUpdateMode,
+  type InstructionUpdateView,
+  updateInstructionUpdates,
   useInstructionUpdates,
 } from "./workflowUpdates.ts";
 
 export const INSTRUCTION_UPDATES_ID = "instruction-updates";
 export const instructionUpdateRowId = (entryId: string) => `instruction-update-${entryId}`;
 
-/** One update: its title and state, and behind the chevron why it changed and both texts. */
-function UpdateRow({
-  entry,
-  mode,
+type GT = ReturnType<typeof useGT>;
+
+function isSameDay(left: Date, right: Date) {
+  return left.toDateString() === right.toDateString();
+}
+
+/** When and by whom an applied or kept update was decided. */
+function decisionNote(gt: GT, locale: string, status: InstructionUpdateStatus): string {
+  const at = status.decidedAt === null ? null : new Date(status.decidedAt);
+  const today = at !== null && isSameDay(at, new Date());
+  const date =
+    at === null ? "" : new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(at);
+  if (status.state === "kept")
+    return today ? gt("You kept your setup today") : gt("You kept your setup on {date}", { date });
+  const by = status.decidedBy;
+  if (by?.kind === "auto")
+    return today
+      ? gt("Applied automatically today")
+      : gt("Applied automatically on {date}", { date });
+  if (by?.kind === "chat" && by.name !== null)
+    return today
+      ? gt("Applied today with {bot}", { bot: by.name })
+      : gt("Applied on {date} with {bot}", { date, bot: by.name });
+  return today ? gt("Applied today in a chat") : gt("Applied on {date} in a chat", { date });
+}
+
+function ChangeView({
+  change,
+  statusNotes,
 }: {
-  readonly entry: InstructionUpdateEntry;
-  readonly mode: InstructionUpdateMode;
+  readonly change: InstructionUpdateChange;
+  readonly statusNotes: Readonly<Record<string, string>>;
 }) {
   const gt = useGT();
+  switch (change.kind) {
+    case "statuses":
+      return <BeforeAfterList before={change.before} after={change.after} notes={statusNotes} />;
+    case "groupOrder":
+      return <BeforeAfterList before={change.before} after={change.after} />;
+    case "prompt":
+      return <BeforeAfterText before={change.before} after={change.after} />;
+    case "failedOnCrash": {
+      const describe = (on: boolean) =>
+        on
+          ? gt("The task moves to Failed. Continuing the run moves it back to In Progress.")
+          : gt("The task keeps its status.");
+      return <BeforeAfterText before={describe(change.before)} after={describe(change.after)} />;
+    }
+  }
+}
+
+/** One update: its title and state, and behind the chevron why it changed and both versions. */
+function UpdateRow({
+  environmentId,
+  update,
+  mode,
+  canMutate,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly update: InstructionUpdateView;
+  readonly mode: InstructionUpdatesMode;
+  readonly canMutate: boolean;
+}) {
+  const gt = useGT();
+  const locale = useLocale();
+  const { entry, status } = update;
+  const copy = instructionUpdateCopy(gt, entry);
   const id = instructionUpdateRowId(entry.id);
   const targetRef = useSettingsSearchTarget<HTMLDivElement>(id);
   const targetId = useSettingsSearchTargetId();
@@ -53,7 +119,14 @@ function UpdateRow({
     setOpenedForTarget(true);
     if (!open) setOpen(true);
   }
-  const applied = entry.state === "applied";
+  const decided = status.state === "applied" || status.state === "kept";
+  const setState = (state: "pending" | "kept") =>
+    updateInstructionUpdates(environmentId, { entries: [{ id: entry.id, state }] }).catch(() =>
+      toastManager.add({
+        type: "error",
+        title: gt("Couldn't save this change. Try again."),
+      }),
+    );
   return (
     <Collapsible
       open={open}
@@ -63,7 +136,7 @@ function UpdateRow({
           id={id}
           ref={targetRef}
           tabIndex={-1}
-          data-instruction-update={entry.state}
+          data-instruction-update={status.state}
           className="@container/updates outline-none"
         />
       }
@@ -81,15 +154,15 @@ function UpdateRow({
             <span
               className={cn(
                 "block text-sm font-medium",
-                applied ? "text-muted-foreground" : "text-foreground",
+                decided ? "text-muted-foreground" : "text-foreground",
               )}
             >
-              {entry.title}
+              {copy.title}
             </span>
             <span className="block text-xs leading-normal text-muted-foreground">
-              {applied
-                ? entry.appliedNote
-                : mode === "auto" && entry.touchesEditedText
+              {decided
+                ? decisionNote(gt, locale, status)
+                : mode === "auto" && status.touchesEditedText
                   ? gt("Up.computer {release} · Changes text you edited, so it waits for you", {
                       release: entry.release,
                     })
@@ -100,15 +173,35 @@ function UpdateRow({
             </span>
           </span>
         </CollapsibleTrigger>
-        {applied ? (
+        {status.state === "applied" ? (
           <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
             <CheckIcon aria-hidden className="size-3.5 text-success-foreground" />
             {gt("Applied")}
           </span>
+        ) : status.state === "kept" ? (
+          <span className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
+            {gt("Kept yours")}
+            {canMutate ? (
+              <InlineButton tone="muted" onClick={() => void setState("pending")}>
+                {gt("Reopen")}
+              </InlineButton>
+            ) : null}
+          </span>
         ) : (
           // Wrapped under the title on a narrow row, it starts where the title does.
-          <span className="pl-6 @min-[32rem]/updates:pl-0">
+          <span className="flex items-center gap-2 pl-6 @min-[32rem]/updates:pl-0">
+            {canMutate ? (
+              <Button
+                size="sm"
+                variant="ghost-muted"
+                data-track="instruction-updates.keep-mine"
+                onClick={() => void setState("kept")}
+              >
+                {gt("Keep mine")}
+              </Button>
+            ) : null}
             <DiscussUpdatesButton
+              environmentId={environmentId}
               entries={[entry]}
               render={<Button size="sm" variant="outline" />}
             />
@@ -118,12 +211,14 @@ function UpdateRow({
       <CollapsiblePanel>
         <div className="space-y-4 px-3 pb-4 sm:px-4 sm:pl-10">
           <p className="max-w-2xl text-xs leading-normal text-pretty text-muted-foreground">
-            {entry.why}
+            {copy.why}
           </p>
           {entry.changes.map((change) => (
-            <div key={change.id} className="space-y-2">
-              <h4 className="text-xs font-medium text-foreground">{change.label}</h4>
-              <BeforeAfterText before={change.before} after={change.after} />
+            <div key={change.kind === "prompt" ? change.field : change.kind} className="space-y-2">
+              <h4 className="text-xs font-medium text-foreground">
+                {instructionUpdateChangeLabel(gt, change)}
+              </h4>
+              <ChangeView change={change} statusNotes={copy.statusNotes} />
             </div>
           ))}
         </div>
@@ -132,18 +227,24 @@ function UpdateRow({
   );
 }
 
-const MODE_LABELS = (gt: ReturnType<typeof useGT>): Record<InstructionUpdateMode, string> => ({
+const MODE_LABELS = (gt: GT): Record<InstructionUpdatesMode, string> => ({
   ask: gt("Ask me"),
   auto: gt("Apply automatically"),
 });
 
 /**
  * Settings → Instructions: what happens when a new version changes the shipped
- * instructions and statuses, and the updates that wait for a decision.
+ * instructions and statuses, and the updates. They belong to the install (the
+ * environment), so the page shows them only for "All projects".
  */
-export function InstructionUpdatesSection() {
+export function InstructionUpdatesSection({
+  environmentId,
+}: {
+  readonly environmentId: EnvironmentId;
+}) {
   const gt = useGT();
-  const { entries, mode } = useInstructionUpdates();
+  const { entries, mode } = useInstructionUpdates(environmentId);
+  const canMutate = useTasksWebAccess(environmentId).canMutateTasks;
   const labels = MODE_LABELS(gt);
   return (
     <SettingsSection id={INSTRUCTION_UPDATES_ID} title={gt("Instruction updates")} hideTitle>
@@ -161,8 +262,15 @@ export function InstructionUpdatesSection() {
         control={
           <Select
             value={mode}
+            disabled={!canMutate}
             onValueChange={(value) => {
-              if (value === "ask" || value === "auto") setInstructionUpdateMode(value);
+              if (value === "ask" || value === "auto")
+                void updateInstructionUpdates(environmentId, { mode: value }).catch(() =>
+                  toastManager.add({
+                    type: "error",
+                    title: gt("Couldn't save this change. Try again."),
+                  }),
+                );
             }}
           >
             <SelectTrigger
@@ -170,7 +278,7 @@ export function InstructionUpdatesSection() {
               className="w-full sm:w-48"
               aria-label={gt("Instruction updates")}
             >
-              <SelectValue>{(value: InstructionUpdateMode) => labels[value]}</SelectValue>
+              <SelectValue>{(value: InstructionUpdatesMode) => labels[value]}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
               <SelectItem hideIndicator value="ask">
@@ -183,8 +291,14 @@ export function InstructionUpdatesSection() {
           </Select>
         }
       />
-      {entries.map((entry) => (
-        <UpdateRow key={entry.id} entry={entry} mode={mode} />
+      {entries.map((update) => (
+        <UpdateRow
+          key={update.entry.id}
+          environmentId={environmentId}
+          update={update}
+          mode={mode}
+          canMutate={canMutate}
+        />
       ))}
     </SettingsSection>
   );

@@ -104,6 +104,24 @@ export function beforeAfterLines(
   return { before: leftLines, after: rightLines };
 }
 
+/**
+ * Two lists of names, such as statuses or a group order: a name only one side
+ * has is marked, and one that only moved is not. Notes follow names in the after list.
+ */
+export function beforeAfterListLines(
+  before: ReadonlyArray<string>,
+  after: ReadonlyArray<string>,
+  notes: Readonly<Record<string, string>> = {},
+): { readonly before: BeforeAfterLine[]; readonly after: BeforeAfterLine[] } {
+  return {
+    before: before.map((name) => ({ text: name, changed: !after.includes(name) })),
+    after: after.map((name) => ({
+      text: notes[name] ? `${name}: ${notes[name]}` : name,
+      changed: !before.includes(name),
+    })),
+  };
+}
+
 function Side({
   title,
   lines,
@@ -169,8 +187,31 @@ export function BeforeAfterText({
   readonly before: string;
   readonly after: string;
 }) {
+  return <BeforeAfterColumns lines={beforeAfterLines(before, after)} />;
+}
+
+/** Two lists of names side by side: added and removed names are marked, moved ones are not. */
+export function BeforeAfterList({
+  before,
+  after,
+  notes,
+}: {
+  readonly before: ReadonlyArray<string>;
+  readonly after: ReadonlyArray<string>;
+  readonly notes?: Readonly<Record<string, string>>;
+}) {
+  return <BeforeAfterColumns lines={beforeAfterListLines(before, after, notes)} />;
+}
+
+function BeforeAfterColumns({
+  lines,
+}: {
+  readonly lines: {
+    readonly before: ReadonlyArray<BeforeAfterLine>;
+    readonly after: ReadonlyArray<BeforeAfterLine>;
+  };
+}) {
   const gt = useGT();
-  const lines = beforeAfterLines(before, after);
   return (
     <div className="grid gap-2 @min-[32rem]/updates:grid-cols-2">
       <Side title={gt("Before")} lines={lines.before} tone="removed" />
