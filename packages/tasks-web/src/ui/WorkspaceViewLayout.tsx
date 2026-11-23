@@ -138,9 +138,9 @@ export function WorkspaceViewLayout({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [navigateBack, navigateOnEscape, panel]);
 
-  const headerContent = (
+  const leading = leadingAction ? <HeaderAction action={leadingAction} /> : null;
+  const headerBody = (
     <>
-      {leadingAction ? <HeaderAction action={leadingAction} /> : null}
       {title ? (
         <h1
           className={`${toolbar ? "shrink-0" : "flex-1"} min-w-0 truncate text-sm font-medium text-foreground`}
@@ -198,7 +198,8 @@ export function WorkspaceViewLayout({
             clearCollapsedSidebar={false}
             className={`${TASKS_HEADER_CONTAINER_CLASS} border-b border-border`}
           >
-            <div className="flex min-w-0 flex-1 items-center gap-1">{headerContent}</div>
+            {leading}
+            <div className="flex min-w-0 flex-1 items-center gap-1">{headerBody}</div>
           </WorkspacePageHeader>
         ) : null}
         <div
@@ -215,7 +216,8 @@ export function WorkspaceViewLayout({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col text-foreground">
         {header ? (
           <WorkspacePageHeader electron={isElectron} className={TASKS_HEADER_CONTAINER_CLASS}>
-            {headerContent}
+            {leading}
+            {headerBody}
           </WorkspacePageHeader>
         ) : null}
         <div
