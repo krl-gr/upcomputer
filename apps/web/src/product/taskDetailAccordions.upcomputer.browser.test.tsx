@@ -117,6 +117,7 @@ function DetailHarness(props: {
   readonly client: ReturnType<TasksViewProps["getClient"]>;
   readonly layout?: "page" | "panel";
   readonly width?: number;
+  readonly canMutate?: boolean;
 }) {
   return (
     <div style={{ width: props.width ?? 960, height: 700 }} className="flex flex-col">
@@ -136,7 +137,7 @@ function DetailHarness(props: {
         providerEntriesByEnvironment={new Map()}
         status="ready"
         initialSelectedTaskKey={`${ENVIRONMENT_ID}:${props.task.id}`}
-        canMutateEnvironment={() => true}
+        canMutateEnvironment={() => props.canMutate ?? true}
         getClient={() => props.client}
         onReload={() => undefined}
         onNavigateBack={() => undefined}
@@ -173,11 +174,18 @@ describe("task detail accordions", () => {
     const panelEl = sectionPanelFor(triggerEl);
     const clipEl = panelEl.firstElementChild as HTMLElement;
 
-    // Collapsed by default when the task has output, and editor is not mounted before interaction.
+    // Collapsed by default when the task has output, wired via aria-controls/id, and editor is not mounted before open.
     expect(triggerEl.getAttribute("aria-expanded")).toBe("false");
+    expect(panelEl.id).not.toBe("");
+    expect(triggerEl.getAttribute("aria-controls")).toBe(panelEl.id);
     expect(panelEl.getAttribute("data-open")).toBe("false");
     expect(panelEl.inert).toBe(true);
     expect(clipEl.className).toContain("[content-visibility:hidden]");
+    expect(panelEl.querySelector('[role="textbox"]')).toBeNull();
+
+    // Hovering and focusing the collapsed trigger only warms the chunk and never mounts Milkdown eagerly.
+    await userEvent.hover(trigger);
+    (triggerEl as HTMLElement).focus();
     expect(panelEl.querySelector('[role="textbox"]')).toBeNull();
 
     // First open mounts the markdown editor and expands the grid panel once ready.
@@ -207,7 +215,8 @@ describe("task detail accordions", () => {
     await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
     await expect.element(panelEl).toHaveAttribute("data-open", "true");
     expect(panelEl.inert).toBe(false);
-    expect(screen.getByRole("textbox", { name: "Task description" }).element()).toBe(editorEl);
+    await expect.element(textbox).toBeVisible();
+    expect(textbox.element()).toBe(editorEl);
   });
 
   it("opens Description automatically when loaded text has no output, and saves edits when blurring via collapse", async () => {
@@ -295,5 +304,136 @@ describe("task detail accordions", () => {
       expect(panelEl.inert).toBe(false);
       expect(panelEl.firstElementChild?.firstElementChild?.firstElementChild).toBe(firstInnerNode);
     }
+  });
+
+  it("hides the body-portaled block handle and removes it from the tab order when Description collapses", async () => {
+    const task = makeTask("task-block-handle", {
+      description: "First paragraph to hover.\n\nSecond paragraph below.",
+      output: "## Summary\n\nOutput below Description.",
+    });
+    await using screen = await renderDetail({
+      task,
+      client: makeClient(async () => task),
+      layout: "panel",
+      width: 380,
+    });
+
+    const trigger = screen.getByRole("button", { name: "Description" });
+    await userEvent.click(trigger);
+    const paragraph = screen.getByText("First paragraph to hover.");
+    await expect.element(paragraph).toBeVisible();
+
+    // Wait for BlockProvider's rAF #init() to attach the handle on document.body before hovering.
+    await vi.waitFor(() => {
+      expect(document.querySelector(".markdown-block-handle")).not.toBeNull();
+    });
+
+    // Hover a block in Description so @milkdown/plugin-block shows the body-portaled handle.
+    await userEvent.hover(paragraph, { position: { x: 12, y: 6 } });
+    await vi.waitFor(() => {
+      const handle = document.querySelector<HTMLElement>(".markdown-block-handle");
+      const rect = paragraph.element().getBoundingClientRect();
+      paragraph.element().dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          clientX: rect.left + 12,
+          clientY: rect.top + rect.height / 2,
+          pointerType: "mouse",
+        }),
+      );
+      expect(handle?.dataset.show).toBe("true");
+      expect(handle?.inert).toBe(false);
+    });
+    const addButton = document.querySelector<HTMLButtonElement>(
+      '.markdown-block-handle button[aria-label="Add a block below"]',
+    )!;
+    await expect.element(addButton).toBeVisible();
+
+    // Collapse via mouse click on Description header: handle must hide and become non-focusable.
+    await userEvent.click(trigger);
+    await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
+    await vi.waitFor(() => {
+      const handle = document.querySelector<HTMLElement>(".markdown-block-handle");
+      expect(handle?.dataset.show).toBe("false");
+      expect(handle?.inert).toBe(true);
+      expect(getComputedStyle(handle!).visibility).toBe("hidden");
+    });
+    addButton.focus();
+    expect(document.activeElement).not.toBe(addButton);
+
+    // Reopen, hover again, then collapse via keyboard without moving the mouse off the paragraph.
+    await userEvent.click(trigger);
+    await expect.element(paragraph).toBeVisible();
+    await userEvent.hover(paragraph, { position: { x: 16, y: 6 } });
+    await vi.waitFor(() => {
+      const handle = document.querySelector<HTMLElement>(".markdown-block-handle");
+      const rect = paragraph.element().getBoundingClientRect();
+      paragraph.element().dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          clientX: rect.left + 16,
+          clientY: rect.top + rect.height / 2,
+          pointerType: "mouse",
+        }),
+      );
+      expect(handle?.dataset.show).toBe("true");
+    });
+    (trigger.element() as HTMLElement).focus();
+    await userEvent.keyboard("{Enter}");
+    await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
+    await vi.waitFor(() => {
+      const handle = document.querySelector<HTMLElement>(".markdown-block-handle");
+      expect(handle?.dataset.show).toBe("false");
+      expect(handle?.inert).toBe(true);
+      expect(getComputedStyle(handle!).visibility).toBe("hidden");
+    });
+    addButton.focus();
+    expect(document.activeElement).not.toBe(addButton);
+  });
+
+  it("handles canEdit toggling while Description is collapsed and keeps an open Description open when output arrives", async () => {
+    const taskWithOutput = makeTask("task-can-edit", {
+      description: "Editable description text",
+      output: "## Output\n\nExisting output.",
+    });
+    const client = makeClient(async () => taskWithOutput);
+    await using screen = await renderDetail({
+      task: taskWithOutput,
+      client,
+      canMutate: true,
+    });
+
+    // Flip canEdit true -> false -> true while Description stays collapsed, then open it.
+    await screen.rerender(
+      <DetailHarness task={taskWithOutput} client={client} canMutate={false} />,
+    );
+    await screen.rerender(<DetailHarness task={taskWithOutput} client={client} canMutate={true} />);
+    const trigger = screen.getByRole("button", { name: "Description" });
+    await userEvent.click(trigger);
+    await expect.element(screen.getByRole("textbox", { name: "Task description" })).toBeVisible();
+    await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
+
+    // A task without output starts open and stays open if output arrives later.
+    const noOutput = makeTask("task-late-output", {
+      description: "Initially open description",
+      output: null,
+    });
+    const withLateOutput = makeTask("task-late-output", {
+      description: "Initially open description",
+      output: "## Late Output\n\nArrived while viewing.",
+    });
+    const lateClient = makeClient(async () => noOutput);
+    await using lateScreen = await renderDetail({
+      task: noOutput,
+      client: lateClient,
+    });
+    await expect
+      .element(lateScreen.getByRole("textbox", { name: "Task description" }))
+      .toBeVisible();
+    await lateScreen.rerender(<DetailHarness task={withLateOutput} client={lateClient} />);
+    await expect.element(lateScreen.getByText("Arrived while viewing.")).toBeVisible();
+    await expect
+      .element(lateScreen.getByRole("button", { name: "Description" }))
+      .toHaveAttribute("aria-expanded", "true");
   });
 });

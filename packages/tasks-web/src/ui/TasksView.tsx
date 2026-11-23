@@ -366,7 +366,7 @@ function DetailSourceThreadRow(props: {
 function DetailDescriptionEditor(props: {
   readonly value: string;
   readonly disabled: boolean;
-  readonly onReady?: () => void;
+  readonly onReady?: (() => void) | undefined;
   readonly onSave: (description: string) => void;
 }) {
   const gt = useGT();
@@ -405,21 +405,28 @@ function TaskDescriptionSection(props: {
   readonly onSave: (description: string) => void;
 }) {
   const gt = useGT();
+  const [startedCollapsed] = useState(!props.defaultOpen);
   const usesEditor = props.text !== null && props.canEdit;
   const [editorReady, setEditorReady] = useState(false);
+  const [prevUsesEditor, setPrevUsesEditor] = useState(usesEditor);
+  if (prevUsesEditor !== usesEditor) {
+    setPrevUsesEditor(usesEditor);
+    if (editorReady) setEditorReady(false);
+  }
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- schedules post-paint chunk preload for a collapsed description editor
   useEffect(() => {
-    if (props.defaultOpen || !usesEditor) return;
+    if (!startedCollapsed || !usesEditor) return;
     const timer = setTimeout(() => preloadMarkdownEditor(), 0);
     return () => clearTimeout(timer);
-  }, [props.defaultOpen, usesEditor]);
+  }, [startedCollapsed, usesEditor]);
 
   return (
     <DetailSidebarSection
       title={props.title}
       defaultOpen={props.defaultOpen}
-      contentReady={!usesEditor || editorReady}
+      contentReady={!startedCollapsed || !usesEditor || editorReady}
+      onWarm={startedCollapsed && usesEditor ? preloadMarkdownEditor : undefined}
     >
       {props.text === null ? (
         <p className="px-3 py-1.5 text-sm text-muted-foreground">{gt("Loading task…")}</p>
@@ -427,7 +434,7 @@ function TaskDescriptionSection(props: {
         <DetailDescriptionEditor
           value={props.text}
           disabled={props.disabled}
-          onReady={() => setEditorReady(true)}
+          onReady={startedCollapsed ? () => setEditorReady(true) : undefined}
           onSave={props.onSave}
         />
       ) : props.text.trim() ? (
