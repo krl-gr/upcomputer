@@ -96,6 +96,30 @@ export interface SetTasksArchivedInput {
   readonly actor: TaskActor;
 }
 
+/**
+ * Renames one status on the tasks that have it: all of them, or only those
+ * in the project, with all the tags, or among the ids. A rename relabels what
+ * a status means, so it keeps triggerChangedAt and starts no agent.
+ */
+export interface RenameTaskStatusInput {
+  readonly from: string;
+  readonly to: string;
+  readonly ids?: ReadonlyArray<TaskId> | undefined;
+  readonly projectId?: ProjectId | undefined;
+  readonly tags?: ReadonlyArray<string> | undefined;
+  /** Also rename it in automations' task templates (in the project, when one is given). */
+  readonly automationTemplates?: boolean | undefined;
+  readonly actor: TaskActor;
+  readonly dryRun?: boolean | undefined;
+}
+
+export interface RenameTaskStatusResult {
+  readonly renamed: ReadonlyArray<TaskId>;
+  /** Person tasks only take To Do and Done. */
+  readonly skipped: ReadonlyArray<{ readonly id: TaskId; readonly reason: string }>;
+  readonly automations: ReadonlyArray<string>;
+}
+
 /** Per requested id, in request order; `task` is set when this call changed it. */
 export type SetTasksArchivedResult = ReadonlyArray<{
   readonly id: TaskId;
@@ -291,6 +315,11 @@ export interface TaskRepositoryShape {
   readonly setArchived: (
     input: SetTasksArchivedInput,
   ) => Effect.Effect<SetTasksArchivedResult, TaskRepositoryError>;
+  readonly renameTaskStatus: (
+    input: RenameTaskStatusInput,
+  ) => Effect.Effect<RenameTaskStatusResult, TaskRepositoryError>;
+  /** Tells clients the instruction updates' mode or states changed. */
+  readonly announceInstructionUpdatesChanged: () => Effect.Effect<void>;
   readonly reorder: (input: TaskReorderInput) => Effect.Effect<Task, TaskRepositoryError>;
   /** Moves the tasks as one block in their current relative order; returns them in that order. */
   readonly reorderMany: (

@@ -23,6 +23,11 @@ import {
   TaskAutomationUpsertInput,
 } from "./automations.ts";
 import {
+  InstructionUpdates,
+  InstructionUpdatesGetInput,
+  InstructionUpdatesUpdateInput,
+} from "./instructionUpdates.ts";
+import {
   TaskPromptSettings,
   TaskPromptSettingsGetInput,
   TaskPromptSettingsUpdateInput,
@@ -85,12 +90,12 @@ import {
 } from "./tasks.ts";
 
 /**
- * 13: audience, kind, schedule, reorderMany; version 12 shapes still decode both ways.
  * 14: markThreadsSeen; threadRunCounts leaves out finished runs already seen.
  * 15: statusCounts, lastRun on page, list settings and listSettingsChanged.
  * 16: workflowVersion on list settings.
+ * 17: instruction updates (getInstructionUpdates, updateInstructionUpdates, instructionUpdatesChanged).
  */
-export const TASKS_RPC_CONTRACT_VERSION = 16 as const;
+export const TASKS_RPC_CONTRACT_VERSION = 17 as const;
 export const TASKS_RPC_NAMESPACE = "upcomputer.tasks.v1" as const;
 export const TASKS_RPC_CAPABILITY_ID = "upcomputer.tasks.rpc.v1" as const;
 export const TASKS_RPC_CAPABILITY = {
@@ -153,6 +158,8 @@ export const TASKS_RPC_METHODS = {
   updateScheduleSettings: `${TASKS_RPC_NAMESPACE}.updateScheduleSettings`,
   getListSettings: `${TASKS_RPC_NAMESPACE}.getListSettings`,
   updateListSettings: `${TASKS_RPC_NAMESPACE}.updateListSettings`,
+  getInstructionUpdates: `${TASKS_RPC_NAMESPACE}.getInstructionUpdates`,
+  updateInstructionUpdates: `${TASKS_RPC_NAMESPACE}.updateInstructionUpdates`,
 } as const;
 
 export const TASK_AGENTS_RPC_METHODS = {
@@ -359,6 +366,20 @@ export const TasksUpdateListSettingsRpc = Rpc.make(TASKS_RPC_METHODS.updateListS
   error: TaskError,
 });
 
+export const TasksGetInstructionUpdatesRpc = Rpc.make(TASKS_RPC_METHODS.getInstructionUpdates, {
+  payload: InstructionUpdatesGetInput,
+  success: InstructionUpdates,
+  error: TaskError,
+});
+export const TasksUpdateInstructionUpdatesRpc = Rpc.make(
+  TASKS_RPC_METHODS.updateInstructionUpdates,
+  {
+    payload: InstructionUpdatesUpdateInput,
+    success: InstructionUpdates,
+    error: TaskError,
+  },
+);
+
 export const TasksRpcGroup = RpcGroup.make(
   TasksRunCountsRpc,
   TasksThreadRunCountsRpc,
@@ -396,6 +417,8 @@ export const TasksRpcGroup = RpcGroup.make(
   TasksUpdateScheduleSettingsRpc,
   TasksGetListSettingsRpc,
   TasksUpdateListSettingsRpc,
+  TasksGetInstructionUpdatesRpc,
+  TasksUpdateInstructionUpdatesRpc,
 );
 
 export const TaskAgentsUpsertRpc = Rpc.make(TASK_AGENTS_RPC_METHODS.upsert, {

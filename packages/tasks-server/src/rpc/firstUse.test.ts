@@ -26,6 +26,7 @@ import { TaskPromptSettingsStore } from "../persistence/TaskPromptSettingsStore.
 import { TaskRepositoryLive } from "../persistence/TaskRepositoryLive.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { TASK_RPC_CONTRIBUTIONS } from "./contributions.ts";
+import { InstructionUpdatesService } from "../instructionUpdates/InstructionUpdatesService.ts";
 
 const project = ProjectId.make("project-1");
 const milestones: Array<{ event: string; properties: unknown }> = [];
@@ -48,6 +49,7 @@ const layer = Layer.mergeAll(
     scheduleAgentChanged: () => Effect.void,
   } as never),
   Layer.succeed(TaskScheduleService, {} as never),
+  Layer.succeed(InstructionUpdatesService, {} as never),
   Layer.succeed(TaskPromptSettingsStore, {} as never),
   Layer.mock(AnalyticsService)({
     enabled: true,

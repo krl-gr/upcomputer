@@ -16,6 +16,7 @@ import { TaskPromptSettingsStore } from "../persistence/TaskPromptSettingsStore.
 import { TaskRepositoryLive } from "../persistence/TaskRepositoryLive.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { TASKS_RPC_CONTRIBUTION } from "./contributions.ts";
+import { InstructionUpdatesService } from "../instructionUpdates/InstructionUpdatesService.ts";
 
 const project = ProjectId.make("project-1");
 
@@ -30,6 +31,7 @@ const layer = Layer.mergeAll(
   Layer.succeed(InboxProject, { ensure: Effect.succeed(project) }),
   Layer.succeed(TaskAgentService, { scheduleTaskChanged: () => Effect.void } as never),
   Layer.succeed(TaskScheduleService, {} as never),
+  Layer.succeed(InstructionUpdatesService, {} as never),
   Layer.succeed(TaskPromptSettingsStore, {} as never),
 );
 
