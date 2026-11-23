@@ -792,6 +792,20 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
           ),
           ["opencode/deepseek-v4.1-flash-free"],
         ],
+        // The catalog still lists a model Zen stopped serving, marked deprecated.
+        [
+          {
+            ...noLoginZen,
+            models: {
+              ...noLoginZen.models,
+              "glm-5.3-flash-free": {
+                ...model("glm-5.3-flash-free", "GLM-5.3-Flash Free"),
+                status: "deprecated",
+              },
+            },
+          },
+          ["opencode/deepseek-v4.1-flash-free"],
+        ],
         [
           zen(["big-pickle", "Big Pickle"], ["minimax-m3.1-flash-free", "MiniMax M3.1 Flash Free"]),
           ["opencode/minimax-m3.1-flash-free"],
@@ -800,14 +814,40 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
           zen(["big-pickle", "Big Pickle"], ["mimo-v2.6-flash-free", "MiMo V2.6 Flash Free"]),
           ["opencode/mimo-v2.6-flash-free"],
         ],
-        [zen(["big-pickle", "Big Pickle"]), []],
+        // None of the preferred models is live: any live free model, never a paid one.
+        [
+          {
+            ...zen(["big-pickle", "Big Pickle"], ["iceman-free", "Iceman Free"]),
+            models: {
+              ...zen(["big-pickle", "Big Pickle"], ["iceman-free", "Iceman Free"]).models,
+              "glm-5.3-flash-free": {
+                ...model("glm-5.3-flash-free", "GLM-5.3-Flash Free"),
+                status: "deprecated",
+              },
+              "a-pro": { ...model("a-pro", "A Pro"), cost: { input: 3, output: 9 } },
+              "zero-cost": { ...model("zero-cost", "Zero Cost"), cost: { input: 0, output: 0 } },
+            },
+          },
+          ["opencode/iceman-free"],
+        ],
+        // No free model at all: OpenCode's own Zen default, even Big Pickle.
+        [zen(["big-pickle", "Big Pickle"]), ["opencode/big-pickle"]],
+        // A paid Zen default is never automatic.
+        [
+          {
+            ...zen(["big-pickle", "Big Pickle"]),
+            models: { "gpt-6": { ...model("gpt-6", "GPT-6"), cost: { input: 3, output: 9 } } },
+          },
+          [],
+          "gpt-6",
+        ],
       ] as const;
-      for (const [provider, expected] of cases) {
+      for (const [provider, expected, zenDefault = "big-pickle"] of cases) {
         runtimeMock.state.inventory = {
           providerList: {
             connected: ["opencode"],
             all: [provider],
-            default: { opencode: "big-pickle" },
+            default: { opencode: zenDefault },
           },
           agents: [],
         };
@@ -853,7 +893,7 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
     }),
   );
 
-  it.effect("keeps OpenCode's Zen default when it is not Big Pickle", () =>
+  it.effect("prefers a live free Zen model over OpenCode's Zen default", () =>
     Effect.gen(function* () {
       runtimeMock.state.inventory = {
         providerList: {
@@ -866,7 +906,7 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
 
       const snapshot = yield* checkProvider(makeOpenCodeSettings());
 
-      NodeAssert.deepEqual(defaultsOf(snapshot), ["opencode/gpt-6"]);
+      NodeAssert.deepEqual(defaultsOf(snapshot), ["opencode/beam-free"]);
     }),
   );
 

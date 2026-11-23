@@ -112,9 +112,10 @@ import {
   splitListInput,
   taskKey,
   taskMetadataLabel,
-  uniqueStatuses,
+  taskStatusOptions,
   type TasksWebProject,
 } from "./shared.ts";
+import { DetailAutocompleteInput } from "./DetailAutocompleteInput.tsx";
 import { pickerProjectFor, pickerProjects, sameProjectGroup } from "./taskProjects.ts";
 import { ListEmptyState } from "./ListEmptyState.tsx";
 import { useTaskArrivals } from "./taskArrivals.ts";
@@ -611,7 +612,7 @@ export function TasksView(props: TasksViewProps) {
   );
   const statusOptions = useMemo(
     () =>
-      uniqueStatuses(
+      taskStatusOptions(
         [
           ...props.statuses,
           ...(statusFilter === ALL_FILTER ? [] : [statusFilter]),
@@ -1831,14 +1832,14 @@ export function TasksView(props: TasksViewProps) {
                     </Select>
                   </DetailSidebarRow>
                   <DetailSidebarRow label={gt("Status")} controlSelector="input">
-                    <input
+                    <DetailAutocompleteInput
+                      ariaLabel={gt("Task status")}
                       className={DETAIL_INPUT_CLASS}
-                      value={form.status}
+                      maxSuggestions={statusOptions.length}
+                      onChange={(status) => setForm((current) => ({ ...current, status }))}
+                      options={statusOptions}
                       placeholder={DEFAULT_TASK_STATUS}
-                      aria-label={gt("Task status")}
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, status: event.target.value }))
-                      }
+                      value={form.status}
                     />
                   </DetailSidebarRow>
                   <DetailSidebarRow label={gt("Tags")}>

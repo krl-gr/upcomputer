@@ -41,6 +41,14 @@ export function uniqueStatuses(
   return unique;
 }
 
+/** What a status picker offers: the workflow's standard statuses, then custom ones in use. */
+export function taskStatusOptions(
+  inUse: readonly string[],
+  workflowVersion: TaskWorkflowVersion,
+): string[] {
+  return uniqueStatuses([...taskStatusesFor(workflowVersion), ...inUse], workflowVersion);
+}
+
 /**
  * The environments Tasks loads: every environment with a project, plus the
  * primary one, which serves Tasks before its first project exists.

@@ -1,5 +1,9 @@
 import type { ToolActivityIcon, ToolActivitySource } from "@t3tools/contracts";
-import { resolveT3McpToolDefinition } from "@t3tools/shared/t3McpToolPresentation";
+import {
+  isT3McpServerName,
+  resolveT3McpToolDefinition,
+} from "@t3tools/shared/t3McpToolPresentation";
+import { UPCOMPUTER_PRODUCT_NAME } from "@t3tools/shared/upcomputerIdentity";
 
 export function normalizeMcpText(value: unknown, maxLength = 160): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -43,7 +47,9 @@ export function mcpToolPresentation(input: {
     normalizeMcpText(input.title) ??
     (server && tool ? normalizeMcpText(tool.replace(/[_-]+/gu, " ")) : undefined);
   if (!server) return title ? { title } : {};
+  // UpComputer: the app's own server has no name of its own users would know.
   const name =
+    (isT3McpServerName(server) ? UPCOMPUTER_PRODUCT_NAME : undefined) ??
     normalizeMcpText(input.serverDisplayName) ??
     normalizeMcpText(source && Reflect.get(source, "name")) ??
     normalizeMcpText(server.replace(/[_-]+/gu, " ")) ??
