@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { NoAgentScreen, type NoAgentScreenView } from "./NoAgentScreen";
@@ -46,6 +47,7 @@ const FAILED_MESSAGE =
   "Could not start setting up your agent. Check your connection and try again.";
 
 export function NoAgentScreenPreview({ children }: { readonly children: ReactNode }) {
+  const navigate = useNavigate();
   const [preview, setPreview] = useState<{
     readonly state: PreviewState;
     readonly progress: number;
@@ -98,7 +100,10 @@ export function NoAgentScreenPreview({ children }: { readonly children: ReactNod
       {...(state === "copied" ? { copied: true } : {})}
       onInstall={install}
       onRetry={install}
-      onClose={() => setPreview((current) => ({ ...current, state: "closed", running: false }))}
+      onSetUpMyself={() => {
+        setPreview((current) => ({ ...current, state: "closed", running: false }));
+        void navigate({ to: "/welcome" });
+      }}
     />
   );
 }

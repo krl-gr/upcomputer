@@ -1,26 +1,37 @@
 import { ProviderDriverKind } from "@t3tools/contracts";
+import type { ProviderIcon } from "@t3tools/provider-core/client";
 import { T, useGT } from "gt-react";
-import { CheckIcon, CircleAlertIcon, CopyIcon, XIcon } from "lucide-react";
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { CheckIcon, ChevronRightIcon, CircleAlertIcon, CopyIcon, PlugIcon } from "lucide-react";
+import { useId, useState, type CSSProperties, type ReactNode } from "react";
 
 import { AntigravityIcon, ClaudeAI, OpenAI } from "../components/Icons";
 import { ProviderPackageIcon } from "../components/chat/ProviderPackageIcon";
 import hermesLogo from "../components/mcp/logos/hermes.png";
 import { providerClients } from "../components/settings/providerDriverMeta";
-import { Button, InlineButton } from "../components/ui/button";
 import { RefreshIcon } from "../components/ui/refresh-icon";
 import { Spinner } from "../components/ui/spinner";
 import { isElectron } from "../env";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
+import { cn } from "../lib/utils";
 import { NO_AGENT_SETUP_PROMPT } from "./noAgentSetupPrompt";
 
-const BODY_CLASS =
-  "mt-3 text-base leading-relaxed text-muted-foreground [@media(max-height:33rem)]:mt-2 [@media(max-height:33rem)]:text-sm [@media(max-height:33rem)]:leading-normal";
 const OPENCODE_URL = "https://opencode.ai";
 const COPIED_NOTE_MS = 4_000;
 
 const openCodeIcon = providerClients.get(ProviderDriverKind.make("opencode"))?.icon;
 const grokIcon = providerClients.get(ProviderDriverKind.make("grok"))?.icon;
+
+/** The filled card is dark in the light theme and light in the dark one, so its mark swaps too. */
+function invertedIcon(icon: ProviderIcon): ProviderIcon {
+  return {
+    ...icon,
+    fill: { light: icon.fill.dark, dark: icon.fill.light },
+    paths: icon.paths.map((path) =>
+      path.fill ? { ...path, fill: { light: path.fill.dark, dark: path.fill.light } } : path,
+    ),
+  };
+}
+const openCodeIconOnFill = openCodeIcon ? invertedIcon(openCodeIcon) : undefined;
 
 export type NoAgentScreenView =
   | { readonly kind: "offer" }
@@ -34,8 +45,9 @@ export type NoAgentScreenView =
   | { readonly kind: "failed"; readonly message: string };
 
 /**
- * A new user's first screen when no coding agent is on the Mac: it asks before
- * OpenCode is installed. Presentational: the caller owns the install and its events.
+ * A new user's first screen when no coding agent is on the Mac: three ways to
+ * get one, and nothing installs before they pick. Presentational: the caller
+ * owns the install and its events.
  */
 export function NoAgentScreen({
   view,
@@ -43,7 +55,7 @@ export function NoAgentScreen({
   copied: copiedOverride,
   onInstall,
   onRetry,
-  onClose,
+  onSetUpMyself,
   onCopyPrompt,
   onOpenCodeLinkClick,
 }: {
@@ -53,7 +65,7 @@ export function NoAgentScreen({
   readonly copied?: boolean;
   readonly onInstall: () => void;
   readonly onRetry: () => void;
-  readonly onClose: () => void;
+  readonly onSetUpMyself: () => void;
   readonly onCopyPrompt?: () => void;
   readonly onOpenCodeLinkClick?: () => void;
 }) {
@@ -63,26 +75,8 @@ export function NoAgentScreen({
     onCopy: onCopyPrompt,
   });
   const copied = copiedOverride ?? isCopied;
-
-  const copyPrompt = (
-    <InlineButton
-      onClick={() => copyToClipboard(NO_AGENT_SETUP_PROMPT, undefined)}
-      data-no-agent-action="copy-prompt"
-      data-track="onboarding.no_agent.copy_prompt"
-    >
-      {copied ? (
-        <>
-          <CheckIcon className="mr-1 size-3.5 text-success-foreground" />
-          {gt("Copied. Paste it into your agent.")}
-        </>
-      ) : (
-        <>
-          <CopyIcon className="mr-1 size-3.5 text-muted-foreground" />
-          {gt("Copy a setup prompt for your own agent")}
-        </>
-      )}
-    </InlineButton>
-  );
+  const installing = view.kind === "installing";
+  const failed = view.kind === "failed";
 
   return (
     <main
@@ -93,103 +87,106 @@ export function NoAgentScreen({
       {isElectron ? (
         <div className="drag-region h-(--workspace-topbar-height) shrink-0" aria-hidden />
       ) : null}
-      <div className="flex min-h-0 flex-1 items-center-safe justify-center overflow-y-auto scrollbar-gutter-both px-4 py-8 [@media(max-height:33rem)]:py-4 sm:px-6">
-        <section className="relative w-full max-w-lg" aria-labelledby="no-agent-screen-title">
-          <div className="absolute -top-1 -right-1.5">
-            <Button
-              variant="ghost-muted"
-              size="icon-sm"
-              aria-label={gt("Close")}
-              onClick={onClose}
-              data-no-agent-action="close"
-              data-track="onboarding.no_agent.close"
-            >
-              <XIcon />
-            </Button>
-          </div>
-          {/* A short window drops the picture so the buttons stay in view. */}
-          <div className="mb-8 [@media(max-height:33rem)]:hidden">
+      <div className="flex min-h-0 flex-1 items-center-safe justify-center overflow-y-auto scrollbar-gutter-both px-4 py-8 [@media(max-height:34rem)]:py-3 sm:px-6">
+        <section className="w-full max-w-lg" aria-labelledby="no-agent-screen-title">
+          {/* A short window drops the picture so the three cards stay in view. */}
+          <div className="mb-8 [@media(max-height:42rem)]:hidden">
             <AgentIconStack />
           </div>
 
           <h1
             id="no-agent-screen-title"
-            className="text-2xl font-semibold tracking-tight text-foreground [@media(max-height:33rem)]:pr-10 [@media(max-height:33rem)]:text-xl"
+            className="text-2xl font-semibold tracking-tight text-foreground [@media(max-height:34rem)]:text-xl"
           >
             {gt("Let's get you an agent")}
           </h1>
-          <p className={BODY_CLASS}>
+          <p className="mt-3 text-base leading-relaxed text-muted-foreground [@media(max-height:34rem)]:mt-1.5 [@media(max-height:34rem)]:text-sm [@media(max-height:34rem)]:leading-snug">
             {gt(
               "We didn't find Claude Code, Codex or another coding agent on this Mac. Up.computer works with the agents you already have.",
             )}
           </p>
-          <p className={BODY_CLASS}>
-            <T>
-              To save you from digging through settings, we can install{" "}
-              <a
-                className="font-medium whitespace-nowrap text-foreground underline decoration-current/30 underline-offset-2 hover:decoration-current"
-                href={OPENCODE_URL}
-                target="_blank"
-                rel="noreferrer noopener"
-                onClick={onOpenCodeLinkClick}
-                data-no-agent-action="opencode-link"
-                data-track="onboarding.no_agent.opencode_link"
-              >
-                {openCodeIcon ? (
-                  <ProviderPackageIcon
-                    icon={openCodeIcon}
-                    className="mr-1 inline-block h-[0.95em] w-auto align-[-0.1em]"
-                    aria-hidden
-                  />
-                ) : null}
-                OpenCode
-              </a>
-              , a free agent whose models don't keep your data. It will help you set up the rest:
-              install Claude Code or Codex, or connect the one you use.
-            </T>
-          </p>
 
-          {/* Tall enough for every state, so the centered block holds still between them. */}
-          <div className="mt-7 min-h-24 text-sm [@media(max-height:33rem)]:mt-5 [@media(max-height:33rem)]:min-h-9">
-            {view.kind === "installing" ? (
-              <InstallProgress progress={view.progress} slow={view.slow} />
-            ) : (
-              <>
-                {view.kind === "failed" ? (
-                  <p
-                    className="mb-4 flex items-start gap-2 text-sm leading-snug text-destructive"
-                    role="alert"
-                  >
-                    <CircleAlertIcon className="mt-px size-4 shrink-0" aria-hidden />
-                    <span>{view.message}</span>
-                  </p>
-                ) : null}
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-                  {view.kind === "failed" ? (
-                    <Button
-                      size="lg"
-                      onClick={onRetry}
-                      disabled={retrying}
-                      data-no-agent-action="retry"
-                      data-track="onboarding.no_agent.retry"
+          {/* Equal rows: the cards keep one shape, and a state change never moves the block. */}
+          <div className="mt-7 grid auto-rows-fr gap-2.5 [@media(max-height:34rem)]:mt-3 [@media(max-height:34rem)]:gap-2">
+            <OptionCard
+              filled
+              action={failed ? "retry" : "install"}
+              track={failed ? "onboarding.no_agent.retry" : "onboarding.no_agent.install"}
+              disabled={installing || retrying}
+              onClick={failed ? onRetry : onInstall}
+              icon={
+                openCodeIconOnFill ? (
+                  <ProviderPackageIcon icon={openCodeIconOnFill} className="h-5 w-auto" />
+                ) : null
+              }
+              title={gt("Install a free agent")}
+              trailing={
+                installing ? (
+                  <Spinner size="md" />
+                ) : failed ? (
+                  <span className="flex items-center gap-1.5 text-sm font-medium">
+                    <RefreshIcon size="sm" refreshing={retrying} />
+                    {retrying ? gt("Retrying…") : gt("Retry")}
+                  </span>
+                ) : undefined
+              }
+              description={
+                installing ? (
+                  <InstallProgress progress={view.progress} slow={view.slow} />
+                ) : failed ? (
+                  <span role="alert">
+                    <CircleAlertIcon
+                      className="mr-1.5 inline-block size-4 align-text-bottom text-destructive"
+                      aria-hidden
+                    />
+                    <span className="text-background">{view.message}</span>
+                  </span>
+                ) : (
+                  <T>
+                    <a
+                      className="relative z-10 font-medium text-background underline decoration-current/40 underline-offset-2 hover:decoration-current"
+                      href={OPENCODE_URL}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      onClick={onOpenCodeLinkClick}
+                      data-no-agent-action="opencode-link"
+                      data-track="onboarding.no_agent.opencode_link"
                     >
-                      <RefreshIcon refreshing={retrying} />
-                      {retrying ? gt("Retrying…") : gt("Retry")}
-                    </Button>
-                  ) : (
-                    <Button
-                      size="lg"
-                      onClick={onInstall}
-                      data-no-agent-action="install"
-                      data-track="onboarding.no_agent.install"
-                    >
-                      {gt("Install free agent")}
-                    </Button>
-                  )}
-                  {copyPrompt}
-                </div>
-              </>
-            )}
+                      OpenCode
+                    </a>{" "}
+                    with free models that don't keep your data. It will help you set up the rest.
+                  </T>
+                )
+              }
+            />
+            <OptionCard
+              action="copy-prompt"
+              track="onboarding.no_agent.copy_prompt"
+              onClick={() => copyToClipboard(NO_AGENT_SETUP_PROMPT, undefined)}
+              icon={
+                copied ? (
+                  <CheckIcon className="size-5 text-success-foreground" />
+                ) : (
+                  <CopyIcon className="size-4.5" />
+                )
+              }
+              title={gt("Ask your own agent")}
+              description={
+                copied ? (
+                  <span role="status">{gt("Copied. Paste it into your agent.")}</span>
+                ) : (
+                  gt("Copy a setup prompt for Claude, ChatGPT or any agent you already use.")
+                )
+              }
+            />
+            <OptionCard
+              action="setup-myself"
+              track="onboarding.no_agent.setup_myself"
+              onClick={onSetUpMyself}
+              icon={<PlugIcon className="size-4.5" />}
+              title={gt("Set up myself")}
+              description={gt("Install or connect Claude Code, Codex, Antigravity and more.")}
+            />
           </div>
         </section>
       </div>
@@ -197,6 +194,92 @@ export function NoAgentScreen({
   );
 }
 
+/*
+ * One choice. The whole card is the click target: a button stretched over it,
+ * so a link in the description can sit above the button without nesting in it.
+ */
+function OptionCard({
+  filled = false,
+  action,
+  track,
+  disabled = false,
+  onClick,
+  icon,
+  title,
+  description,
+  trailing,
+}: {
+  readonly filled?: boolean;
+  readonly action: string;
+  readonly track: string;
+  readonly disabled?: boolean;
+  readonly onClick: () => void;
+  readonly icon: ReactNode;
+  readonly title: string;
+  readonly description: ReactNode;
+  readonly trailing?: ReactNode;
+}) {
+  const titleId = useId();
+  const descriptionId = useId();
+  return (
+    <div
+      className={cn(
+        "group relative flex items-center gap-3.5 rounded-xl border px-4 py-3.5 [@media(max-height:34rem)]:gap-3 [@media(max-height:34rem)]:px-3 [@media(max-height:34rem)]:py-2",
+        filled
+          ? "border-foreground bg-foreground text-background shadow-sm has-[button:enabled:hover]:bg-foreground/90"
+          : "border-border text-foreground has-[button:enabled:hover]:border-foreground/25 has-[button:enabled:hover]:bg-accent/60",
+      )}
+      data-no-agent-card={action}
+    >
+      <button
+        type="button"
+        className="absolute inset-0 cursor-pointer rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-default"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        disabled={disabled}
+        onClick={onClick}
+        data-no-agent-action={action}
+        data-track={track}
+      />
+      <span
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center",
+          filled ? "" : "text-muted-foreground",
+        )}
+        aria-hidden
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span
+          id={titleId}
+          className="block text-base leading-snug font-medium [@media(max-height:34rem)]:text-sm"
+        >
+          {title}
+        </span>
+        <span
+          id={descriptionId}
+          className={cn(
+            "mt-0.5 block text-sm leading-snug [@media(max-height:34rem)]:mt-0 [@media(max-height:34rem)]:text-xs",
+            filled ? "text-background/70" : "text-muted-foreground",
+          )}
+        >
+          {description}
+        </span>
+      </span>
+      <span className={cn("flex shrink-0 items-center", filled ? "" : "text-muted-foreground")}>
+        {trailing ?? (
+          <ChevronRightIcon
+            className="size-4.5 opacity-70 transition-transform group-has-[button:enabled:hover]:translate-x-0.5"
+            aria-hidden
+          />
+        )}
+      </span>
+    </div>
+  );
+}
+
+/** Inside the filled card, so the bar and text take the card's own colors. */
 function InstallProgress({
   progress,
   slow,
@@ -206,31 +289,31 @@ function InstallProgress({
 }) {
   const gt = useGT();
   // The bar never runs backward: once the download is done it stays full while the agent starts.
-  const reported = slow ? 1 : (progress ?? 0);
+  const reported = progress ?? 0;
   const [filled, setFilled] = useState(reported);
   if (reported > filled) setFilled(reported);
+  if (slow) {
+    return (
+      <span role="status" data-no-agent-progress>
+        <span className="text-background">{gt("Still starting your agent…")}</span>{" "}
+        {gt("The first start can take a minute or two.")}
+      </span>
+    );
+  }
   return (
-    <div role="status" data-no-agent-progress>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/8">
-        <div
-          className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
+    <span className="block pt-1.5" role="status" data-no-agent-progress>
+      <span className="block h-1.5 w-full overflow-hidden rounded-full bg-background/20">
+        <span
+          className="block h-full rounded-full bg-background transition-[width] duration-300 ease-out"
           style={{ width: `${Math.round(filled * 100)}%` }}
         />
-      </div>
-      <p className="mt-3 flex items-center gap-2 text-sm text-foreground">
-        <Spinner size="sm" tone="muted" />
-        {slow
-          ? gt("Still starting your agent…")
-          : progress === null
-            ? gt("Setting up your agent…")
-            : gt("Setting up your agent… {percent}%", { percent: Math.round(progress * 100) })}
-      </p>
-      {slow ? (
-        <p className="mt-1 pl-5.5 text-xs text-muted-foreground">
-          {gt("The first start can take a minute or two.")}
-        </p>
-      ) : null}
-    </div>
+      </span>
+      <span className="mt-2 block text-background/80">
+        {progress === null
+          ? gt("Setting up your agent…")
+          : gt("Setting up your agent… {percent}%", { percent: Math.round(progress * 100) })}
+      </span>
+    </span>
   );
 }
 
