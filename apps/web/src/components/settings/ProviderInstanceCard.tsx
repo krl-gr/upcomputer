@@ -77,10 +77,7 @@ import {
   pendingCustomModelSaves,
   settleCustomModelSave,
 } from "./customModelSaves.logic";
-import {
-  getProviderRestartNotice,
-  isProviderUpdateCandidate,
-} from "../ProviderUpdateLaunchNotification.logic";
+import { getProviderRestartNotice } from "../ProviderUpdateLaunchNotification.logic";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
@@ -736,6 +733,7 @@ interface ProviderInstanceCardProps {
   readonly onRunUpdate?: (() => void) | undefined;
   readonly onInstallRecommended?: (() => void) | undefined;
   readonly isUpdating?: boolean | undefined;
+  readonly canUpdateAll?: boolean | undefined;
   readonly onAcceptUrlAuth?: ((action: AcpRegistryUrlAuthAction) => void) | undefined;
   readonly environmentId?: EnvironmentId | undefined;
   readonly secretSources?: ReadonlyArray<SecretSource>;
@@ -807,6 +805,7 @@ export function ProviderInstanceCard({
   onRunUpdate,
   onInstallRecommended,
   isUpdating = false,
+  canUpdateAll = false,
   onAcceptUrlAuth,
   environmentId,
   acpProjects = EMPTY_ACP_PROJECTS,
@@ -1028,11 +1027,7 @@ export function ProviderInstanceCard({
   const inlineStatusDetail =
     hasCompatibilityWarning && compatibility
       ? [
-          providerCompatibilityRowHint(
-            compatibility,
-            liveProvider !== undefined && isProviderUpdateCandidate(liveProvider),
-            m,
-          ),
+          providerCompatibilityRowHint(compatibility, canUpdateAll, m),
           liveProvider?.auth.status === "unauthenticated" &&
           summary.detail !== compatibility.message
             ? summary.detail

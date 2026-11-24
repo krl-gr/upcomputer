@@ -6,6 +6,10 @@ import type {
 import { msg } from "gt-react";
 
 import { m, type MessageResolver } from "../../i18n/messages";
+import {
+  hasOneClickUpdateProviderCandidate,
+  isProviderUpdateCandidate,
+} from "../ProviderUpdateLaunchNotification.logic";
 
 export const PROVIDER_STATUS_STYLES = {
   // UpComputer: not reported yet, or its first check is still running.
@@ -261,6 +265,18 @@ function providerCompatibilityFloor(
 ): string | null {
   if (compatibility.recommendedVersion) return compatibility.recommendedVersion;
   return /^>=\s*(\d[\w.+-]*)$/.exec(compatibility.recommendedRange?.trim() ?? "")?.[1] ?? null;
+}
+
+/** UpComputer: the row names Update all only when that button updates this install. */
+export function providerRowCanUpdateAll(
+  provider: ServerProvider | undefined,
+  providers: ReadonlyArray<ServerProvider>,
+): boolean {
+  return (
+    provider !== undefined &&
+    isProviderUpdateCandidate(provider) &&
+    hasOneClickUpdateProviderCandidate(provider, providers)
+  );
 }
 
 /**
