@@ -6,7 +6,10 @@ import {
   ProviderInstanceId,
   type ThreadId,
 } from "@t3tools/contracts";
-import { providerSignInInstanceId } from "@t3tools/shared/providerSignIn";
+import {
+  providerSignInInstanceId,
+  resolveProviderSignInCommand,
+} from "@t3tools/shared/providerSignIn";
 import { resolveProviderInstanceDisplayName } from "@t3tools/client-runtime/state/provider-instance-display";
 import { T, useGT } from "gt-react";
 import { use, useEffect, useRef } from "react";
@@ -166,8 +169,20 @@ function AppSetup({
   if (provider === undefined || (provider.enabled && provider.auth.status === "authenticated")) {
     return null;
   }
+  // Once on, a CLI with a terminal sign-in gets that terminal from the agent's next call.
+  if (
+    provider.enabled &&
+    serverConfig !== null &&
+    resolveProviderSignInCommand(
+      provider,
+      serverConfig.settings,
+      serverConfig.environment.platform.os,
+    ) !== null
+  ) {
+    return null;
+  }
   const config = serverConfig?.settings.providerInstances[instanceId]?.config;
-  // A new user's Antigravity or Cursor starts turned off; the card turns it on, as Welcome does.
+  // A new user's Antigravity or Cursor, or a CLI the agent just installed, starts turned off.
   const turnOn = async () => {
     const instance = serverConfig?.settings.providerInstances[instanceId] ?? {
       driver: provider.driver,
