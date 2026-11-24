@@ -40,6 +40,13 @@ describe("web runtime relay telemetry policy", () => {
       exports: false,
     },
     {
+      // UpComputer: the Settings switch lives on the server, which the desktop host cannot see.
+      surface: "desktop whose server turned usage data off",
+      desktopBridge: { getRelayTelemetryEnabled: () => true },
+      server: false,
+      exports: false,
+    },
+    {
       surface: "browser before its server has answered",
       desktopBridge: undefined,
       exports: false,

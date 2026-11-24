@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
+import * as TelemetryOptOut from "../telemetry/TelemetryOptOut.ts";
 import { resolveRelayClientTracingConfig } from "./publicConfig.ts";
 
 const relayClientTracingConfig = resolveRelayClientTracingConfig();
@@ -27,10 +28,13 @@ export const relayLayer = (
   Layer.unwrap(
     Effect.gen(function* () {
       const policy = yield* ManagedPolicy.ManagedPolicy;
+      const optOut = yield* TelemetryOptOut.load;
       return RelayTracing.layer(
         ManagedPolicy.deniedBy(policy, "telemetry") === undefined ? tracingConfig : null,
         // Never the operator's own `service.instance.id`: it names their machine for their receiver.
         { ...resource, serviceInstanceId: processServiceInstanceId() },
+        // UpComputer: the Settings switch stops relay traces at once, including queued ones.
+        { isEnabled: () => !TelemetryOptOut.isOptedOutUnsafe(optOut.filePath) },
       );
     }),
   );

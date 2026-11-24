@@ -7175,12 +7175,19 @@
   ],
   "216ab7514aea1d61": "Ohne Agenten starten",
   "501ce2d99da8bfd1": "Richte einen Agenten ein, um zu starten.",
-  "df7fecfae4ac29cf": [
-    "Up.computer erfasst anonyme Nutzungsdaten, um die App zu verbessern. Wie du widersprichst, steht in der",
+  "3f7787e752b4ec6e": [
+    "Up.computer erfasst anonyme Nutzungsdaten, um die App zu verbessern. Du kannst das in den",
+    " ",
+    {
+      "t": "Link",
+      "i": 1,
+      "c": "Einstellungen"
+    },
+    " ausschalten. Mehr dazu in der",
     " ",
     {
       "t": "a",
-      "i": 1,
+      "i": 2,
       "c": "Datenschutzerklärung"
     },
     "."
@@ -11007,7 +11014,6 @@
   "76a8f66d44943999": "Sieh deine Agenten und importiere Projekte.",
   "6a48fd0a37e725a1": "Rechtliches",
   "b31463a28fbd157a": "Was Up.computer erfasst: einfache Nutzungsstatistiken, niemals deine Chats, Dateien oder Passwörter.",
-  "bd2878e24d439537": "Was Up.computer erfasst: einfache Nutzungsstatistiken, niemals deine Chats, Dateien oder Passwörter. {telemetryOff}",
   "1dde0a09a86963ad": "Hinweise zu Abhängigkeiten, Assets und optionalen Tools, die Up.computer verwendet.",
   "e39a57514be028e9": "Prüfen",
   "7c0512387c3a42ea": "Stable",
@@ -12285,6 +12291,19 @@
     },
     " wechseln"
   ],
+  "87f235cc2f052d82": "Deine Organisation hat anonyme Nutzungsdaten ausgeschaltet.",
+  "5d413e151932b5a0": "Durch die Umgebungsvariable UPCOMPUTER_TELEMETRY_ENABLED ausgeschaltet.",
+  "efca95f8da8503ff": "Anonyme Nutzungsdaten teilen",
+  "105dc8ba736e43ca": [
+    "Einfache Nutzungsstatistiken und Fehlerberichte, niemals deine Chats, Dateien oder Passwörter. Mehr dazu in der",
+    " ",
+    {
+      "t": "a",
+      "i": 1,
+      "c": "Datenschutzerklärung"
+    },
+    "."
+  ],
   "f54364b854a07918": "Keine Hubs konfiguriert.",
   "4cf6a373a7535324": "{name} · Deaktiviert",
   "1d1e9cda847bd398": "Der Verwaltungsschlüssel des Hubs wird von diesem Server gelöscht. Seine Konten verschwinden aus der Limits-Ansicht; der Hub selbst bleibt unberührt. Füge ihn mit URL und Schlüssel erneut hinzu, um sie zurückzuholen.",
@@ -12701,6 +12720,7 @@
   "dc2a999ca67ccf31": "telefon tablet iPhone iPad iOS Android App Store Google Play QR",
   "6310b97b04ef239f": "Willkommensseite",
   "df9fa3a9cb004b9b": "onboarding einrichtung erster start erste schritte agenten import projekte",
+  "49e3eaff1327eabc": "telemetrie analyse nutzungsdaten tracking datenschutz deaktivieren",
   "3188bc3b3c4508bc": "Datenschutzerklärung",
   "901a823214edc8c4": "telemetrie analyse nutzungsdaten tracking rechtliches deaktivieren",
   "82136480255a5106": "OTel OTLP telemetrie export endpunkte logs traces metriken Grafana",

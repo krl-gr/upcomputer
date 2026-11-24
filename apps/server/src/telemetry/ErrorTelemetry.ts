@@ -26,6 +26,7 @@ import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
 import { AnalyticsService } from "./AnalyticsService.ts";
+import * as TelemetryOptOut from "./TelemetryOptOut.ts";
 
 // A crash written by the process that died, sent by the next start.
 const PENDING_ERRORS_FILE = "telemetry-pending-errors";
@@ -82,6 +83,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const clock = yield* Clock.Clock;
   const pendingErrorsPath = path.join(config.stateDir, PENDING_ERRORS_FILE);
+  const optOutPath = yield* TelemetryOptOut.markerPath;
   const budget = yield* Ref.make({
     seen: new Set<string>(),
     recorded: new Map<ReturnType<typeof budgetOf>, number>(),
@@ -149,6 +151,7 @@ export const make = Effect.gen(function* () {
     const onFatalError = (error: unknown, origin: string) => {
       try {
         // A throwing getter on the error lands in the catch, not in Node.
+        if (TelemetryOptOut.isOptedOutUnsafe(optOutPath)) return;
         const fingerprint = fingerprintError(error);
         if (written.has(fingerprint.stackHash) || written.size >= MAX_PENDING_ERRORS) return;
         written.add(fingerprint.stackHash);

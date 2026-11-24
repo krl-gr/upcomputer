@@ -72,6 +72,8 @@ export function setServerRelayTelemetry(allowed: boolean | null): void {
 
 export function relayTelemetryEnabled(): boolean | null {
   if (typeof window === "undefined") return true;
+  // UpComputer: the server also reports the Settings switch, which the desktop host cannot see.
+  if (serverRelayTelemetry === false) return false;
   if (window.desktopBridge) {
     desktopRelayTelemetry ??= window.desktopBridge.getRelayTelemetryEnabled();
     return desktopRelayTelemetry;

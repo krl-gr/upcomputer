@@ -7,7 +7,7 @@ import {
   resolveUpcomputerBuildKind,
   type UpcomputerBuildKind,
 } from "@t3tools/shared/upcomputerIdentity";
-import type { ClientOs } from "@t3tools/contracts";
+import type { ClientOs, TelemetryPreference } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -33,6 +33,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import { getTelemetryIdentity, type TelemetryOwner } from "./Identify.ts";
+import * as TelemetryOptOut from "./TelemetryOptOut.ts";
 import * as UncleanExit from "./UncleanExit.ts";
 
 interface BufferedAnalyticsEvent {
@@ -200,8 +201,16 @@ export class AnalyticsService extends Context.Service<
       properties: Readonly<Record<string, unknown>>,
       options?: { readonly anonymous?: boolean },
     ) => Effect.Effect<boolean>;
-    /** False when the install opted out; nothing is recorded or written then. */
+    /** False when the install had opted out at startup; nothing is recorded or written then. */
     readonly enabled: boolean;
+    readonly preference: Effect.Effect<TelemetryPreference>;
+    /**
+     * The user's own switch. Turning it off drops what is waiting to be sent and sends no
+     * notice. An environment variable or managed policy that turns telemetry off wins.
+     */
+    readonly setUserEnabled: (
+      enabled: boolean,
+    ) => Effect.Effect<TelemetryPreference, PlatformError.PlatformError>;
     readonly sessionId: string | undefined;
 
     readonly internalDevice: Effect.Effect<boolean>;
@@ -238,11 +247,11 @@ export const make = Effect.gen(function* () {
   const shellConsentPending = Effect.sync(
     () => awaitingShellConsent && hostEnvironment.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING === "1",
   );
-  // A cached PATH does not establish consent from the current login shell.
-  const telemetryEnabled = Effect.suspend(() => {
-    if (!telemetryConfig.enabled || !policyAllows) return Effect.succeed(false);
-    if (!awaitingShellConsent) return Effect.succeed(true);
-    if (hostEnvironment.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING === "1")
+  // True once the environment turns telemetry off. A cached PATH does not establish
+  // consent from the current login shell, so a late opt-out is read after discovery.
+  const environmentOptOut = Effect.suspend(() => {
+    if (!telemetryConfig.enabled) return Effect.succeed(true);
+    if (!awaitingShellConsent || hostEnvironment.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING === "1")
       return Effect.succeed(false);
     const preference = hostEnvironment.T3CODE_TELEMETRY_ENABLED;
     return Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(
@@ -253,16 +262,28 @@ export const make = Effect.gen(function* () {
           env: preference === undefined ? {} : { T3CODE_TELEMETRY_ENABLED: preference },
         }),
       ),
-      Effect.orElseSucceed(() => false),
+      Effect.map((enabled) => !enabled),
+      Effect.orElseSucceed(() => true),
     );
+  });
+  const userOptOut = yield* TelemetryOptOut.load;
+  let userOptedOut = userOptOut.optedOut;
+  const telemetryEnabled = Effect.suspend(() => {
+    if (!policyAllows || userOptedOut) return Effect.succeed(false);
+    if (awaitingShellConsent && hostEnvironment.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING === "1")
+      return Effect.succeed(false);
+    return Effect.map(environmentOptOut, (optedOut) => !optedOut);
   });
   const httpClient = yield* HttpClient.HttpClient;
   const serverConfig = yield* ServerConfig.ServerConfig;
-  // Opted-out installs never write an identity.
-  const { distinctId, installId } =
-    telemetryConfig.enabled && policyAllows
+  // Opted-out installs never write an identity. Turning the switch back on reads the same one.
+  const identityContext = yield* Effect.context<
+    Effect.Services<typeof getTelemetryIdentity> | Effect.Services<typeof TelemetryOptOut.save>
+  >();
+  let { distinctId, installId } =
+    telemetryConfig.enabled && policyAllows && !userOptedOut
       ? yield* getTelemetryIdentity
-      : { distinctId: null, installId: null };
+      : { distinctId: null as string | null, installId: null as string | null };
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const crypto = yield* SecureRandom.SecureRandom;
@@ -349,14 +370,15 @@ export const make = Effect.gen(function* () {
   const sendBatch = Effect.fn("AnalyticsService.sendBatch")(function* (
     events: ReadonlyArray<BufferedAnalyticsEvent>,
   ) {
-    if (!(yield* telemetryEnabled) || !distinctId) return;
+    const sendAs = distinctId;
+    if (!(yield* telemetryEnabled) || !sendAs) return;
 
     const payload = {
       api_key: telemetryConfig.posthogKey,
       batch: events.map((event) => ({
         uuid: event.uuid,
         event: event.event,
-        distinct_id: distinctId,
+        distinct_id: sendAs,
         properties: {
           ...event.properties,
           ...(installId === null ? {} : { installId }),
@@ -499,7 +521,7 @@ export const make = Effect.gen(function* () {
   });
 
   const startedAtMs = yield* Clock.currentTimeMillis;
-  const enabled = telemetryConfig.enabled && policyAllows && distinctId !== null;
+  const enabled = telemetryConfig.enabled && policyAllows && !userOptedOut && distinctId !== null;
   const { quietUntilMs, markerError, uncleanExit } = enabled
     ? yield* UncleanExit.startSession({
         stateDir: serverConfig.stateDir,
@@ -512,7 +534,7 @@ export const make = Effect.gen(function* () {
 
   const record: AnalyticsService["Service"]["record"] = Effect.fn("AnalyticsService.record")(
     function* (event, properties, options) {
-      if (!telemetryConfig.enabled || !policyAllows || !distinctId) return;
+      if (!telemetryConfig.enabled || !policyAllows || userOptedOut || !distinctId) return;
       // Startup events wait in the buffer for shell consent; flush sends or drops them then.
       if (!(yield* shellConsentPending) && !(yield* telemetryEnabled)) return;
       if (quietUntilMs > 0 && (yield* Clock.currentTimeMillis) < quietUntilMs) return;
@@ -576,7 +598,7 @@ export const make = Effect.gen(function* () {
     );
 
   const recordMilestone: AnalyticsService["Service"]["recordMilestone"] = (event, properties) =>
-    enabled
+    enabled && !userOptedOut
       ? claimMarker(path.join(milestonesDir, event)).pipe(
           Effect.flatMap((claimed) => (claimed ? record(event, properties) : Effect.void)),
         )
@@ -627,6 +649,35 @@ export const make = Effect.gen(function* () {
     ),
   );
 
+  const preference: AnalyticsService["Service"]["preference"] = Effect.map(
+    environmentOptOut,
+    (environmentOff): TelemetryPreference => {
+      const lockedBy = !policyAllows ? "policy" : environmentOff ? "environment" : null;
+      return { enabled: lockedBy === null && !userOptedOut, lockedBy };
+    },
+  );
+
+  const setUserEnabled: AnalyticsService["Service"]["setUserEnabled"] = Effect.fn(
+    "AnalyticsService.setUserEnabled",
+  )(function* (on) {
+    yield* TelemetryOptOut.save(!on).pipe(Effect.provideContext(identityContext));
+    userOptedOut = !on;
+    if (!on) {
+      // Nothing recorded before the switch goes out after it.
+      yield* Ref.set(bufferRef, []);
+      yield* Ref.update(deliveryRef, (delivery) => ({
+        ...delivery,
+        failedBatch: [],
+        batchAttempts: 0,
+      }));
+    } else if (distinctId === null && telemetryConfig.enabled && policyAllows) {
+      const identity = yield* getTelemetryIdentity.pipe(Effect.provideContext(identityContext));
+      distinctId = identity.distinctId;
+      installId = identity.installId;
+    }
+    return yield* preference;
+  });
+
   return AnalyticsService.of({
     record,
     recordMilestone,
@@ -634,6 +685,8 @@ export const make = Effect.gen(function* () {
     recordOwners,
     sendNow,
     enabled,
+    preference,
+    setUserEnabled,
     sessionId,
     internalDevice,
     setInternalDevice,

@@ -362,7 +362,14 @@ function TelemetryNotice({ environmentId }: { readonly environmentId: Environmen
     <p className="mt-auto pt-12 text-2xs leading-relaxed text-muted-foreground/70">
       {telemetryOff === undefined ? (
         <T>
-          Up.computer collects anonymous usage data to improve the app. To opt out, see the{" "}
+          Up.computer collects anonymous usage data to improve the app. You can turn it off in{" "}
+          <Link
+            className="underline decoration-current/40 underline-offset-2 hover:text-muted-foreground"
+            to="/settings/about"
+          >
+            Settings
+          </Link>
+          . See the{" "}
           <a
             className="underline decoration-current/40 underline-offset-2 hover:text-muted-foreground"
             href={PRIVACY_POLICY_URL}

@@ -7177,15 +7177,22 @@
   ],
   "216ab7514aea1d61": "Starta utan agent",
   "501ce2d99da8bfd1": "Konfigurera en agent för att starta.",
-  "df7fecfae4ac29cf": [
-    "Up.computer samlar in anonym användningsdata för att förbättra appen. Se",
+  "3f7787e752b4ec6e": [
+    "Up.computer samlar in anonym användningsdata för att förbättra appen. Du kan stänga av det i",
+    " ",
+    {
+      "t": "Link",
+      "i": 1,
+      "c": "Inställningar"
+    },
+    ". Se",
     " ",
     {
       "t": "a",
-      "i": 1,
+      "i": 2,
       "c": "integritetspolicyn"
     },
-    " för att välja bort det."
+    " för mer."
   ],
   "b33f35083757b42c": [
     "Se",
@@ -11014,7 +11021,6 @@
   "76a8f66d44943999": "Se dina agenter och importera projekt.",
   "6a48fd0a37e725a1": "Juridiskt",
   "b31463a28fbd157a": "Vad Up.computer samlar in: grundläggande användningsstatistik, aldrig dina chattar, filer eller lösenord.",
-  "bd2878e24d439537": "Vad Up.computer samlar in: grundläggande användningsstatistik, aldrig dina chattar, filer eller lösenord. {telemetryOff}",
   "1dde0a09a86963ad": "Meddelanden för beroenden, resurser och valfria verktyg som Up.computer använder.",
   "e39a57514be028e9": "Granska",
   "7c0512387c3a42ea": "Stabil",
@@ -12292,6 +12298,19 @@
       "v": "v"
     }
   ],
+  "87f235cc2f052d82": "Din organisation har stängt av anonym användningsdata.",
+  "5d413e151932b5a0": "Avstängt av miljövariabeln UPCOMPUTER_TELEMETRY_ENABLED.",
+  "efca95f8da8503ff": "Dela anonym användningsdata",
+  "105dc8ba736e43ca": [
+    "Grundläggande användningsstatistik och felrapporter, aldrig dina chattar, filer eller lösenord. Se",
+    " ",
+    {
+      "t": "a",
+      "i": 1,
+      "c": "integritetspolicyn"
+    },
+    " för mer."
+  ],
   "f54364b854a07918": "Inga hubbar konfigurerade.",
   "4cf6a373a7535324": "{name} · Inaktiverad",
   "1d1e9cda847bd398": "Hubbens hanteringsnyckel tas bort från den här servern. Dess konton försvinner från vyn Gränser; själva hubben påverkas inte. Lägg till den igen med URL och nyckel för att få tillbaka dem.",
@@ -12707,6 +12726,7 @@
   "dc2a999ca67ccf31": "telefon surfplatta iPhone iPad iOS Android App Store Google Play QR",
   "6310b97b04ef239f": "Välkomstsida",
   "df9fa3a9cb004b9b": "introduktion konfiguration första start kom igång agenter importera projekt",
+  "49e3eaff1327eabc": "telemetri analys användningsdata spårning integritet avböj",
   "3188bc3b3c4508bc": "Integritetspolicy",
   "901a823214edc8c4": "telemetri analys användningsdata spårning juridiskt avböj",
   "82136480255a5106": "OTel OTLP telemetri export slutpunkter loggar spår mätvärden Grafana",

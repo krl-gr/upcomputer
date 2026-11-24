@@ -264,10 +264,13 @@ describe("command permissions", () => {
         expect(denied._tag).toBe("EnvironmentAuthorizationError");
       }),
   );
-  it.effect("requires the destination settings grant to mark an internal device", () =>
+  it.effect.each([
+    WS_METHODS.serverSetTelemetryInternalDevice,
+    WS_METHODS.serverSetTelemetryPreference,
+  ] as const)("requires the destination settings grant for %s", (method) =>
     Effect.gen(function* () {
       const registry = yield* setup;
-      const mark = createCommandPermissions(runtime, WS_METHODS.serverSetTelemetryInternalDevice);
+      const mark = createCommandPermissions(runtime, method);
       registry.set(sessions(env), AsyncResult.success(grant(true)));
       expect(registry.get(mark.permissionAtom(env))).toBe(false);
       registry.set(
