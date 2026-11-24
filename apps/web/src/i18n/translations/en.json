@@ -3753,7 +3753,7 @@
   "5189ad3a62d5a81b": "We didn't find Claude Code, Codex or another coding agent on {computer}. Up.computer works with the agents you already have.",
   "5fffad9ea9c40ae6": "Install a free agent",
   "198d8fa7319dfd95": "Easiest",
-  "32df420903c353a7": "OpenCode with free models that don't keep your data. It will help you set up the rest.",
+  "f8133bb69ed469ef": "OpenCode with free models. It will help you set up the rest.",
   "53dcd70a309c2313": "Ask your own agent",
   "8297eaa5cb7a276f": "Copy a setup prompt for Claude, ChatGPT or any agent you already use.",
   "88294793652e2b1c": "Copied. Paste it into your agent.",

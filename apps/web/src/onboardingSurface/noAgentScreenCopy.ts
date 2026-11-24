@@ -23,9 +23,7 @@ export const NO_AGENT_COPY = {
     },
     installTitle: msg("Install a free agent"),
     installTag: msg("Easiest"),
-    installDescription: msg(
-      "OpenCode with free models that don't keep your data. It will help you set up the rest.",
-    ),
+    installDescription: msg("OpenCode with free models. It will help you set up the rest."),
     askTitle: msg("Ask your own agent"),
     askDescription: msg("Copy a setup prompt for Claude, ChatGPT or any agent you already use."),
     askCopied: msg("Copied. Paste it into your agent."),
