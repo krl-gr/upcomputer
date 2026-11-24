@@ -11,7 +11,7 @@ import * as Effect from "effect/Effect";
 
 import { onboardingTurnNote } from "./OnboardingTurnNote.ts";
 
-const rootThread: Pick<OrchestrationV2AppThread, "lineage"> = {
+const rootThread: Pick<OrchestrationV2AppThread, "lineage" | "historyOrigin"> = {
   lineage: {
     parentThreadId: null,
     relationshipToParent: null,
@@ -129,6 +129,19 @@ it.effect("is not sent to a delegated child thread", () =>
     assert.strictEqual(
       yield* note({
         message: { createdBy: "user", creationSource: "web", senderThreadId: parentThreadId },
+      }),
+      "",
+    );
+  }),
+);
+
+it.effect("is not sent in a thread imported from the user's own CLI history", () =>
+  Effect.gen(function* () {
+    // The imported messages have no runs, so this would otherwise be the thread's first turn.
+    assert.strictEqual(
+      yield* note({
+        thread: { ...rootThread, historyOrigin: "v1_import" },
+        personMessagedElsewhere: Effect.die("read other threads"),
       }),
       "",
     );
