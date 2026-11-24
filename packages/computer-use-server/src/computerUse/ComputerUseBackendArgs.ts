@@ -1,3 +1,5 @@
+// Browser key names to the xdotool names every sidecar accepts. The Windows sidecar has no
+// "PageUp" or "PageDown", only Page_Up and Page_Down.
 const KEY_ALIASES: Readonly<Record<string, string>> = {
   ArrowDown: "Down",
   ArrowLeft: "Left",
@@ -5,6 +7,8 @@ const KEY_ALIASES: Readonly<Record<string, string>> = {
   ArrowUp: "Up",
   Enter: "Return",
   Esc: "Escape",
+  PageDown: "Page_Down",
+  PageUp: "Page_Up",
 };
 
 const MODIFIER_ALIASES: Readonly<Record<string, string>> = {
