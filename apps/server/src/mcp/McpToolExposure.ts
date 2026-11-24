@@ -63,7 +63,7 @@ const MAX_RESULTS = 10;
 // A long session keeps the newest loaded tools only, so its listing stays under 128-tool API limits.
 const MAX_LOADED = 60;
 // A `core` listing adds only this many of the newest loaded search-only tools, for the same limit.
-const MAX_LOADED_SEARCH_ONLY = 20;
+const MAX_LOADED_SEARCH_ONLY = 19;
 // Threads that ended are never reported here, so keep only the newest.
 const MAX_THREADS = 256;
 

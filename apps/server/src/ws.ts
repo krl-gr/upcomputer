@@ -124,6 +124,7 @@ import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
 import * as CommandOutputHub from "./orchestration-v2/CommandOutputHub.ts";
+import * as ThreadViewers from "./orchestration-v2/ThreadViewers.ts";
 import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts";
@@ -1497,6 +1498,7 @@ export const layerWsRpc = (
       };
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const commandOutputHub = yield* CommandOutputHub.CommandOutputHub;
+      const threadViewers = yield* ThreadViewers.ThreadViewers;
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
@@ -2346,9 +2348,12 @@ export const layerWsRpc = (
         [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: (input) =>
           Stream.unwrap(subscribeOrchestrationV2Shell(input)),
         [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: (input) =>
-          Stream.unwrap(
-            Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
-              Effect.andThen(subscribeOrchestrationV2Thread(input)),
+          threadViewers.track(
+            input.threadId,
+            Stream.unwrap(
+              Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
+                Effect.andThen(subscribeOrchestrationV2Thread(input)),
+              ),
             ),
           ),
         [ORCHESTRATION_V2_WS_METHODS.subscribeCommandOutput]: (input) =>

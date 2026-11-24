@@ -20,6 +20,7 @@ import { EnvironmentToolkit } from "./toolkits/environment/tools.ts";
 import { HtmlToolkit } from "./toolkits/html/tools.ts";
 import { IssuesToolkit } from "./toolkits/issues/tools.ts";
 import { MessageToolkit } from "./toolkits/message/tools.ts";
+import { ProviderToolkit } from "./toolkits/provider/tools.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
 import { PreviewToolkit } from "./toolkits/preview/tools.ts";
 import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
@@ -67,6 +68,7 @@ const upComputerT3Tools = [
       ...listed(HtmlToolkit),
       ...listed(ThemeToolkit),
       ...listed(MessageToolkit),
+      ...listed(ProviderToolkit),
       ...listed(WorkspaceToolkit),
       ...TASK_TOOL_SPECS.map(({ name, description }) => ({ name, description })),
       ...listed(BotToolkit),
@@ -136,6 +138,7 @@ describe("OpenCode session tools", () => {
       "watch_pull_request",
       "send_to_user",
       "request_secret",
+      "provider_sign_in",
       "instructions_update",
       "tool_search",
     ]) {
