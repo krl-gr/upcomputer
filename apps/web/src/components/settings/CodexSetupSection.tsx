@@ -101,7 +101,10 @@ interface CodexSetupSectionProps {
   // Onboarding's "Use existing CLI" opens a terminal, which this session may not be allowed.
   readonly existingCliDisabled?: boolean;
   readonly presentation?: "settings" | "onboarding";
-  readonly onModeChange: (mode: "managed" | "existing") => void;
+  readonly onModeChange: (
+    mode: "managed" | "existing",
+    options?: { readonly restore?: boolean },
+  ) => void;
   readonly autoStart?: boolean;
   readonly displayName?: string | undefined;
   readonly onAutoStartConsumed?: () => void;
@@ -114,6 +117,20 @@ export function CodexSetupSection(props: CodexSetupSectionProps) {
   const gt = useGT();
   const m = useMessages();
   const [requested, setRequested] = useState(false);
+  const [previousMode, setPreviousMode] = useState<"managed" | "existing" | null>(null);
+  if (props.provider?.auth.status === "authenticated" && previousMode !== null) {
+    setPreviousMode(null);
+  }
+  const willRestoreOnCancel = previousMode !== null && previousMode !== props.mode;
+  const restoreOnCancel = () => {
+    if (willRestoreOnCancel && previousMode !== null) {
+      const targetMode = previousMode;
+      setPreviousMode(null);
+      setRequested(false);
+      props.onModeChange(targetMode, { restore: true });
+    }
+    props.onSignInCancelled?.();
+  };
   // A policy that owns Codex's launch settings also rules out ChatGPT's own runtime.
   const codexLocks = managedInstanceLocks(
     useManagedPolicy(props.environmentId),
@@ -175,6 +192,7 @@ export function CodexSetupSection(props: CodexSetupSectionProps) {
                 size="sm"
                 disabled={props.readOnly}
                 onClick={() => {
+                  setPreviousMode("existing");
                   setRequested(true);
                   props.onModeChange("managed");
                 }}
@@ -190,7 +208,10 @@ export function CodexSetupSection(props: CodexSetupSectionProps) {
               size="sm"
               variant="ghost-muted"
               disabled={props.existingCliDisabled}
-              onClick={() => props.onModeChange("existing")}
+              onClick={() => {
+                setPreviousMode(null);
+                props.onModeChange("existing");
+              }}
             >
               <T>Use existing CLI</T>
             </Button>
@@ -208,7 +229,12 @@ export function CodexSetupSection(props: CodexSetupSectionProps) {
             </Button>
           }
           secondaryControl={
-            <Button size="sm" variant="ghost-muted" disabled>
+            <Button
+              size="sm"
+              variant="ghost-muted"
+              disabled={!willRestoreOnCancel || props.readOnly}
+              onClick={restoreOnCancel}
+            >
               <T>Cancel</T>
             </Button>
           }
@@ -221,6 +247,13 @@ export function CodexSetupSection(props: CodexSetupSectionProps) {
         key={`${props.environmentId}:${props.instanceId}`}
         {...props}
         autoStart={requested || props.autoStart === true}
+        willRestoreOnCancel={willRestoreOnCancel}
+        onSignInCancelled={restoreOnCancel}
+        onModeChange={(nextMode, options) => {
+          setPreviousMode(null);
+          if (options) props.onModeChange(nextMode, options);
+          else props.onModeChange(nextMode);
+        }}
         onAutoStartConsumed={() => {
           setRequested(false);
           props.onAutoStartConsumed?.();
@@ -277,6 +310,7 @@ function ManagedCodexSetup({
   autoStart,
   onAutoStartConsumed,
   allowExistingCli = true,
+  willRestoreOnCancel = false,
   existingCliDisabled,
   presentation,
   displayName,
@@ -286,6 +320,7 @@ function ManagedCodexSetup({
   readonly autoStart: boolean;
   readonly onAutoStartConsumed: () => void;
   readonly allowExistingCli?: boolean;
+  readonly willRestoreOnCancel?: boolean;
 }) {
   const gt = useGT();
   const target = { environmentId, input: { instanceId } };
@@ -483,6 +518,25 @@ function ManagedCodexSetup({
       return Promise.resolve();
     }
     return run(() => cancelAuth({ environmentId, input: { instanceId, flowId: auth!.flowId! } }));
+  };
+  const handleCancel = () => {
+    abortOperation();
+    setAwaitingProvider(null);
+    if (willRestoreOnCancel) setLeavingForCli(true);
+    const cancel =
+      handoff || (authActive && auth?.flowId)
+        ? cancelSignIn()
+        : installActive && installation?.operationId
+          ? run(() =>
+              cancelInstall({
+                environmentId,
+                input: { instanceId, operationId: installation.operationId! },
+              }),
+            )
+          : Promise.resolve();
+    void cancel.finally(() => {
+      onSignInCancelled?.();
+    });
   };
 
   const receivingCallback = useRef<string | null>(null);
@@ -951,17 +1005,7 @@ function ManagedCodexSetup({
                 size="sm"
                 variant="ghost-muted"
                 disabled={pending || readOnly}
-                onClick={() => {
-                  abortOperation();
-                  if (handoff || (authActive && auth?.flowId)) void cancelSignIn();
-                  else if (installation?.operationId)
-                    void run(() =>
-                      cancelInstall({
-                        environmentId,
-                        input: { instanceId, operationId: installation.operationId! },
-                      }),
-                    );
-                }}
+                onClick={handleCancel}
               >
                 <T>Cancel</T>
               </Button>
@@ -1017,10 +1061,8 @@ function ManagedCodexSetup({
                     variant="ghost"
                     disabled={pending || readOnly}
                     onClick={() => {
-                      if (!handoff && !auth?.flowId) return;
-                      abortOperation();
-                      void cancelSignIn();
-                      onSignInCancelled?.();
+                      if (!handoff && !auth?.flowId && !willRestoreOnCancel) return;
+                      handleCancel();
                     }}
                   >
                     <T>Cancel</T>
@@ -1033,14 +1075,8 @@ function ManagedCodexSetup({
                 variant="ghost"
                 disabled={pending || readOnly}
                 onClick={() => {
-                  if (!installation?.operationId) return;
-                  abortOperation();
-                  void run(() =>
-                    cancelInstall({
-                      environmentId,
-                      input: { instanceId, operationId: installation.operationId! },
-                    }),
-                  );
+                  if (!installation?.operationId && !willRestoreOnCancel) return;
+                  handleCancel();
                 }}
               >
                 <T>Cancel</T>

@@ -7,6 +7,7 @@ import {
   T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV,
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
+  T3_PI_TURN_INSTRUCTIONS_PATH_ENV,
   T3_PI_USER_INSTRUCTIONS_PATH_ENV,
 } from "./mcpExtensionSource.ts";
 import * as Effect from "effect/Effect";
@@ -111,21 +112,33 @@ describe("pi T3 MCP injection", () => {
   it("points the extension at the user's instructions file beside it", () => {
     const launch = buildPiRpcLaunch({
       launchArgs: [],
-      environment: { [T3_PI_USER_INSTRUCTIONS_PATH_ENV]: "/inherited/instructions.md" },
+      environment: {
+        [T3_PI_USER_INSTRUCTIONS_PATH_ENV]: "/inherited/instructions.md",
+        [T3_PI_TURN_INSTRUCTIONS_PATH_ENV]: "/inherited/turn.md",
+      },
       mcpSession: undefined,
       extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
+      turnInstructionsPath: "/tmp/cache/pi-t3-turn-instructions-session.md",
     });
     assert.equal(
       launch.env[T3_PI_USER_INSTRUCTIONS_PATH_ENV],
       "/tmp/cache/pi-t3-user-instructions.md",
     );
+    assert.equal(
+      launch.env[T3_PI_TURN_INSTRUCTIONS_PATH_ENV],
+      "/tmp/cache/pi-t3-turn-instructions-session.md",
+    );
     const withoutExtension = buildPiRpcLaunch({
       launchArgs: [],
-      environment: { [T3_PI_USER_INSTRUCTIONS_PATH_ENV]: "/inherited/instructions.md" },
+      environment: {
+        [T3_PI_USER_INSTRUCTIONS_PATH_ENV]: "/inherited/instructions.md",
+        [T3_PI_TURN_INSTRUCTIONS_PATH_ENV]: "/inherited/turn.md",
+      },
       mcpSession: undefined,
       extensionPath: undefined,
     });
     assert.isUndefined(withoutExtension.env[T3_PI_USER_INSTRUCTIONS_PATH_ENV]);
+    assert.isUndefined(withoutExtension.env[T3_PI_TURN_INSTRUCTIONS_PATH_ENV]);
   });
   it("forces tools and user extensions off for unattended text generation", () => {
     const launch = buildPiRpcLaunch({

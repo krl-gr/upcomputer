@@ -5613,6 +5613,65 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       }).pipe(Effect.scoped),
   );
 
+  it.effect(
+    "sends per-turn instructions in session instructions on turn 1 and clears them on turn 2",
+    () =>
+      Effect.gen(function* () {
+        const note =
+          "[UpComputer onboarding note: this is the user's first conversation. Make the one-time onboarding offer from your instructions in this reply.]";
+        const runtimeInstructions = buildRuntimeInstructions({
+          harness: "OpenCode",
+          model: bigPickle.model,
+        });
+        const runtime = yield* openCode2ReplayRuntime([
+          ...opening,
+          out("session.get", { sessionID: SESSION }),
+          replyData("session.get", sessionInfo()),
+          ...noOpenRequests,
+          out("session.instructions.entry.put", {
+            sessionID: SESSION,
+            key: "t3-code",
+            value: [runtimeInstructions, note].join("\n\n"),
+          }),
+          reply("session.instructions.entry.put", null),
+          out("session.prompt", { sessionID: SESSION, text: "hi" }),
+          promptAccepted,
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          out("session.instructions.entry.put", {
+            sessionID: SESSION,
+            key: "t3-code",
+            value: runtimeInstructions,
+          }),
+          reply("session.instructions.entry.put", null),
+          out("session.prompt", { sessionID: SESSION, text: "second" }),
+          promptAccepted,
+          event("session.execution.succeeded", { sessionID: SESSION }),
+        ]);
+        const thread = yield* runtime.resumeThread({
+          providerThread: providerThread(yield* DateTime.now),
+          threadId: ThreadId.make("thread:opencode2-onboarding"),
+          modelSelection: bigPickle,
+          runtimePolicy: policy(),
+        });
+        for (const [index, text, turnInstructions] of [
+          [1, "hi", note],
+          [2, "second", undefined],
+        ] as const) {
+          const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+          const base = turnInput(thread);
+          yield* runtime.startTurn({
+            ...base,
+            runOrdinal: index,
+            providerTurnOrdinal: index,
+            attemptId: RunAttemptId.make(`attempt:opencode2-onboarding:${index}`),
+            message: { ...base.message, text },
+            ...(turnInstructions === undefined ? {} : { turnInstructions }),
+          });
+          assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+        }
+      }).pipe(Effect.scoped),
+  );
+
   it.effect.each([
     {
       external: false,

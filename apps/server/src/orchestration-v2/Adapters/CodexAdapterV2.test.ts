@@ -299,6 +299,26 @@ describe("CodexAdapterV2 runtime policy", () => {
     }),
   );
 
+  it.effect(
+    "sends per-turn instructions as application additionalContext, never in user input",
+    () =>
+      Effect.gen(function* () {
+        const note =
+          "[UpComputer onboarding note: this is not the user's first conversation. Do not make the onboarding offer; just answer the message.]";
+        const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
+          nativeThreadId: "native-imported-rollout",
+          codexInput: [{ type: "text", text: "Can you continue from here?" }],
+          runtimePolicy: { runtimeMode: "full-access", interactionMode: "default", cwd: null },
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+          turnInstructions: note,
+        });
+        assert.deepEqual(params.input, [{ type: "text", text: "Can you continue from here?" }]);
+        assert.deepEqual(params.additionalContext, {
+          t3_code_onboarding: { kind: "application", value: note },
+        });
+      }),
+  );
+
   it.effect("passes the session's tool call hints to the turn's context", () =>
     Effect.gen(function* () {
       const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
@@ -4080,6 +4100,115 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         ["item/completed", "turn/completed", "thread/inject_items"],
         "restored T3 context while the compacting native turn was still running",
       );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  it.effect("does not replay per-turn onboarding instructions after compaction", () =>
+    Effect.gen(function* () {
+      const nativeThreadId = "onboarding-compact-thread";
+      const nativeTurnId = "onboarding-compact-turn";
+      const onboardingNote =
+        "[UpComputer onboarding note: this is not the user's first conversation. Do not make the onboarding offer; just answer the message.]";
+      const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        nativeThreadId,
+        codexInput: [{ type: "text", text: "continue" }],
+        runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+        modelSelection: CODEX_TEST_MODEL_SELECTION,
+        hasT3Mcp: true,
+        turnInstructions: onboardingNote,
+      });
+      assert.equal(params.additionalContext?.t3_code_onboarding?.value, onboardingNote);
+      const { t3_code_onboarding: _omitted, ...persistentContext } = params.additionalContext ?? {};
+      const entries = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "continue" });
+      const transcript = makeCodexReplayTranscript({
+        scenario: "restore-context-without-onboarding",
+        entries: [
+          ...entries.slice(0, 5),
+          {
+            type: "expect_outbound",
+            label: "turn with onboarding",
+            frame: { id: 3, method: "turn/start", params },
+          },
+          ...entries.slice(6),
+          {
+            type: "emit_inbound",
+            label: "compacted",
+            frame: {
+              method: "item/completed",
+              params: {
+                threadId: nativeThreadId,
+                turnId: nativeTurnId,
+                item: { type: "contextCompaction", id: "compact-onboarding" },
+              },
+            },
+          },
+          {
+            type: "emit_inbound",
+            label: "done",
+            frame: {
+              method: "turn/completed",
+              params: {
+                threadId: nativeThreadId,
+                turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
+              },
+            },
+          },
+          {
+            type: "expect_outbound",
+            label: "restore persistent context only",
+            frame: {
+              id: 4,
+              method: "thread/inject_items",
+              params: {
+                threadId: nativeThreadId,
+                items: Object.entries(persistentContext).map(([key, entry]) => ({
+                  type: "message",
+                  role: "developer",
+                  content: [{ type: "input_text", text: `<${key}>${entry.value}</${key}>` }],
+                })),
+              },
+            },
+          },
+          { type: "emit_inbound", label: "restored", frame: { id: 4, result: {} } },
+        ],
+      });
+      const restoreRequested = yield* Deferred.make<void>();
+      const harness = yield* makeCodexReplayHarness(transcript, undefined, (method) =>
+        method === "thread/inject_items"
+          ? Deferred.succeed(restoreRequested, undefined)
+          : Effect.void,
+      );
+      yield* (yield* McpProviderSessions.McpProviderSessions).set({
+        environmentId: EnvironmentId.make("test"),
+        threadId: harness.threadId,
+        providerSessionId: "onboarding-compact-session",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        endpoint: "http://127.0.0.1:43123/mcp",
+        authorizationHeader: "Bearer test",
+        browserToolsAvailable: true,
+      });
+      yield* harness.runtime.startTurn({
+        ...makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("onboarding-compact-attempt"),
+          text: "continue",
+        }),
+        turnInstructions: onboardingNote,
+      });
+      yield* harness.firstTerminal;
+      yield* Deferred.await(restoreRequested);
+      assert.equal(harness.terminalEvents()[0]?.status, "completed");
     }).pipe(
       Effect.provide(
         Layer.mergeAll(

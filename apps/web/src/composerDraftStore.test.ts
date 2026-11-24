@@ -2182,6 +2182,23 @@ describe("composerDraftStore sticky composer settings", () => {
 
     expect(draftByKey(draftId)).toBeUndefined();
   });
+
+  it("drops an unrunnable sticky active provider while retaining per-provider sticky options", () => {
+    const store = useComposerDraftStore.getState();
+    const draftId = DraftId.make("draft-unrunnable-sticky-provider");
+
+    store.setStickyModelSelection(
+      modelSelection(CODEX_DRIVER, "gpt-6-astra", { reasoningEffort: "high" }),
+    );
+    store.applyStickyState(draftId, {
+      allowActiveProvider: (instanceId) => instanceId !== CODEX_INSTANCE,
+    });
+
+    expect(draftByKey(draftId)?.activeProvider).toBeNull();
+    expect(draftByKey(draftId)?.modelSelectionByProvider[CODEX_INSTANCE]).toEqual(
+      modelSelection(CODEX_DRIVER, "gpt-6-astra", { reasoningEffort: "high" }),
+    );
+  });
 });
 
 describe("composerDraftStore model seed migration", () => {

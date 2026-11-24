@@ -1412,6 +1412,7 @@ export default function ChatView(props: ChatViewProps) {
     ],
     lockedProvider,
     lockedInstanceId: activeRuntime?.providerInstanceId ?? activeThreadModelInstanceId,
+    preferRunnableCandidate: !threadHasStarted(activeThread) && !composerModelSelectionExplicit,
   });
   const selectedProvider = selectedProviderEntry?.driverKind ?? requestedDriverKind;
   const activeProviderInstanceId = selectedProviderEntry?.instanceId ?? null;

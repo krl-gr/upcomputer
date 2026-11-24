@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
   DEFAULT_SERVER_SETTINGS,
+  type TerminalEvent,
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
@@ -17,7 +18,6 @@ import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import * as ThreadViewers from "../orchestration-v2/ThreadViewers.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { TerminalManager } from "../terminal/Manager.ts";
-import { ProviderInstallation } from "./providerInstallation.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 import * as ProviderSignIn from "./ProviderSignIn.ts";
 
@@ -46,7 +46,7 @@ interface Harness {
   readonly opened: Array<string>;
   readonly written: Array<string>;
   readonly refreshed: Array<string>;
-  readonly installed: Array<string>;
+  readonly listeners: Array<(event: TerminalEvent) => Effect.Effect<void>>;
   pid: number;
 }
 
@@ -55,7 +55,7 @@ const setup = (providers: ReadonlyArray<ServerProvider>) => {
     opened: [],
     written: [],
     refreshed: [],
-    installed: [],
+    listeners: [],
     pid: 100,
   };
   const layer = ProviderSignIn.layer.pipe(
@@ -76,13 +76,6 @@ const setup = (providers: ReadonlyArray<ServerProvider>) => {
         ServerConfig.layerTest("/work", { prefix: "t3-provider-sign-in-" }).pipe(
           Layer.provide(NodeServices.layer),
         ),
-        Layer.mock(ProviderInstallation)({
-          start: (input) =>
-            Effect.sync(() => {
-              harness.installed.push(input.instanceId);
-              return {} as never;
-            }),
-        }),
         Layer.mock(TerminalManager)({
           open: (input) =>
             Effect.sync(() => {
@@ -92,6 +85,11 @@ const setup = (providers: ReadonlyArray<ServerProvider>) => {
           write: (input) =>
             Effect.sync(() => {
               harness.written.push(input.data);
+            }),
+          subscribe: (listener) =>
+            Effect.sync(() => {
+              harness.listeners.push(listener);
+              return () => {};
             }),
         }),
       ),
@@ -109,6 +107,18 @@ const withViewer = <A, E, R>(effect: Effect.Effect<A, E, R>, watched = true) => 
     .track(threadId, Stream.fromEffect(provided))
     .pipe(Stream.runHead, Effect.map(Option.getOrThrow));
 };
+
+/** The terminal manager's subprocess poll seeing the sign-in shell start or finish a command. */
+const subprocess = (harness: Harness, running: boolean) =>
+  Effect.forEach(harness.listeners, (listener) =>
+    listener({
+      type: "activity",
+      threadId,
+      terminalId: "provider-sign-in-claudeAgent",
+      hasRunningSubprocess: running,
+      label: running ? "claude" : "zsh",
+    }),
+  );
 
 const signIn = (name: string) =>
   ProviderSignIn.ProviderSignIn.pipe(
@@ -132,11 +142,26 @@ describe("ProviderSignIn", () => {
       assert.isUndefined(again.signInTerminalId);
       assert.deepStrictEqual(harness.written, ["claude auth login"]);
 
+      // The user pressed Enter: the login runs until they finish in the browser.
+      yield* subprocess(harness, true);
+      const running = yield* withViewer(signIn("claudeAgent"));
+      assert.strictEqual(running.status, "alreadyOpen");
+      assert.include(running.message, "in the browser");
+      assert.deepStrictEqual(harness.written, ["claude auth login"]);
+
+      // Cancelled or failed: the shell is back at an empty prompt, so it is typed again,
+      // after Ctrl+U clears anything left on the line.
+      yield* subprocess(harness, false);
+      const retried = yield* withViewer(signIn("claudeAgent"));
+      assert.strictEqual(retried.status, "opened");
+      assert.deepStrictEqual(harness.written, ["claude auth login", "\u0015claude auth login"]);
+      assert.strictEqual((yield* withViewer(signIn("claudeAgent"))).status, "alreadyOpen");
+
       harness.pid = 101;
       const restarted = yield* withViewer(signIn("claudeAgent"));
       assert.strictEqual(restarted.status, "opened");
-      assert.deepStrictEqual(harness.written, ["claude auth login", "claude auth login"]);
-      assert.deepStrictEqual(harness.refreshed, ["claudeAgent", "claudeAgent", "claudeAgent"]);
+      assert.strictEqual(harness.written.length, 3);
+      assert.strictEqual(harness.refreshed.length, 6);
     }).pipe(Effect.provide(layer));
   });
 
@@ -152,7 +177,7 @@ describe("ProviderSignIn", () => {
     }).pipe(Effect.provide(layer));
   });
 
-  it.effect("shows the app's own setup for app-managed providers, installing first", () => {
+  it.effect("shows the app's own setup for app-managed providers, and installs nothing", () => {
     const { harness, layer } = setup([
       provider("antigravity", {
         installed: false,
@@ -165,11 +190,11 @@ describe("ProviderSignIn", () => {
       const antigravity = yield* withViewer(signIn("antigravity"));
       assert.strictEqual(antigravity.status, "appSetup");
       assert.strictEqual(antigravity.appSetupInstanceId, "antigravity");
-      assert.include(antigravity.message, "installing");
+      // The user starts the install from the card; the tool has no way to install.
+      assert.include(antigravity.message, "Install button");
       const cursor = yield* withViewer(signIn("cursor"));
       assert.strictEqual(cursor.status, "appSetup");
-      assert.notInclude(cursor.message, "installing");
-      assert.deepStrictEqual(harness.installed, ["antigravity"]);
+      assert.notInclude(cursor.message, "Install button");
 
       const pi = yield* withViewer(signIn("pi"));
       assert.strictEqual(pi.status, "useSettings");

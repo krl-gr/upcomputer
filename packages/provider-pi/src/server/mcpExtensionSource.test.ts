@@ -11,6 +11,7 @@ import {
   PI_T3_MCP_EXTENSION_SOURCE,
   PI_T3_SERVICE_TIER_COMMAND,
   T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV,
+  T3_PI_TURN_INSTRUCTIONS_PATH_ENV,
   T3_PI_USER_INSTRUCTIONS_PATH_ENV,
 } from "./mcpExtensionSource.ts";
 import { loadMcpBridge } from "./mcpBridge.testkit.ts";
@@ -796,6 +797,51 @@ describe("Pi orchestration guidance", () => {
         [T3_PI_USER_INSTRUCTIONS_PATH_ENV]: path,
       });
       assert.equal(await systemPrompt(), "base\n\n# User instructions");
+    });
+  });
+
+  it("injects per-turn instructions once into system prompt or sections and clears them", async () => {
+    await withInstructionsFile(async (userPath) => {
+      const turnPath = NodePath.join(NodePath.dirname(userPath), "pi-t3-turn-instructions-a.md");
+      await NodeFSP.writeFile(userPath, "# User instructions");
+      await NodeFSP.writeFile(turnPath, "[UpComputer onboarding note: once]");
+
+      const systemPrompt = await startHook({
+        [T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV]: "omit",
+        [T3_PI_USER_INSTRUCTIONS_PATH_ENV]: userPath,
+        [T3_PI_TURN_INSTRUCTIONS_PATH_ENV]: turnPath,
+      });
+      assert.equal(
+        await systemPrompt(),
+        "base\n\n# User instructions\n\n[UpComputer onboarding note: once]",
+      );
+      // Consumed once: a second prompt sees only the persistent user instructions.
+      assert.equal(await systemPrompt(), "base\n\n# User instructions");
+
+      await NodeFSP.writeFile(turnPath, "[UpComputer onboarding note: sections]");
+      const bridge = await loadMcpBridge({
+        modern: true,
+        env: {
+          [T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV]: "omit",
+          [T3_PI_USER_INSTRUCTIONS_PATH_ENV]: userPath,
+          [T3_PI_TURN_INSTRUCTIONS_PATH_ENV]: turnPath,
+        },
+      });
+      const start = bridge.handlers.get("before_agent_start");
+      assert.isDefined(start);
+      const sections: Record<string, string> = {};
+      await start!(
+        { systemPrompt: "base", systemPromptOptions: { sections } },
+        { ui: { notify: () => undefined } },
+      );
+      assert.equal(sections.t3_code_user_instructions, "# User instructions");
+      assert.equal(sections.t3_code_turn_instructions, "[UpComputer onboarding note: sections]");
+
+      await start!(
+        { systemPrompt: "base", systemPromptOptions: { sections } },
+        { ui: { notify: () => undefined } },
+      );
+      assert.isUndefined(sections.t3_code_turn_instructions);
     });
   });
 });

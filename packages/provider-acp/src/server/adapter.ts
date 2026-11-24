@@ -8935,6 +8935,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           if (sendRuntimeInstructions) {
             prompt.push({ type: "text", text: runtimeInstructions });
           }
+          if (
+            !isNativeSlashCommand &&
+            turnInput.turnInstructions !== undefined &&
+            turnInput.turnInstructions.length > 0
+          ) {
+            prompt.push({ type: "text", text: turnInput.turnInstructions });
+          }
           return {
             prompt,
             instructionState: text === messageText ? undefined : instructionState,
