@@ -218,10 +218,13 @@ const make = Effect.gen(function* () {
           message: `The sign-in terminal is already open in this chat with \`${command}\` typed in, and ${name} is not signed in yet. Ask the user to press Enter there and finish signing in, then call this again to check. If its line is empty, ask the user to close the terminal, then call this again.`,
         };
       }
+      // A login shell's startup can mark `ran` before Enter, so a re-type first clears the
+      // line (Ctrl+U) on POSIX shells; PowerShell has no such binding by default.
+      const clearLine = typed?.pid === shell.pid && platform !== "windows" ? "\u0015" : "";
       // Set before writing, so the shell's activity from here on lands on this entry.
       typedShells.set(key, { pid: shell.pid, ran: false, running: false });
       yield* terminals
-        .write({ threadId, terminalId, data: command })
+        .write({ threadId, terminalId, data: `${clearLine}${command}` })
         .pipe(Effect.mapError(terminalFailed));
       return {
         ...base,

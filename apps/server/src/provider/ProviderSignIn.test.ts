@@ -149,11 +149,12 @@ describe("ProviderSignIn", () => {
       assert.include(running.message, "in the browser");
       assert.deepStrictEqual(harness.written, ["claude auth login"]);
 
-      // Cancelled or failed: the shell is back at an empty prompt, so it is typed again.
+      // Cancelled or failed: the shell is back at an empty prompt, so it is typed again,
+      // after Ctrl+U clears anything left on the line.
       yield* subprocess(harness, false);
       const retried = yield* withViewer(signIn("claudeAgent"));
       assert.strictEqual(retried.status, "opened");
-      assert.deepStrictEqual(harness.written, ["claude auth login", "claude auth login"]);
+      assert.deepStrictEqual(harness.written, ["claude auth login", "\u0015claude auth login"]);
       assert.strictEqual((yield* withViewer(signIn("claudeAgent"))).status, "alreadyOpen");
 
       harness.pid = 101;
