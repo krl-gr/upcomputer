@@ -190,7 +190,10 @@ a slow start or a later recheck can still turn the same attempt `ready`, so coun
 attempt as failed only when no `ready` follows. `started`
 means the app began installing its own OpenCode; `ready` without `started` is a new user
 whose own agent, or own OpenCode, already worked, so nothing was downloaded. The download itself is
-`provider.install.*` with `provider: "opencode"`. `onboarding.step.completed` with
+`provider.install.*` with `provider: "opencode"`. The free agent's first message after that sends
+`onboarding.agent_setup_offer` once with `action: "shown"`, then `choice_clicked` with the `choice`
+per quick reply clicked. Each `provider_sign_in` call an agent makes sends
+`onboarding.provider_sign_in` with its `outcome` (the tool's status, or `failed` with a `reason`). `onboarding.step.completed` with
 `step: "agents"` and
 `readyProviders: 0` is a user who left setup without a working agent, and
 `onboarding.agent.terminal_closed` with `installed: false` after an install is an

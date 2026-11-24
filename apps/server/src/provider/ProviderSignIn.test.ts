@@ -17,6 +17,7 @@ import { ServerConfig } from "../config.ts";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import * as ThreadViewers from "../orchestration-v2/ThreadViewers.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { TerminalManager } from "../terminal/Manager.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 import * as ProviderSignIn from "./ProviderSignIn.ts";
@@ -47,6 +48,7 @@ interface Harness {
   readonly written: Array<string>;
   readonly refreshed: Array<string>;
   readonly listeners: Array<(event: TerminalEvent) => Effect.Effect<void>>;
+  readonly recorded: Array<[string, unknown]>;
   pid: number;
 }
 
@@ -56,6 +58,7 @@ const setup = (providers: ReadonlyArray<ServerProvider>) => {
     written: [],
     refreshed: [],
     listeners: [],
+    recorded: [],
     pid: 100,
   };
   const layer = ProviderSignIn.layer.pipe(
@@ -70,6 +73,12 @@ const setup = (providers: ReadonlyArray<ServerProvider>) => {
             }),
         }),
         Layer.mock(ServerSettingsService)({ getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS) }),
+        Layer.mock(AnalyticsService.AnalyticsService)({
+          record: (event, properties) =>
+            Effect.sync(() => {
+              harness.recorded.push([event, properties]);
+            }),
+        }),
         Layer.mock(ServerEnvironment)({
           getDescriptor: Effect.succeed({ platform: { os: "darwin" } } as never),
         }),
@@ -218,6 +227,14 @@ describe("ProviderSignIn", () => {
         "no_window",
       );
       assert.deepStrictEqual(harness.opened, []);
+      // Each call's outcome reaches product analytics, with the driver and never the name typed.
+      assert.deepStrictEqual(harness.recorded, [
+        ["onboarding.provider_sign_in", { outcome: "appSetup", provider: "antigravity" }],
+        ["onboarding.provider_sign_in", { outcome: "appSetup", provider: "antigravity" }],
+        ["onboarding.provider_sign_in", { outcome: "appSetup", provider: "cursor" }],
+        ["onboarding.provider_sign_in", { outcome: "useSettings", provider: "pi" }],
+        ["onboarding.provider_sign_in", { outcome: "failed", reason: "no_window" }],
+      ]);
     }).pipe(Effect.provide(layer));
   });
 

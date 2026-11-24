@@ -1,6 +1,11 @@
 // Opens a terminal in the calling agent's thread with a provider's sign-in command typed in,
 // the way the Welcome page does. The user reviews it and presses Enter themselves.
-import { PROVIDER_DISPLAY_NAMES, type ServerProvider, type ThreadId } from "@t3tools/contracts";
+import {
+  PROVIDER_DISPLAY_NAMES,
+  type ServerProvider,
+  type ThreadId,
+  toTelemetryProvider,
+} from "@t3tools/contracts";
 import {
   providerSignInTerminalId,
   resolveProviderSignInCommand,
@@ -8,12 +13,14 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { ServerConfig } from "../config.ts";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { ThreadViewers } from "../orchestration-v2/ThreadViewers.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { TerminalManager } from "../terminal/Manager.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 
@@ -87,6 +94,7 @@ const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment;
   const config = yield* ServerConfig;
   const terminals = yield* TerminalManager;
+  const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
   // Each sign-in terminal's shell when its command was typed, and whether a subprocess has
   // run there since. Subprocess polling is about a second apart, so a command that ends
   // faster can go unseen; the user then closes the card and the agent calls again.
@@ -120,7 +128,7 @@ const make = Effect.gen(function* () {
     });
   });
 
-  const signIn: ProviderSignIn["Service"]["signIn"] = Effect.fn("ProviderSignIn.signIn")(
+  const attempt: ProviderSignIn["Service"]["signIn"] = Effect.fn("ProviderSignIn.attempt")(
     function* ({ threadId, provider: requested }) {
       yield* Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": threadId });
       const found = findProvider(yield* registry.getProviders, requested);
@@ -240,6 +248,31 @@ const make = Effect.gen(function* () {
       };
     },
   );
+
+  // Each call's outcome, so onboarding funnels see how far an agent-led sign-in got.
+  const record = (properties: Readonly<Record<string, string>>) =>
+    Option.match(analytics, {
+      onNone: () => Effect.void,
+      onSome: (service) =>
+        service.record("onboarding.provider_sign_in", properties).pipe(Effect.ignoreCause),
+    });
+  const driverOf = (instanceId: string) =>
+    registry.getProviders.pipe(
+      Effect.map((providers) =>
+        toTelemetryProvider(
+          providers.find((provider) => provider.instanceId === instanceId)?.driver ?? "other",
+        ),
+      ),
+    );
+  const signIn: ProviderSignIn["Service"]["signIn"] = (input) =>
+    attempt(input).pipe(
+      Effect.tap((result) =>
+        driverOf(result.instanceId).pipe(
+          Effect.flatMap((provider) => record({ outcome: result.status, provider })),
+        ),
+      ),
+      Effect.tapError((error) => record({ outcome: "failed", reason: error.reason })),
+    );
 
   return ProviderSignIn.of({ signIn });
 });

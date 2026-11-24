@@ -1,15 +1,17 @@
 import { useAtomValue } from "@effect/atom-react";
 import { type EnvironmentId, MessageId } from "@t3tools/contracts";
 import { useMessages } from "gt-react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import { AntigravityIcon, ClaudeAI, OpenAI } from "../components/Icons";
 import { Button } from "../components/ui/button";
+import { useRecordClientEvent } from "../hooks/useRecordClientEvent";
 import { getOnboardingProviderState } from "../onboarding/providerReadiness.logic";
 import type { TimelineEntry } from "../session-logic";
 import { serverEnvironment } from "../state/server";
 import {
   answerAgentSetupOffer,
+  markAgentSetupOfferShown,
   resolveAgentSetupOfferView,
   setAgentSetupOfferTyping,
   useAgentSetupOfferRecord,
@@ -18,8 +20,15 @@ import {
 import { AGENT_SETUP_OFFER_COPY } from "./agentSetupOfferCopy";
 import { FIRST_RUN_AGENT_INSTANCE_ID } from "./upComputerOnboarding.logic";
 
+type AgentSetupChoice = NonNullable<
+  Extract<
+    Parameters<ReturnType<typeof useRecordClientEvent>>[1],
+    { readonly event: "onboarding.agent_setup_offer" }
+  >["choice"]
+>;
+
 interface QuickReply {
-  readonly id: string;
+  readonly id: AgentSetupChoice;
   readonly label: string;
   readonly icon?: ReactNode;
   /** A way out, such as "Not now": shown as plain text after the choices. */
@@ -144,6 +153,14 @@ export function useAgentSetupOffer(input: {
     emptyDraft: input.emptyDraft,
     otherAgentReady,
   });
+  const recordClientEvent = useRecordClientEvent();
+  const { environmentId } = input;
+  const showing = view?.replies === true;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records a telemetry event once the offer's choices have rendered
+  useEffect(() => {
+    if (!showing || !markAgentSetupOfferShown()) return;
+    recordClientEvent(environmentId, { event: "onboarding.agent_setup_offer", action: "shown" });
+  }, [environmentId, recordClientEvent, showing]);
   if (view === null) return null;
 
   const createdAt = new Date(view.createdAt).toISOString();
@@ -162,13 +179,18 @@ export function useAgentSetupOffer(input: {
     reply: QuickReply,
     actions: { readonly send: (text: string) => void; readonly focusComposer: () => void },
   ) => {
-    if (reply.id === "something-else") {
+    recordClientEvent(environmentId, {
+      event: "onboarding.agent_setup_offer",
+      action: "choice_clicked",
+      choice: reply.id,
+    });
+    if (reply.id === "something_else") {
       setAgentSetupOfferTyping(threadId);
       actions.focusComposer();
       return;
     }
     setAgentSetupOfferTyping(null);
-    if (reply.id === "not-now") {
+    if (reply.id === "not_now") {
       answerAgentSetupOffer(threadId, "dismissed");
       return;
     }
@@ -183,8 +205,8 @@ export function useAgentSetupOffer(input: {
       label: m(AGENT_SETUP_OFFER_COPY.antigravity),
       icon: <AntigravityIcon aria-hidden />,
     },
-    { id: "something-else", label: m(AGENT_SETUP_OFFER_COPY.somethingElse), pressed: typing },
-    { id: "not-now", label: m(AGENT_SETUP_OFFER_COPY.notNow), quiet: true },
+    { id: "something_else", label: m(AGENT_SETUP_OFFER_COPY.somethingElse), pressed: typing },
+    { id: "not_now", label: m(AGENT_SETUP_OFFER_COPY.notNow), quiet: true },
   ];
   return {
     entries,

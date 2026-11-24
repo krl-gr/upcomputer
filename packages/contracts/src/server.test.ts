@@ -210,6 +210,10 @@ describe("ClientTelemetryEvent", () => {
     expect(decode({ ...sent, path: "installed_free_agent" })._tag).toBe("Success");
     expect(decode(sent)._tag).toBe("Success");
     expect(decode({ ...sent, path: "elsewhere" })._tag).toBe("Failure");
+    const offer = { event: "onboarding.agent_setup_offer" };
+    expect(decode({ ...offer, action: "shown" })._tag).toBe("Success");
+    expect(decode({ ...offer, action: "choice_clicked", choice: "not_now" })._tag).toBe("Success");
+    expect(decode({ ...offer, action: "choice_clicked", choice: "Cursor" })._tag).toBe("Failure");
   });
 
   it("takes click targets only from code-shaped names and drops other properties", () => {

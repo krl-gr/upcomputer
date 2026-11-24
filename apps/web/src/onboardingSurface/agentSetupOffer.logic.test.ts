@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   answerAgentSetupOffer,
+  markAgentSetupOfferShown,
   readAgentSetupOfferRecord,
   resolveAgentSetupOfferView,
   shouldCreateAgentSetupOffer,
@@ -136,5 +137,16 @@ describe("answerAgentSetupOffer", () => {
     expect(readAgentSetupOfferRecord()).toMatchObject({ threadId: "thread-a", state: "dismissed" });
     updateAgentSetupOfferRecord(() => null);
     expect(readAgentSetupOfferRecord()).toBeNull();
+  });
+});
+
+describe("markAgentSetupOfferShown", () => {
+  it("marks the offer once, so its shown event goes out once", () => {
+    expect(markAgentSetupOfferShown()).toBe(false);
+    updateAgentSetupOfferRecord(() => open);
+    expect(markAgentSetupOfferShown()).toBe(true);
+    expect(markAgentSetupOfferShown()).toBe(false);
+    expect(readAgentSetupOfferRecord()).toEqual({ ...open, shown: true });
+    updateAgentSetupOfferRecord(() => null);
   });
 });
