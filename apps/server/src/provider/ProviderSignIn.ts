@@ -138,15 +138,6 @@ const make = Effect.gen(function* () {
       }
       const name = nameOf(provider);
       const base = { provider: name, instanceId: provider.instanceId };
-      if (!provider.enabled || provider.status === "disabled") {
-        return yield* new ProviderSignInError({
-          reason: "disabled",
-          message: `${name} is turned off. Ask the user to turn it on in Settings, Providers, then call this again.`,
-        });
-      }
-      if (provider.auth.status === "authenticated") {
-        return { ...base, status: "signedIn" as const, message: `${name} is signed in.` };
-      }
       const settings = yield* settingsService.getSettings.pipe(
         Effect.mapError(
           () =>
@@ -158,9 +149,22 @@ const make = Effect.gen(function* () {
       );
       const platform = (yield* environment.getDescriptor).platform.os;
       const command = resolveProviderSignInCommand(provider, settings, platform);
+      const setup = provider.setup;
+      const appSetup =
+        command === null && setup !== undefined && (setup.canAuthenticate || setup.canInstall);
+      const turnedOff = !provider.enabled || provider.status === "disabled";
+      // The app's own setup card turns a provider on itself.
+      if (turnedOff && !appSetup) {
+        return yield* new ProviderSignInError({
+          reason: "disabled",
+          message: `${name} is turned off. Ask the user to turn it on in Settings, Providers, then call this again.`,
+        });
+      }
+      if (provider.auth.status === "authenticated" && !turnedOff) {
+        return { ...base, status: "signedIn" as const, message: `${name} is signed in.` };
+      }
       if (command === null) {
-        const setup = provider.setup;
-        if (setup === undefined || !(setup.canAuthenticate || setup.canInstall)) {
+        if (!appSetup) {
           return {
             ...base,
             status: "useSettings" as const,
@@ -169,8 +173,9 @@ const make = Effect.gen(function* () {
         }
         yield* requireWindow(threadId, `Ask the user to set it up in ${SETTINGS_PATH}.`);
         // Installing is the user's call: the card's own Install button starts it.
-        const install =
-          !provider.installed && setup.canInstall
+        const install = turnedOff
+          ? `${name} is turned off: the user turns it on with the card's Enable button. `
+          : !provider.installed && setup?.canInstall
             ? `${name} is not installed yet: the user starts the install with the card's Install button. `
             : "";
         return {

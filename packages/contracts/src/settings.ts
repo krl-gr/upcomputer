@@ -1,6 +1,7 @@
 import { EasDeviceHostConfigs, SimlockDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
 import {
   DEFAULT_CUSTOM_INSTRUCTIONS,
+  FREE_AGENT_SETUP_INSTRUCTIONS,
   hasPendingOnboarding,
   upgradeCustomInstructions,
 } from "./defaultCustomInstructions.ts";
@@ -1371,7 +1372,12 @@ export const StorageCleanupSettings = Schema.Struct({
 });
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
-export { DEFAULT_CUSTOM_INSTRUCTIONS, hasPendingOnboarding, upgradeCustomInstructions };
+export {
+  DEFAULT_CUSTOM_INSTRUCTIONS,
+  FREE_AGENT_SETUP_INSTRUCTIONS,
+  hasPendingOnboarding,
+  upgradeCustomInstructions,
+};
 /** The longest "all chats" text a settings write accepts. */
 export const CUSTOM_INSTRUCTIONS_MAX_CHARS = 20_000;
 const UsageHistoryRetentionDays = Schema.Union([

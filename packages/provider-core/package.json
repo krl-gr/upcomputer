@@ -43,6 +43,10 @@
       "types": "./src/server/failure.ts",
       "import": "./src/server/failure.ts"
     },
+    "./server/freeAgentSetup": {
+      "types": "./src/server/freeAgentSetup.ts",
+      "import": "./src/server/freeAgentSetup.ts"
+    },
     "./server/handoffBudget": {
       "types": "./src/server/handoffBudget.ts",
       "import": "./src/server/handoffBudget.ts"

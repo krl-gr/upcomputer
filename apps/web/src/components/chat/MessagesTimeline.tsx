@@ -262,6 +262,8 @@ interface MessagesTimelineProps {
   /** Which request is waiting, so a second one of the same kind is announced too. */
   awaitingRequestId?: string | null;
   footer?: ReactNode;
+  /** Controls shown under one assistant message's text, such as quick replies. */
+  assistantMessageFooter?: { readonly messageId: MessageId; readonly content: ReactNode } | null;
 
   listRef: React.RefObject<LegendListRef | null>;
   timelineEntries: ReadonlyArray<TimelineEntry>;
@@ -371,6 +373,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   providerStartingLabel = null,
   worktreeSetup = null,
   footer = null,
+  assistantMessageFooter = null,
   onCancelWorktreeSetup,
   retryableWorkspacePreparationRunIds = EMPTY_RUN_IDS,
   onRetryWorkspacePreparation,
@@ -1149,6 +1152,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       .map((approval) => [approval.requestId, approval]),
   );
   const sharedState: TimelineRowSharedState = {
+    assistantMessageFooter,
     pendingApprovals: pendingApprovalsByRequestId,
     respondingRequestIds,
     canOperateThread,

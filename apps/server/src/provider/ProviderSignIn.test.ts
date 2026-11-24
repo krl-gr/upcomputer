@@ -185,6 +185,16 @@ describe("ProviderSignIn", () => {
       }),
       provider("cursor", { setup: { canAuthenticate: true, canInstall: false } }),
       provider("pi"),
+      provider(
+        "antigravity",
+        {
+          enabled: false,
+          status: "disabled",
+          installed: false,
+          setup: { canAuthenticate: true, canInstall: true },
+        },
+        "antigravity_off",
+      ),
     ]);
     return Effect.gen(function* () {
       const antigravity = yield* withViewer(signIn("antigravity"));
@@ -192,6 +202,10 @@ describe("ProviderSignIn", () => {
       assert.strictEqual(antigravity.appSetupInstanceId, "antigravity");
       // The user starts the install from the card; the tool has no way to install.
       assert.include(antigravity.message, "Install button");
+      // A new user's Antigravity is turned off; the card turns it on.
+      const off = yield* withViewer(signIn("antigravity_off"));
+      assert.strictEqual(off.status, "appSetup");
+      assert.include(off.message, "Enable button");
       const cursor = yield* withViewer(signIn("cursor"));
       assert.strictEqual(cursor.status, "appSetup");
       assert.notInclude(cursor.message, "Install button");

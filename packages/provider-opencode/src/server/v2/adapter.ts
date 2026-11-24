@@ -74,6 +74,7 @@ import {
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import { readableProviderErrorMessage } from "../providerErrorMessage.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import { currentFreeAgentSetupBlock } from "@t3tools/provider-core/server/freeAgentSetup";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import { t3OrchestrationSystemPrompt } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { SKILL_MENTION_PATTERN } from "@t3tools/shared/composerInlineTokens";
@@ -4484,6 +4485,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         mcpAvailable
           ? "To wait for a background shell you started (tests, a build), call `t3_background_wait` with its shell ID before you end your turn. Do not mark work you leave running, or PRs."
           : undefined,
+        currentFreeAgentSetupBlock(turnInput.modelSelection.model),
         turnInput.turnInstructions,
       ]
         .filter((part) => part !== undefined && part.length > 0)

@@ -326,6 +326,7 @@ import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
 import { useCitedHistory } from "./chat/citationProcedure";
 import type { MessagesTimelineHistoryControls } from "./chat/MessagesTimeline";
 import { ThreadTimeline } from "./chat/ThreadTimeline";
+import { answeringAgentSetupOffer, useAgentSetupOffer } from "../onboardingSurface/AgentSetupOffer";
 import { NativeChildWorkDialog } from "./chat/NativeChildWorkDialog";
 import { ProviderSubagentBar } from "./chat/ProviderSubagentBar";
 import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
@@ -1651,10 +1652,17 @@ export default function ChatView(props: ChatViewProps) {
       }) as const,
   );
   const timelineEntries = isServerThread ? serverTimelineEntries : draftTimelineEntries;
+  // UpComputer: the free agent's first message, written by the app.
+  const agentSetupOffer = useAgentSetupOffer({
+    environmentId,
+    threadId,
+    emptyDraft: !isServerThread && optimisticUserMessages.length === 0,
+  });
   const timelineMessages = timelineEntries.flatMap((entry) =>
     entry.kind === "message" ? [entry.message] : [],
   );
-  const timelineEmpty = timelineEntries.length === 0 && !hasStreamedTimelineRows;
+  const timelineEmpty =
+    timelineEntries.length === 0 && !hasStreamedTimelineRows && agentSetupOffer === null;
   const displayedTimelineKey = activeThreadKey ?? routeThreadKey;
   const displayedThreadRef = parseScopedThreadKey(displayedTimelineKey);
   const {
@@ -3210,7 +3218,12 @@ export default function ChatView(props: ChatViewProps) {
     });
   };
   const onWorktreeSetupWorkLocallyStable = useStableCallback(onWorktreeSetupWorkLocally);
-  const onComposerSendStable = useStableCallback(onSend);
+  const onComposerSendStable = useStableCallback(answeringAgentSetupOffer(agentSetupOffer, onSend));
+  const sendAgentSetupReplyStable = useStableCallback((text: string) => {
+    promptRef.current = text;
+    useComposerDraftStore.getState().setPrompt(composerDraftTarget, text);
+    void onSend();
+  });
   const sendPreviewAnnotation = (
     annotation: PreviewAnnotationPayload,
     image: ComposerImageAttachment | null,
@@ -3658,6 +3671,13 @@ export default function ChatView(props: ChatViewProps) {
                   threadDetailRef={routeThreadDetailRef}
                   entriesInput={timelineEntriesInput}
                   draftEntries={isServerThread ? null : draftTimelineEntries}
+                  leadingEntries={agentSetupOffer?.entries ?? null}
+                  assistantMessageFooter={
+                    agentSetupOffer?.messageFooter({
+                      send: sendAgentSetupReplyStable,
+                      focusComposer: focusComposerStable,
+                    }) ?? null
+                  }
                   activeThreadKey={activeThreadKey}
                   syncing={threadSyncPhase !== null}
                   detailLoading={threadDetailLoading}

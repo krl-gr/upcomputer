@@ -253,6 +253,7 @@ import {
 } from "./product/ServerProduct.ts";
 import { hiddenMcpOAuthLayer, hiddenWebhooksLayer } from "./product/hiddenHttpGroups.ts";
 import * as UserInstructions from "./provider/UserInstructions.ts";
+import * as FreeAgentSetup from "./provider/FreeAgentSetup.ts";
 import { cutoverV1OnServerStart } from "./upcomputerCutover/V1Cutover.ts";
 
 // Escaped MCP handoff provenance can exceed find-my-way's 100-character segment default.
@@ -752,6 +753,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ProviderInstallation.layer,
   ReplayMarkers.layer,
   UserInstructions.layer,
+  FreeAgentSetup.layer,
   // Product features see every core runtime service; their services reach the routes.
   productFeatureLayer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),

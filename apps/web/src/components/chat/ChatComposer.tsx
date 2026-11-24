@@ -1,4 +1,6 @@
 import { copySnapshot } from "./copySnapshot";
+import { useAgentSetupOfferTyping } from "../../onboardingSurface/agentSetupOffer.logic";
+import { AGENT_SETUP_OFFER_COPY } from "../../onboardingSurface/agentSetupOfferCopy";
 import { VoiceInputSetup } from "./VoiceInputSetup";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
@@ -990,6 +992,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     recordClientEvent,
     showProviderUnavailable,
   ]);
+  // UpComputer: "Something else" on the free agent's first message asks for the agent's name.
+  const agentSetupOfferPlaceholder = useAgentSetupOfferTyping(routeThreadRef.threadId)
+    ? m(AGENT_SETUP_OFFER_COPY.typePlaceholder)
+    : null;
   const firstRunAgentPlaceholder =
     firstRunAgentStatus?.kind === "preparing"
       ? firstRunAgentStatus.slow
@@ -4034,7 +4040,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             : showProviderUnavailable
                               ? (firstRunAgentPlaceholder ??
                                 gt("Enable a provider in Settings to send a message"))
-                              : (offeredPromptSuggestion ??
+                              : (agentSetupOfferPlaceholder ??
+                                offeredPromptSuggestion ??
                                 m(composerIdlePlaceholder(routeKind === "server")))
                     }
                     placeholderSuffix={

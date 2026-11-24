@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import {
   DEFAULT_CUSTOM_INSTRUCTIONS,
+  ProviderInstanceId,
   ScheduledTaskId,
   ThreadId,
   type OrchestrationV2AppThread,
@@ -22,14 +23,27 @@ const personMessage: Pick<
   "createdBy" | "creationSource" | "scheduledTaskId" | "senderThreadId"
 > = { createdBy: "user", creationSource: "web" };
 
+const claude = ProviderInstanceId.make("claudeAgent");
+const openCode = ProviderInstanceId.make("opencode");
+const freeModel = "opencode/glm-5.3-flash-free";
+const turn = (ordinal: number, providerInstanceId = claude, model = "claude-sonnet-5-5") => ({
+  ordinal,
+  providerInstanceId,
+  modelSelection: { instanceId: providerInstanceId, model },
+});
+const freeTurn = (ordinal: number) => turn(ordinal, openCode, freeModel);
+
 const note = (overrides: Partial<Parameters<typeof onboardingTurnNote<never, never>>[0]> = {}) =>
   onboardingTurnNote({
     instructions: DEFAULT_CUSTOM_INSTRUCTIONS,
     thread: rootThread,
-    run: { ordinal: 1 },
-    runs: [{ ordinal: 1 }],
+    run: turn(1),
+    runs: [turn(1)],
     message: personMessage,
     isCommand: false,
+    freeAgentSetupActive: false,
+    isFreeAgentRun: (run) =>
+      run.providerInstanceId === openCode && run.modelSelection.model === freeModel,
     personMessagedElsewhere: Effect.succeed(false),
     ...overrides,
   });
@@ -61,7 +75,7 @@ it.effect(
 it.effect("reads other threads only for a turn that would otherwise get the note", () =>
   Effect.gen(function* () {
     const unread = Effect.die("read other threads");
-    assert.strictEqual(yield* note({ run: { ordinal: 2 }, personMessagedElsewhere: unread }), "");
+    assert.strictEqual(yield* note({ run: turn(2), personMessagedElsewhere: unread }), "");
     assert.strictEqual(
       yield* note({ instructions: undefined, personMessagedElsewhere: unread }),
       "",
@@ -71,10 +85,7 @@ it.effect("reads other threads only for a turn that would otherwise get the note
 
 it.effect("is not sent on a later turn", () =>
   Effect.gen(function* () {
-    assert.strictEqual(
-      yield* note({ run: { ordinal: 2 }, runs: [{ ordinal: 1 }, { ordinal: 2 }] }),
-      "",
-    );
+    assert.strictEqual(yield* note({ run: turn(2), runs: [turn(1), turn(2)] }), "");
   }),
 );
 
@@ -138,5 +149,53 @@ it.effect("is not sent to a scheduled task or with a slash command", () =>
       "",
     );
     assert.strictEqual(yield* note({ isCommand: true }), "");
+  }),
+);
+
+it.effect("waits for a real agent while the free agent is the only one that works", () =>
+  Effect.gen(function* () {
+    const unread = Effect.die("read other threads");
+    assert.strictEqual(
+      yield* note({
+        freeAgentSetupActive: true,
+        run: freeTurn(1),
+        runs: [freeTurn(1)],
+        personMessagedElsewhere: unread,
+      }),
+      "",
+    );
+    // A real agent's turn gets it even while the registry still says setup.
+    assert.include(yield* note({ freeAgentSetupActive: true }), "user's first conversation");
+    // So does the user's own OpenCode on a paid model or their own keys.
+    const ownOpenCode = turn(1, openCode, "anthropic/claude-sonnet-5-5");
+    assert.include(
+      yield* note({ freeAgentSetupActive: true, run: ownOpenCode, runs: [ownOpenCode] }),
+      "user's first conversation",
+    );
+  }),
+);
+
+it.effect("comes in the setup chat's first turn after switching to a real agent", () =>
+  Effect.gen(function* () {
+    assert.include(
+      yield* note({
+        run: turn(4),
+        runs: [freeTurn(1), freeTurn(2), freeTurn(3), turn(4)],
+      }),
+      "user's first conversation",
+    );
+    // The next real turn in that chat is a later turn.
+    assert.strictEqual(yield* note({ run: turn(5), runs: [freeTurn(1), turn(4), turn(5)] }), "");
+  }),
+);
+
+it.effect("is never sent on a later free-agent turn once another agent works", () =>
+  Effect.gen(function* () {
+    assert.strictEqual(yield* note({ run: freeTurn(3), runs: [freeTurn(1), freeTurn(3)] }), "");
+    // A free-agent chat started after setup is a first conversation like any other.
+    assert.include(
+      yield* note({ run: freeTurn(1), runs: [freeTurn(1)] }),
+      "user's first conversation",
+    );
   }),
 );
