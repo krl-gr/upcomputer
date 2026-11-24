@@ -4987,6 +4987,7 @@
   "4681c4c9541539a4": "Se connecter",
   "4c180d45134b7da4": "Vérifiez la commande, puis appuyez sur Enter pour l’exécuter.",
   "2ca89fd7bbd7ea94": "Cette connexion ne peut pas contrôler les terminaux.",
+  "f77d000c0710f066": "Activer",
   "3e3db4f54e59264a": "{provider} n’est pas installé sur cet ordinateur. Ouvrez la configuration du fournisseur pour l’installer.",
   "f1ab192c62a6e680": "Ouvrez la configuration du fournisseur pour vous connecter avec Google.",
   "6457e38508a19b22": "Ouvrez la configuration du fournisseur pour vous connecter.",
@@ -7186,7 +7187,6 @@
     },
     "."
   ],
-  "f77d000c0710f066": "Activer",
   "4ed27bf946e504db": "Configurer",
   "7a26eaacff0607f7": [
     "Vérification de ",

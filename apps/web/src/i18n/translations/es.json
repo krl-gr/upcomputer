@@ -4986,6 +4986,7 @@
   "4681c4c9541539a4": "Iniciar sesión",
   "4c180d45134b7da4": "Revisa el comando y pulsa Enter para ejecutarlo.",
   "2ca89fd7bbd7ea94": "Esta conexión no puede controlar terminales.",
+  "f77d000c0710f066": "Activar",
   "3e3db4f54e59264a": "{provider} no está instalado en este ordenador. Abre la configuración del proveedor para instalarlo.",
   "f1ab192c62a6e680": "Abre la configuración del proveedor para iniciar sesión con Google.",
   "6457e38508a19b22": "Abre la configuración del proveedor para iniciar sesión.",
@@ -7185,7 +7186,6 @@
     },
     "."
   ],
-  "f77d000c0710f066": "Activar",
   "4ed27bf946e504db": "Configurar",
   "7a26eaacff0607f7": [
     "Comprobando ",

@@ -7,6 +7,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { providerSignInInstanceId } from "@t3tools/shared/providerSignIn";
+import { resolveProviderInstanceDisplayName } from "@t3tools/client-runtime/state/provider-instance-display";
 import { T, useGT } from "gt-react";
 import { use, useEffect, useRef } from "react";
 
@@ -16,6 +17,8 @@ import { useEnvironmentScope } from "../../state/session";
 import { terminalEnvironment } from "../../state/terminal";
 import { useKnownTerminalSessions } from "../../state/terminalSessions";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { usePersistEnvironmentProviderInstanceMutation } from "../../hooks/useSettings";
+import { turnedOnInstance } from "../../onboarding/welcomePage.logic";
 import { SwitchChatToSignedInAgent } from "../../onboardingSurface/SwitchChatToSignedInAgent";
 import { SetupTerminal } from "../onboarding/SetupTerminal";
 import { ProviderAuthenticationSection } from "../settings/ProviderAuthenticationSection";
@@ -156,8 +159,26 @@ function AppSetup({
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const environmentLabel = useEnvironment(environmentId)?.label ?? "";
   const canManageProviders = useEnvironmentScope(environmentId, AuthProvidersManageScope);
-  if (provider === undefined || provider.auth.status === "authenticated") return null;
+  const persistProviderInstance = usePersistEnvironmentProviderInstanceMutation(environmentId);
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
+  if (provider === undefined || (provider.enabled && provider.auth.status === "authenticated")) {
+    return null;
+  }
   const config = serverConfig?.settings.providerInstances[instanceId]?.config;
+  // A new user's Antigravity or Cursor starts turned off; the card turns it on, as Welcome does.
+  const turnOn = async () => {
+    const instance = serverConfig?.settings.providerInstances[instanceId] ?? {
+      driver: provider.driver,
+    };
+    const result = await persistProviderInstance({
+      operation: "upsert",
+      instanceId,
+      instance: turnedOnInstance(instance),
+    });
+    if (result._tag === "Success") void refreshProviders({ environmentId, input: { instanceId } });
+  };
   return (
     <div className="mt-4 min-w-0 overflow-hidden rounded-lg border border-border/70 px-1">
       {provider.driver === "antigravity" ? (
@@ -177,8 +198,22 @@ function AppSetup({
           authMethod={readAntigravityAuthMethod(config)}
           enabled={provider.enabled}
           readOnly={!canManageProviders}
-          onEnable={() => undefined}
+          onEnable={() => void turnOn()}
         />
+      ) : !provider.enabled ? (
+        <div className="flex items-center justify-between gap-3 px-2 py-2">
+          <span className="text-muted-foreground">
+            {resolveProviderInstanceDisplayName(provider)}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!canManageProviders}
+            onClick={() => void turnOn()}
+          >
+            <T>Turn on</T>
+          </Button>
+        </div>
       ) : (
         <ProviderAuthenticationSection
           environmentId={environmentId}

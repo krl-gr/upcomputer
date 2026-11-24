@@ -4987,6 +4987,7 @@
   "4681c4c9541539a4": "Entrar",
   "4c180d45134b7da4": "Revise o comando e pressione Enter para executá-lo.",
   "2ca89fd7bbd7ea94": "Esta conexão não pode controlar terminais.",
+  "f77d000c0710f066": "Ativar",
   "3e3db4f54e59264a": "{provider} não está instalado neste computador. Abra a configuração do provedor para instalá-lo.",
   "f1ab192c62a6e680": "Abra a configuração do provedor para entrar com o Google.",
   "6457e38508a19b22": "Abra a configuração do provedor para entrar.",
@@ -7185,7 +7186,6 @@
     },
     "."
   ],
-  "f77d000c0710f066": "Ativar",
   "4ed27bf946e504db": "Configurar",
   "7a26eaacff0607f7": [
     "Verificando ",

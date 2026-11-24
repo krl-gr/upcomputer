@@ -4987,6 +4987,7 @@
   "4681c4c9541539a4": "Logga in",
   "4c180d45134b7da4": "Granska kommandot och tryck sedan på Enter för att köra det.",
   "2ca89fd7bbd7ea94": "Den här anslutningen kan inte styra terminaler.",
+  "f77d000c0710f066": "Aktivera",
   "3e3db4f54e59264a": "{provider} är inte installerad på den här datorn. Öppna leverantörskonfigurationen för att installera den.",
   "f1ab192c62a6e680": "Öppna leverantörskonfigurationen för att logga in med Google.",
   "6457e38508a19b22": "Öppna leverantörskonfigurationen för att logga in.",
@@ -7186,7 +7187,6 @@
     },
     "."
   ],
-  "f77d000c0710f066": "Aktivera",
   "4ed27bf946e504db": "Konfigurera",
   "7a26eaacff0607f7": [
     "Kontrollerar ",

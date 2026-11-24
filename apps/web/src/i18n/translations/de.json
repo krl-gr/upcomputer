@@ -4990,6 +4990,7 @@
   "4681c4c9541539a4": "Anmelden",
   "4c180d45134b7da4": "Prüfe den Befehl und drücke dann Enter, um ihn auszuführen.",
   "2ca89fd7bbd7ea94": "Diese Verbindung kann keine Terminals steuern.",
+  "f77d000c0710f066": "Aktivieren",
   "3e3db4f54e59264a": "{provider} ist auf diesem Computer nicht installiert. Öffne die Anbietereinrichtung, um es zu installieren.",
   "f1ab192c62a6e680": "Öffne die Anbietereinrichtung, um dich mit Google anzumelden.",
   "6457e38508a19b22": "Öffne die Anbietereinrichtung, um dich anzumelden.",
@@ -7184,7 +7185,6 @@
     },
     "."
   ],
-  "f77d000c0710f066": "Aktivieren",
   "4ed27bf946e504db": "Einrichten",
   "7a26eaacff0607f7": [
     {
