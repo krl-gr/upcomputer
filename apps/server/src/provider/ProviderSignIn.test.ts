@@ -74,6 +74,8 @@ const setup = (providers: ReadonlyArray<ServerProvider>) => {
         }),
         Layer.mock(ServerSettingsService)({ getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS) }),
         Layer.mock(AnalyticsService.AnalyticsService)({
+          enabled: true,
+          sessionId: undefined,
           record: (event, properties) =>
             Effect.sync(() => {
               harness.recorded.push([event, properties]);
