@@ -12,10 +12,15 @@ import {
   useClientSettingsHydrationStatus,
 } from "../../hooks/useSettings";
 import { completeOnboarding } from "../../onboarding/firstRun";
+import { useFirstRunAgentStarterEnvironment } from "../../onboardingSurface/FirstRunAgent";
 import {
-  FirstRunAgentStarter,
-  useFirstRunAgentStarterEnvironment,
-} from "../../onboardingSurface/FirstRunAgent";
+  FirstRunAgentSetup,
+  NoAgentFirstMessageReporter,
+} from "../../onboardingSurface/NoAgentFirstRun";
+import {
+  asksAgainForAgent,
+  readNoAgentScreenRecord,
+} from "../../onboardingSurface/noAgentScreenRecord";
 import { firstRunWorkspaceProjects } from "../../onboardingSurface/upComputerOnboarding.logic";
 import { productSurface } from "../../product/productFlags";
 import {
@@ -168,10 +173,13 @@ export function FirstRunGate({
     }),
   );
 
-  // UpComputer: a new user lands in the app while it sets up OpenCode; the
-  // Welcome page stays at /welcome for connecting other agents.
+  // UpComputer: a new user lands in the app while it sets up OpenCode, or on
+  // the no-agent screen, which also comes back on a launch after the user left
+  // it without a working agent. The Welcome page stays at /welcome.
+  const [noAgentScreen] = useState(readNoAgentScreenRecord);
   const installsFirstAgent =
-    decision === "wizard" &&
+    (decision === "wizard" ||
+      (decision === "app" && enabled && asksAgainForAgent(noAgentScreen))) &&
     !hostedStatic &&
     primaryEnvironmentId !== null &&
     productSurface("onboarding") === "upcomputer";
@@ -208,14 +216,24 @@ export function FirstRunGate({
     }
   }, [decision, installsFirstAgent, navigate, wizardOwnsRoute]);
 
+  // UpComputer: the first message after the no-agent screen, on whichever launch it comes.
+  const firstMessageReporter =
+    primaryEnvironmentId !== null && productSurface("onboarding") === "upcomputer" ? (
+      <NoAgentFirstMessageReporter environmentId={primaryEnvironmentId} />
+    ) : null;
   if (settingsReadFailed) {
     return <FirstRunRecovery reason="settings" retrying={hydrationStatus === "retrying"} />;
   }
   if (firstAgentEnvironmentId !== null) {
     return (
       <>
-        <FirstRunAgentStarter environmentId={firstAgentEnvironmentId} />
-        {children}
+        {firstMessageReporter}
+        <FirstRunAgentSetup
+          environmentId={firstAgentEnvironmentId}
+          askAgain={asksAgainForAgent(noAgentScreen)}
+        >
+          {children}
+        </FirstRunAgentSetup>
       </>
     );
   }
@@ -225,7 +243,12 @@ export function FirstRunGate({
   if (decision !== "app") {
     return stalled ? <FirstRunRecovery reason="connection" /> : <BootSplash />;
   }
-  return children;
+  return (
+    <>
+      {firstMessageReporter}
+      {children}
+    </>
+  );
 }
 
 function FirstRunRecovery({
