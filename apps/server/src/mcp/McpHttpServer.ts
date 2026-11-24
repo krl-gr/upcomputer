@@ -95,6 +95,8 @@ import { productMcpToolsLayer, whenProductFeature } from "../product/ServerProdu
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { MessageToolkit } from "./toolkits/message/tools.ts";
 import * as MessageHandlers from "./toolkits/message/handlers.ts";
+import { ProviderToolkit } from "./toolkits/provider/tools.ts";
+import * as ProviderHandlers from "./toolkits/provider/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
 import { MCP_HTTP_PATH } from "../httpCors.ts";
 import { requestUrl } from "../requestUrl.ts";
@@ -1421,6 +1423,8 @@ export const layerThreadToolkit = toolkitRegistration(ThreadToolkit, ThreadHandl
 
 const layerMessageToolkit = toolkitRegistration(MessageToolkit, MessageHandlers.layer);
 
+const layerProviderToolkit = toolkitRegistration(ProviderToolkit, ProviderHandlers.layer);
+
 const layerWorktreeToolkitRegistration = toolkitRegistration(
   WorktreeToolkit,
   WorktreeHandlers.layer,
@@ -1514,6 +1518,7 @@ export const layerTools = Layer.mergeAll(
   whenProductFeature("devices", layerDeviceToolkit),
   layerHtmlToolkit,
   layerMessageToolkit,
+  layerProviderToolkit,
 );
 
 const layerToolExposure = Layer.effect(

@@ -666,6 +666,10 @@
     "./paletteSearchCopy": {
       "types": "./src/paletteSearchCopy.ts",
       "import": "./src/paletteSearchCopy.ts"
+    },
+    "./providerSignIn": {
+      "types": "./src/providerSignIn.ts",
+      "import": "./src/providerSignIn.ts"
     }
   },
   "scripts": {
