@@ -95,6 +95,9 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             <AssistantStatusBadge status="interrupted" />
           </div>
         ) : null}
+        {ctx.assistantMessageFooter?.messageId === row.message.id ? (
+          <div className="mt-3">{ctx.assistantMessageFooter.content}</div>
+        ) : null}
         {row.showAssistantMeta ? (
           <AssistantMessageMeta
             className="mt-1.5"

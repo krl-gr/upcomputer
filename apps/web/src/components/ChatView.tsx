@@ -326,7 +326,7 @@ import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
 import { useCitedHistory } from "./chat/citationProcedure";
 import type { MessagesTimelineHistoryControls } from "./chat/MessagesTimeline";
 import { ThreadTimeline } from "./chat/ThreadTimeline";
-import { useAgentSetupOfferPreview } from "../onboardingSurface/AgentSetupOfferPreview";
+import { useAgentSetupOffer } from "../onboardingSurface/AgentSetupOffer";
 import { NativeChildWorkDialog } from "./chat/NativeChildWorkDialog";
 import { ProviderSubagentBar } from "./chat/ProviderSubagentBar";
 import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
@@ -1641,11 +1641,15 @@ export default function ChatView(props: ChatViewProps) {
     ...timelineEntriesInput,
     visibleTurnItems: serverTimelineRows,
   });
-  // UpComputer design preview (dev builds): the free agent's first message and its mock setup chat.
-  const setupOfferPreview = useAgentSetupOfferPreview();
-  const draftTimelineEntries =
-    setupOfferPreview?.entries ??
-    optimisticUserMessages.map(
+  // UpComputer: the free agent's first message, written by the app.
+  const agentSetupOffer = useAgentSetupOffer({
+    environmentId,
+    threadId,
+    emptyDraft: !isServerThread && optimisticUserMessages.length === 0,
+  });
+  const draftTimelineEntries = [
+    ...(agentSetupOffer?.entries ?? []),
+    ...optimisticUserMessages.map(
       (message) =>
         ({
           id: message.id,
@@ -1653,8 +1657,11 @@ export default function ChatView(props: ChatViewProps) {
           createdAt: message.createdAt,
           message,
         }) as const,
-    );
-  const timelineEntries = isServerThread ? serverTimelineEntries : draftTimelineEntries;
+    ),
+  ];
+  const timelineEntries = isServerThread
+    ? [...(agentSetupOffer?.entries ?? []), ...serverTimelineEntries]
+    : draftTimelineEntries;
   const timelineMessages = timelineEntries.flatMap((entry) =>
     entry.kind === "message" ? [entry.message] : [],
   );
@@ -3214,7 +3221,17 @@ export default function ChatView(props: ChatViewProps) {
     });
   };
   const onWorktreeSetupWorkLocallyStable = useStableCallback(onWorktreeSetupWorkLocally);
-  const onComposerSendStable = useStableCallback(onSend);
+  const onComposerSendStable = useStableCallback(
+    (...args: Parameters<typeof onSend>): ReturnType<typeof onSend> => {
+      agentSetupOffer?.beforeSend();
+      return onSend(...args);
+    },
+  );
+  const sendAgentSetupReplyStable = useStableCallback((text: string) => {
+    promptRef.current = text;
+    useComposerDraftStore.getState().setPrompt(composerDraftTarget, text);
+    void onSend();
+  });
   const sendPreviewAnnotation = (
     annotation: PreviewAnnotationPayload,
     image: ComposerImageAttachment | null,
@@ -3662,6 +3679,13 @@ export default function ChatView(props: ChatViewProps) {
                   threadDetailRef={routeThreadDetailRef}
                   entriesInput={timelineEntriesInput}
                   draftEntries={isServerThread ? null : draftTimelineEntries}
+                  leadingEntries={agentSetupOffer?.entries ?? null}
+                  assistantMessageFooter={
+                    agentSetupOffer?.messageFooter({
+                      send: sendAgentSetupReplyStable,
+                      focusComposer: focusComposerStable,
+                    }) ?? null
+                  }
                   activeThreadKey={activeThreadKey}
                   syncing={threadSyncPhase !== null}
                   detailLoading={threadDetailLoading}
@@ -3672,7 +3696,7 @@ export default function ChatView(props: ChatViewProps) {
                   {...(activeProject && isProductFeatureShown("terminal")
                     ? { onRunShellCommand: parentPanel?.runShellCommand ?? runShellCommandStable }
                     : {})}
-                  isWorking={isWorking || setupOfferPreview?.working === true}
+                  isWorking={isWorking}
                   runlessWorkActive={runlessWorkStartedAt !== null}
                   isCompacting={isCompacting}
                   awaitingUser={
@@ -3704,7 +3728,7 @@ export default function ChatView(props: ChatViewProps) {
                     : {})}
                   {...(onOpenWorktreeSetupTerminal ? { onOpenWorktreeSetupTerminal } : {})}
                   isPreparingWorktree={isPreparingWorktree}
-                  footer={setupOfferPreview?.footer ?? timelineFooter}
+                  footer={timelineFooter}
                   listRef={legendListRef}
                   runs={serverProjection?.runs ?? []}
                   latestRun={activeActivityRun}

@@ -12,6 +12,8 @@ import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { TerminalViewport } from "../ThreadTerminalDrawer";
 
+const CHAT_TERMINAL_FONT_SIZE = 14;
+
 export interface SetupTerminalSession {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -34,6 +36,7 @@ export function SetupTerminal({
   showTerminal,
   onSessionExited,
   autoFocus = true,
+  textSize = "small",
 }: {
   readonly session: SetupTerminalSession;
   readonly status: ReactNode;
@@ -43,6 +46,8 @@ export function SetupTerminal({
   readonly onSessionExited: () => void;
   /** Off where the card can remount, as in the virtualized chat, so it never takes focus back. */
   readonly autoFocus?: boolean;
+  /** "chat": the chat's body size, in a card inside a conversation. */
+  readonly textSize?: "small" | "chat";
 }) {
   const [advancedTypography] = useLocalStorage(
     TYPOGRAPHY_ADVANCED_STORAGE_KEY,
@@ -55,7 +60,15 @@ export function SetupTerminal({
       className="mt-4 overflow-hidden rounded-lg border border-border/70 bg-background text-foreground"
     >
       <div className="flex items-center justify-between border-b border-border/60 bg-background/60 px-3 py-1.5">
-        <span className="text-2xs font-medium text-muted-foreground">{status}</span>
+        <span
+          className={
+            textSize === "chat"
+              ? "text-base font-medium text-muted-foreground sm:text-sm"
+              : "text-2xs font-medium text-muted-foreground"
+          }
+        >
+          {status}
+        </span>
         <div className="flex items-center gap-1">{actions}</div>
       </div>
       <div className="h-64">
@@ -74,6 +87,7 @@ export function SetupTerminal({
             autoFocus={autoFocus}
             visible
             keybindings={session.keybindings}
+            {...(textSize === "chat" ? { fontSize: CHAT_TERMINAL_FONT_SIZE } : {})}
           />
         ) : null}
       </div>

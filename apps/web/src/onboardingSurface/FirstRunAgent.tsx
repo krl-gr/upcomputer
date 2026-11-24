@@ -12,6 +12,7 @@ import { serverEnvironment } from "../state/server";
 import { environmentThreadShells } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { getOnboardingProviderState } from "../onboarding/providerReadiness.logic";
+import { shouldCreateAgentSetupOffer, updateAgentSetupOfferRecord } from "./agentSetupOffer.logic";
 import { updateNoAgentScreenRecord } from "./noAgentScreenRecord";
 import {
   countReadyOnboardingProviders,
@@ -386,6 +387,11 @@ export function FirstRunAgentStarter({
     completed.current = true;
     // A later launch without a working agent no longer shows the no-agent screen.
     updateNoAgentScreenRecord((record) => record && { ...record, agentWorked: true });
+    updateAgentSetupOfferRecord((existing) =>
+      shouldCreateAgentSetupOffer({ existing, source: setup.source, providers })
+        ? { createdAt: Date.now(), threadId: null, state: "open" }
+        : existing,
+    );
     // An install from the screen on a later launch still reports its `ready`.
     if (!onboardingCompleted || setup.source !== null) {
       recordClientEvent(environmentId, {
@@ -411,7 +417,15 @@ export function FirstRunAgentStarter({
       .catch(() => {
         completed.current = false;
       });
-  }, [environmentId, onboardingCompleted, ready, recordClientEvent, setSetup, setup.source]);
+  }, [
+    environmentId,
+    onboardingCompleted,
+    providers,
+    ready,
+    recordClientEvent,
+    setSetup,
+    setup.source,
+  ]);
 
   // Only a window that onboarded a new user starts this, so installs onboarded
   // before never report it, and an app closed sooner reports nothing.

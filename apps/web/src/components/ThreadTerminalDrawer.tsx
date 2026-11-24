@@ -485,6 +485,8 @@ interface TerminalViewportProps {
   autoFocus?: boolean;
   visible: boolean;
   keybindings: ResolvedKeybindingsConfig;
+  /** Overrides the terminal font size from Settings, in px. */
+  fontSize?: number;
 }
 
 interface TerminalLaunchLocation {
@@ -520,6 +522,7 @@ function TerminalSessionViewport({
   autoFocus = false,
   visible,
   keybindings,
+  fontSize,
 }: TerminalViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const autoFocusedRef = useRef(false);
@@ -609,13 +612,14 @@ function TerminalSessionViewport({
       terminal: settings.fontFamilyTerminal,
     }),
   );
-  const terminalFontSize = useClientSettings((settings) =>
+  const settingsFontSize = useClientSettings((settings) =>
     resolveTerminalFontSizePreference({
       advanced: advancedTypography,
       code: settings.fontSizeCode,
       terminal: settings.fontSizeTerminal,
     }),
   );
+  const terminalFontSize = fontSize ?? settingsFontSize;
   const terminalFontRef = useRef({ family: terminalFontFamily, size: terminalFontSize });
   // Keyed by the launch (see TerminalViewport), so the atom is fixed for this surface.
   const terminalSessionAtom = attachedTerminalSessionAtom(environmentId, {

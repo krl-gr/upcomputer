@@ -21,6 +21,7 @@ export function ThreadTimeline({
   threadDetailRef,
   entriesInput,
   draftEntries,
+  leadingEntries,
   activeThreadKey,
   syncing,
   detailLoading,
@@ -31,6 +32,8 @@ export function ThreadTimeline({
   entriesInput: Omit<TimelineEntriesInput, "visibleTurnItems">;
   /** A local draft's optimistic rows; null for a server thread. */
   draftEntries: ReadonlyArray<TimelineEntry> | null;
+  /** App-written rows before a server thread's own; a draft has them in `draftEntries`. */
+  leadingEntries: ReadonlyArray<TimelineEntry> | null;
   activeThreadKey: string | null;
   syncing: boolean;
   detailLoading: boolean;
@@ -40,7 +43,9 @@ export function ThreadTimeline({
     ...entriesInput,
     visibleTurnItems,
   });
-  const entries = draftEntries ?? serverEntries;
+  const entries =
+    draftEntries ??
+    (leadingEntries === null ? serverEntries : [...leadingEntries, ...serverEntries]);
   const displayedEntries = resolveThreadSwitchTimeline({
     loading: entries.length === 0 && syncing,
     activeThreadKey,

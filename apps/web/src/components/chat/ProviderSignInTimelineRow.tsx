@@ -16,6 +16,7 @@ import { useEnvironmentScope } from "../../state/session";
 import { terminalEnvironment } from "../../state/terminal";
 import { useKnownTerminalSessions } from "../../state/terminalSessions";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { SwitchChatToSignedInAgent } from "../../onboardingSurface/SwitchChatToSignedInAgent";
 import { SetupTerminal } from "../onboarding/SetupTerminal";
 import { ProviderAuthenticationSection } from "../settings/ProviderAuthenticationSection";
 import { readAntigravityAuthMethod, ProviderSetupSection } from "../settings/ProviderSetupSection";
@@ -28,17 +29,32 @@ type ProviderSignInRow = Extract<TimelineRow, { kind: "provider-sign-in" }>;
 export function ProviderSignInTimelineRow({ row }: { row: ProviderSignInRow }) {
   const ctx = use(TimelineRowCtx);
   const environmentId = ctx.threadRef?.environmentId ?? ctx.activeThreadEnvironmentId;
-  return row.surface.kind === "terminal" ? (
-    <SignInTerminal
-      environmentId={environmentId}
-      threadId={row.sourceThreadId}
-      terminalId={row.surface.terminalId}
-    />
-  ) : (
-    <AppSetup
-      environmentId={environmentId}
-      instanceId={ProviderInstanceId.make(row.surface.instanceId)}
-    />
+  const instanceId =
+    row.surface.kind === "terminal"
+      ? providerSignInInstanceId(row.surface.terminalId)
+      : row.surface.instanceId;
+  return (
+    <>
+      {row.surface.kind === "terminal" ? (
+        <SignInTerminal
+          environmentId={environmentId}
+          threadId={row.sourceThreadId}
+          terminalId={row.surface.terminalId}
+        />
+      ) : (
+        <AppSetup
+          environmentId={environmentId}
+          instanceId={ProviderInstanceId.make(row.surface.instanceId)}
+        />
+      )}
+      {instanceId === null ? null : (
+        <SwitchChatToSignedInAgent
+          environmentId={environmentId}
+          threadId={row.sourceThreadId}
+          instanceId={ProviderInstanceId.make(instanceId)}
+        />
+      )}
+    </>
   );
 }
 
@@ -96,6 +112,7 @@ function SignInTerminal({
         }}
         showTerminal
         autoFocus={false}
+        textSize="chat"
         onSessionExited={() => undefined}
         status={
           canOperateTerminal
@@ -104,7 +121,7 @@ function SignInTerminal({
         }
         actions={
           <Button
-            size="xs"
+            size="sm"
             variant="ghost-muted"
             disabled={!canOperateTerminal}
             onClick={() =>
