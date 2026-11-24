@@ -105,6 +105,7 @@ describe("FREE_AGENT_SETUP_INSTRUCTIONS", () => {
 
   it("asks for the plan, installs, signs in through the tool and checks", () => {
     const step = (prefix: string) => lines.find((line) => line.startsWith(prefix)) ?? "";
+    expect(step("1.")).toMatch(/^1\. Before you install anything, ask once/);
     expect(step("1.")).toContain("Claude Pro or Max");
     expect(step("1.")).toContain("ChatGPT Plus, Pro or Business");
     expect(step("2.")).toContain("https://claude.ai/install.sh");
