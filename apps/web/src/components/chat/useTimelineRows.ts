@@ -1,7 +1,10 @@
+import type { OrchestrationV2Run, RunId } from "@t3tools/contracts";
 import { useLocale, useMessages } from "gt-react";
 import { useState } from "react";
+import { shallow } from "zustand/vanilla/shallow";
 import {
   computeStableMessagesTimelineRows,
+  finishedRunElapsedMs,
   handoffRunsSignature,
   type MessagesTimelineRowsInput,
   sameRowsInput,
@@ -33,6 +36,21 @@ export function useStableHandoffRuns(
           modelSelection: run.modelSelection,
         }));
   setState({ source: runs, signature, value });
+  return value;
+}
+
+/** `finishedRunElapsedMs`, keeping its identity until a run finishes so streamed events reuse rows. */
+export function useFinishedRunElapsedMs(
+  runs: ReadonlyArray<Pick<OrchestrationV2Run, "id" | "startedAt" | "completedAt">>,
+): ReadonlyMap<RunId, number> {
+  const [state, setState] = useState<{
+    readonly source: typeof runs | null;
+    readonly value: ReadonlyMap<RunId, number>;
+  }>({ source: null, value: new Map() });
+  if (state.source === runs) return state.value;
+  const next = finishedRunElapsedMs(runs);
+  const value = shallow(state.value, next) ? state.value : next;
+  setState({ source: runs, value });
   return value;
 }
 

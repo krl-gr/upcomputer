@@ -1489,6 +1489,80 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
   });
 
+  it("keeps a finished turn's duration once a later turn starts", () => {
+    const time = (seconds: number) => new Date(Date.UTC(2026, 0, 1) + seconds * 1000).toISOString();
+    const message = (
+      id: string,
+      role: "user" | "assistant",
+      seconds: number,
+      runId: string | null,
+    ) => ({
+      id: `${id}-entry`,
+      kind: "message" as const,
+      createdAt: time(seconds),
+      message: {
+        id: MessageId.make(id),
+        role,
+        text: id,
+        runId: runId === null ? null : RunId.make(runId),
+        createdAt: time(seconds),
+        updatedAt: time(seconds),
+        streaming: false,
+      },
+    });
+    const firstTurn = [
+      message("prompt-1", "user", 0, null),
+      {
+        id: "work-entry",
+        kind: "work" as const,
+        createdAt: time(5),
+        entry: {
+          id: "work",
+          createdAt: time(5),
+          runId: RunId.make("turn-1"),
+          label: "Ran command",
+          tone: "tool" as const,
+        },
+      },
+      message("reply-1", "assistant", 11, "turn-1"),
+    ];
+    const firstRun = { startedAt: time(1.7), completedAt: time(11) };
+    const foldLabel = (rows: ReturnType<typeof deriveMessagesTimelineRows>) =>
+      rows.find(
+        (row): row is Extract<(typeof rows)[number], { kind: "turn-fold" }> =>
+          row.kind === "turn-fold" && row.runId === "turn-1",
+      )?.label;
+    const settled = foldLabel(
+      deriveMessagesTimelineRows({
+        timelineEntries: firstTurn,
+        latestRun: { runId: RunId.make("turn-1"), status: "completed", ...firstRun },
+        finishedRunElapsedMs: new Map([[RunId.make("turn-1"), 9_300]]),
+        isWorking: false,
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      }),
+    );
+    expect(settled).toBe("Worked for 9.3s");
+    // The QA saw "Worked for 9.3s" become "Worked for 11s" once the next message was sent.
+    const later = foldLabel(
+      deriveMessagesTimelineRows({
+        timelineEntries: [...firstTurn, message("prompt-2", "user", 20, null)],
+        latestRun: {
+          runId: RunId.make("turn-2"),
+          status: "running",
+          startedAt: time(20),
+          completedAt: null,
+        },
+        finishedRunElapsedMs: new Map([[RunId.make("turn-1"), 9_300]]),
+        isWorking: true,
+        activeTurnStartedAt: time(20),
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      }),
+    );
+    expect(later).toBe(settled);
+  });
+
   it.each(["steer", "promoted_queued_to_steer"] as const)(
     "keeps the duration header at the initiating prompt when %s arrives before output",
     (inputIntent) => {
