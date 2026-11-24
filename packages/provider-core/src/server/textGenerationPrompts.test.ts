@@ -29,6 +29,8 @@ describe("buildThreadTitlePrompt", () => {
       expect(prompt).toContain('Never include the project name ("Hyperdrive")');
       expect(prompt).not.toContain("fewer than 40 characters");
       expect(prompt).toContain("Title instructions from the user:\nPrefix every title");
+      // A small title model answered "Which model are you?" about itself.
+      expect(prompt).toContain("written to the thread's agent, not to you");
     }
     expect(buildThreadTitlePrompt({ message: "Fix login", instructions: " " }).prompt).toContain(
       "3-8 words, fewer than 40 characters.",
