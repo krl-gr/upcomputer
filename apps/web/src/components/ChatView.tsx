@@ -49,6 +49,7 @@ import type { ProviderFailureAction } from "@t3tools/client-runtime/state/turn-i
 import {
   isThreadEnvironmentLocked,
   resolveDraftHeroState,
+  threadErrorBannerRepeatsFailureCard,
   threadErrorIsServerRuntime,
 } from "./ChatView.logic";
 import { useQueuedRunEdit } from "./chat/useQueuedRunEdit";
@@ -1090,10 +1091,13 @@ export default function ChatView(props: ChatViewProps) {
     recovery: activeThreadShell?.limitRecovery,
     snoozedUntil: activeThreadShell?.snoozedUntil,
   });
-  const timelineThreadError =
-    limitRecoveryRun !== null && visibleThreadError === serverRuntime?.lastError
-      ? null
-      : visibleThreadError;
+  const timelineThreadError = threadErrorBannerRepeatsFailureCard({
+    error: visibleThreadError,
+    runtimeError: serverRuntime?.lastError ?? null,
+    runtimeErrorClass: serverRuntime?.lastErrorClass ?? null,
+  })
+    ? null
+    : visibleThreadError;
 
   const [timelineAnchor, setTimelineAnchor] = useState<{
     readonly threadKey: string | null;
@@ -3656,10 +3660,11 @@ export default function ChatView(props: ChatViewProps) {
               setThreadError={setThreadError}
               setThreadErrorBannerDismissTick={setThreadErrorBannerDismissTick}
             />
-            {/* UpComputer: isolate keeps the right-edge minimap's z-index under the docked details card. */}
+            {/* UpComputer: isolate keeps the right-edge minimap's z-index under the docked details card.
+                The top padding starts the timeline below the banners (ChatBannerLane). */}
             <div
               {...conversationArea}
-              className="relative isolate flex min-h-0 flex-1 flex-col bg-background group-has-[[data-chat-header-hidden]]/chat-column:-mt-[var(--workspace-topbar-height)]"
+              className="relative isolate flex min-h-0 flex-1 flex-col bg-background pt-(--chat-banner-lane-height,0px) group-has-[[data-chat-header-hidden]]/chat-column:-mt-[var(--workspace-topbar-height)]"
             >
               <WorkspaceMutationIdContext value={workspaceMutationId}>
                 <ThreadTimeline

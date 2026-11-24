@@ -76,7 +76,9 @@ function promptTextOf(
   change: PromptChange,
   texts: UserTexts,
   states: InstructionUpdateStates,
-): { readonly kind: "shipped" | "edited" } | { readonly kind: "waits"; readonly on: string } {
+):
+  | { readonly kind: "shipped" | "edited" }
+  | { readonly kind: "waits" | "kept"; readonly on: string } {
   const { field } = change;
   const current = texts.prompts[field];
   if (current === change.before || current === change.after) return { kind: "shipped" };
@@ -89,9 +91,9 @@ function promptTextOf(
     ),
   );
   const state = earlier === undefined ? undefined : states.get(earlier.id);
-  return earlier !== undefined && state !== undefined && isPendingInstructionUpdate(state)
-    ? { kind: "waits", on: earlier.id }
-    : { kind: "edited" };
+  if (earlier === undefined || state === undefined) return { kind: "edited" };
+  if (isPendingInstructionUpdate(state)) return { kind: "waits", on: earlier.id };
+  return state === "kept" ? { kind: "kept", on: earlier.id } : { kind: "edited" };
 }
 
 /** The pending earlier entry this one waits for, when its texts are still that entry's defaults. */
@@ -109,6 +111,27 @@ export function waitsForOf(
 }
 
 /**
+ * The kept earlier entry whose default text this one would change, when that is all
+ * the user's text it touches: the text is one they kept, not one they edited.
+ */
+export function keptFromOf(
+  entry: InstructionUpdateEntry,
+  texts: UserTexts,
+  states: InstructionUpdateStates,
+  edited: EditedText,
+): string | undefined {
+  if (edited.mentions.length > 0) return undefined;
+  let keptFrom: string | undefined;
+  for (const change of entry.changes) {
+    if (change.kind !== "prompt") continue;
+    const text = promptTextOf(entry, change, texts, states);
+    if (text.kind === "edited") return undefined;
+    if (text.kind === "kept") keptFrom ??= text.on;
+  }
+  return keptFrom;
+}
+
+/**
  * The texts an entry would change that the user wrote or edited. Shipped
  * defaults the user left alone are not counted: replacing those is the update.
  */
@@ -120,8 +143,8 @@ export function editedTextOf(
   const editedFields: TaskPromptField[] = [];
   for (const change of entry.changes) {
     if (change.kind !== "prompt") continue;
-    if (promptTextOf(entry, change, texts, states).kind === "edited")
-      editedFields.push(change.field);
+    const { kind } = promptTextOf(entry, change, texts, states);
+    if (kind === "edited" || kind === "kept") editedFields.push(change.field);
   }
   const old = Object.keys(entry.statusRenames ?? {});
   const mentions: Array<EditedText["mentions"][number]> = [];

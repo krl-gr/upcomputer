@@ -9090,6 +9090,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         makeAssistantErrorFrame({
           uuid: "00000000-0000-4000-8000-000000000606",
           error: "authentication_failed",
+          text: "Not logged in · Please run /login",
         }),
         makeResultFrame({
           uuid: "00000000-0000-4000-8000-000000000607",
@@ -9103,7 +9104,14 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       if (terminal.status !== "failed") return;
       assert.equal(
         terminal.failure.message,
-        "Claude Code is signed out. Sign in again in Settings, then send the message again.",
+        "Claude Code isn't signed in. Sign in from Settings → Providers → Connect your agents, then send the message again.",
+      );
+      // The CLI's "/login" notice is no step in Up.computer, so it is not shown as a reply.
+      assert.isFalse(
+        harness.events.some(
+          (event) =>
+            event.type === "turn_item.updated" && event.turnItem.type === "assistant_message",
+        ),
       );
       assert.equal(terminal.failure.code, "authentication_failed");
       assert.equal(terminal.failure.class, "permission_error");

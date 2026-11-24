@@ -6,6 +6,10 @@ import type {
 import { msg } from "gt-react";
 
 import { m, type MessageResolver } from "../../i18n/messages";
+import {
+  hasOneClickUpdateProviderCandidate,
+  isProviderUpdateCandidate,
+} from "../ProviderUpdateLaunchNotification.logic";
 
 export const PROVIDER_STATUS_STYLES = {
   // UpComputer: not reported yet, or its first check is still running.
@@ -183,7 +187,11 @@ export function getProviderVersionAdvisoryPresentation(
     // Latest package versions cannot be updated into recommendations requiring another package.
     const isAlreadyLatest = advisory?.status === "current";
     return {
-      title: resolve(COMPATIBILITY_TITLES[compatibility.status]),
+      // UpComputer: an old version an update fixes is not alarming news, just a step.
+      title:
+        compatibility.status === "broken" && !latestIsIncompatible
+          ? resolve(msg("Update required"))
+          : resolve(COMPATIBILITY_TITLES[compatibility.status]),
       detail:
         compatibility.message ??
         (recommendation
@@ -246,4 +254,56 @@ export function withoutManagedOpenCodeNote(
   }
   const { compatibilityAdvisory: _note, ...rest } = provider;
   return rest;
+}
+
+/** UpComputer: the oldest version with full support, from the recommendation or a `>=` range. */
+function providerCompatibilityFloor(
+  compatibility: Pick<
+    ServerProviderCompatibilityAdvisory,
+    "recommendedVersion" | "recommendedRange"
+  >,
+): string | null {
+  if (compatibility.recommendedVersion) return compatibility.recommendedVersion;
+  return /^>=\s*(\d[\w.+-]*)$/.exec(compatibility.recommendedRange?.trim() ?? "")?.[1] ?? null;
+}
+
+/** UpComputer: the row names Update all only when that button updates this install. */
+export function providerRowCanUpdateAll(
+  provider: ServerProvider | undefined,
+  providers: ReadonlyArray<ServerProvider>,
+): boolean {
+  return (
+    provider !== undefined &&
+    isProviderUpdateCandidate(provider) &&
+    hasOneClickUpdateProviderCandidate(provider, providers)
+  );
+}
+
+/**
+ * UpComputer: the provider row's note for an old version: the version to reach and how,
+ * rather than a bare "Incompatible". When updating cannot help, the plain status stays.
+ */
+export function providerCompatibilityRowHint(
+  compatibility: ServerProviderCompatibilityAdvisory,
+  canUpdateAll: boolean,
+  resolve: MessageResolver = m,
+): string {
+  const latestIsIncompatible =
+    compatibility.latestVersionStatus === "broken" ||
+    compatibility.latestVersionStatus === "unsupported";
+  const floor = providerCompatibilityFloor(compatibility);
+  const plain =
+    compatibility.status === "broken"
+      ? resolve(msg("Incompatible"))
+      : compatibility.status === "unsupported"
+        ? resolve(msg("Unsupported"))
+        : resolve(msg("Limited support"));
+  if (latestIsIncompatible || floor === null) return plain;
+  const version = getProviderVersionLabel(floor) ?? floor;
+  const update = canUpdateAll
+    ? resolve(msg("Update to {version} or newer with Update all", { version }))
+    : resolve(msg("Update to {version} or newer", { version }));
+  return compatibility.status === "graceful"
+    ? resolve(msg("Limited support. {update}", { update }))
+    : update;
 }

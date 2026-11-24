@@ -123,6 +123,8 @@ function UpdateRow({
   const decided = status.state === "applied" || status.state === "kept";
   const waitsFor =
     status.waitsFor === undefined ? undefined : instructionUpdateById(status.waitsFor);
+  const keptFrom =
+    status.keptFrom === undefined ? undefined : instructionUpdateById(status.keptFrom);
   // The clicked button unmounts with the state it sets. Its replacement takes focus, or the
   // app's focus recovery would move it to the instructions editor below.
   const focusReplacement = useRef(false);
@@ -179,9 +181,17 @@ function UpdateRow({
               {decided
                 ? decisionNote(gt, locale, status)
                 : mode === "auto" && status.touchesEditedText
-                  ? gt("Up.computer {release} · Changes text you edited, so it waits for you", {
-                      release: entry.release,
-                    })
+                  ? keptFrom !== undefined
+                    ? gt(
+                        "Up.computer {release} · Builds on “{update}”, which you kept, so it waits for you",
+                        {
+                          release: entry.release,
+                          update: instructionUpdateCopy(gt, keptFrom).title,
+                        },
+                      )
+                    : gt("Up.computer {release} · Changes text you edited, so it waits for you", {
+                        release: entry.release,
+                      })
                   : mode === "auto" && waitsFor !== undefined
                     ? gt(
                         "Up.computer {release} · Applies automatically once “{update}” is applied",

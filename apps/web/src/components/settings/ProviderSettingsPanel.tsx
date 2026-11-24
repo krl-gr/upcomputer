@@ -48,7 +48,11 @@ import { msg, T, useGT, useMessages, Var } from "gt-react";
 import { m as resolveNow, type MessageResolver } from "../../i18n/messages";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
-import { isManagedOpenCodeBinaryPath, withoutManagedOpenCodeNote } from "./providerStatus";
+import {
+  isManagedOpenCodeBinaryPath,
+  providerRowCanUpdateAll,
+  withoutManagedOpenCodeNote,
+} from "./providerStatus";
 import {
   useEnvironmentSettings,
   usePersistEnvironmentProviderInstanceMutation,
@@ -1011,6 +1015,10 @@ export function EnvironmentProviderSettings({
           configuredBinaryPath(row.explicitInstance?.config),
         )}
         isUpdateDispatching={updatingProviderInstanceIds.has(row.instanceId)}
+        canUpdateAll={providerRowCanUpdateAll(
+          serverProviders.find((candidate) => candidate.instanceId === row.instanceId),
+          serverProviders,
+        )}
         showProjectOverride={showProjectOverride}
         projectOverrideValue={
           showProjectOverride
@@ -1325,6 +1333,7 @@ function ProviderInstanceRow({
   canWriteSettings,
   liveProvider,
   isUpdateDispatching,
+  canUpdateAll,
   showProjectOverride,
   projectOverrideValue,
   projectOverrideEffectiveEnabled,
@@ -1345,6 +1354,7 @@ function ProviderInstanceRow({
   readonly canWriteSettings: boolean;
   readonly liveProvider: ServerProvider | undefined;
   readonly isUpdateDispatching: boolean;
+  readonly canUpdateAll: boolean;
   readonly showProjectOverride: boolean;
   readonly projectOverrideValue: boolean | undefined;
   readonly projectOverrideEffectiveEnabled: boolean;
@@ -1554,6 +1564,7 @@ function ProviderInstanceRow({
           : undefined
       }
       isUpdating={isInstanceUpdateRunning}
+      canUpdateAll={canUpdateAll}
     />
   );
 }

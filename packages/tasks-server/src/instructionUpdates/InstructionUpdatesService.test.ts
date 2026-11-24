@@ -294,6 +294,8 @@ it.effect("text the user kept or edited still makes the later entry wait", () =>
     assert.strictEqual(kept?.state, "pending");
     assert.isTrue(kept?.touchesEditedText);
     assert.isUndefined(kept?.waitsFor);
+    // The text is the default the user kept, not one they edited, and the row says so.
+    assert.strictEqual(kept?.keptFrom, ENTRY);
   }).pipe(Effect.provide(layer())),
 );
 

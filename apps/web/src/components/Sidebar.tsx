@@ -285,7 +285,11 @@ import {
   projectKeysInComputerScope,
 } from "../sidebarComputers/sidebarComputers.logic";
 import { productThreadActions, runProductThreadAction } from "../product/threadActions";
-import { useClaimedSidebarThreadKeys } from "../product/sidebarThreadClaims";
+import {
+  holdsAllSidebarThreads,
+  isSidebarThreadClaimed,
+  useClaimedSidebarThreadKeys,
+} from "../product/sidebarThreadClaims";
 import { useDraftFirstSendPending } from "../draftFirstSend";
 import { TooltipProvider } from "./ui/tooltip";
 import {
@@ -693,7 +697,11 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   // A bot's chat is listed under Bots, so Threads leaves it out.
   const claimed: EnvironmentThreadShell[] = [];
   const visible = scoped.filter((thread) => {
-    const listed = !claimedThreadKeys.has(threadShellKey(thread));
+    const listed = !isSidebarThreadClaimed(
+      claimedThreadKeys,
+      thread.environmentId,
+      threadShellKey(thread),
+    );
     if (!listed) claimed.push(thread);
     return listed;
   });
@@ -1459,6 +1467,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       workspaceSettled,
       workspaceDelivered: workspaceDelivery.delivered,
     });
+  const threadsHeldForBots = holdsAllSidebarThreads(useClaimedSidebarThreadKeys());
   const sidebarWaiting =
     sidebarEmptyState === "waiting"
       ? describeWorkspaceWaiting(
@@ -3881,6 +3890,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           {!isSearchingThreads &&
           threadListShown &&
           sidebarEmptyState !== "hidden" &&
+          !threadsHeldForBots &&
           !routeDraftFirstSendPending &&
           visibleDraftSessionCount === 0 &&
           scopeHidesActiveThreads ? (
