@@ -9,7 +9,7 @@ import { assert, describe, test } from "vite-plus/test";
 
 import { DEFAULT_STATUS_GROUP_ORDER, LEGACY_STATUS_GROUP_ORDER } from "../ui/taskStatusGroups.ts";
 import { beforeAfterListLines } from "./BeforeAfterText.tsx";
-import { instructionUpdateCopy } from "./instructionUpdateCopy.ts";
+import { instructionUpdateCopy, instructionUpdatesNoticeDetail } from "./instructionUpdateCopy.ts";
 import { instructionUpdatesView, withInstructionUpdates } from "./workflowUpdates.ts";
 
 const ENTRY = "task-statuses-v2";
@@ -67,6 +67,43 @@ describe("entry copy", () => {
         entry.id,
       );
     }
+  });
+});
+
+describe("the bell's card", () => {
+  const notice = (mode: "ask" | "auto", ...statuses: ReturnType<typeof status>[]) =>
+    instructionUpdatesNoticeDetail(gtFallback, instructionUpdatesView({ mode, entries: statuses }));
+
+  test("says what waits for whom in the install's mode", () => {
+    const touching = { ...status(ENTRY, "pending"), touchesEditedText: true };
+    assert.include(notice("ask", status(ENTRY, "pending")), "Nothing changes until you decide.");
+    // In Apply automatically mode the rest applied by itself; this one waits for a reason.
+    assert.notInclude(notice("auto", touching), "Nothing changes until you decide");
+    assert.include(notice("auto", touching), "changes your own text, so it waits for you");
+    const waiting = { ...status("bot-vs-worker-agent-creation", "pending"), waitsFor: ENTRY };
+    assert.include(
+      notice("auto", waiting),
+      "applies by itself once “We updated how task statuses work” is applied",
+    );
+    // Before any decision only the first touches edited text; the second waits for it.
+    assert.notInclude(notice("auto", touching, waiting), "These change your own text");
+    assert.include(
+      notice("auto", touching, waiting),
+      "Some change your own text, and the rest build on those",
+    );
+    const touchingBoth = { ...waiting, touchesEditedText: true };
+    assert.include(notice("auto", touching, touchingBoth), "These change your own text");
+    // After "Keep mine" the second builds on the kept one; it did not touch the user's text.
+    const kept = {
+      ...status("bot-vs-worker-agent-creation", "pending"),
+      touchesEditedText: true,
+      keptFrom: ENTRY,
+    };
+    assert.notInclude(notice("auto", kept), "changes your own text");
+    assert.include(
+      notice("auto", kept),
+      "builds on “We updated how task statuses work”, which you kept, so it waits for you",
+    );
   });
 });
 

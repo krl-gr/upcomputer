@@ -18,6 +18,7 @@ import { resolveThreadLastVisitedAt } from "../../../../apps/web/src/components/
 import { useUiStateStore } from "../../../../apps/web/src/uiStateStore.ts";
 import { ConfigurableBotCharacter } from "../../../../apps/web/src/components/bot-character-configurable/ConfigurableBotCharacter.tsx";
 import { holdClientNotice } from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
+import { allSidebarThreadsClaimKey } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
 import {
   readLocalStorageValue,
   writeLocalStorageValue,
@@ -85,11 +86,13 @@ function rememberBotChats(environmentId: EnvironmentId, bots: ReadonlyArray<Bot>
 }
 
 /**
- * The scoped keys of the bot chats each computer had when its list last loaded, for those whose
- * list is loading again, so Threads does not list them until the Bots section does. A computer
- * whose Tasks access is still being checked counts as loading: at startup that check comes first.
+ * The computers whose bot list is loading, each with the chat thread ids its last loaded list
+ * had (undefined when none is remembered). A computer whose Tasks access is still being checked
+ * counts as loading: at startup that check comes first.
  */
-export function rememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string[] {
+function rememberedWhileLoading(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): Array<readonly [EnvironmentId, ReadonlyArray<string> | undefined]> {
   const loading = environmentIds.filter((environmentId) => {
     const access = readTasksWebAccess(environmentId);
     if (access.availability !== "loading" && !access.canReadAgents) return false;
@@ -98,11 +101,42 @@ export function rememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentI
   });
   if (loading.length === 0) return [];
   const remembered = readLocalStorageValue(BOT_CHATS_STORAGE_KEY, {}, BotChats);
-  return loading.flatMap((environmentId) =>
-    (remembered[environmentId] ?? []).map((threadId) =>
-      scopedThreadKey(scopeThreadRef(environmentId, ThreadId.make(threadId))),
-    ),
-  );
+  return loading.map((environmentId) => [environmentId, remembered[environmentId]] as const);
+}
+
+/**
+ * The scoped keys of the bot chats each computer had when its list last loaded, for those whose
+ * list is loading again, so Threads does not list them until the Bots section does. A computer
+ * that serves Tasks but has no remembered list claims all its threads (`allSidebarThreadsClaimKey`)
+ * until its list loads.
+ */
+export function rememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string[] {
+  return rememberedWhileLoading(environmentIds).flatMap(([environmentId, threadIds]) => {
+    if (threadIds !== undefined)
+      return threadIds.map((threadId) =>
+        scopedThreadKey(scopeThreadRef(environmentId, ThreadId.make(threadId))),
+      );
+    // Nothing remembered, as on the first start after an update: any thread may be a bot chat.
+    // Only a computer that serves Tasks is held, as its list then loads or fails.
+    return readTasksWebAccess(environmentId).canReadAgents
+      ? [allSidebarThreadsClaimKey(environmentId)]
+      : [];
+  });
+}
+
+/**
+ * How many bots the loading computers had when their lists last loaded, so the Bots section
+ * keeps their room meanwhile. Null when none is loading or one has nothing remembered.
+ */
+export function rememberedBotCount(environmentIds: ReadonlyArray<EnvironmentId>): number | null {
+  const loading = rememberedWhileLoading(environmentIds);
+  if (loading.length === 0) return null;
+  let count = 0;
+  for (const [, threadIds] of loading) {
+    if (threadIds === undefined) return null;
+    count += threadIds.length;
+  }
+  return count;
 }
 
 type GT = ReturnType<typeof useGT>;
@@ -318,6 +352,12 @@ function useSubscribeBotSectionLists(environmentIds: ReadonlyArray<EnvironmentId
 export function useRememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string {
   const subscribe = useSubscribeBotSectionLists(environmentIds);
   const read = () => rememberedBotChatKeys(environmentIds).join("\n");
+  return useSyncExternalStore(subscribe, read, read);
+}
+
+export function useRememberedBotCount(environmentIds: ReadonlyArray<EnvironmentId>): number | null {
+  const subscribe = useSubscribeBotSectionLists(environmentIds);
+  const read = () => rememberedBotCount(environmentIds);
   return useSyncExternalStore(subscribe, read, read);
 }
 

@@ -85,6 +85,7 @@ import {
   getProviderSummary,
   getProviderVersionLabel,
   providerAuthLabel,
+  providerCompatibilityRowHint,
   type ProviderStatusKey,
 } from "./providerStatus";
 
@@ -732,6 +733,7 @@ interface ProviderInstanceCardProps {
   readonly onRunUpdate?: (() => void) | undefined;
   readonly onInstallRecommended?: (() => void) | undefined;
   readonly isUpdating?: boolean | undefined;
+  readonly canUpdateAll?: boolean | undefined;
   readonly onAcceptUrlAuth?: ((action: AcpRegistryUrlAuthAction) => void) | undefined;
   readonly environmentId?: EnvironmentId | undefined;
   readonly secretSources?: ReadonlyArray<SecretSource>;
@@ -803,6 +805,7 @@ export function ProviderInstanceCard({
   onRunUpdate,
   onInstallRecommended,
   isUpdating = false,
+  canUpdateAll = false,
   onAcceptUrlAuth,
   environmentId,
   acpProjects = EMPTY_ACP_PROJECTS,
@@ -1020,13 +1023,19 @@ export function ProviderInstanceCard({
     ) : null;
   const needsAttention = statusKey === "warning" || statusKey === "error";
   const statusDiagnostic = hasCompatibilityWarning && needsAttention ? summary.detail : null;
-  const inlineStatusDetail = hasCompatibilityWarning
-    ? compatibility?.status === "broken"
-      ? gt("Incompatible")
-      : compatibility?.status === "unsupported"
-        ? gt("Unsupported")
-        : gt("Limited support")
-    : summary.detail;
+  // UpComputer: the next step for an old version, and the sign-in hint when it still applies.
+  const inlineStatusDetail =
+    hasCompatibilityWarning && compatibility
+      ? [
+          providerCompatibilityRowHint(compatibility, canUpdateAll, m),
+          liveProvider?.auth.status === "unauthenticated" &&
+          summary.detail !== compatibility.message
+            ? summary.detail
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : summary.detail;
   const editorStatusNode =
     isAuthenticated && authEmail ? (
       <>

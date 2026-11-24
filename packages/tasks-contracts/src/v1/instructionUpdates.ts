@@ -277,6 +277,11 @@ export const InstructionUpdateStatus = Schema.Struct({
    * by itself only after that one does.
    */
   waitsFor: Schema.optional(TrimmedNonEmptyString),
+  /**
+   * A kept earlier entry whose default text this one would change, when that kept
+   * text is all of the user's text it touches.
+   */
+  keptFrom: Schema.optional(TrimmedNonEmptyString),
 });
 export type InstructionUpdateStatus = typeof InstructionUpdateStatus.Type;
 

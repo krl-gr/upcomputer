@@ -4582,7 +4582,7 @@ it.layer(
           if (configDir === undefined) {
             assert.strictEqual(
               status.message,
-              "Claude Code isn't signed in. Run `claude auth login` in a terminal, then refresh.",
+              "Claude Code isn't signed in. Sign in from Settings → Providers → Connect your agents, or run `claude auth login` in a terminal.",
             );
           } else {
             // A home path is resolved to a native path; an inherited value is kept literal.

@@ -35,6 +35,7 @@ import {
   renamedGroupKey,
   shippedGroupOrder,
   renamedStatuses,
+  keptFromOf,
   touchesEditedText,
   waitsForOf,
   type EditedText,
@@ -182,9 +183,9 @@ const make = Effect.gen(function* () {
         const row = rows.get(entry.id);
         if (row === undefined) return [];
         const edited = editedTextOf(entry, texts, states);
-        const waitsFor = isPendingInstructionUpdate(row.state)
-          ? waitsForOf(entry, texts, states)
-          : undefined;
+        const pending = isPendingInstructionUpdate(row.state);
+        const waitsFor = pending ? waitsForOf(entry, texts, states) : undefined;
+        const keptFrom = pending ? keptFromOf(entry, texts, states, edited) : undefined;
         return [
           {
             id: entry.id,
@@ -193,6 +194,7 @@ const make = Effect.gen(function* () {
             decidedBy: row.decidedBy,
             touchesEditedText: touchesEditedText(edited),
             ...(waitsFor === undefined ? {} : { waitsFor }),
+            ...(keptFrom === undefined ? {} : { keptFrom }),
             entry,
             edited,
           },

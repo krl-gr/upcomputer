@@ -231,6 +231,11 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
                 <InlineButton onClick={() => onOpenProviderSetup(status.instanceId)}>
                   <T>Open provider setup</T>
                 </InlineButton>
+              ) : onOpenProviderSetup && isUnauthenticated ? (
+                // UpComputer: the sign-in the message names is in Settings, Providers.
+                <InlineButton onClick={() => onOpenProviderSetup(status.instanceId)}>
+                  {gt("Open settings")}
+                </InlineButton>
               ) : null}
               <Button
                 aria-label={gt("Refresh {provider} provider status", { provider: providerName })}

@@ -1,7 +1,11 @@
 import { toServerClock } from "@t3tools/client-runtime/clock";
 import { msg } from "gt-react";
 import { m, type MessageResolver } from "../i18n/messages";
-import { type OrchestrationV2ProviderTurn, type RunAttemptId } from "@t3tools/contracts";
+import {
+  type OrchestrationV2ProviderFailureClass,
+  type OrchestrationV2ProviderTurn,
+  type RunAttemptId,
+} from "@t3tools/contracts";
 import {
   deriveLatestThreadRun,
   deriveThreadRuntime,
@@ -1324,6 +1328,17 @@ export function threadErrorIsServerRuntime(input: {
   return (
     input.isServerThread &&
     (input.localServerError === null || input.localServerError === input.runtimeError)
+  );
+}
+
+/** UpComputer: a run's failure has its own card in the timeline, so a banner would only repeat it. */
+export function threadErrorBannerRepeatsFailureCard(input: {
+  readonly error: string | null;
+  readonly runtimeError: string | null;
+  readonly runtimeErrorClass: OrchestrationV2ProviderFailureClass | null;
+}): boolean {
+  return (
+    input.error !== null && input.error === input.runtimeError && input.runtimeErrorClass !== null
   );
 }
 

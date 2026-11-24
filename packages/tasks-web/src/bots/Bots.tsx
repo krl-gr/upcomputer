@@ -116,6 +116,7 @@ import {
   useBotSectionLists,
   useBotStatus,
   useRememberedBotChatKeys,
+  useRememberedBotCount,
   type BotSectionList,
 } from "./botData.tsx";
 
@@ -141,7 +142,7 @@ function useBotLists() {
     () => claimSidebarThreads("bots:remembered", remembered ? remembered.split("\n") : []),
     [remembered],
   );
-  return lists;
+  return { lists, rememberedCount: useRememberedBotCount(environmentIds) };
 }
 
 /** Each computer's bots the sidebar's Projects filter leaves, merged in the lists' order. */
@@ -191,14 +192,63 @@ function openBotChat(
 }
 
 export function SidebarBots() {
-  const lists = useBotLists();
+  const { lists, rememberedCount } = useBotLists();
   const computerScope = useSidebarComputerScope();
   const selected = computerScope === null ? null : ([...computerScope][0] ?? null);
   if (selected !== null && !lists.some((list) => list.environmentId === selected)) {
     return <UnavailableComputerBots environmentId={selected} />;
   }
-  return lists.length > 0 ? <BotsSection lists={lists} /> : null;
+  if (lists.length > 0) return <BotsSection lists={lists} />;
+  return rememberedCount === null ? null : <LoadingBotsSection rows={rememberedCount} />;
 }
+
+/**
+ * The Bots section's room while its lists load, as many rows as they last had, so Threads
+ * below it does not jump when they arrive.
+ */
+function LoadingBotsSection({ rows }: { readonly rows: number }) {
+  const gt = useGT();
+  const [open] = useLocalStorage(BOTS_OPEN_STORAGE_KEY, true, Schema.Boolean);
+  return (
+    <div aria-hidden inert data-bots-loading="">
+      <div className={SIDEBAR_SECTION_GAP}>
+        <SidebarSectionHeader
+          title={gt("Bots")}
+          open={open}
+          onToggle={() => {}}
+          action={
+            <SidebarSectionHeaderAction
+              label={gt("New bot")}
+              track="bots.create"
+              onClick={() => {}}
+            >
+              <PlusIcon />
+            </SidebarSectionHeaderAction>
+          }
+        />
+      </div>
+      {open ? (
+        <div className={`${SIDEBAR_SECTION_HEADER_GAP} ${SIDEBAR_MENU_SCOPE}`}>
+          <SidebarMenu>
+            {rows === 0 ? (
+              <SidebarEmptyRow label={gt("New bot")} disabled onClick={() => {}} />
+            ) : (
+              Array.from({ length: rows }, (_, index) => (
+                <SidebarMenuItem key={index}>
+                  <div className={cn(SIDEBAR_LIST_ROW, SIDEBAR_LIST_ROW_REST)}>
+                    <span className={SIDEBAR_BOT_FACE_SLOT} />
+                  </div>
+                </SidebarMenuItem>
+              ))
+            )}
+          </SidebarMenu>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const BOTS_OPEN_STORAGE_KEY = "upcomputer:bots-open";
 
 /**
  * The Bots section of a picked computer that shows none: offline, its last known bots dimmed
@@ -284,7 +334,7 @@ export function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectio
   const canWrite = useExperimentalFeatureRpcPermission(createOn, BOTS_RPC_METHODS.save);
   const navigate = useNavigate();
   const isActive = useIsBotActive();
-  const [open, setOpen] = useLocalStorage("upcomputer:bots-open", true, Schema.Boolean);
+  const [open, setOpen] = useLocalStorage(BOTS_OPEN_STORAGE_KEY, true, Schema.Boolean);
   // Each bot's chat belongs here, so Threads leaves it out, even while the
   // Projects filter hides its bot; a removed bot's chat returns there with the next list.
   const chatKeys = lists

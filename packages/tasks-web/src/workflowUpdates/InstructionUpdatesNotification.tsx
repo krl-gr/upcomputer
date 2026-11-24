@@ -10,7 +10,7 @@ import {
 } from "../../../../apps/web/src/sidebarNotifications/NotificationCard.tsx";
 import { usePrimaryEnvironmentId } from "../../../../apps/web/src/state/environments.ts";
 import { DiscussUpdatesButton } from "./DiscussUpdatesButton.tsx";
-import { instructionUpdateCopy } from "./instructionUpdateCopy.ts";
+import { instructionUpdateCopy, instructionUpdatesNoticeDetail } from "./instructionUpdateCopy.ts";
 import { INSTRUCTION_UPDATES_ID, instructionUpdateRowId } from "./InstructionUpdatesSection.tsx";
 import { updateInstructionUpdates, useInstructionUpdates } from "./workflowUpdates.ts";
 
@@ -27,11 +27,11 @@ export function InstructionUpdatesNotification({ onClose }: { readonly onClose: 
   const gt = useGT();
   const navigate = useNavigate();
   const environmentId = usePrimaryEnvironmentId();
-  const { notice } = useInstructionUpdates(environmentId);
+  const updates = useInstructionUpdates(environmentId);
+  const { notice } = updates;
   const first = notice[0];
   if (environmentId === null || !first) return null;
   const single = notice.length === 1;
-  const release = notice.at(-1)?.entry.release ?? first.entry.release;
   const openSettings = () => {
     onClose();
     void navigate({
@@ -47,15 +47,7 @@ export function InstructionUpdatesNotification({ onClose }: { readonly onClose: 
           ? instructionUpdateCopy(gt, first.entry).title
           : gt("{count} instruction updates", { count: notice.length })
       }
-      detail={
-        single
-          ? gt("{summary} Nothing changes until you decide.", {
-              summary: instructionUpdateCopy(gt, first.entry).summary,
-            })
-          : gt("Up.computer {release} changed its defaults. Nothing changes until you decide.", {
-              release,
-            })
-      }
+      detail={instructionUpdatesNoticeDetail(gt, updates)}
       below={
         single ? null : (
           <ul className="space-y-1 text-xs leading-4 text-foreground/85">

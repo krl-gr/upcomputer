@@ -1,5 +1,11 @@
-import type { InstructionUpdateChange, InstructionUpdateEntry } from "@t3tools/tasks-contracts/v1";
+import {
+  instructionUpdateById,
+  type InstructionUpdateChange,
+  type InstructionUpdateEntry,
+} from "@t3tools/tasks-contracts/v1";
 import type { useGT } from "gt-react";
+
+import type { InstructionUpdatesView } from "./workflowUpdates.ts";
 
 type GT = ReturnType<typeof useGT>;
 
@@ -70,4 +76,51 @@ export function instructionUpdateChangeLabel(gt: GT, change: InstructionUpdateCh
           return gt("Task execution instructions");
       }
   }
+}
+
+/**
+ * The bell card's text under its title. In Apply automatically mode the card holds only the
+ * updates that did not apply by themselves, so it says why they wait.
+ */
+export function instructionUpdatesNoticeDetail(
+  gt: GT,
+  { mode, notice }: Pick<InstructionUpdatesView, "mode" | "notice">,
+): string {
+  const first = notice[0];
+  if (first === undefined) return "";
+  if (notice.length > 1) {
+    const release = notice.at(-1)?.entry.release ?? first.entry.release;
+    if (mode === "ask") {
+      return gt("Up.computer {release} changed its defaults. Nothing changes until you decide.", {
+        release,
+      });
+    }
+    return notice.every(({ status }) => status.touchesEditedText && status.keptFrom === undefined)
+      ? gt(
+          "Up.computer {release} changed its defaults. These change your own text, so they wait for you.",
+          { release },
+        )
+      : gt(
+          "Up.computer {release} changed its defaults. Some change your own text, and the rest build on those, so they wait for you.",
+          { release },
+        );
+  }
+  const summary = instructionUpdateCopy(gt, first.entry).summary;
+  if (mode === "ask") return gt("{summary} Nothing changes until you decide.", { summary });
+  const keptFrom =
+    first.status.keptFrom === undefined ? undefined : instructionUpdateById(first.status.keptFrom);
+  if (keptFrom !== undefined) {
+    return gt("{summary} It builds on “{update}”, which you kept, so it waits for you.", {
+      summary,
+      update: instructionUpdateCopy(gt, keptFrom).title,
+    });
+  }
+  const waitsFor =
+    first.status.waitsFor === undefined ? undefined : instructionUpdateById(first.status.waitsFor);
+  return waitsFor !== undefined && !first.status.touchesEditedText
+    ? gt("{summary} It applies by itself once “{update}” is applied.", {
+        summary,
+        update: instructionUpdateCopy(gt, waitsFor).title,
+      })
+    : gt("{summary} It changes your own text, so it waits for you.", { summary });
 }

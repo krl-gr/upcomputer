@@ -53,7 +53,7 @@ import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useClientSettings } from "../hooks/useSettings";
 import { projectLinksByKey, type LinkedProjectScopeThread } from "../linkedProjects/projectScope";
-import { claimedSidebarThreadKeys } from "../product/sidebarThreadClaims";
+import { claimedSidebarThreadKeys, isSidebarThreadClaimed } from "../product/sidebarThreadClaims";
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 import { readNavigationThreadShells, readProjects, readThreadShell } from "../state/entities";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
@@ -105,7 +105,11 @@ function readListedThreads() {
   return readNavigationThreadShells().filter(
     (thread) =>
       isListedThreadLineage(thread.lineage) &&
-      !claimed.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
+      !isSidebarThreadClaimed(
+        claimed,
+        thread.environmentId,
+        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+      ),
   );
 }
 

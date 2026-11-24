@@ -149,6 +149,18 @@ const WAITING = install("waiting", {
   mode: "auto",
   entries: [status({ touchesEditedText: true })],
 });
+// Kept the statuses update in Apply automatically mode: the later one builds on its text.
+const KEPT_THEN_WAITS = install("kept-then-waits", {
+  mode: "auto",
+  entries: [
+    status({ state: "kept", decidedAt: TODAY, decidedBy: { kind: "person", name: null } }),
+    status({
+      id: "bot-vs-worker-agent-creation",
+      touchesEditedText: true,
+      keptFrom: "task-statuses-v2",
+    }),
+  ],
+});
 const PHONE = install("phone", { mode: "ask", entries: [status()] }, BOTS);
 
 /** Waits for a popup's opening transition, then copies it into `target`. */
@@ -250,6 +262,7 @@ const BELL_STATES: ReadonlyArray<UiState> = [
       await userEvent.keyboard("{Escape}");
     },
   }),
+  bell("Apply automatically: the card says why the update waits", WAITING),
   bell("after dismiss: the card is gone, the toast says where it went", DISMISSING, {
     settle: async (popup, cell) => {
       const card = popup
@@ -376,6 +389,11 @@ const SETTINGS_STATES: ReadonlyArray<UiState> = [
   settings(
     "Apply automatically: an update that changes edited text waits",
     WAITING,
+    waitForRowState("pending"),
+  ),
+  settings(
+    "Apply automatically, earlier update kept: the later one says it builds on it",
+    KEPT_THEN_WAITS,
     waitForRowState("pending"),
   ),
 ];
