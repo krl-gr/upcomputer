@@ -887,6 +887,16 @@ function codexCyberAccess(
   return descriptor?.type === "select" ? { defaultProgram: descriptor.currentValue } : undefined;
 }
 
+const CODEX_TURN_INSTRUCTIONS_CONTEXT_KEY = "t3_code_onboarding";
+
+function stripTurnOnlyAdditionalContext(
+  context: CodexTurnStartParams["additionalContext"],
+): NonNullable<CodexTurnStartParams["additionalContext"]> | undefined {
+  if (context === undefined) return undefined;
+  const { [CODEX_TURN_INSTRUCTIONS_CONTEXT_KEY]: _turnOnly, ...persistent } = context;
+  return Object.keys(persistent).length > 0 ? persistent : undefined;
+}
+
 export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTurnStartParams")(
   function* (input: {
     readonly nativeThreadId: string;
@@ -957,7 +967,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
     const turnInstructionsContext =
       input.turnInstructions !== undefined && input.turnInstructions.length > 0
         ? {
-            t3_code_onboarding: {
+            [CODEX_TURN_INSTRUCTIONS_CONTEXT_KEY]: {
               kind: "application" as const,
               value: input.turnInstructions,
             },
@@ -7849,10 +7859,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               updated.set(threadId, turnInput);
               return updated;
             });
+            const persistentAdditionalContext = stripTurnOnlyAdditionalContext(
+              turnStartParams.additionalContext,
+            );
             yield* Ref.update(additionalContextByThread, (current) => {
               const next = new Map(current);
-              if (turnStartParams.additionalContext)
-                next.set(threadId, turnStartParams.additionalContext);
+              if (persistentAdditionalContext) next.set(threadId, persistentAdditionalContext);
               else next.delete(threadId);
               return next;
             });
