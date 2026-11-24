@@ -350,6 +350,9 @@ import {
   ClientTelemetryEvent,
   TelemetryInternalDevice,
   TelemetryInternalDeviceError,
+  SetTelemetryPreferenceInput,
+  TelemetryPreference,
+  TelemetryPreferenceError,
   ServerConfig,
   ServerProviderUpdateError,
   ServerProviderUpdateInput,
@@ -577,6 +580,8 @@ export const WS_METHODS = {
   serverCheckOtlpEndpoint: "server.checkOtlpEndpoint",
   serverGetTelemetryInternalDevice: "server.getTelemetryInternalDevice",
   serverSetTelemetryInternalDevice: "server.setTelemetryInternalDevice",
+  serverGetTelemetryPreference: "server.getTelemetryPreference",
+  serverSetTelemetryPreference: "server.setTelemetryPreference",
   serverListTextGeneratorModels: "server.listTextGeneratorModels",
   serverPrepareTriage: "server.prepareTriage",
   serverSignalProcess: "server.signalProcess",
@@ -1081,6 +1086,17 @@ const WsServerSetTelemetryInternalDeviceRpc = Rpc.make(
     error: Schema.Union([EnvironmentAuthorizationError, TelemetryInternalDeviceError]),
   },
 );
+const WsServerGetTelemetryPreferenceRpc = Rpc.make(WS_METHODS.serverGetTelemetryPreference, {
+  payload: Schema.Struct({}),
+  success: TelemetryPreference,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsServerSetTelemetryPreferenceRpc = Rpc.make(WS_METHODS.serverSetTelemetryPreference, {
+  payload: SetTelemetryPreferenceInput,
+  success: TelemetryPreference,
+  error: Schema.Union([EnvironmentAuthorizationError, TelemetryPreferenceError]),
+});
 const WsServerListTextGeneratorModelsRpc = Rpc.make(WS_METHODS.serverListTextGeneratorModels, {
   payload: ListTextGeneratorModelsInput,
   success: ListTextGeneratorModelsResult,
@@ -2359,6 +2375,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerCheckOtlpEndpointRpc,
   WsServerGetTelemetryInternalDeviceRpc,
   WsServerSetTelemetryInternalDeviceRpc,
+  WsServerGetTelemetryPreferenceRpc,
+  WsServerSetTelemetryPreferenceRpc,
   WsServerListTextGeneratorModelsRpc,
   WsServerPrepareTriageRpc,
   WsServerGetUsageSummaryRpc,

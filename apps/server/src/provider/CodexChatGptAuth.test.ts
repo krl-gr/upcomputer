@@ -242,6 +242,8 @@ const makeHarnessFor = Effect.fnUntraced(function* (
     sessionId: undefined,
     internalDevice: Effect.succeed(false),
     setInternalDevice: (enabled) => Effect.succeed(enabled),
+    preference: Effect.succeed({ enabled: true, lockedBy: null }),
+    setUserEnabled: (enabled) => Effect.succeed({ enabled, lockedBy: null }),
     sendNow: () => Effect.succeed(true),
   });
   const auth = yield* makeCodexChatGptAuth({

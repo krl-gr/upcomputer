@@ -7177,12 +7177,19 @@
   ],
   "216ab7514aea1d61": "Commencer sans agent",
   "501ce2d99da8bfd1": "Configurez un agent pour commencer.",
-  "df7fecfae4ac29cf": [
-    "Up.computer collecte des données d’utilisation anonymes pour améliorer l’app. Pour vous désinscrire, consultez la",
+  "3f7787e752b4ec6e": [
+    "Up.computer collecte des données d’utilisation anonymes pour améliorer l’app. Vous pouvez les désactiver dans les",
+    " ",
+    {
+      "t": "Link",
+      "i": 1,
+      "c": "Paramètres"
+    },
+    ". Consultez la",
     " ",
     {
       "t": "a",
-      "i": 1,
+      "i": 2,
       "c": "politique de confidentialité"
     },
     "."
@@ -11006,7 +11013,6 @@
   "76a8f66d44943999": "Consultez vos agents et importez des projets.",
   "6a48fd0a37e725a1": "Mentions légales",
   "b31463a28fbd157a": "Ce que collecte Up.computer : des statistiques d'utilisation de base, jamais vos discussions, fichiers ou mots de passe.",
-  "bd2878e24d439537": "Ce que collecte Up.computer : des statistiques d'utilisation de base, jamais vos discussions, fichiers ou mots de passe. {telemetryOff}",
   "1dde0a09a86963ad": "Mentions relatives aux dépendances, ressources et outils facultatifs utilisés par Up.computer.",
   "e39a57514be028e9": "Consulter",
   "7c0512387c3a42ea": "Stable",
@@ -12284,6 +12290,19 @@
       "v": "v"
     }
   ],
+  "87f235cc2f052d82": "Votre organisation a désactivé les données d’utilisation anonymes.",
+  "5d413e151932b5a0": "Désactivé par la variable d’environnement UPCOMPUTER_TELEMETRY_ENABLED.",
+  "efca95f8da8503ff": "Partager des données d’utilisation anonymes",
+  "105dc8ba736e43ca": [
+    "Des statistiques d’utilisation de base et des rapports d’erreur, jamais vos discussions, fichiers ou mots de passe. Consultez la",
+    " ",
+    {
+      "t": "a",
+      "i": 1,
+      "c": "politique de confidentialité"
+    },
+    "."
+  ],
   "f54364b854a07918": "Aucun hub configuré.",
   "4cf6a373a7535324": "{name} · Désactivé",
   "1d1e9cda847bd398": "La clé de gestion du hub est supprimée de ce serveur. Ses comptes quittent la vue Limites ; le hub lui-même n’est pas touché. Ajoutez-le à nouveau avec l’URL et la clé pour les récupérer.",
@@ -12699,6 +12718,7 @@
   "dc2a999ca67ccf31": "téléphone tablette iPhone iPad iOS Android App Store Google Play QR",
   "6310b97b04ef239f": "Page d’accueil",
   "df9fa3a9cb004b9b": "prise en main configuration premier lancement démarrer agents importer projets",
+  "49e3eaff1327eabc": "télémétrie analytique données d’utilisation suivi confidentialité refuser",
   "3188bc3b3c4508bc": "Politique de confidentialité",
   "901a823214edc8c4": "télémétrie analytique données d’utilisation suivi mentions légales refuser",
   "82136480255a5106": "OTel OTLP télémétrie export points de terminaison journaux traces métriques Grafana",

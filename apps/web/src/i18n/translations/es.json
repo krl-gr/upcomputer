@@ -7176,12 +7176,19 @@
   ],
   "216ab7514aea1d61": "Empezar sin agente",
   "501ce2d99da8bfd1": "Configura un agente para empezar.",
-  "df7fecfae4ac29cf": [
-    "Up.computer recopila datos de uso anónimos para mejorar la app. Para desactivarlo, consulta la",
+  "3f7787e752b4ec6e": [
+    "Up.computer recopila datos de uso anónimos para mejorar la app. Puedes desactivarlo en",
+    " ",
+    {
+      "t": "Link",
+      "i": 1,
+      "c": "Ajustes"
+    },
+    ". Consulta la",
     " ",
     {
       "t": "a",
-      "i": 1,
+      "i": 2,
       "c": "política de privacidad"
     },
     "."
@@ -11004,7 +11011,6 @@
   "76a8f66d44943999": "Consulta tus agentes e importa proyectos.",
   "6a48fd0a37e725a1": "Legal",
   "b31463a28fbd157a": "Qué recopila Up.computer: estadísticas básicas de uso, nunca tus chats, archivos ni contraseñas.",
-  "bd2878e24d439537": "Qué recopila Up.computer: estadísticas básicas de uso, nunca tus chats, archivos ni contraseñas. {telemetryOff}",
   "1dde0a09a86963ad": "Avisos de las dependencias, recursos y herramientas opcionales que usa Up.computer.",
   "e39a57514be028e9": "Revisar",
   "7c0512387c3a42ea": "Estable",
@@ -12279,6 +12285,19 @@
       "v": "v"
     }
   ],
+  "87f235cc2f052d82": "Tu organización desactivó los datos de uso anónimos.",
+  "5d413e151932b5a0": "Desactivado por la variable de entorno UPCOMPUTER_TELEMETRY_ENABLED.",
+  "efca95f8da8503ff": "Compartir datos de uso anónimos",
+  "105dc8ba736e43ca": [
+    "Estadísticas básicas de uso e informes de errores, nunca tus chats, archivos ni contraseñas. Consulta la",
+    " ",
+    {
+      "t": "a",
+      "i": 1,
+      "c": "política de privacidad"
+    },
+    "."
+  ],
   "f54364b854a07918": "No hay hubs configurados.",
   "4cf6a373a7535324": "{name} · Deshabilitado",
   "1d1e9cda847bd398": "La clave de gestión del hub se elimina de este servidor. Sus cuentas salen de la vista Límites; el hub en sí no se toca. Vuelve a añadirlo con la URL y la clave para recuperarlas.",
@@ -12694,6 +12713,7 @@
   "dc2a999ca67ccf31": "teléfono tableta iPhone iPad iOS Android App Store Google Play QR",
   "6310b97b04ef239f": "Página de bienvenida",
   "df9fa3a9cb004b9b": "bienvenida configuración primer inicio primeros pasos agentes importar proyectos",
+  "49e3eaff1327eabc": "telemetría analítica datos de uso seguimiento privacidad desactivar",
   "3188bc3b3c4508bc": "Política de privacidad",
   "901a823214edc8c4": "telemetría analítica datos de uso seguimiento legal desactivar",
   "82136480255a5106": "OTel OTLP telemetría exportar endpoints registros trazas métricas Grafana",

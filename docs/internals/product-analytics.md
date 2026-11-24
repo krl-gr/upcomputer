@@ -25,33 +25,36 @@ installs that predate the survey qualify without new tracking.
 
 ## Installs and owners
 
-`distinct_id` keeps the rule every build has used: the hashed Codex workspace,
-else the Claude machine id, else the install's anonymous id. It can change when
-someone logs in, and a Codex Team shares one, but keeping it means PostHog charts
-and history never break. Do not change it; add a field instead. Up.computer pins the
-first `distinct_id` an install resolves in its state directory: a provider login
-creates the account file mid-onboarding, and without the pin the next launch
-reported as a new user.
+`distinct_id` is the install id: the hash of a random id in the state directory, which never
+changes for the install. Events also carry it as `installId`, which reports count installs by,
+because builds up to 0.0.40 derived `distinct_id` from the Codex or Claude sign-in files (and
+pinned it in a `telemetry-id` file the server now deletes). Who an install belongs to is a
+separate fact, sent as `install.owner_observed`. Owners are resolved at query time in our own
+store, so a rule can change and apply to all history.
 
-Every event also carries `installId` when the server can save its state: the hash
-of a random id in the state directory, which never changes for the install. If
-that file cannot be written, events still go out under `distinct_id`, as before. Count installs
-with it. Who an install belongs to is a separate fact, sent as
-`install.owner_observed`. Owners are resolved at query time in our own store, so
-a rule can change and apply to all history.
+Identity never comes from a provider. Do not read a provider's sign-in files or derive an id or
+owner from a user's OpenAI, Claude, or other provider account, even hashed: users did not sign in
+to those to be identified by Up.computer.
 
-[Owner sources](../../apps/server/src/telemetry/Identify.ts), strongest first:
-T3 Connect, then the OpenAI and Claude person ids, then the client device. The
-server reports what it can read itself: the linked Connect account and provider
-logins. A connecting client reports its signed-in Connect account and its device,
-which links every environment opened from one phone, browser, or desktop. Use the
-OpenAI `user_id` claim, not the Codex `account_id` (the ChatGPT workspace, which a
-whole Team shares) or the token `sub` (one per login method). Two Connect accounts are never the same person, whatever
-weaker ids they share.
+[Owner sources](../../apps/server/src/telemetry/Identify.ts), strongest first: UpComputer
+Connect, then the client device. The server reports the linked Connect account itself. A
+connecting client reports its signed-in Connect account and its device, which links every
+environment opened from one phone, browser, or desktop. Two Connect accounts are never the same
+person.
 
 Every id is SHA-256 hashed with [one helper](../../packages/shared/src/telemetryId.ts)
 on both sides, so a Connect account hashes the same on the client and the server.
 The server accepts only hashes from clients.
+
+## Opt-out
+
+Three things turn analytics off: `T3CODE_TELEMETRY_ENABLED=false`, a managed policy with
+`telemetry: false`, and the user's **Share anonymous usage data** switch, saved as a
+`telemetry-opt-out` marker in the state directory. The variable and the policy win; the switch
+then shows locked. Switching off drops the buffer and the failed batch and sends no event about
+it. Relay tracing reads the same marker through
+[TelemetryOptOut](../../apps/server/src/telemetry/TelemetryOptOut.ts), and the server reports
+the result to browsers as `observability.relayTracingAllowed`.
 
 ## Test traffic
 

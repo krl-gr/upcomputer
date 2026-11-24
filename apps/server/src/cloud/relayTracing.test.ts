@@ -9,7 +9,7 @@ import { FetchHttpClient } from "effect/http";
 
 import * as ServerConfig from "../config.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
-import { relayLayer } from "./relayTracing.ts";
+import { allowedFor, relayLayer } from "./relayTracing.ts";
 
 const tracesTo = (policy?: ManagedPolicyDocument) =>
   Effect.service(RelayTracing.RelayClientTracer).pipe(
@@ -21,7 +21,7 @@ const tracesTo = (policy?: ManagedPolicyDocument) =>
         Layer.provide(ManagedPolicy.layerTest(policy)),
         Layer.provide(
           ServerConfig.layerTest(process.cwd(), { prefix: "t3-relay-tracing-" }).pipe(
-            Layer.provide(NodeServices.layer),
+            Layer.provideMerge(NodeServices.layer),
           ),
         ),
         Layer.provide(FetchHttpClient.layer),
@@ -42,3 +42,14 @@ it.effect("a policy with telemetry off stops relay tracing to UpComputer Connect
     );
   }),
 );
+
+it("reports the server's relay tracing policy to clients", () => {
+  assert.isTrue(allowedFor({}, undefined));
+  assert.isFalse(allowedFor({ T3CODE_TELEMETRY_ENABLED: "false" }, undefined));
+  assert.isFalse(
+    allowedFor(
+      {},
+      { organization: "Example Corp", lockedSettings: [], limits: { telemetry: false } },
+    ),
+  );
+});

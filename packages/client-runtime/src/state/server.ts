@@ -1942,6 +1942,18 @@ export function createServerEnvironmentAtoms<R, E>(
         key: ({ environmentId }) => environmentId,
       },
     }),
+    getTelemetryPreference: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:get-telemetry-preference",
+      tag: WS_METHODS.serverGetTelemetryPreference,
+    }),
+    setTelemetryPreference: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:set-telemetry-preference",
+      tag: WS_METHODS.serverSetTelemetryPreference,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId }) => environmentId,
+      },
+    }),
     checkSecretSource: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:check-secret-source",
       tag: WS_METHODS.serverCheckSecretSource,

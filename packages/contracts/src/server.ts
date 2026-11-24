@@ -412,6 +412,8 @@ export const ServerObservability = Schema.Struct({
   otlpLogsSource: Schema.optional(OtlpEndpointSource),
   otlpLogsVariable: Schema.optional(TrimmedNonEmptyString),
   otlpLogsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Relay tracing policy for browsers opened from this server. */
+  relayTracingAllowed: Schema.optionalKey(Schema.Boolean),
 });
 export type ServerObservability = typeof ServerObservability.Type;
 
@@ -441,6 +443,28 @@ export class TelemetryInternalDeviceError extends Schema.TaggedError<TelemetryIn
 ) {
   override get message(): string {
     return "Could not change the internal device setting.";
+  }
+}
+
+/**
+ * The install's "Share anonymous usage data" switch. `lockedBy` names what keeps it off
+ * whatever the user picks: an environment variable or the organization's managed policy.
+ */
+export const TelemetryPreference = Schema.Struct({
+  enabled: Schema.Boolean,
+  lockedBy: Schema.NullOr(Schema.Literals(["environment", "policy"])),
+});
+export type TelemetryPreference = typeof TelemetryPreference.Type;
+
+export const SetTelemetryPreferenceInput = Schema.Struct({ enabled: Schema.Boolean });
+export type SetTelemetryPreferenceInput = typeof SetTelemetryPreferenceInput.Type;
+
+export class TelemetryPreferenceError extends Schema.TaggedError<TelemetryPreferenceError>()(
+  "TelemetryPreferenceError",
+  { cause: Schema.optional(Schema.Defect()) },
+) {
+  override get message(): string {
+    return "Could not save the usage data setting.";
   }
 }
 

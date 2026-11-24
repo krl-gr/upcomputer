@@ -104,6 +104,7 @@ import {
   type PullRequestRef,
   type AppView,
   TelemetryInternalDeviceError,
+  TelemetryPreferenceError,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -191,6 +192,8 @@ import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
 import * as ProviderInstallation from "./provider/providerInstallation.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as NpmRelease from "./cloud/npmRelease.ts";
+import * as RelayTracing from "./cloud/relayTracing.ts";
+import * as TelemetryOptOut from "./telemetry/TelemetryOptOut.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
@@ -1575,6 +1578,11 @@ export const layerWsRpc = (
       const storageCleanup = yield* StorageCleanup.StorageCleanup;
       const databaseStorage = yield* DatabaseStorage.DatabaseStorage;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
+      const relayTracingAllowed = RelayTracing.allowedFor(
+        yield* HostProcess.Environment,
+        serverSettings.managedPolicy,
+      );
+      const telemetryOptOutPath = yield* TelemetryOptOut.markerPath;
       const secretResolver = yield* SecretResolver.SecretResolver;
       const peerLinks = yield* PeerLinks.PeerLinks;
       const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
@@ -1913,6 +1921,8 @@ export const layerWsRpc = (
                 }
               : {}),
             otlpLogsEnabled: config.otlpLogsUrl !== undefined,
+            relayTracingAllowed:
+              relayTracingAllowed && !TelemetryOptOut.isOptedOutUnsafe(telemetryOptOutPath),
           },
           settings,
           ...(serverSettings.managedPolicy === undefined
@@ -2800,6 +2810,11 @@ export const layerWsRpc = (
             Effect.map((enabled) => ({ enabled })),
             Effect.mapError((cause) => new TelemetryInternalDeviceError({ cause })),
           ),
+        [WS_METHODS.serverGetTelemetryPreference]: (_input) => analytics.preference,
+        [WS_METHODS.serverSetTelemetryPreference]: (input) =>
+          analytics
+            .setUserEnabled(input.enabled)
+            .pipe(Effect.mapError((cause) => new TelemetryPreferenceError({ cause }))),
         [WS_METHODS.serverListTextGeneratorModels]: (input) => textGenerators.listModels(input),
         [WS_METHODS.serverPrepareTriage]: (input) => triage.prepare(input),
         [WS_METHODS.serverSignalProcess]: (input) => processDiagnostics.signal(input),

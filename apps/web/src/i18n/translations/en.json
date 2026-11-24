@@ -7178,12 +7178,19 @@
   ],
   "216ab7514aea1d61": "Start without an agent",
   "501ce2d99da8bfd1": "Set up one agent to start.",
-  "df7fecfae4ac29cf": [
-    "Up.computer collects anonymous usage data to improve the app. To opt out, see the",
+  "3f7787e752b4ec6e": [
+    "Up.computer collects anonymous usage data to improve the app. You can turn it off in",
+    " ",
+    {
+      "t": "Link",
+      "i": 1,
+      "c": "Settings"
+    },
+    ". See the",
     " ",
     {
       "t": "a",
-      "i": 1,
+      "i": 2,
       "c": "privacy policy"
     },
     "."
@@ -11016,7 +11023,6 @@
   "76a8f66d44943999": "See your agents and import projects.",
   "6a48fd0a37e725a1": "Legal",
   "b31463a28fbd157a": "What Up.computer collects: basic usage stats, never your chats, files or passwords.",
-  "bd2878e24d439537": "What Up.computer collects: basic usage stats, never your chats, files or passwords. {telemetryOff}",
   "1dde0a09a86963ad": "Notices for dependencies, assets, and optional tools used by Up.computer.",
   "e39a57514be028e9": "Review",
   "7c0512387c3a42ea": "Stable",
@@ -12294,6 +12300,19 @@
       "v": "v"
     }
   ],
+  "87f235cc2f052d82": "Your organization turned off anonymous usage data.",
+  "5d413e151932b5a0": "Turned off by the UPCOMPUTER_TELEMETRY_ENABLED environment variable.",
+  "efca95f8da8503ff": "Share anonymous usage data",
+  "105dc8ba736e43ca": [
+    "Basic usage stats and error reports, never your chats, files or passwords. See the",
+    " ",
+    {
+      "t": "a",
+      "i": 1,
+      "c": "privacy policy"
+    },
+    "."
+  ],
   "f54364b854a07918": "No hubs configured.",
   "4cf6a373a7535324": "{name} · Disabled",
   "1d1e9cda847bd398": "The hub's management key is deleted from this server. Its accounts leave the Limits view; the hub itself is untouched. Add it again with the URL and key to bring them back.",
@@ -12709,6 +12728,7 @@
   "dc2a999ca67ccf31": "phone tablet iPhone iPad iOS Android App Store Google Play QR",
   "6310b97b04ef239f": "Welcome page",
   "df9fa3a9cb004b9b": "onboarding setup first run getting started agents import projects",
+  "49e3eaff1327eabc": "telemetry analytics usage data tracking privacy opt out",
   "3188bc3b3c4508bc": "Privacy policy",
   "901a823214edc8c4": "telemetry analytics usage data tracking legal opt out",
   "82136480255a5106": "OTel OTLP telemetry export endpoints logs traces metrics Grafana",

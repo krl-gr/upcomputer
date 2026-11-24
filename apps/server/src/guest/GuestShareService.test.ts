@@ -139,6 +139,8 @@ const layerAnalytics = Layer.effectContext(
           sessionId: undefined,
           internalDevice: Effect.succeed(false),
           setInternalDevice: (enabled) => Effect.succeed(enabled),
+          preference: Effect.succeed({ enabled: true, lockedBy: null }),
+          setUserEnabled: (enabled) => Effect.succeed({ enabled, lockedBy: null }),
           sendNow: () => Effect.succeed(true),
         }),
       ),

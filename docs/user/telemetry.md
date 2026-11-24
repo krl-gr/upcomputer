@@ -1,9 +1,11 @@
 # Product usage data
 
-The Up.computer server sends product usage events to PostHog, associated with a hashed account or
-installation identifier. To count how many installations one person uses, the server also sends
-hashed account identifiers: your UpComputer Connect account, your OpenAI and Claude accounts when
-you are signed in, and a random identifier for each device that connects. Events include the
+The Up.computer server sends product usage events to PostHog, associated with a hashed random
+identifier for the installation. To count how many installations one person uses, the server also
+sends a hashed identifier for your UpComputer Connect account when you are signed in to one, and a
+random identifier for each device that connects. Usage data never includes identifiers from
+your provider accounts, such as your OpenAI or Claude account, and Up.computer never reads them
+for it. Events include the
 provider, model, reasoning effort, permission mode, turn result and, for a failed turn, a
 category of why (such as a usage limit), duration, release channel, and main-agent token totals
 when available. They also say whether the agent could connect to Up.computer's tools and how
@@ -35,17 +37,28 @@ names or titles of your threads, tasks, projects, or workers, raw provider event
 output. Child-agent token use is excluded from the totals.
 
 Up.computer also sends relay connection traces to Axiom to diagnose UpComputer Connect connectivity.
+Traces carry connection timings, request paths, environment and thread identifiers, and error
+types. They omit machine addresses, query strings, log lines, error messages, and stack frames.
 
-To disable product events and relay tracing, set `T3CODE_TELEMETRY_ENABLED=false` in the server's
-environment before starting it. Relay tracing also stops when `T3CODE_OTEL_SDK_DISABLED` or
-`OTEL_SDK_DISABLED` turns OpenTelemetry export off. The web app in a browser, including one the
-`up` CLI opens, does not read these variables.
+## Turn it off
 
-An administrator can turn product events and relay tracing off in the server and desktop app with
-a [managed policy](./managed-policy.md#other-capabilities).
+Turn off **Share anonymous usage data** in **Settings > About**. Product events, error reports and
+relay traces stop at once, events waiting to be sent are dropped, and nothing announces the
+change. The choice is kept across restarts and updates. Turning it back on resumes with the same
+installation identifier.
 
-The desktop app reads `T3CODE_TELEMETRY_ENABLED` from your shell profile (for example `~/.zshrc`) on macOS and
-Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
+You can also set `UPCOMPUTER_TELEMETRY_ENABLED=false` (or `T3CODE_TELEMETRY_ENABLED=false`) in the
+server's environment before starting it. The desktop app reads it from your shell profile (for
+example `~/.zshrc`) on macOS and Linux, so export it there and restart the app. On Windows, set it
+as a user environment variable. Relay tracing also stops when `T3CODE_OTEL_SDK_DISABLED` or
+`OTEL_SDK_DISABLED` turns OpenTelemetry export off.
+
+An administrator can turn product events and relay tracing off with a
+[managed policy](./managed-policy.md#other-capabilities). The variable and the policy win over the
+Settings switch, which then shows as off and cannot be changed.
+
+A browser opened from an Up.computer server sends relay traces only while connected and allowed by
+that server. The hosted web app sends relay traces when configured.
 
 ## Surveys
 

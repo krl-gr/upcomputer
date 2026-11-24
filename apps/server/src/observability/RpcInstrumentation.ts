@@ -94,6 +94,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.serverCheckOtlpEndpoint]: "server",
   [WS_METHODS.serverGetTelemetryInternalDevice]: "server",
   [WS_METHODS.serverSetTelemetryInternalDevice]: "server",
+  [WS_METHODS.serverGetTelemetryPreference]: "server",
+  [WS_METHODS.serverSetTelemetryPreference]: "server",
   [WS_METHODS.serverListTextGeneratorModels]: "server",
   [WS_METHODS.serverPrepareTriage]: "server",
   [WS_METHODS.serverGetUsageSummary]: "server",

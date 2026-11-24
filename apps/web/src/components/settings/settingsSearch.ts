@@ -1043,6 +1043,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("onboarding setup first run getting started agents import projects")],
   },
   {
+    id: "usage-data",
+    title: msg("Share anonymous usage data"),
+    to: "/settings/about",
+    primaryEnvironmentOnly: true,
+    searchTerms: [msg("telemetry analytics usage data tracking privacy opt out")],
+  },
+  {
     id: "privacy-policy",
     title: msg("Privacy policy"),
     to: "/settings/about",

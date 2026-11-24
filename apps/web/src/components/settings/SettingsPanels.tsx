@@ -72,7 +72,7 @@ import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ThreadTitleInstructionsSettings } from "./ThreadTitleInstructionsSettings";
 import { SnoozePresetsRow } from "./SnoozePresetsSettings";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
-import { managedTelemetryOffMessage, usePrimaryManagedPolicy } from "../../state/managedPolicy";
+import { usePrimaryManagedPolicy } from "../../state/managedPolicy";
 import {
   getTextGenerationModelOptionsByInstance,
   resolveAppModelSelectionState,
@@ -93,6 +93,7 @@ import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
+import { UsageDataSettingRow } from "./UsageDataSetting";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -2558,11 +2559,9 @@ export function MaintenanceSettingsPanel() {
 export function AboutSettingsPanel() {
   const setting = useSearchableSetting();
   const gt = useGT();
-  const messages = useMessages();
   const primaryPolicy = usePrimaryManagedPolicy();
   // The Welcome page sets up this computer, so it needs one.
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const telemetryOff = managedTelemetryOffMessage(primaryPolicy, messages);
   return (
     <SettingsPageContainer>
       <SettingsSection id="about" title={gt("App")}>
@@ -2618,19 +2617,15 @@ export function AboutSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="legal" title={gt("Legal")}>
+        {isProductFeatureShown("usageDataNotice") && primaryEnvironmentId !== null ? (
+          <UsageDataSettingRow environmentId={primaryEnvironmentId} />
+        ) : null}
         {isProductFeatureShown("usageDataNotice") ? (
           <SettingsRow
             {...setting("privacy-policy")}
-            description={
-              telemetryOff === undefined
-                ? gt(
-                    "What Up.computer collects: basic usage stats, never your chats, files or passwords.",
-                  )
-                : gt(
-                    "What Up.computer collects: basic usage stats, never your chats, files or passwords. {telemetryOff}",
-                    { telemetryOff },
-                  )
-            }
+            description={gt(
+              "What Up.computer collects: basic usage stats, never your chats, files or passwords.",
+            )}
             control={
               <Button
                 render={<a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer noopener" />}
