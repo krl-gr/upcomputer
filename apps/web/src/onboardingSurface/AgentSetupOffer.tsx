@@ -112,8 +112,6 @@ export interface AgentSetupOfferTimeline {
     readonly send: (text: string) => void;
     readonly focusComposer: () => void;
   }) => { readonly messageId: MessageId; readonly content: ReactNode } | null;
-  /** "Something else" is waiting for the typed name. */
-  readonly typing: boolean;
   /** Called before a send from this chat's composer: any message answers the open offer. */
   readonly beforeSend: () => void;
 }
@@ -195,11 +193,21 @@ export function useAgentSetupOffer(input: {
             content: <QuickReplies replies={replies} onPick={(reply) => pick(reply, actions)} />,
           }
         : null,
-    typing: view.replies && typing,
     beforeSend: () => {
       if (!view.replies) return;
       setAgentSetupOfferTyping(null);
       answerAgentSetupOffer(threadId, "answered");
     },
+  };
+}
+
+/** A composer send answers the open offer: any message from this chat does. */
+export function answeringAgentSetupOffer<Args extends ReadonlyArray<unknown>, Result>(
+  offer: AgentSetupOfferTimeline | null,
+  send: (...args: Args) => Result,
+): (...args: Args) => Result {
+  return (...args) => {
+    offer?.beforeSend();
+    return send(...args);
   };
 }
