@@ -6,6 +6,10 @@ export const RELEASES_URL = `https://github.com/${REPO}/releases`;
 export const RELEASE_URL = `${RELEASES_URL}/tag/${RELEASE_TAG}`;
 
 export function releaseAssetUrl(suffix: string): string {
-  const assetName = `Up.computer-${RELEASE_VERSION}-${suffix}`;
+  // 0.0.40 published its AppImage without the version in the file name.
+  const assetName =
+    suffix === "x86_64.AppImage"
+      ? `Up.computer-${suffix}`
+      : `Up.computer-${RELEASE_VERSION}-${suffix}`;
   return `${RELEASES_URL}/download/${RELEASE_TAG}/${assetName}`;
 }
