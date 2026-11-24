@@ -220,7 +220,7 @@ const make = Effect.gen(function* () {
           ...base,
           command,
           status: "alreadyOpen" as const,
-          message: `\`${command}\` is running in the sign-in terminal in this chat, and ${name} is not signed in yet. Ask the user to finish signing in in the browser, then call this again to check.`,
+          message: `\`${command}\` is running in the sign-in terminal in this chat, and ${name} is not signed in yet. Ask the user to finish signing in through the browser, then call this again to check.`,
         };
       }
       if (typed?.pid === shell.pid && !typed.ran) {
