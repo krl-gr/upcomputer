@@ -15,7 +15,6 @@ import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { ThreadViewers } from "../orchestration-v2/ThreadViewers.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { TerminalManager } from "../terminal/Manager.ts";
-import { ProviderInstallation } from "./providerInstallation.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 
 const SETTINGS_PATH = "Settings, Providers, Connect your agents";
@@ -42,7 +41,6 @@ export class ProviderSignInError extends Schema.TaggedError<ProviderSignInError>
       "not_installed",
       "no_window",
       "terminal_failed",
-      "install_failed",
     ]),
     message: Schema.String,
   },
@@ -53,8 +51,8 @@ export class ProviderSignIn extends Context.Service<
   {
     /**
      * Refreshes the provider's status first: a signed-in provider opens nothing, and a call
-     * after the user finished reports that. A shell the command was already typed into is
-     * left as it is.
+     * after the user finished reports that. The command is typed again only once the earlier
+     * one has run and ended in that shell.
      */
     readonly signIn: (input: {
       readonly threadId: ThreadId;
@@ -89,10 +87,27 @@ const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment;
   const config = yield* ServerConfig;
   const terminals = yield* TerminalManager;
-  const installation = yield* ProviderInstallation;
-  // The shell pid each sign-in terminal had when its command was typed, so a call never
-  // types it twice into one shell but does into a restarted one.
-  const typedShells = new Map<string, number | null>();
+  // Each sign-in terminal's shell when its command was typed, and whether a subprocess has
+  // run there since. Subprocess polling is about a second apart, so a command that ends
+  // faster can go unseen; the user then closes the card and the agent calls again.
+  const typedShells = new Map<
+    string,
+    { readonly pid: number | null; ran: boolean; running: boolean }
+  >();
+  const keyOf = (threadId: string, terminalId: string) => `${threadId}\u0000${terminalId}`;
+  yield* Effect.acquireRelease(
+    terminals.subscribe((event) =>
+      Effect.sync(() => {
+        if (event.type !== "activity") return;
+        // A restarted shell gets a new pid, so its entry no longer matches and is typed again.
+        const typed = typedShells.get(keyOf(event.threadId, event.terminalId));
+        if (typed === undefined) return;
+        typed.running = event.hasRunningSubprocess;
+        if (event.hasRunningSubprocess) typed.ran = true;
+      }),
+    ),
+    (unsubscribe) => Effect.sync(unsubscribe),
+  );
 
   const requireWindow = Effect.fn("ProviderSignIn.requireWindow")(function* (
     threadId: ThreadId,
@@ -153,23 +168,16 @@ const make = Effect.gen(function* () {
           };
         }
         yield* requireWindow(threadId, `Ask the user to set it up in ${SETTINGS_PATH}.`);
-        const installing = !provider.installed && setup.canInstall;
-        if (installing) {
-          yield* installation.start({ instanceId: provider.instanceId }).pipe(
-            Effect.mapError(
-              (error) =>
-                new ProviderSignInError({
-                  reason: "install_failed",
-                  message: `Could not install ${name}: ${error.message} Ask the user to try from ${SETTINGS_PATH}.`,
-                }),
-            ),
-          );
-        }
+        // Installing is the user's call: the card's own Install button starts it.
+        const install =
+          !provider.installed && setup.canInstall
+            ? `${name} is not installed yet: the user starts the install with the card's Install button. `
+            : "";
         return {
           ...base,
           status: "appSetup" as const,
           appSetupInstanceId: provider.instanceId,
-          message: `${installing ? `Up.computer is installing ${name}. ` : ""}This chat now shows ${name}'s setup card, where the user signs in with the app's own sign-in (for Antigravity, a Google link and a code). Ask the user to follow the card, then call this again to check that ${name} is signed in.`,
+          message: `This chat now shows ${name}'s setup card. ${install}The user signs in there with the app's own sign-in (for Antigravity, a Google link and a code). Ask the user to follow the card, then call this again to check that ${name} is signed in.`,
         };
       }
       if (!provider.installed) {
@@ -192,19 +200,29 @@ const make = Effect.gen(function* () {
       const shell = yield* terminals
         .open({ threadId, terminalId, cwd: config.cwd, providerInstanceId: provider.instanceId })
         .pipe(Effect.mapError(terminalFailed));
-      const key = `${threadId}\u0000${terminalId}`;
-      if (typedShells.get(key) === shell.pid) {
+      const key = keyOf(threadId, terminalId);
+      const typed = typedShells.get(key);
+      if (typed?.pid === shell.pid && typed.running) {
         return {
           ...base,
           command,
           status: "alreadyOpen" as const,
-          message: `The sign-in terminal is already open in this chat with \`${command}\`, and ${name} is not signed in yet. Ask the user to press Enter there and finish signing in, then call this again to check.`,
+          message: `\`${command}\` is running in the sign-in terminal in this chat, and ${name} is not signed in yet. Ask the user to finish signing in in the browser, then call this again to check.`,
         };
       }
+      if (typed?.pid === shell.pid && !typed.ran) {
+        return {
+          ...base,
+          command,
+          status: "alreadyOpen" as const,
+          message: `The sign-in terminal is already open in this chat with \`${command}\` typed in, and ${name} is not signed in yet. Ask the user to press Enter there and finish signing in, then call this again to check. If its line is empty, ask the user to close the terminal, then call this again.`,
+        };
+      }
+      // Set before writing, so the shell's activity from here on lands on this entry.
+      typedShells.set(key, { pid: shell.pid, ran: false, running: false });
       yield* terminals
         .write({ threadId, terminalId, data: command })
         .pipe(Effect.mapError(terminalFailed));
-      typedShells.set(key, shell.pid);
       return {
         ...base,
         command,

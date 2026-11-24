@@ -12,7 +12,6 @@ const FAILURE_CODES = {
   not_installed: "provider_unavailable",
   no_window: "capability_denied",
   terminal_failed: "orchestration_error",
-  install_failed: "provider_unavailable",
 } as const;
 
 export const layer = McpToolAccess.toLayer(ProviderToolkit, {
