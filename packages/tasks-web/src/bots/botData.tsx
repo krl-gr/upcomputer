@@ -18,6 +18,7 @@ import { resolveThreadLastVisitedAt } from "../../../../apps/web/src/components/
 import { useUiStateStore } from "../../../../apps/web/src/uiStateStore.ts";
 import { ConfigurableBotCharacter } from "../../../../apps/web/src/components/bot-character-configurable/ConfigurableBotCharacter.tsx";
 import { holdClientNotice } from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
+import { allSidebarThreadsClaimKey } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
 import {
   readLocalStorageValue,
   writeLocalStorageValue,
@@ -88,6 +89,7 @@ function rememberBotChats(environmentId: EnvironmentId, bots: ReadonlyArray<Bot>
  * The scoped keys of the bot chats each computer had when its list last loaded, for those whose
  * list is loading again, so Threads does not list them until the Bots section does. A computer
  * whose Tasks access is still being checked counts as loading: at startup that check comes first.
+ * A computer with no remembered list claims all its threads (`allSidebarThreadsClaimKey`).
  */
 export function rememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string[] {
   const loading = environmentIds.filter((environmentId) => {
@@ -98,11 +100,14 @@ export function rememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentI
   });
   if (loading.length === 0) return [];
   const remembered = readLocalStorageValue(BOT_CHATS_STORAGE_KEY, {}, BotChats);
-  return loading.flatMap((environmentId) =>
-    (remembered[environmentId] ?? []).map((threadId) =>
+  return loading.flatMap((environmentId) => {
+    const threadIds = remembered[environmentId];
+    // Nothing remembered, as on the first start after an update: any thread may be a bot chat.
+    if (threadIds === undefined) return [allSidebarThreadsClaimKey(environmentId)];
+    return threadIds.map((threadId) =>
       scopedThreadKey(scopeThreadRef(environmentId, ThreadId.make(threadId))),
-    ),
-  );
+    );
+  });
 }
 
 type GT = ReturnType<typeof useGT>;

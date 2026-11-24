@@ -42,6 +42,7 @@ vi.mock("../environmentApi.ts", () => {
 });
 
 import { readClientNotices } from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
+import { allSidebarThreadsClaimKey } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
 import { TaskChangeStreamEnded } from "../rpc/taskChanges.ts";
 import {
   readLocalStorageValue,
@@ -150,6 +151,23 @@ describe("Bots section lists", () => {
     expect(readLocalStorageValue(BOT_CHATS_STORAGE_KEY, {}, BotChats)).toEqual({
       [here]: ["atlas-chat"],
     });
+    view.unmount();
+  });
+
+  it("keeps a computer's threads out of Threads until its first bot list loads", async () => {
+    // The first start after updating from 0.0.39 remembers no list, and bot chats flashed
+    // under Threads until the Bots section loaded.
+    const here = EnvironmentId.make("sections-first-start");
+    let answer: (bots: unknown) => void = () => {};
+    servers.lists.set(here, () => new Promise((resolve) => (answer = resolve)));
+    setAccess("loading");
+    expect(rememberedBotChatKeys([here])).toEqual([allSidebarThreadsClaimKey(here)]);
+
+    setAccess("enabled");
+    const { view } = await render([here]);
+    expect(rememberedBotChatKeys([here])).toEqual([allSidebarThreadsClaimKey(here)]);
+    await act(async () => answer([]));
+    expect(rememberedBotChatKeys([here])).toEqual([]);
     view.unmount();
   });
 
