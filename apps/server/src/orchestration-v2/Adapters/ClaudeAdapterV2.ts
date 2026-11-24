@@ -2775,6 +2775,14 @@ function nextClaudeGoal(
   };
 }
 
+function isClaudeLoginNotice(message: SDKMessage): boolean {
+  return (
+    message.type === "assistant" &&
+    message.error === "authentication_failed" &&
+    textFromClaudeContent(message.message.content).includes("/login")
+  );
+}
+
 /** The CLI confirms a goal change as a synthetic reply; the goal row shows that change instead. */
 function isClaudeGoalAcknowledgement(message: SDKMessage): boolean {
   if (
@@ -4714,7 +4722,7 @@ const CONTEXT_WINDOW_FULL_ERROR =
 const CLAUDE_USAGE_LIMIT_TEXT =
   "Claude usage limit reached. Switch to another model or provider to keep working now.";
 const CLAUDE_SIGNED_OUT_TEXT =
-  "Claude Code is signed out. Sign in again in Settings, then send the message again.";
+  "Claude Code isn't signed in. Sign in from Settings → Providers → Connect your agents, then send the message again.";
 const CLAUDE_NO_CREDIT_TEXT =
   'The Claude account in use has no credit ("Credit balance is too low"). Add credit to that account, or sign in with a Claude subscription in Settings and remove any ANTHROPIC_API_KEY that overrides it. Then send the message again.';
 const CLAUDE_INVALID_API_KEY_TEXT =
@@ -12153,6 +12161,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             });
             return;
           }
+          // The failure card gives Up.computer's sign-in step; the CLI's "/login" is not one here.
+          if (isClaudeLoginNotice(message)) return;
           if (isClaudeGoalAcknowledgement(message)) {
             // The CLI repeats a local command's output as the turn's result text.
             if (assistantText !== null) {

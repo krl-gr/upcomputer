@@ -850,7 +850,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         auth: { status: "unauthenticated" },
         message:
           configDir === undefined
-            ? "Claude Code isn't signed in. Run `claude auth login` in a terminal, then refresh."
+            ? "Claude Code isn't signed in. Sign in from Settings → Providers → Connect your agents, or run `claude auth login` in a terminal."
             : claudeSignedOutMessage({ configDir, cwd: path.resolve(cwd ?? ".") }),
       },
     });
