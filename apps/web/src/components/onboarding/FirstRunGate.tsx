@@ -16,6 +16,10 @@ import {
   FirstRunAgentStarter,
   useFirstRunAgentStarterEnvironment,
 } from "../../onboardingSurface/FirstRunAgent";
+import {
+  NoAgentScreenPreview,
+  noAgentScreenPreviewRequested,
+} from "../../onboardingSurface/NoAgentScreenPreview";
 import { firstRunWorkspaceProjects } from "../../onboardingSurface/upComputerOnboarding.logic";
 import { productSurface } from "../../product/productFlags";
 import {
@@ -212,6 +216,10 @@ export function FirstRunGate({
     return <FirstRunRecovery reason="settings" retrying={hydrationStatus === "retrying"} />;
   }
   if (firstAgentEnvironmentId !== null) {
+    // UpComputer design preview (dev builds): ask before the first agent installs.
+    if (import.meta.env.DEV && noAgentScreenPreviewRequested()) {
+      return <NoAgentScreenPreview>{children}</NoAgentScreenPreview>;
+    }
     return (
       <>
         <FirstRunAgentStarter environmentId={firstAgentEnvironmentId} />
