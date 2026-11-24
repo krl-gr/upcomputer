@@ -688,12 +688,12 @@ it.layer(
         assert.strictEqual(status.auth.status, "unauthenticated");
         assert.strictEqual(
           status.message,
-          "Codex isn't signed in. Sign in with ChatGPT in Settings, or run `codex login` in a terminal.",
+          "Codex isn't signed in. Run `codex login` in a terminal, or sign in from the Welcome page.",
         );
         assert.deepStrictEqual(status.usageLimits?.unavailable, {
           reason: "probeFailed",
           message:
-            "Codex isn't signed in. Sign in with ChatGPT in Settings, or run `codex login` in a terminal.",
+            "Codex isn't signed in. Run `codex login` in a terminal, or sign in from the Welcome page.",
         });
       }),
     );

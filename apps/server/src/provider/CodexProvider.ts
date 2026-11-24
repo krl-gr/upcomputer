@@ -1003,7 +1003,7 @@ function accountProbeStatus(
       auth: { status: "unauthenticated" },
       message: codexHome
         ? `Codex isn't signed in. Run \`codex login\` in a terminal with CODEX_HOME set to ${quotePath(codexHome)}, then refresh.`
-        : "Codex isn't signed in. Sign in with ChatGPT in Settings, or run `codex login` in a terminal.",
+        : "Codex isn't signed in. Run `codex login` in a terminal, or sign in from the Welcome page.",
     };
   }
 
