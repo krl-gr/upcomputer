@@ -479,6 +479,19 @@ export function noAgentScreenClosesForAgent(
   );
 }
 
+/**
+ * OpenCode works, for example after "Set up another way" let its install finish:
+ * the install card offers it as ready to use.
+ */
+export function noAgentScreenFreeAgentReady(
+  providers: ReadonlyArray<ServerProvider> | null | undefined,
+): boolean {
+  const openCode = providers?.find(
+    (provider) => provider.instanceId === FIRST_RUN_AGENT_INSTANCE_ID,
+  );
+  return openCode?.enabled === true && getOnboardingProviderState(openCode) === "ready";
+}
+
 /** What `onboarding.no_agent_screen` `shown` reports of the agent checks. */
 export function noAgentScreenShownDetails(
   providers: ReadonlyArray<ServerProvider> | null | undefined,

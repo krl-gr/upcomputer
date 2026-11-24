@@ -26,6 +26,7 @@ import {
   isFirstRunAgentChecking,
   latchFirstRunAgentStart,
   noAgentScreenClosesForAgent,
+  noAgentScreenFreeAgentReady,
   noAgentScreenPlace,
   noAgentScreenShownDetails,
   resolveFirstRunAgentAutoRetry,
@@ -589,6 +590,18 @@ describe("no-agent screen", () => {
     );
     expect(noAgentScreenClosesForAgent([provider("opencode", { statusPending: true })], true)).toBe(
       false,
+    );
+  });
+
+  it("offers the free agent as ready once OpenCode works", () => {
+    expect(noAgentScreenFreeAgentReady(undefined)).toBe(false);
+    expect(noAgentScreenFreeAgentReady([provider("codex", missing)])).toBe(false);
+    expect(noAgentScreenFreeAgentReady([provider("opencode", { statusPending: true })])).toBe(
+      false,
+    );
+    expect(noAgentScreenFreeAgentReady([provider("opencode", { enabled: false })])).toBe(false);
+    expect(noAgentScreenFreeAgentReady([provider("codex", missing), provider("opencode")])).toBe(
+      true,
     );
   });
 

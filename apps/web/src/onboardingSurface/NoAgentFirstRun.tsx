@@ -26,6 +26,7 @@ import {
 } from "./noAgentScreenRecord";
 import {
   noAgentScreenClosesForAgent,
+  noAgentScreenFreeAgentReady,
   noAgentScreenPlace,
   noAgentScreenShownDetails,
   resolveNoAgentScreenInstallView,
@@ -109,6 +110,7 @@ function NoAgentFirstRunScreen({ environmentId }: { readonly environmentId: Envi
     reportShown();
   }, [setup.screenShownReported]);
 
+  const freeAgentReady = noAgentScreenFreeAgentReady(providers);
   const failed = view.kind === "failed";
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- remembers a shown failure for the events of later clicks
   useEffect(() => {
@@ -120,10 +122,16 @@ function NoAgentFirstRunScreen({ environmentId }: { readonly environmentId: Envi
     <NoAgentScreen
       view={view}
       place={place}
+      freeAgentReady={freeAgentReady}
       onInstall={() => {
         const attempt = setup.installClicks + 1;
         record({ action: "install_clicked", attempt });
         choose("installed_free_agent");
+        // A ready OpenCode needs no install: the chat opens at once.
+        if (freeAgentReady) {
+          setSetup((current) => ({ ...current, screen: "closed", installClicks: attempt }));
+          return;
+        }
         const running = setup.start === "install";
         setSetup((current) => ({
           ...current,
@@ -145,7 +153,7 @@ function NoAgentFirstRunScreen({ environmentId }: { readonly environmentId: Envi
           action: "setup_another_way_clicked",
           during: view.kind === "failed" ? view.reason : "installing",
         });
-        // The install goes on, and OpenCode shows as ready in the agent list when it is.
+        // The install goes on, and the install card says when OpenCode is ready.
         setSetup((current) => ({ ...current, screen: "offer" }));
       }}
       onSetUpMyself={() => {
