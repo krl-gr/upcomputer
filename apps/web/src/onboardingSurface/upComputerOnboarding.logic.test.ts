@@ -1,5 +1,6 @@
 import {
   EnvironmentId,
+  type FirstRunAgentFailureReason,
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderInstallState,
@@ -24,11 +25,16 @@ import {
   type FirstRunAgentStartup,
   isFirstRunAgentChecking,
   latchFirstRunAgentStart,
+  noAgentScreenClosesForAgent,
+  noAgentScreenPlace,
+  noAgentScreenShownDetails,
   resolveFirstRunAgentAutoRetry,
   resolveFirstRunAgentStart,
   resolveFirstRunAgentStartupFailure,
   resolveFirstRunAgentStatus,
+  resolveNoAgentScreenInstallView,
 } from "./upComputerOnboarding.logic";
+import { asksAgainForAgent } from "./noAgentScreenRecord";
 
 afterEach(() => {
   surface.variant = "upcomputer";
@@ -402,7 +408,25 @@ describe("first-run agent start", () => {
   const decide = (providers: ReadonlyArray<ServerProvider> | null, waitOver = false) =>
     resolveFirstRunAgentStart({ providers, waitOver });
 
-  it("installs OpenCode on a Mac whose agents have all answered without one that works", () => {
+  const pending = { statusPending: true, ...missing } as const;
+
+  it("asks first on a Mac with none of the user's agents installed", () => {
+    expect(
+      decide([
+        provider("codex", missing),
+        provider("claudeAgent", missing),
+        provider("opencode", { enabled: false }),
+      ]),
+    ).toBe("ask");
+    // Turned off in settings is not one of the user's agents; OpenCode is what setup installs.
+    expect(decide([provider("claudeAgent", { enabled: false })])).toBe("ask");
+    expect(decide([provider("codex", missing), provider("opencode", missing)])).toBe("ask");
+    // A driver's placeholder before its first check, which says installed with nothing found yet.
+    const placeholder = { version: null, status: "warning", auth: { status: "unknown" } } as const;
+    expect(decide([provider("kiro", placeholder), provider("codex", missing)])).toBe("ask");
+  });
+
+  it("keeps installing by itself when an agent of the user's is installed but does not work", () => {
     expect(
       decide([
         provider("codex", missing),
@@ -410,20 +434,24 @@ describe("first-run agent start", () => {
         provider("opencode", { enabled: false }),
       ]),
     ).toBe("install");
+    expect(decide([provider("codex", { status: "error" })])).toBe("install");
   });
 
   it("keeps a working agent of the user's and downloads nothing", () => {
     expect(decide([provider("codex", missing), provider("claudeAgent")])).toBe("skip");
     expect(decide([provider("claudeAgent")], true)).toBe("skip");
-    expect(decide([provider("claudeAgent", { enabled: false })])).toBe("install");
+    expect(decide([provider("claudeAgent", pending), provider("codex")])).toBe("skip");
   });
 
   it("waits for the first checks, but not past the wait", () => {
     expect(decide(null)).toBe("wait");
-    expect(decide([provider("claudeAgent", { statusPending: true })])).toBe("wait");
-    expect(decide([provider("claudeAgent", { statusPending: true })], true)).toBe("install");
-    expect(decide(null, true)).toBe("install");
-    expect(decide([provider("opencode", { statusPending: true })])).toBe("install");
+    expect(decide([provider("claudeAgent", pending)])).toBe("wait");
+    expect(decide([provider("claudeAgent", pending)], true)).toBe("ask");
+    expect(decide([provider("claudeAgent", pending), provider("codex", signedOut)], true)).toBe(
+      "install",
+    );
+    expect(decide(null, true)).toBe("ask");
+    expect(decide([provider("opencode", { statusPending: true })])).toBe("ask");
   });
 });
 
@@ -433,7 +461,8 @@ describe("first-run agent start latch", () => {
     latched: Parameters<typeof latchFirstRunAgentStart>[0]["latched"],
     providers: ReadonlyArray<ServerProvider> | null,
     completed = false,
-  ) => latchFirstRunAgentStart({ latched, completed, providers, waitOver: false });
+    askAgain = false,
+  ) => latchFirstRunAgentStart({ latched, completed, askAgain, providers, waitOver: false });
 
   it("skips for good once the user's own agent worked, whatever it does later", () => {
     const decided = latch(null, working);
@@ -449,12 +478,119 @@ describe("first-run agent start latch", () => {
 
   it("never installs once onboarding is complete", () => {
     expect(latch(null, [provider("codex", missing)], true)).toBe("skip");
+    expect(latch(null, [provider("codex", signedOut)], true, true)).toBe("skip");
+  });
+
+  it("asks again on a later launch for a user who left the screen without a working agent", () => {
+    expect(latch(null, [provider("codex", missing)], true, true)).toBe("ask");
+    expect(latch(null, [provider("codex", missing)], false, true)).toBe("ask");
+    expect(latch(null, working, true, true)).toBe("skip");
+    expect(latch(null, [provider("claudeAgent", { statusPending: true })], true, true)).toBeNull();
   });
 
   it("keeps an install decision, and decides nothing while the checks run", () => {
     expect(latch(null, [provider("claudeAgent", { statusPending: true })])).toBeNull();
-    expect(latch(null, [provider("codex", missing)])).toBe("install");
+    expect(latch(null, [provider("codex", signedOut)])).toBe("install");
     expect(latch("install", working)).toBe("install");
+    expect(latch("ask", working)).toBe("ask");
+  });
+});
+
+describe("no-agent screen", () => {
+  const view = (input: Partial<Parameters<typeof resolveNoAgentScreenInstallView>[0]>) =>
+    resolveNoAgentScreenInstallView({ status: null, installed: false, retrying: false, ...input });
+  const preparing = (progress: number | null, slow = false) =>
+    ({ kind: "preparing", progress, slow }) as const;
+  const failed = (reason: FirstRunAgentFailureReason) =>
+    ({ kind: "failed", message: "", reason }) as const;
+  const installing = (phase: string, progress: number | null = null) => ({
+    kind: "installing",
+    phase,
+    progress,
+  });
+
+  it("shows the download, then the start, then still starting", () => {
+    expect(view({ status: preparing(null) })).toEqual(installing("downloading"));
+    expect(view({ status: preparing(0.42) })).toEqual(installing("downloading", 0.42));
+    expect(view({ status: preparing(null), installed: true })).toEqual(installing("starting"));
+    expect(view({ status: preparing(null, true), installed: true })).toEqual(installing("slow"));
+  });
+
+  it("shows trying again from Try again until progress reports", () => {
+    expect(view({ status: failed("install"), retrying: true })).toEqual(installing("retrying"));
+    expect(view({ status: preparing(null), retrying: true })).toEqual(installing("retrying"));
+    expect(view({ status: preparing(0), retrying: true })).toEqual(installing("retrying"));
+    expect(view({ status: preparing(0.1), retrying: true })).toEqual(
+      installing("downloading", 0.1),
+    );
+    expect(view({ status: preparing(null), installed: true, retrying: true })).toEqual(
+      installing("retrying"),
+    );
+  });
+
+  it("tells three failures apart, and reads the rest as no answer", () => {
+    const reasons: ReadonlyArray<[FirstRunAgentFailureReason, string]> = [
+      ["install", "install"],
+      ["models_missing", "models"],
+      ["startup_timeout", "timeout"],
+      ["auth", "timeout"],
+      ["migration", "timeout"],
+      ["unknown", "timeout"],
+    ];
+    for (const [reason, shown] of reasons) {
+      expect(view({ status: failed(reason), installed: reason !== "install" })).toEqual({
+        kind: "failed",
+        reason: shown,
+      });
+    }
+  });
+
+  it("closes for the user's own agent at any time, and for OpenCode only while its install shows", () => {
+    const openCodeReady = [provider("codex", missing), provider("opencode")];
+    expect(noAgentScreenClosesForAgent(openCodeReady, true)).toBe(true);
+    expect(noAgentScreenClosesForAgent(openCodeReady, false)).toBe(false);
+    expect(noAgentScreenClosesForAgent([provider("claudeAgent")], false)).toBe(true);
+    expect(noAgentScreenClosesForAgent([provider("claudeAgent", { enabled: false })], true)).toBe(
+      false,
+    );
+    expect(noAgentScreenClosesForAgent([provider("opencode", { statusPending: true })], true)).toBe(
+      false,
+    );
+  });
+
+  it("reports what the checks found when it shows", () => {
+    expect(
+      noAgentScreenShownDetails([
+        provider("codex", missing),
+        provider("claudeAgent", { statusPending: true, ...missing }),
+        provider("opencode"),
+      ]),
+    ).toEqual({ installedAgents: 0, signedOutAgents: 0, checksTimedOut: true });
+    expect(noAgentScreenShownDetails([provider("codex", signedOut)])).toEqual({
+      installedAgents: 1,
+      signedOutAgents: 1,
+      checksTimedOut: false,
+    });
+  });
+
+  it("names the machine the agents belong to", () => {
+    const place = (os: "darwin" | "windows" | "linux" | null, local = true) =>
+      noAgentScreenPlace({ os, local, environmentLabel: local ? null : "Studio" });
+    expect(place("darwin")).toEqual({ kind: "mac" });
+    expect(place("windows")).toEqual({ kind: "pc" });
+    expect(place("linux")).toEqual({ kind: "computer" });
+    expect(place(null)).toEqual({ kind: "computer" });
+    expect(place("darwin", false)).toEqual({ kind: "remote", name: "Studio" });
+    expect(noAgentScreenPlace({ os: "darwin", local: false, environmentLabel: null })).toEqual({
+      kind: "computer",
+    });
+  });
+
+  it("comes back on the next launch until an agent worked", () => {
+    expect(asksAgainForAgent(null)).toBe(false);
+    expect(asksAgainForAgent({ shownAt: 1, path: "setup_myself", agentWorked: false })).toBe(true);
+    expect(asksAgainForAgent({ shownAt: 1, path: "copied_prompt", agentWorked: false })).toBe(true);
+    expect(asksAgainForAgent({ shownAt: 1, path: null, agentWorked: true })).toBe(false);
   });
 });
 
