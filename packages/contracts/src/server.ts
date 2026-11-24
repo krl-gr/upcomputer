@@ -1304,6 +1304,15 @@ export const ClientTelemetryEvent = Schema.Union([
     during: Schema.optionalKey(Schema.Literals(["installing", ...NoAgentScreenFailure.literals])),
   }),
   Schema.Struct({
+    /** The free agent's first message, and each quick reply clicked under it. */
+    event: Schema.Literal("onboarding.agent_setup_offer"),
+    action: Schema.Literals(["shown", "choice_clicked"]),
+    /** With `choice_clicked`. Typed names after `something_else` are never sent. */
+    choice: Schema.optionalKey(
+      Schema.Literals(["claude", "codex", "antigravity", "something_else", "not_now"]),
+    ),
+  }),
+  Schema.Struct({
     /** The first message after the no-agent screen, once per install of the app. */
     event: Schema.Literal("onboarding.first_message_sent"),
     /** The way the user chose on the screen last, if any. */

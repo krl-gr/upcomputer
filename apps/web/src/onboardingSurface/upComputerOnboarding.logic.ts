@@ -409,6 +409,32 @@ export type NoAgentScreenView =
     }
   | { readonly kind: "failed"; readonly reason: NoAgentScreenFailure };
 
+/** The download's whole percent, as the installing line shows it. */
+export function noAgentScreenDownloadPercent(progress: number | null): number {
+  return Math.round((progress ?? 0) * 100);
+}
+
+/**
+ * Try again shows "Trying again" while its request runs, and after a failed
+ * install until the new download's line would read at least 1%. `retriedInstallId`
+ * is the failed install it retried, `undefined` for a retry of OpenCode's start.
+ */
+export function firstRunAgentRetrying(input: {
+  readonly requestRunning: boolean;
+  readonly retriedInstallId: string | null | undefined;
+  readonly startError: string | null;
+  readonly install: ProviderInstallState | null | undefined;
+}): boolean {
+  if (input.requestRunning) return true;
+  const { install, retriedInstallId } = input;
+  if (retriedInstallId === undefined || input.startError !== null || !install) return false;
+  if (retriedInstallId !== null && install.operationId === retriedInstallId) return true;
+  if (install.phase !== "downloading") return false;
+  return install.totalBytes !== null && install.totalBytes > 0
+    ? noAgentScreenDownloadPercent(install.downloadedBytes / install.totalBytes) === 0
+    : install.downloadedBytes === 0;
+}
+
 /** `startup_timeout`, `auth`, `migration` and `unknown` all read as "OpenCode didn't respond". */
 function noAgentScreenFailure(reason: FirstRunAgentFailureReason): NoAgentScreenFailure {
   if (reason === "install") return "install";
@@ -434,7 +460,7 @@ export function resolveNoAgentScreenInstallView(input: {
   // No status left means OpenCode works: the screen closes.
   if (status === null) return installing(retrying ? "retrying" : "starting");
   if (!installed) {
-    return retrying && !(status.progress !== null && status.progress > 0)
+    return retrying && noAgentScreenDownloadPercent(status.progress) === 0
       ? installing("retrying")
       : { kind: "installing", phase: "downloading", progress: status.progress };
   }
@@ -459,6 +485,19 @@ export function noAgentScreenClosesForAgent(
         (installOnScreen || provider.instanceId !== FIRST_RUN_AGENT_INSTANCE_ID),
     ) ?? false
   );
+}
+
+/**
+ * OpenCode works, for example after "Set up another way" let its install finish:
+ * the install card offers it as ready to use.
+ */
+export function noAgentScreenFreeAgentReady(
+  providers: ReadonlyArray<ServerProvider> | null | undefined,
+): boolean {
+  const openCode = providers?.find(
+    (provider) => provider.instanceId === FIRST_RUN_AGENT_INSTANCE_ID,
+  );
+  return openCode?.enabled === true && getOnboardingProviderState(openCode) === "ready";
 }
 
 /** What `onboarding.no_agent_screen` `shown` reports of the agent checks. */

@@ -26,12 +26,14 @@ import {
   isFirstRunAgentChecking,
   latchFirstRunAgentStart,
   noAgentScreenClosesForAgent,
+  noAgentScreenFreeAgentReady,
   noAgentScreenPlace,
   noAgentScreenShownDetails,
   resolveFirstRunAgentAutoRetry,
   resolveFirstRunAgentStart,
   resolveFirstRunAgentStartupFailure,
   resolveFirstRunAgentStatus,
+  firstRunAgentRetrying,
   resolveNoAgentScreenInstallView,
 } from "./upComputerOnboarding.logic";
 import { asksAgainForAgent } from "./noAgentScreenRecord";
@@ -520,12 +522,50 @@ describe("no-agent screen", () => {
     expect(view({ status: failed("install"), retrying: true })).toEqual(installing("retrying"));
     expect(view({ status: preparing(null), retrying: true })).toEqual(installing("retrying"));
     expect(view({ status: preparing(0), retrying: true })).toEqual(installing("retrying"));
+    // The first bytes would still read "Downloading… 0%".
+    expect(view({ status: preparing(0.004), retrying: true })).toEqual(installing("retrying"));
     expect(view({ status: preparing(0.1), retrying: true })).toEqual(
       installing("downloading", 0.1),
     );
     expect(view({ status: preparing(null), installed: true, retrying: true })).toEqual(
       installing("retrying"),
     );
+  });
+
+  it("holds Try again on a failed install until the new download reads 1%", () => {
+    const install = (operationId: string, overrides: Partial<ProviderInstallState> = {}) =>
+      ({
+        driver: ProviderDriverKind.make("opencode"),
+        operationId,
+        phase: "downloading",
+        downloadedBytes: 0,
+        totalBytes: 100,
+        version: null,
+        installedVersion: null,
+        canRemove: false,
+        message: null,
+        ...overrides,
+      }) as ProviderInstallState;
+    const retrying = (input: Partial<Parameters<typeof firstRunAgentRetrying>[0]>) =>
+      firstRunAgentRetrying({
+        requestRunning: false,
+        retriedInstallId: "failed",
+        startError: null,
+        install: install("failed", { phase: "failed" }),
+        ...input,
+      });
+    expect(retrying({ requestRunning: true, retriedInstallId: undefined })).toBe(true);
+    // The request answered before the install state moved on from the failure.
+    expect(retrying({})).toBe(true);
+    expect(retrying({ install: install("next") })).toBe(true);
+    expect(retrying({ install: install("next", { downloadedBytes: 4, totalBytes: 1000 }) })).toBe(
+      true,
+    );
+    expect(retrying({ install: install("next", { downloadedBytes: 1 }) })).toBe(false);
+    expect(retrying({ install: install("next", { phase: "failed" }) })).toBe(false);
+    expect(retrying({ startError: "Could not start" })).toBe(false);
+    // Not after a first install, and not once OpenCode is installed.
+    expect(retrying({ retriedInstallId: undefined, install: install("next") })).toBe(false);
   });
 
   it("tells three failures apart, and reads the rest as no answer", () => {
@@ -555,6 +595,18 @@ describe("no-agent screen", () => {
     );
     expect(noAgentScreenClosesForAgent([provider("opencode", { statusPending: true })], true)).toBe(
       false,
+    );
+  });
+
+  it("offers the free agent as ready once OpenCode works", () => {
+    expect(noAgentScreenFreeAgentReady(undefined)).toBe(false);
+    expect(noAgentScreenFreeAgentReady([provider("codex", missing)])).toBe(false);
+    expect(noAgentScreenFreeAgentReady([provider("opencode", { statusPending: true })])).toBe(
+      false,
+    );
+    expect(noAgentScreenFreeAgentReady([provider("opencode", { enabled: false })])).toBe(false);
+    expect(noAgentScreenFreeAgentReady([provider("codex", missing), provider("opencode")])).toBe(
+      true,
     );
   });
 

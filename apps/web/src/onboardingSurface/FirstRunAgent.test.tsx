@@ -308,6 +308,19 @@ it("retries a failed download once by itself before it offers Retry", async () =
   expect(retriedEvents()).toEqual([autoRetried]);
 });
 
+it("offers Try again again at the timeout when a retried install's request never answers", async () => {
+  await render();
+  await update(() => registry.set(testAtoms.install, installState("first", { phase: "failed" })));
+  await update(() => registry.set(testAtoms.install, installState("second", { phase: "failed" })));
+  expect(committed.at(-1)).toMatchObject({ kind: "failed", reason: "install" });
+
+  mocks.startInstall.mockReturnValueOnce(new Promise(() => {}));
+  await update(() => retry());
+  expect(retrying).toBe(true);
+  await update(() => vi.advanceTimersByTime(FIRST_RUN_AGENT_START_TIMEOUT_MS));
+  expect(retrying).toBe(false);
+});
+
 it("offers Retry again at the attempt's timeout when its check never answers", async () => {
   await startInstalled("hung");
   // The first attempt, then the app's own second one.

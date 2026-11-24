@@ -13,7 +13,11 @@ import { isElectron } from "../env";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { cn } from "../lib/utils";
 import { NO_AGENT_COPY } from "./noAgentScreenCopy";
-import type { NoAgentScreenPlace, NoAgentScreenView } from "./upComputerOnboarding.logic";
+import {
+  noAgentScreenDownloadPercent,
+  type NoAgentScreenPlace,
+  type NoAgentScreenView,
+} from "./upComputerOnboarding.logic";
 import { NO_AGENT_SETUP_PROMPT } from "./noAgentSetupPrompt";
 
 const COPIED_NOTE_MS = 4_000;
@@ -29,6 +33,7 @@ const grokIcon = providerClients.get(ProviderDriverKind.make("grok"))?.icon;
 export function NoAgentScreen({
   view,
   place,
+  freeAgentReady,
   copied: copiedOverride,
   onInstall,
   onTryAgain,
@@ -38,6 +43,8 @@ export function NoAgentScreen({
 }: {
   readonly view: NoAgentScreenView;
   readonly place: NoAgentScreenPlace;
+  /** OpenCode works already, so the install card opens the chat. */
+  readonly freeAgentReady: boolean;
   /** Forces the copied note, for state sheets. */
   readonly copied?: boolean;
   readonly onInstall: () => void;
@@ -80,6 +87,7 @@ export function NoAgentScreen({
           {view.kind === "offer" ? (
             <Offer
               place={place}
+              freeAgentReady={freeAgentReady}
               copied={copiedOverride}
               onInstall={onInstall}
               onSetUpMyself={onSetUpMyself}
@@ -106,12 +114,14 @@ export function NoAgentScreen({
 
 function Offer({
   place,
+  freeAgentReady,
   copied: copiedOverride,
   onInstall,
   onSetUpMyself,
   onCopyPrompt,
 }: {
   readonly place: NoAgentScreenPlace;
+  readonly freeAgentReady: boolean;
   readonly copied: boolean | undefined;
   readonly onInstall: () => void;
   readonly onSetUpMyself: () => void;
@@ -124,6 +134,13 @@ function Offer({
   });
   const copied = copiedOverride ?? isCopied;
   const copy = NO_AGENT_COPY.offer;
+  // A click that leaves the screen shows its spinner first: the app behind it can take seconds to draw.
+  const [leaving, setLeaving] = useState<"install" | "setup-myself" | null>(null);
+  const leave = (action: "install" | "setup-myself", run: () => void) => {
+    if (leaving !== null) return;
+    setLeaving(action);
+    requestAnimationFrame(() => window.setTimeout(run, 0));
+  };
   return (
     <>
       {/* The smallest window drops the intro, so all three cards fit at a readable size. */}
@@ -136,13 +153,15 @@ function Offer({
         <OptionCard
           action="install"
           track="onboarding.no_agent.install"
-          onClick={onInstall}
+          onClick={freeAgentReady ? () => leave("install", onInstall) : onInstall}
+          pending={leaving === "install"}
           icon={
             openCodeIcon ? <ProviderPackageIcon icon={openCodeIcon} className="h-5 w-auto" /> : null
           }
-          title={m(copy.installTitle)}
-          tag={m(copy.installTag)}
-          description={m(copy.installDescription)}
+          title={m(freeAgentReady ? copy.readyTitle : copy.installTitle)}
+          tag={m(freeAgentReady ? copy.readyTag : copy.installTag)}
+          tagTone={freeAgentReady ? "success" : "muted"}
+          description={m(freeAgentReady ? copy.readyDescription : copy.installDescription)}
         />
         <OptionCard
           action="copy-prompt"
@@ -163,7 +182,8 @@ function Offer({
         <OptionCard
           action="setup-myself"
           track="onboarding.no_agent.setup_myself"
-          onClick={onSetUpMyself}
+          onClick={() => leave("setup-myself", onSetUpMyself)}
+          pending={leaving === "setup-myself"}
           icon={<PlugIcon className="size-4.5 text-muted-foreground" />}
           title={m(copy.setupTitle)}
           description={m(copy.setupDescription)}
@@ -178,22 +198,28 @@ function OptionCard({
   action,
   track,
   onClick,
+  pending = false,
   icon,
   title,
   tag,
+  tagTone = "muted",
   description,
 }: {
   readonly action: string;
   readonly track: string;
   readonly onClick: () => void;
+  /** The click is on its way: a spinner replaces the arrow. */
+  readonly pending?: boolean;
   readonly icon: ReactNode;
   readonly title: string;
   readonly tag?: string;
+  readonly tagTone?: "muted" | "success";
   readonly description: ReactNode;
 }) {
   return (
     <button
       type="button"
+      aria-busy={pending || undefined}
       className="group flex w-full cursor-pointer items-center gap-3.5 rounded-xl border border-border px-4 py-3.5 text-left text-foreground outline-none hover:border-foreground/25 hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [@media(max-height:34rem)]:gap-3 [@media(max-height:34rem)]:px-3 [@media(max-height:34rem)]:py-2"
       onClick={onClick}
       data-no-agent-action={action}
@@ -205,17 +231,30 @@ function OptionCard({
       <span className="min-w-0 flex-1">
         <span className="block text-base leading-snug [@media(max-height:34rem)]:text-sm">
           <span className="font-medium">{title}</span>
-          {tag ? <span className="ml-2 text-muted-foreground">{tag}</span> : null}
+          {tag ? (
+            <span
+              className={cn(
+                "ml-2",
+                tagTone === "success" ? "text-success-foreground" : "text-muted-foreground",
+              )}
+            >
+              {tag}
+            </span>
+          ) : null}
         </span>
         {/* The smallest text on the screen: nothing here goes under it. */}
         <span className="mt-0.5 block text-sm leading-snug text-muted-foreground [@media(max-height:34rem)]:mt-0">
           {description}
         </span>
       </span>
-      <ChevronRightIcon
-        className="size-4.5 shrink-0 text-muted-foreground opacity-70 transition-transform group-hover:translate-x-0.5"
-        aria-hidden
-      />
+      {pending ? (
+        <Spinner size="md" tone="muted" className="shrink-0" />
+      ) : (
+        <ChevronRightIcon
+          className="size-4.5 shrink-0 text-muted-foreground opacity-70 transition-transform group-hover:translate-x-0.5"
+          aria-hidden
+        />
+      )}
     </button>
   );
 }
@@ -249,7 +288,7 @@ function Installing({
           {/* The bar holds still outside the download, so the spinner shows the work goes on. */}
           {phase === "downloading" ? null : <Spinner size="sm" />}
           {phase === "downloading"
-            ? m(copy.downloading.line(Math.round((progress ?? 0) * 100)))
+            ? m(copy.downloading.line(noAgentScreenDownloadPercent(progress)))
             : m(copy[phase].line)}
         </p>
       </div>

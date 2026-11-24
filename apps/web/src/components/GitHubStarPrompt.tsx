@@ -10,6 +10,7 @@ import { readLocalApi } from "../localApi";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { toastManager } from "./ui/toast";
+import { starPromptWaitsForRealAgent } from "../onboardingSurface/starPromptGate";
 
 // Separate keys so a count written by another tab can never undo a dismissal.
 const SENT_KEY = "t3code:github-star-prompt:sent";
@@ -147,7 +148,7 @@ async function starRepository(environmentId: EnvironmentId) {
  * unless the environment's GitHub account already starred the repo. Waits until the user is idle.
  */
 export async function recordPromptSent(environmentId: EnvironmentId): Promise<void> {
-  if (shownThisSession) return;
+  if (shownThisSession || starPromptWaitsForRealAgent(environmentId)) return;
   try {
     if (getLocalStorageItem(DISMISSED_KEY, Schema.Boolean)) return;
     const sent = (getLocalStorageItem(SENT_KEY, Schema.Number) ?? 0) + 1;

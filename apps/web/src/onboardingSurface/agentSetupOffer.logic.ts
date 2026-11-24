@@ -19,6 +19,8 @@ const AgentSetupOfferRecord = Schema.Struct({
   createdAt: Schema.Number,
   threadId: Schema.NullOr(Schema.String),
   state: Schema.Literals(["open", "answered", "dismissed"]),
+  /** `onboarding.agent_setup_offer` `shown` went out. */
+  shown: Schema.optionalKey(Schema.Boolean),
 });
 export type AgentSetupOfferRecord = typeof AgentSetupOfferRecord.Type;
 
@@ -115,6 +117,17 @@ export function answerAgentSetupOffer(threadId: string, state: "answered" | "dis
       ? record
       : { ...record, threadId, state },
   );
+}
+
+/** Marks the offer as shown: true only the first time, so its `shown` event goes out once. */
+export function markAgentSetupOfferShown(): boolean {
+  let marked = false;
+  updateAgentSetupOfferRecord((record) => {
+    if (record === null || record.shown === true) return record;
+    marked = true;
+    return { ...record, shown: true };
+  });
+  return marked;
 }
 
 function subscribe(listener: () => void) {
