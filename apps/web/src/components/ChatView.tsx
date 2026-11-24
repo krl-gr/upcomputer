@@ -326,6 +326,7 @@ import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
 import { useCitedHistory } from "./chat/citationProcedure";
 import type { MessagesTimelineHistoryControls } from "./chat/MessagesTimeline";
 import { ThreadTimeline } from "./chat/ThreadTimeline";
+import { useAgentSetupOfferPreview } from "../onboardingSurface/AgentSetupOfferPreview";
 import { NativeChildWorkDialog } from "./chat/NativeChildWorkDialog";
 import { ProviderSubagentBar } from "./chat/ProviderSubagentBar";
 import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
@@ -1640,15 +1641,19 @@ export default function ChatView(props: ChatViewProps) {
     ...timelineEntriesInput,
     visibleTurnItems: serverTimelineRows,
   });
-  const draftTimelineEntries = optimisticUserMessages.map(
-    (message) =>
-      ({
-        id: message.id,
-        kind: "message",
-        createdAt: message.createdAt,
-        message,
-      }) as const,
-  );
+  // UpComputer design preview (dev builds): the free agent's first message and its mock setup chat.
+  const setupOfferPreview = useAgentSetupOfferPreview();
+  const draftTimelineEntries =
+    setupOfferPreview?.entries ??
+    optimisticUserMessages.map(
+      (message) =>
+        ({
+          id: message.id,
+          kind: "message",
+          createdAt: message.createdAt,
+          message,
+        }) as const,
+    );
   const timelineEntries = isServerThread ? serverTimelineEntries : draftTimelineEntries;
   const timelineMessages = timelineEntries.flatMap((entry) =>
     entry.kind === "message" ? [entry.message] : [],
@@ -3667,7 +3672,7 @@ export default function ChatView(props: ChatViewProps) {
                   {...(activeProject && isProductFeatureShown("terminal")
                     ? { onRunShellCommand: parentPanel?.runShellCommand ?? runShellCommandStable }
                     : {})}
-                  isWorking={isWorking}
+                  isWorking={isWorking || setupOfferPreview?.working === true}
                   runlessWorkActive={runlessWorkStartedAt !== null}
                   isCompacting={isCompacting}
                   awaitingUser={
@@ -3699,7 +3704,7 @@ export default function ChatView(props: ChatViewProps) {
                     : {})}
                   {...(onOpenWorktreeSetupTerminal ? { onOpenWorktreeSetupTerminal } : {})}
                   isPreparingWorktree={isPreparingWorktree}
-                  footer={timelineFooter}
+                  footer={setupOfferPreview?.footer ?? timelineFooter}
                   listRef={legendListRef}
                   runs={serverProjection?.runs ?? []}
                   latestRun={activeActivityRun}
