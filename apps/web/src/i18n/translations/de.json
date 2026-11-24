@@ -1658,6 +1658,7 @@
   "8703de97f2c1a98f": "Am {date} mit {bot} angewendet",
   "64ab5f58b0818b06": "Heute in einem Chat angewendet",
   "51f94c63888ece8a": "Am {date} in einem Chat angewendet",
+  "4dd5390374dcb3f4": "Up.computer {release} · Baut auf „{update}“ auf, das du behalten hast, und wartet daher auf dich",
   "98dabfa5c252418c": "Up.computer {release} · Ändert Text, den du bearbeitet hast, und wartet daher auf dich",
   "0d060caa70a7f5bd": "Up.computer {release} · Wird automatisch angewendet, sobald „{update}“ angewendet ist",
   "4ff3fcbbc05deb52": "Up.computer {release} · {count, plural, one {{count} Änderung} other {{count} Änderungen}} · Nicht angewendet",

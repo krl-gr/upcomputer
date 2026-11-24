@@ -1658,6 +1658,7 @@
   "8703de97f2c1a98f": "Tillämpad {date} med {bot}",
   "64ab5f58b0818b06": "Tillämpad i dag i en chatt",
   "51f94c63888ece8a": "Tillämpad {date} i en chatt",
+  "4dd5390374dcb3f4": "Up.computer {release} · Bygger på ”{update}”, som du behöll, så den väntar på dig",
   "98dabfa5c252418c": "Up.computer {release} · Ändrar text du har redigerat, så den väntar på dig",
   "0d060caa70a7f5bd": "Up.computer {release} · Tillämpas automatiskt när ”{update}” har tillämpats",
   "4ff3fcbbc05deb52": "Up.computer {release} · {count, plural, one {{count} ändring} other {{count} ändringar}} · Inte tillämpad",

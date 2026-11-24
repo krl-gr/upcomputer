@@ -1656,6 +1656,7 @@
   "8703de97f2c1a98f": "{date} に {bot} で適用",
   "64ab5f58b0818b06": "今日チャットで適用",
   "51f94c63888ece8a": "{date} にチャットで適用",
+  "4dd5390374dcb3f4": "Up.computer {release} · 保持した「{update}」に基づくため、あなたの判断を待っています",
   "98dabfa5c252418c": "Up.computer {release} · 編集済みのテキストを変更するため、あなたの判断を待っています",
   "0d060caa70a7f5bd": "Up.computer {release} · 「{update}」が適用されると自動で適用されます",
   "4ff3fcbbc05deb52": "Up.computer {release} · {count, plural, other {{count} 件の変更}} · 未適用",

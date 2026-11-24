@@ -1658,6 +1658,7 @@
   "8703de97f2c1a98f": "Applied on {date} with {bot}",
   "64ab5f58b0818b06": "Applied today in a chat",
   "51f94c63888ece8a": "Applied on {date} in a chat",
+  "4dd5390374dcb3f4": "Up.computer {release} · Builds on “{update}”, which you kept, so it waits for you",
   "98dabfa5c252418c": "Up.computer {release} · Changes text you edited, so it waits for you",
   "0d060caa70a7f5bd": "Up.computer {release} · Applies automatically once “{update}” is applied",
   "4ff3fcbbc05deb52": "Up.computer {release} · {count, plural, one {{count} change} other {{count} changes}} · Not applied",

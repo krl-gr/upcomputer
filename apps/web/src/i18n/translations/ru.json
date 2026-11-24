@@ -1658,6 +1658,7 @@
   "8703de97f2c1a98f": "Применено {date} с помощью {bot}",
   "64ab5f58b0818b06": "Применено сегодня в чате",
   "51f94c63888ece8a": "Применено {date} в чате",
+  "4dd5390374dcb3f4": "Up.computer {release} · Основано на «{update}», которое вы оставили, поэтому ждёт вашего решения",
   "98dabfa5c252418c": "Up.computer {release} · Меняет текст, который вы редактировали, поэтому ждёт вас",
   "0d060caa70a7f5bd": "Up.computer {release} · Применится автоматически после «{update}»",
   "4ff3fcbbc05deb52": "Up.computer {release} · {count, plural, one {{count} изменение} few {{count} изменения} many {{count} изменений} other {{count} изменения}} · Не применено",

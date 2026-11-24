@@ -1658,6 +1658,7 @@
   "8703de97f2c1a98f": "{date}에 {bot}와(과) 함께 적용됨",
   "64ab5f58b0818b06": "오늘 채팅에서 적용됨",
   "51f94c63888ece8a": "{date}에 채팅에서 적용됨",
+  "4dd5390374dcb3f4": "Up.computer {release} · 유지하기로 한 “{update}”을(를) 바탕으로 하므로 결정을 기다립니다",
   "98dabfa5c252418c": "Up.computer {release} · 편집한 텍스트를 변경하므로 결정을 기다립니다",
   "0d060caa70a7f5bd": "Up.computer {release} · ‘{update}’이(가) 적용되면 자동으로 적용됩니다",
   "4ff3fcbbc05deb52": "Up.computer {release} · {count, plural, other {변경 {count}개}} · 적용 안 됨",

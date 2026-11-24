@@ -1658,6 +1658,7 @@
   "8703de97f2c1a98f": "已于 {date} 通过 {bot} 应用",
   "64ab5f58b0818b06": "今天已在聊天中应用",
   "51f94c63888ece8a": "已于 {date} 在聊天中应用",
+  "4dd5390374dcb3f4": "Up.computer {release} · 基于你保留的“{update}”，因此会等你决定",
   "98dabfa5c252418c": "Up.computer {release} · 会更改你编辑过的文本，因此等待你决定",
   "0d060caa70a7f5bd": "Up.computer {release} · “{update}”应用后会自动应用",
   "4ff3fcbbc05deb52": "Up.computer {release} · {count, plural, other {{count} 项更改}} · 未应用",

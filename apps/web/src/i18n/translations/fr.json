@@ -1658,6 +1658,7 @@
   "8703de97f2c1a98f": "Appliquée le {date} avec {bot}",
   "64ab5f58b0818b06": "Appliquée aujourd’hui dans une discussion",
   "51f94c63888ece8a": "Appliquée le {date} dans une discussion",
+  "4dd5390374dcb3f4": "Up.computer {release} · S’appuie sur « {update} », que vous avez conservée, elle vous attend donc",
   "98dabfa5c252418c": "Up.computer {release} · Modifie du texte que vous avez édité, elle attend donc votre décision",
   "0d060caa70a7f5bd": "Up.computer {release} · S’applique automatiquement une fois « {update} » appliquée",
   "4ff3fcbbc05deb52": "Up.computer {release} · {count, plural, one {{count} modification} other {{count} modifications}} · Non appliquée",
