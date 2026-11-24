@@ -1,18 +1,19 @@
 import { ProviderDriverKind } from "@t3tools/contracts";
-import type { ProviderIcon } from "@t3tools/provider-core/client";
-import { T, useGT } from "gt-react";
-import { CheckIcon, ChevronRightIcon, CircleAlertIcon, CopyIcon, PlugIcon } from "lucide-react";
+import { T, useGT, useMessages } from "gt-react";
+import { CheckIcon, ChevronRightIcon, CopyIcon, PlugIcon } from "lucide-react";
 import { useId, useState, type CSSProperties, type ReactNode } from "react";
 
 import { AntigravityIcon, ClaudeAI, OpenAI } from "../components/Icons";
 import { ProviderPackageIcon } from "../components/chat/ProviderPackageIcon";
 import hermesLogo from "../components/mcp/logos/hermes.png";
 import { providerClients } from "../components/settings/providerDriverMeta";
-import { RefreshIcon } from "../components/ui/refresh-icon";
+import { Badge } from "../components/ui/badge";
+import { InlineButton } from "../components/ui/button";
 import { Spinner } from "../components/ui/spinner";
 import { isElectron } from "../env";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { cn } from "../lib/utils";
+import { NO_AGENT_COPY } from "./noAgentScreenCopy";
 import { NO_AGENT_SETUP_PROMPT } from "./noAgentSetupPrompt";
 
 const OPENCODE_URL = "https://opencode.ai";
@@ -21,62 +22,54 @@ const COPIED_NOTE_MS = 4_000;
 const openCodeIcon = providerClients.get(ProviderDriverKind.make("opencode"))?.icon;
 const grokIcon = providerClients.get(ProviderDriverKind.make("grok"))?.icon;
 
-/** The filled card is dark in the light theme and light in the dark one, so its mark swaps too. */
-function invertedIcon(icon: ProviderIcon): ProviderIcon {
-  return {
-    ...icon,
-    fill: { light: icon.fill.dark, dark: icon.fill.light },
-    paths: icon.paths.map((path) =>
-      path.fill ? { ...path, fill: { light: path.fill.dark, dark: path.fill.light } } : path,
-    ),
-  };
-}
-const openCodeIconOnFill = openCodeIcon ? invertedIcon(openCodeIcon) : undefined;
-
 export type NoAgentScreenView =
   | { readonly kind: "offer" }
   | {
       readonly kind: "installing";
-      /** 0 to 1 while the download reports bytes, null before and after it. */
+      /** `slow` is `starting` past 15 seconds. `retrying` runs from Try again until progress reports. */
+      readonly phase: "downloading" | "starting" | "slow" | "retrying";
+      /** 0 to 1 while the download reports bytes. */
       readonly progress: number | null;
-      /** Installed, and still starting: the same wording the composer uses. */
-      readonly slow: boolean;
     }
-  | { readonly kind: "failed"; readonly message: string };
+  | { readonly kind: "failed"; readonly reason: "install" | "timeout" | "models" };
 
 /**
  * A new user's first screen when no coding agent is on the Mac: three ways to
- * get one, and nothing installs before they pick. Presentational: the caller
- * owns the install and its events.
+ * get one, and nothing installs before they pick. Installing and a failure
+ * each replace the cards. Presentational: the caller owns the install and its events.
  */
 export function NoAgentScreen({
   view,
-  retrying = false,
   copied: copiedOverride,
+  centeredOffer = false,
   onInstall,
-  onRetry,
+  onTryAgain,
+  onSetUpAnotherWay,
   onSetUpMyself,
   onCopyPrompt,
   onOpenCodeLinkClick,
 }: {
   readonly view: NoAgentScreenView;
-  readonly retrying?: boolean;
   /** Forces the copied note, for state sheets. */
   readonly copied?: boolean;
+  /** Design question: center the offer's picture and text like the state screens. */
+  readonly centeredOffer?: boolean;
   readonly onInstall: () => void;
-  readonly onRetry: () => void;
+  readonly onTryAgain: () => void;
+  readonly onSetUpAnotherWay: () => void;
   readonly onSetUpMyself: () => void;
   readonly onCopyPrompt?: () => void;
   readonly onOpenCodeLinkClick?: () => void;
 }) {
-  const gt = useGT();
-  const { copyToClipboard, isCopied } = useCopyToClipboard<void>({
-    timeout: COPIED_NOTE_MS,
-    onCopy: onCopyPrompt,
-  });
-  const copied = copiedOverride ?? isCopied;
-  const installing = view.kind === "installing";
-  const failed = view.kind === "failed";
+  const m = useMessages();
+  const offer = view.kind === "offer";
+  const centered = !offer || centeredOffer;
+  const title =
+    view.kind === "offer"
+      ? NO_AGENT_COPY.offer.title
+      : view.kind === "installing"
+        ? NO_AGENT_COPY.installing[view.phase].title
+        : NO_AGENT_COPY.failed[view.reason].title;
 
   return (
     <main
@@ -88,109 +81,124 @@ export function NoAgentScreen({
         <div className="drag-region h-(--workspace-topbar-height) shrink-0" aria-hidden />
       ) : null}
       <div className="flex min-h-0 flex-1 items-center-safe justify-center overflow-y-auto scrollbar-gutter-both px-4 py-8 [@media(max-height:34rem)]:py-3 sm:px-6">
-        <section className="w-full max-w-lg" aria-labelledby="no-agent-screen-title">
+        <section
+          className={cn("w-full max-w-lg", centered && "text-center")}
+          aria-labelledby="no-agent-screen-title"
+        >
           {/* A short window drops the picture so the three cards stay in view. */}
-          <div className="mb-8 [@media(max-height:42rem)]:hidden">
-            <AgentIconStack />
+          <div className={cn("mb-8", offer && "[@media(max-height:42rem)]:hidden")}>
+            <AgentIconStack centered={centered} />
           </div>
 
           <h1
             id="no-agent-screen-title"
             className="text-2xl font-semibold tracking-tight text-foreground [@media(max-height:34rem)]:text-xl"
           >
-            {gt("Let's get you an agent")}
+            {m(title)}
           </h1>
-          <p className="mt-3 text-base leading-relaxed text-muted-foreground [@media(max-height:34rem)]:mt-1.5 [@media(max-height:34rem)]:text-sm [@media(max-height:34rem)]:leading-snug">
-            {gt(
-              "We didn't find Claude Code, Codex or another coding agent on this Mac. Up.computer works with the agents you already have.",
-            )}
-          </p>
-
-          {/* Equal rows: the cards keep one shape, and a state change never moves the block. */}
-          <div className="mt-7 grid auto-rows-fr gap-2.5 [@media(max-height:34rem)]:mt-3 [@media(max-height:34rem)]:gap-2">
-            <OptionCard
-              filled
-              action={failed ? "retry" : "install"}
-              track={failed ? "onboarding.no_agent.retry" : "onboarding.no_agent.install"}
-              disabled={installing || retrying}
-              onClick={failed ? onRetry : onInstall}
-              icon={
-                openCodeIconOnFill ? (
-                  <ProviderPackageIcon icon={openCodeIconOnFill} className="h-5 w-auto" />
-                ) : null
-              }
-              title={gt("Install a free agent")}
-              trailing={
-                installing ? (
-                  <Spinner size="md" />
-                ) : failed ? (
-                  <span className="flex items-center gap-1.5 text-sm font-medium">
-                    <RefreshIcon size="sm" refreshing={retrying} />
-                    {retrying ? gt("Retrying…") : gt("Retry")}
-                  </span>
-                ) : undefined
-              }
-              description={
-                installing ? (
-                  <InstallProgress progress={view.progress} slow={view.slow} />
-                ) : failed ? (
-                  <span role="alert">
-                    <CircleAlertIcon
-                      className="mr-1.5 inline-block size-4 align-text-bottom text-destructive"
-                      aria-hidden
-                    />
-                    <span className="text-background">{view.message}</span>
-                  </span>
-                ) : (
-                  <T>
-                    <a
-                      className="relative z-10 font-medium text-background underline decoration-current/40 underline-offset-2 hover:decoration-current"
-                      href={OPENCODE_URL}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      onClick={onOpenCodeLinkClick}
-                      data-no-agent-action="opencode-link"
-                      data-track="onboarding.no_agent.opencode_link"
-                    >
-                      OpenCode
-                    </a>{" "}
-                    with free models that don't keep your data. It will help you set up the rest.
-                  </T>
-                )
-              }
+          {view.kind === "offer" ? (
+            <Offer
+              copied={copiedOverride}
+              onInstall={onInstall}
+              onSetUpMyself={onSetUpMyself}
+              onCopyPrompt={onCopyPrompt}
+              onOpenCodeLinkClick={onOpenCodeLinkClick}
             />
-            <OptionCard
-              action="copy-prompt"
-              track="onboarding.no_agent.copy_prompt"
-              onClick={() => copyToClipboard(NO_AGENT_SETUP_PROMPT, undefined)}
-              icon={
-                copied ? (
-                  <CheckIcon className="size-5 text-success-foreground" />
-                ) : (
-                  <CopyIcon className="size-4.5" />
-                )
-              }
-              title={gt("Ask your own agent")}
-              description={
-                copied ? (
-                  <span role="status">{gt("Copied. Paste it into your agent.")}</span>
-                ) : (
-                  gt("Copy a setup prompt for Claude, ChatGPT or any agent you already use.")
-                )
-              }
+          ) : view.kind === "installing" ? (
+            <Installing phase={view.phase} progress={view.progress} />
+          ) : (
+            <Failed
+              reason={view.reason}
+              onTryAgain={onTryAgain}
+              onSetUpAnotherWay={onSetUpAnotherWay}
             />
-            <OptionCard
-              action="setup-myself"
-              track="onboarding.no_agent.setup_myself"
-              onClick={onSetUpMyself}
-              icon={<PlugIcon className="size-4.5" />}
-              title={gt("Set up myself")}
-              description={gt("Install or connect Claude Code, Codex, Antigravity and more.")}
-            />
-          </div>
+          )}
         </section>
       </div>
     </main>
+  );
+}
+
+function Offer({
+  copied: copiedOverride,
+  onInstall,
+  onSetUpMyself,
+  onCopyPrompt,
+  onOpenCodeLinkClick,
+}: {
+  readonly copied: boolean | undefined;
+  readonly onInstall: () => void;
+  readonly onSetUpMyself: () => void;
+  readonly onCopyPrompt: (() => void) | undefined;
+  readonly onOpenCodeLinkClick: (() => void) | undefined;
+}) {
+  const m = useMessages();
+  const { copyToClipboard, isCopied } = useCopyToClipboard<void>({
+    timeout: COPIED_NOTE_MS,
+    onCopy: onCopyPrompt,
+  });
+  const copied = copiedOverride ?? isCopied;
+  const copy = NO_AGENT_COPY.offer;
+  return (
+    <>
+      <p className="mt-3 text-base leading-relaxed text-muted-foreground [@media(max-height:34rem)]:mt-1.5 [@media(max-height:34rem)]:text-sm [@media(max-height:34rem)]:leading-snug">
+        {m(copy.intro)}
+      </p>
+
+      {/* Equal rows: the cards keep one shape, and a state change never moves the block. */}
+      <div className="mt-7 grid auto-rows-fr gap-2.5 text-left [@media(max-height:34rem)]:mt-3 [@media(max-height:34rem)]:gap-2">
+        <OptionCard
+          action="install"
+          track="onboarding.no_agent.install"
+          onClick={onInstall}
+          icon={
+            openCodeIcon ? <ProviderPackageIcon icon={openCodeIcon} className="h-5 w-auto" /> : null
+          }
+          title={m(copy.installTitle)}
+          tag={m(copy.installTag)}
+          description={
+            <T>
+              <a
+                className="relative z-10 font-medium text-foreground underline decoration-current/30 underline-offset-2 hover:decoration-current"
+                href={OPENCODE_URL}
+                target="_blank"
+                rel="noreferrer noopener"
+                onClick={onOpenCodeLinkClick}
+                data-no-agent-action="opencode-link"
+                data-track="onboarding.no_agent.opencode_link"
+              >
+                OpenCode
+              </a>{" "}
+              with free models that don't keep your data. It will help you set up the rest.
+            </T>
+          }
+        />
+        <OptionCard
+          action="copy-prompt"
+          track="onboarding.no_agent.copy_prompt"
+          onClick={() => copyToClipboard(NO_AGENT_SETUP_PROMPT, undefined)}
+          icon={
+            copied ? (
+              <CheckIcon className="size-5 text-success-foreground" />
+            ) : (
+              <CopyIcon className="size-4.5 text-muted-foreground" />
+            )
+          }
+          title={m(copy.askTitle)}
+          description={
+            copied ? <span role="status">{m(copy.askCopied)}</span> : m(copy.askDescription)
+          }
+        />
+        <OptionCard
+          action="setup-myself"
+          track="onboarding.no_agent.setup_myself"
+          onClick={onSetUpMyself}
+          icon={<PlugIcon className="size-4.5 text-muted-foreground" />}
+          title={m(copy.setupTitle)}
+          description={m(copy.setupDescription)}
+        />
+      </div>
+    </>
   );
 }
 
@@ -199,121 +207,142 @@ export function NoAgentScreen({
  * so a link in the description can sit above the button without nesting in it.
  */
 function OptionCard({
-  filled = false,
   action,
   track,
-  disabled = false,
   onClick,
   icon,
   title,
+  tag,
   description,
-  trailing,
 }: {
-  readonly filled?: boolean;
   readonly action: string;
   readonly track: string;
-  readonly disabled?: boolean;
   readonly onClick: () => void;
   readonly icon: ReactNode;
   readonly title: string;
+  readonly tag?: string;
   readonly description: ReactNode;
-  readonly trailing?: ReactNode;
 }) {
   const titleId = useId();
   const descriptionId = useId();
   return (
     <div
-      className={cn(
-        "group relative flex items-center gap-3.5 rounded-xl border px-4 py-3.5 [@media(max-height:34rem)]:gap-3 [@media(max-height:34rem)]:px-3 [@media(max-height:34rem)]:py-2",
-        filled
-          ? "border-foreground bg-foreground text-background shadow-sm has-[button:enabled:hover]:bg-foreground/90"
-          : "border-border text-foreground has-[button:enabled:hover]:border-foreground/25 has-[button:enabled:hover]:bg-accent/60",
-      )}
+      className="group relative flex items-center gap-3.5 rounded-xl border border-border px-4 py-3.5 text-foreground has-[button:hover]:border-foreground/25 has-[button:hover]:bg-accent/60 [@media(max-height:34rem)]:gap-3 [@media(max-height:34rem)]:px-3 [@media(max-height:34rem)]:py-2"
       data-no-agent-card={action}
     >
       <button
         type="button"
-        className="absolute inset-0 cursor-pointer rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-default"
+        className="absolute inset-0 cursor-pointer rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
-        disabled={disabled}
         onClick={onClick}
         data-no-agent-action={action}
         data-track={track}
       />
-      <span
-        className={cn(
-          "flex size-5 shrink-0 items-center justify-center",
-          filled ? "" : "text-muted-foreground",
-        )}
-        aria-hidden
-      >
+      <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden>
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span
-          id={titleId}
-          className="block text-base leading-snug font-medium [@media(max-height:34rem)]:text-sm"
-        >
-          {title}
+        <span className="flex items-center gap-2">
+          <span
+            id={titleId}
+            className="text-base leading-snug font-medium [@media(max-height:34rem)]:text-sm"
+          >
+            {title}
+          </span>
+          {tag ? (
+            <Badge variant="secondary" size="sm">
+              {tag}
+            </Badge>
+          ) : null}
         </span>
         <span
           id={descriptionId}
-          className={cn(
-            "mt-0.5 block text-sm leading-snug [@media(max-height:34rem)]:mt-0 [@media(max-height:34rem)]:text-xs",
-            filled ? "text-background/70" : "text-muted-foreground",
-          )}
+          className="mt-0.5 block text-sm leading-snug text-muted-foreground [@media(max-height:34rem)]:mt-0 [@media(max-height:34rem)]:text-xs"
         >
           {description}
         </span>
       </span>
-      <span className={cn("flex shrink-0 items-center", filled ? "" : "text-muted-foreground")}>
-        {trailing ?? (
-          <ChevronRightIcon
-            className="size-4.5 opacity-70 transition-transform group-has-[button:enabled:hover]:translate-x-0.5"
-            aria-hidden
-          />
-        )}
-      </span>
+      <ChevronRightIcon
+        className="size-4.5 shrink-0 text-muted-foreground opacity-70 transition-transform group-has-[button:hover]:translate-x-0.5"
+        aria-hidden
+      />
     </div>
   );
 }
 
-/** Inside the filled card, so the bar and text take the card's own colors. */
-function InstallProgress({
+function Installing({
+  phase,
   progress,
-  slow,
 }: {
+  readonly phase: "downloading" | "starting" | "slow" | "retrying";
   readonly progress: number | null;
-  readonly slow: boolean;
 }) {
-  const gt = useGT();
-  // The bar never runs backward: once the download is done it stays full while the agent starts.
-  const reported = progress ?? 0;
+  const m = useMessages();
+  // Full once installed. The bar never runs backward within one attempt.
+  const reported =
+    phase === "starting" || phase === "slow" ? 1 : phase === "retrying" ? 0 : (progress ?? 0);
   const [filled, setFilled] = useState(reported);
   if (reported > filled) setFilled(reported);
-  if (slow) {
-    return (
-      <span role="status" data-no-agent-progress>
-        <span className="text-background">{gt("Still starting your agent…")}</span>{" "}
-        {gt("The first start can take a minute or two.")}
-      </span>
-    );
-  }
+  const copy = NO_AGENT_COPY.installing;
   return (
-    <span className="block pt-1.5" role="status" data-no-agent-progress>
-      <span className="block h-1.5 w-full overflow-hidden rounded-full bg-background/20">
-        <span
-          className="block h-full rounded-full bg-background transition-[width] duration-300 ease-out"
+    <div className="mx-auto mt-7 w-full max-w-xs" role="status" data-no-agent-progress={phase}>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+        <div
+          className="h-full rounded-full bg-foreground transition-[width] duration-300 ease-out"
           style={{ width: `${Math.round(filled * 100)}%` }}
         />
-      </span>
-      <span className="mt-2 block text-background/80">
-        {progress === null
-          ? gt("Setting up your agent…")
-          : gt("Setting up your agent… {percent}%", { percent: Math.round(progress * 100) })}
-      </span>
-    </span>
+      </div>
+      <p className="mt-3.5 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+        {/* The bar holds still outside the download, so the spinner shows the work goes on. */}
+        {phase === "downloading" ? null : <Spinner size="sm" />}
+        {phase === "downloading"
+          ? m(copy.downloading.line(Math.round((progress ?? 0) * 100)))
+          : m(copy[phase].line)}
+      </p>
+    </div>
+  );
+}
+
+function Failed({
+  reason,
+  onTryAgain,
+  onSetUpAnotherWay,
+}: {
+  readonly reason: "install" | "timeout" | "models";
+  readonly onTryAgain: () => void;
+  readonly onSetUpAnotherWay: () => void;
+}) {
+  const m = useMessages();
+  return (
+    <div data-no-agent-failed={reason}>
+      <p
+        className="mx-auto mt-3 max-w-sm text-base leading-relaxed text-muted-foreground"
+        role="alert"
+      >
+        {m(NO_AGENT_COPY.failed[reason].line)}
+      </p>
+      <div className="mt-7 flex flex-col items-center gap-4 text-sm">
+        {/* The bar's own dark tone, which no shared Button variant has. */}
+        <button
+          type="button"
+          className="inline-flex h-10 cursor-pointer items-center justify-center rounded-lg bg-foreground px-5 text-sm font-medium text-background shadow-sm outline-none hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset active:scale-[0.98]"
+          onClick={onTryAgain}
+          data-no-agent-action="try-again"
+          data-track="onboarding.no_agent.try_again"
+        >
+          {m(NO_AGENT_COPY.tryAgain)}
+        </button>
+        <InlineButton
+          tone="muted"
+          onClick={onSetUpAnotherWay}
+          data-no-agent-action="setup-another-way"
+          data-track="onboarding.no_agent.setup_another_way"
+        >
+          {m(NO_AGENT_COPY.setUpAnotherWay)}
+        </InlineButton>
+      </div>
+    </div>
   );
 }
 
@@ -356,11 +385,11 @@ const TILES: ReadonlyArray<{
   },
 ];
 
-function AgentIconStack() {
+function AgentIconStack({ centered }: { readonly centered: boolean }) {
   const gt = useGT();
   return (
     <div
-      className="flex h-[4.5rem] items-center pl-1"
+      className={cn("flex h-[4.5rem] items-center", centered ? "justify-center" : "pl-1")}
       role="img"
       aria-label={gt("Claude Code, Codex, Antigravity, Grok, OpenCode and Hermes")}
     >
