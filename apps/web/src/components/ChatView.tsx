@@ -3207,6 +3207,7 @@ export default function ChatView(props: ChatViewProps) {
     handleNewThreadInActiveProject,
     persistThreadSettingsForNextTurn,
     linkCheckoutPullRequest,
+    newThreadTitle: agentSetupOffer?.threadTitle ?? null,
   });
 
   const onWorktreeSetupWorkLocally = () => {

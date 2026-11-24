@@ -114,6 +114,8 @@ export interface AgentSetupOfferTimeline {
   }) => { readonly messageId: MessageId; readonly content: ReactNode } | null;
   /** Called before a send from this chat's composer: any message answers the open offer. */
   readonly beforeSend: () => void;
+  /** The title of the chat a send creates while the offer is open: the setup chat. */
+  readonly threadTitle: string | null;
 }
 
 /**
@@ -198,6 +200,7 @@ export function useAgentSetupOffer(input: {
       setAgentSetupOfferTyping(null);
       answerAgentSetupOffer(threadId, "answered");
     },
+    threadTitle: view.replies ? m(AGENT_SETUP_OFFER_COPY.chatTitle) : null,
   };
 }
 

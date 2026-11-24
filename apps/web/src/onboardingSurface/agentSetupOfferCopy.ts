@@ -4,6 +4,8 @@ import { msg } from "gt-react";
 export const AGENT_SETUP_OFFER_COPY = {
   message: msg("I'm ready to help you set up your agents. Which one do you want to start with?"),
   notNowReply: msg("You can ask me to set up your agents anytime."),
+  /** The chat's title once the offer is answered, instead of one the model makes up. */
+  chatTitle: msg("Set up your agents"),
   repliesLabel: msg("Quick replies"),
   claude: msg("Claude Code"),
   codex: msg("Codex"),

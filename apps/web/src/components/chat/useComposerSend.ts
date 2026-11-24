@@ -292,6 +292,8 @@ interface ComposerSendInput {
   }) => Promise<AtomCommandResult<void, unknown>>;
   /** Links a checked-out pull request to its thread; best effort, failures only logged. */
   readonly linkCheckoutPullRequest: (threadRef: ScopedThreadRef, url: string) => void;
+  /** UpComputer: a fixed title for the thread this send creates, kept over a generated one. */
+  readonly newThreadTitle?: string | null;
 }
 
 /**
@@ -374,6 +376,7 @@ export function useComposerSend(input: ComposerSendInput) {
     handleNewThreadInActiveProject,
     persistThreadSettingsForNextTurn,
     linkCheckoutPullRequest,
+    newThreadTitle,
   } = input;
   const linkedEnvironments = useLinkedEnvironments(environmentId);
   const handleNewThread = useNewThreadHandler();
@@ -1411,6 +1414,7 @@ export function useComposerSend(input: ComposerSendInput) {
       },
       m,
     );
+    const fixedTitle = isLocalDraftThread ? newThreadTitle : null;
     const threadCreateModelSelection = createModelSelection(
       ctxSelectedModelSelection.instanceId,
       ctxSelectedModel || activeProjectDefaultModelSelection?.model || DEFAULT_MODEL,
@@ -1478,7 +1482,7 @@ export function useComposerSend(input: ComposerSendInput) {
                 ? {
                     createThread: {
                       projectId: activeProject.id,
-                      title,
+                      title: fixedTitle ?? title,
                       modelSelection: threadCreateModelSelection,
                       runtimeMode,
                       interactionMode: DEFAULT_INTERACTION_MODE,
@@ -1528,7 +1532,8 @@ export function useComposerSend(input: ComposerSendInput) {
             }),
           },
           modelSelection: ctxSelectedModelSelection,
-          titleSeed: title,
+          // A fixed title needs no seed: the new thread keeps it and generates none.
+          ...(fixedTitle ? {} : { titleSeed: title }),
           runtimeMode,
           interactionMode: DEFAULT_INTERACTION_MODE,
           dispatchMode: turnDispatchMode,
