@@ -160,9 +160,10 @@ describe("Bots section lists", () => {
     const here = EnvironmentId.make("sections-first-start");
     let answer: (bots: unknown) => void = () => {};
     servers.lists.set(here, () => new Promise((resolve) => (answer = resolve)));
-    // Until the computer says it serves Tasks, its list may never come: nothing is held.
+    // The Tasks check comes first, and bot chats flashed during it (up to 2.5 s through the
+    // updater), so the threads are held meanwhile too.
     setAccess("loading");
-    expect(rememberedBotChatKeys([here])).toEqual([]);
+    expect(rememberedBotChatKeys([here])).toEqual([allSidebarThreadsClaimKey(here)]);
 
     setAccess("enabled");
     const { view } = await render([here]);
@@ -204,6 +205,10 @@ describe("Bots section lists", () => {
     expect(rememberedBotChatKeys([older])).toHaveLength(1);
     setAccess("unavailable");
     expect(rememberedBotChatKeys([older])).toEqual([]);
+    // One with nothing remembered is no longer held either.
+    expect(rememberedBotChatKeys([EnvironmentId.make("sections-first-start-no-tasks")])).toEqual(
+      [],
+    );
   });
 
   it("merges every computer's bots, in order", async () => {

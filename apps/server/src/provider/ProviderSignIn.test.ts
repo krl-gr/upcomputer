@@ -157,7 +157,7 @@ describe("ProviderSignIn", () => {
       yield* subprocess(harness, true);
       const running = yield* withViewer(signIn("claudeAgent"));
       assert.strictEqual(running.status, "alreadyOpen");
-      assert.include(running.message, "in the browser");
+      assert.include(running.message, "signing in through the browser");
       assert.deepStrictEqual(harness.written, ["claude auth login"]);
 
       // Cancelled or failed: the shell is back at an empty prompt, so it is typed again,
@@ -196,6 +196,7 @@ describe("ProviderSignIn", () => {
       }),
       provider("cursor", { setup: { canAuthenticate: true, canInstall: false } }),
       provider("pi"),
+      provider("grok", { enabled: false, status: "disabled", installed: false }),
       provider(
         "antigravity",
         {
@@ -220,6 +221,11 @@ describe("ProviderSignIn", () => {
       const cursor = yield* withViewer(signIn("cursor"));
       assert.strictEqual(cursor.status, "appSetup");
       assert.notInclude(cursor.message, "Install button");
+      // A CLI the agent just installed starts turned off; the card turns it on in the chat.
+      const grok = yield* withViewer(signIn("grok"));
+      assert.strictEqual(grok.status, "appSetup");
+      assert.strictEqual(grok.appSetupInstanceId, "grok");
+      assert.include(grok.message, "Turn on button");
 
       const pi = yield* withViewer(signIn("pi"));
       assert.strictEqual(pi.status, "useSettings");
@@ -234,6 +240,7 @@ describe("ProviderSignIn", () => {
         ["onboarding.provider_sign_in", { outcome: "appSetup", provider: "antigravity" }],
         ["onboarding.provider_sign_in", { outcome: "appSetup", provider: "antigravity" }],
         ["onboarding.provider_sign_in", { outcome: "appSetup", provider: "cursor" }],
+        ["onboarding.provider_sign_in", { outcome: "appSetup", provider: "grok" }],
         ["onboarding.provider_sign_in", { outcome: "useSettings", provider: "pi" }],
         ["onboarding.provider_sign_in", { outcome: "failed", reason: "no_window" }],
       ]);
@@ -250,7 +257,7 @@ describe("ProviderSignIn", () => {
     }).pipe(Effect.provide(layer));
   });
 
-  it.effect("refuses unknown, ambiguous, turned-off and missing providers", () => {
+  it.effect("refuses unknown, ambiguous and missing providers", () => {
     const { harness, layer } = setup([
       provider("codex"),
       provider("codex", {}, "codex_work"),
@@ -261,12 +268,15 @@ describe("ProviderSignIn", () => {
       for (const [name, reason] of [
         ["nope", "unknown_provider"],
         ["codex_", "unknown_provider"],
-        ["kiro", "disabled"],
         ["fx", "not_installed"],
       ] as const) {
         const error = yield* Effect.flip(withViewer(signIn(name)));
         assert.strictEqual(error.reason, reason, name);
       }
+      // Without a window to show the Turn on button, Settings is the way.
+      const off = yield* Effect.flip(withViewer(signIn("kiro"), false));
+      assert.strictEqual(off.reason, "no_window");
+      assert.include(off.message, "turn it on in Settings, Providers");
       // An exact id wins over its prefix matching another instance.
       assert.strictEqual((yield* withViewer(signIn("codex"))).command, "codex login");
       assert.deepStrictEqual(harness.opened, ["provider-sign-in-codex codex"]);

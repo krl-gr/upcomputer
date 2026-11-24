@@ -56,6 +56,7 @@ import {
   isOrchestrationV2WorkActive,
   type MessageId,
   type OrchestrationV2IdleCompaction,
+  type OrchestrationV2Run,
   type WorktreeSetupSnapshot,
   type OrchestrationV2ProjectedTurnItem,
   type RunAttemptId,
@@ -505,6 +506,19 @@ const TIMELINE_MINIMAP_NAVIGATION_REACH = 14;
 
 export function resolveTimelineMinimapNavigationInteractive(collapsedWidth: number): boolean {
   return collapsedWidth >= TIMELINE_MINIMAP_NAVIGATION_REACH;
+}
+
+/** How long each finished run took, by its own start and end. */
+export function finishedRunElapsedMs(
+  runs: ReadonlyArray<Pick<OrchestrationV2Run, "id" | "startedAt" | "completedAt">>,
+): Map<RunId, number> {
+  const elapsed = new Map<RunId, number>();
+  for (const run of runs) {
+    if (run.startedAt === null || run.completedAt === null) continue;
+    const ms = run.completedAt.epochMilliseconds - run.startedAt.epochMilliseconds;
+    if (ms >= 0) elapsed.set(run.id, ms);
+  }
+  return elapsed;
 }
 
 function computeElapsedMs(startIso: string, endIso: string): number | null {
@@ -1090,6 +1104,7 @@ function deriveTurnFolds(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   terminalAssistantMessageIds: ReadonlySet<string>;
   latestRun: TimelineLatestRun | null;
+  finishedRunElapsedMs?: ReadonlyMap<RunId, number> | undefined;
   unfoldedRunIds: ReadonlySet<RunId>;
   runlessWorkActive: boolean;
   liveSubagentEntryIds: ReadonlySet<string>;
@@ -1267,14 +1282,16 @@ function deriveTurnFolds(input: {
     const lastTurnEntry =
       group.entries.findLast((entry) => !lateSubagentIds.has(entry.id)) ?? lastEntry;
     const lastEntryEnd = timelineEntryEnd(lastTurnEntry);
+    // A finished run keeps its own time once a later run becomes the latest.
     const elapsedMs =
-      input.latestRun?.runId === runId && input.latestRun.startedAt && input.latestRun.completedAt
+      input.finishedRunElapsedMs?.get(runId) ??
+      (input.latestRun?.runId === runId && input.latestRun.startedAt && input.latestRun.completedAt
         ? computeElapsedMs(input.latestRun.startedAt, input.latestRun.completedAt)
         : computeElapsedMs(
             group.startBoundary ?? firstEntry.createdAt,
             maxIsoTimestamp(group.terminalEntry?.message.updatedAt ?? null, lastEntryEnd) ??
               lastEntryEnd,
-          );
+          ));
     const { resolve } = input;
     const duration = elapsedMs !== null ? formatDuration(elapsedMs, resolve) : null;
     const label = isLatestInterruptedTurn
@@ -1628,6 +1645,8 @@ export function deriveMessagesTimelineRows(
     timelineEntries: ReadonlyArray<TimelineEntry>;
     pendingApprovalRequestIds?: ReadonlySet<RuntimeRequestId>;
     latestRun?: TimelineLatestRun | null;
+    /** Each finished run's own duration, from `finishedRunElapsedMs`. */
+    finishedRunElapsedMs?: ReadonlyMap<RunId, number>;
     runningRunId?: RunId | null;
     expandedRunIds?: ReadonlySet<RunId>;
     expandedAttemptIds?: ReadonlySet<RunAttemptId>;
@@ -1704,6 +1723,7 @@ export function deriveMessagesTimelineRows(
           timelineEntries: timelineEntries,
           terminalAssistantMessageIds,
           latestRun: input.latestRun ?? null,
+          finishedRunElapsedMs: input.finishedRunElapsedMs,
           unfoldedRunIds: new Set([...activeVisualResponseRunIds, ...failedRunIds]),
           runlessWorkActive,
           liveSubagentEntryIds,

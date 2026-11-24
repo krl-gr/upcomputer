@@ -44,6 +44,7 @@ import type {
 } from "@t3tools/client-runtime/connection";
 import type { WsRpcProtocolClient } from "@t3tools/client-runtime/rpc";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { TASKS_RPC_METHODS } from "@t3tools/tasks-contracts/v1";
 import { APP_VERSION } from "~/branding";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -550,6 +551,8 @@ const handlers: Record<string, (input: never) => unknown> = {
     }),
   [WS_METHODS.subscribeServerConfig]: () =>
     subscribe([{ version: 1 as const, type: "snapshot" as const, config: serverConfig() }]),
+  // UpComputer: answers the Tasks check as a server without Tasks; Threads waits for it.
+  [TASKS_RPC_METHODS.runCounts]: () => Effect.die("Unknown request tag"),
 };
 
 // Unanswered calls stay pending, like a server that has not replied yet.

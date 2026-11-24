@@ -15,6 +15,9 @@ import {
   type TasksWebRpcRequest,
 } from "./rpc/index.ts";
 
+// The first check often runs while the connection is still coming up, and the sidebar holds
+// Threads for a computer's first bot list until it answers, so the first retries come soon.
+const FIRST_RETRY_WHILE_DISCONNECTED_MS = 250;
 const RETRY_WHILE_DISCONNECTED_MS = 2_000;
 const isEnvironmentRpcUnavailable = Schema.is(EnvironmentRpcUnavailableError);
 
@@ -24,6 +27,8 @@ interface Probe {
 }
 
 const probes = new Map<EnvironmentId, Probe>();
+/** Checks in a row that found the computer disconnected. */
+const disconnectedChecks = new Map<EnvironmentId, number>();
 const clients = new Map<EnvironmentId, TasksWebRpcClient>();
 const listeners = new Set<() => void>();
 let revision = 0;
@@ -48,12 +53,22 @@ const requestFor =
 function startProbe(environmentId: EnvironmentId) {
   probes.set(environmentId, { availability: "loading" });
   requestFor(environmentId)((client) => client[TASKS_RPC_METHODS.runCounts]({})).then(
-    () => setProbe(environmentId, { availability: "enabled" }),
+    () => {
+      disconnectedChecks.delete(environmentId);
+      setProbe(environmentId, { availability: "enabled" });
+    },
     (error: unknown) => {
       if (isEnvironmentRpcUnavailable(error)) {
-        setTimeout(() => setProbe(environmentId, undefined), RETRY_WHILE_DISCONNECTED_MS);
+        const checks = disconnectedChecks.get(environmentId) ?? 0;
+        disconnectedChecks.set(environmentId, checks + 1);
+        const delay = Math.min(
+          FIRST_RETRY_WHILE_DISCONNECTED_MS * 2 ** checks,
+          RETRY_WHILE_DISCONNECTED_MS,
+        );
+        setTimeout(() => setProbe(environmentId, undefined), delay);
         return;
       }
+      disconnectedChecks.delete(environmentId);
       setProbe(environmentId, {
         availability: "unavailable",
         reason: "The connected server does not serve Tasks.",

@@ -42,13 +42,7 @@ export type ProviderSignInResult = typeof ProviderSignInResult.Type;
 export class ProviderSignInError extends Schema.TaggedError<ProviderSignInError>()(
   "ProviderSignInError",
   {
-    reason: Schema.Literals([
-      "unknown_provider",
-      "disabled",
-      "not_installed",
-      "no_window",
-      "terminal_failed",
-    ]),
+    reason: Schema.Literals(["unknown_provider", "not_installed", "no_window", "terminal_failed"]),
     message: Schema.String,
   },
 ) {}
@@ -161,12 +155,18 @@ const make = Effect.gen(function* () {
       const appSetup =
         command === null && setup !== undefined && (setup.canAuthenticate || setup.canInstall);
       const turnedOff = !provider.enabled || provider.status === "disabled";
-      // The app's own setup card turns a provider on itself.
+      // The card's Turn on button turns it on; the next call types the sign-in command.
       if (turnedOff && !appSetup) {
-        return yield* new ProviderSignInError({
-          reason: "disabled",
-          message: `${name} is turned off. Ask the user to turn it on in Settings, Providers, then call this again.`,
-        });
+        yield* requireWindow(
+          threadId,
+          `${name} is turned off. Ask the user to turn it on in Settings, Providers, then call this again.`,
+        );
+        return {
+          ...base,
+          status: "appSetup" as const,
+          appSetupInstanceId: provider.instanceId,
+          message: `${name} is turned off. This chat now shows a Turn on button for it. Ask the user to press it and tell you, then call this again to sign in.`,
+        };
       }
       if (provider.auth.status === "authenticated" && !turnedOff) {
         return { ...base, status: "signedIn" as const, message: `${name} is signed in.` };
@@ -220,7 +220,7 @@ const make = Effect.gen(function* () {
           ...base,
           command,
           status: "alreadyOpen" as const,
-          message: `\`${command}\` is running in the sign-in terminal in this chat, and ${name} is not signed in yet. Ask the user to finish signing in in the browser, then call this again to check.`,
+          message: `\`${command}\` is running in the sign-in terminal in this chat, and ${name} is not signed in yet. Ask the user to finish signing in through the browser, then call this again to check.`,
         };
       }
       if (typed?.pid === shell.pid && !typed.ran) {

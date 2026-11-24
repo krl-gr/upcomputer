@@ -15,12 +15,14 @@ import * as Effect from "effect/Effect";
  * first conversation and forbids it in later ones: a person who already wrote
  * in another thread was offered there, answered or not. Task-agent runs,
  * scheduled tasks and threads another agent or thread started do not get it:
- * their first message is not a person opening a conversation. Removing the
- * block stops it.
+ * their first message is not a person opening a conversation. Neither does a
+ * thread imported from the user's own CLI history: it is not their first
+ * conversation, and Claude Code stores hook context in that CLI session.
+ * Removing the block stops it.
  */
 export function onboardingTurnNote<E, R>(input: {
   readonly instructions: string | undefined;
-  readonly thread: Pick<OrchestrationV2AppThread, "lineage">;
+  readonly thread: Pick<OrchestrationV2AppThread, "lineage" | "historyOrigin">;
   readonly run: Pick<OrchestrationV2Run, "ordinal" | "providerInstanceId" | "modelSelection">;
   readonly runs: ReadonlyArray<
     Pick<OrchestrationV2Run, "ordinal" | "providerInstanceId" | "modelSelection">
@@ -55,6 +57,7 @@ export function onboardingTurnNote<E, R>(input: {
     message.scheduledTaskId === undefined &&
     message.senderThreadId === undefined &&
     input.thread.lineage.parentThreadId === null &&
+    input.thread.historyOrigin !== "v1_import" &&
     !input.isCommand &&
     !input.runs.some((run) => run.ordinal < input.run.ordinal && earlierCounts(run));
   if (!due) return Effect.succeed("");
