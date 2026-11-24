@@ -86,12 +86,13 @@ function rememberBotChats(environmentId: EnvironmentId, bots: ReadonlyArray<Bot>
 }
 
 /**
- * The scoped keys of the bot chats each computer had when its list last loaded, for those whose
- * list is loading again, so Threads does not list them until the Bots section does. A computer
- * whose Tasks access is still being checked counts as loading: at startup that check comes first.
- * A computer with no remembered list claims all its threads (`allSidebarThreadsClaimKey`).
+ * The computers whose bot list is loading, each with the chat thread ids its last loaded list
+ * had (undefined when none is remembered). A computer whose Tasks access is still being checked
+ * counts as loading: at startup that check comes first.
  */
-export function rememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string[] {
+function rememberedWhileLoading(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): Array<readonly [EnvironmentId, ReadonlyArray<string> | undefined]> {
   const loading = environmentIds.filter((environmentId) => {
     const access = readTasksWebAccess(environmentId);
     if (access.availability !== "loading" && !access.canReadAgents) return false;
@@ -100,14 +101,38 @@ export function rememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentI
   });
   if (loading.length === 0) return [];
   const remembered = readLocalStorageValue(BOT_CHATS_STORAGE_KEY, {}, BotChats);
-  return loading.flatMap((environmentId) => {
-    const threadIds = remembered[environmentId];
+  return loading.map((environmentId) => [environmentId, remembered[environmentId]] as const);
+}
+
+/**
+ * The scoped keys of the bot chats each computer had when its list last loaded, for those whose
+ * list is loading again, so Threads does not list them until the Bots section does. A computer
+ * with no remembered list claims all its threads (`allSidebarThreadsClaimKey`) until it loads.
+ */
+export function rememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string[] {
+  return rememberedWhileLoading(environmentIds).flatMap(([environmentId, threadIds]) =>
     // Nothing remembered, as on the first start after an update: any thread may be a bot chat.
-    if (threadIds === undefined) return [allSidebarThreadsClaimKey(environmentId)];
-    return threadIds.map((threadId) =>
-      scopedThreadKey(scopeThreadRef(environmentId, ThreadId.make(threadId))),
-    );
-  });
+    threadIds === undefined
+      ? [allSidebarThreadsClaimKey(environmentId)]
+      : threadIds.map((threadId) =>
+          scopedThreadKey(scopeThreadRef(environmentId, ThreadId.make(threadId))),
+        ),
+  );
+}
+
+/**
+ * How many bots the loading computers had when their lists last loaded, so the Bots section
+ * keeps their room meanwhile. Null when none is loading or one has nothing remembered.
+ */
+export function rememberedBotCount(environmentIds: ReadonlyArray<EnvironmentId>): number | null {
+  const loading = rememberedWhileLoading(environmentIds);
+  if (loading.length === 0) return null;
+  let count = 0;
+  for (const [, threadIds] of loading) {
+    if (threadIds === undefined) return null;
+    count += threadIds.length;
+  }
+  return count;
 }
 
 type GT = ReturnType<typeof useGT>;
@@ -323,6 +348,12 @@ function useSubscribeBotSectionLists(environmentIds: ReadonlyArray<EnvironmentId
 export function useRememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string {
   const subscribe = useSubscribeBotSectionLists(environmentIds);
   const read = () => rememberedBotChatKeys(environmentIds).join("\n");
+  return useSyncExternalStore(subscribe, read, read);
+}
+
+export function useRememberedBotCount(environmentIds: ReadonlyArray<EnvironmentId>): number | null {
+  const subscribe = useSubscribeBotSectionLists(environmentIds);
+  const read = () => rememberedBotCount(environmentIds);
   return useSyncExternalStore(subscribe, read, read);
 }
 
