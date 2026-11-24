@@ -522,6 +522,8 @@ describe("no-agent screen", () => {
     expect(view({ status: failed("install"), retrying: true })).toEqual(installing("retrying"));
     expect(view({ status: preparing(null), retrying: true })).toEqual(installing("retrying"));
     expect(view({ status: preparing(0), retrying: true })).toEqual(installing("retrying"));
+    // The first bytes would still read "Downloading… 0%".
+    expect(view({ status: preparing(0.004), retrying: true })).toEqual(installing("retrying"));
     expect(view({ status: preparing(0.1), retrying: true })).toEqual(
       installing("downloading", 0.1),
     );
@@ -530,7 +532,7 @@ describe("no-agent screen", () => {
     );
   });
 
-  it("holds Try again on a failed install until the new download reports bytes", () => {
+  it("holds Try again on a failed install until the new download reads 1%", () => {
     const install = (operationId: string, overrides: Partial<ProviderInstallState> = {}) =>
       ({
         driver: ProviderDriverKind.make("opencode"),
@@ -556,6 +558,9 @@ describe("no-agent screen", () => {
     // The request answered before the install state moved on from the failure.
     expect(retrying({})).toBe(true);
     expect(retrying({ install: install("next") })).toBe(true);
+    expect(retrying({ install: install("next", { downloadedBytes: 4, totalBytes: 1000 }) })).toBe(
+      true,
+    );
     expect(retrying({ install: install("next", { downloadedBytes: 1 }) })).toBe(false);
     expect(retrying({ install: install("next", { phase: "failed" }) })).toBe(false);
     expect(retrying({ startError: "Could not start" })).toBe(false);

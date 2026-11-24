@@ -13,7 +13,11 @@ import { isElectron } from "../env";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { cn } from "../lib/utils";
 import { NO_AGENT_COPY } from "./noAgentScreenCopy";
-import type { NoAgentScreenPlace, NoAgentScreenView } from "./upComputerOnboarding.logic";
+import {
+  noAgentScreenDownloadPercent,
+  type NoAgentScreenPlace,
+  type NoAgentScreenView,
+} from "./upComputerOnboarding.logic";
 import { NO_AGENT_SETUP_PROMPT } from "./noAgentSetupPrompt";
 
 const COPIED_NOTE_MS = 4_000;
@@ -284,7 +288,7 @@ function Installing({
           {/* The bar holds still outside the download, so the spinner shows the work goes on. */}
           {phase === "downloading" ? null : <Spinner size="sm" />}
           {phase === "downloading"
-            ? m(copy.downloading.line(Math.round((progress ?? 0) * 100)))
+            ? m(copy.downloading.line(noAgentScreenDownloadPercent(progress)))
             : m(copy[phase].line)}
         </p>
       </div>

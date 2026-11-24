@@ -409,9 +409,14 @@ export type NoAgentScreenView =
     }
   | { readonly kind: "failed"; readonly reason: NoAgentScreenFailure };
 
+/** The download's whole percent, as the installing line shows it. */
+export function noAgentScreenDownloadPercent(progress: number | null): number {
+  return Math.round((progress ?? 0) * 100);
+}
+
 /**
  * Try again shows "Trying again" while its request runs, and after a failed
- * install until the new download reports its first bytes. `retriedInstallId`
+ * install until the new download's line would read at least 1%. `retriedInstallId`
  * is the failed install it retried, `undefined` for a retry of OpenCode's start.
  */
 export function firstRunAgentRetrying(input: {
@@ -424,7 +429,10 @@ export function firstRunAgentRetrying(input: {
   const { install, retriedInstallId } = input;
   if (retriedInstallId === undefined || input.startError !== null || !install) return false;
   if (retriedInstallId !== null && install.operationId === retriedInstallId) return true;
-  return install.phase === "downloading" && install.downloadedBytes === 0;
+  if (install.phase !== "downloading") return false;
+  return install.totalBytes !== null && install.totalBytes > 0
+    ? noAgentScreenDownloadPercent(install.downloadedBytes / install.totalBytes) === 0
+    : install.downloadedBytes === 0;
 }
 
 /** `startup_timeout`, `auth`, `migration` and `unknown` all read as "OpenCode didn't respond". */
@@ -452,7 +460,7 @@ export function resolveNoAgentScreenInstallView(input: {
   // No status left means OpenCode works: the screen closes.
   if (status === null) return installing(retrying ? "retrying" : "starting");
   if (!installed) {
-    return retrying && !(status.progress !== null && status.progress > 0)
+    return retrying && noAgentScreenDownloadPercent(status.progress) === 0
       ? installing("retrying")
       : { kind: "installing", phase: "downloading", progress: status.progress };
   }
