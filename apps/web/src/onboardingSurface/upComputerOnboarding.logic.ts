@@ -409,6 +409,24 @@ export type NoAgentScreenView =
     }
   | { readonly kind: "failed"; readonly reason: NoAgentScreenFailure };
 
+/**
+ * Try again shows "Trying again" while its request runs, and after a failed
+ * install until the new download reports its first bytes. `retriedInstallId`
+ * is the failed install it retried, `undefined` for a retry of OpenCode's start.
+ */
+export function firstRunAgentRetrying(input: {
+  readonly requestRunning: boolean;
+  readonly retriedInstallId: string | null | undefined;
+  readonly startError: string | null;
+  readonly install: ProviderInstallState | null | undefined;
+}): boolean {
+  if (input.requestRunning) return true;
+  const { install, retriedInstallId } = input;
+  if (retriedInstallId === undefined || input.startError !== null || !install) return false;
+  if (retriedInstallId !== null && install.operationId === retriedInstallId) return true;
+  return install.phase === "downloading" && install.downloadedBytes === 0;
+}
+
 /** `startup_timeout`, `auth`, `migration` and `unknown` all read as "OpenCode didn't respond". */
 function noAgentScreenFailure(reason: FirstRunAgentFailureReason): NoAgentScreenFailure {
   if (reason === "install") return "install";

@@ -23,6 +23,7 @@ import {
   FIRST_RUN_AGENT_SLOW_START_MS,
   FIRST_RUN_AGENT_START_TIMEOUT_MS,
   FIRST_SCREEN_IDLE_THRESHOLD_MS,
+  firstRunAgentRetrying,
   firstRunAgentStartupPhase,
   latchFirstRunAgentStart,
   resolveFirstRunAgentAutoRetry,
@@ -496,7 +497,8 @@ export function useFirstRunAgentStatus(
   ).data;
   const runAttempt = useRunFirstRunAgentAttempt(environmentId);
   const recordClientEvent = useRecordClientEvent();
-  const [retrying, setRetrying] = useState(false);
+  const [requestRunning, setRequestRunning] = useState(false);
+  const [retriedInstallId, setRetriedInstallId] = useState<string | null | undefined>(undefined);
   const installSucceeded = install?.phase === "succeeded";
   const openCode = providers?.find(
     (provider) => provider.instanceId === FIRST_RUN_AGENT_INSTANCE_ID,
@@ -508,7 +510,8 @@ export function useFirstRunAgentStatus(
       outcome: "retried",
       ...sourceProps(setup.source),
     });
-    setRetrying(true);
+    setRequestRunning(true);
+    setRetriedInstallId(installSucceeded ? undefined : (install?.operationId ?? null));
     if (installSucceeded) {
       setSetup((current) =>
         current.startup === null || current.startup.operationId !== install.operationId
@@ -526,7 +529,7 @@ export function useFirstRunAgentStatus(
     void Promise.all([
       Promise.race([attempt, after(FIRST_RUN_AGENT_START_TIMEOUT_MS)]),
       after(RETRY_FEEDBACK_MS),
-    ]).finally(() => setRetrying(false));
+    ]).finally(() => setRequestRunning(false));
   };
   const resolved = active
     ? resolveFirstRunAgentStatus({
@@ -543,5 +546,11 @@ export function useFirstRunAgentStatus(
     resolved?.kind === "failed" && OWN_FAILURE_MESSAGES.has(resolved.message)
       ? { ...resolved, message: m(resolved.message) }
       : resolved;
+  const retrying = firstRunAgentRetrying({
+    requestRunning,
+    retriedInstallId,
+    startError: setup.startError,
+    install,
+  });
   return { status, installed: installSucceeded, retrying, retry };
 }
