@@ -526,10 +526,12 @@ export function useFirstRunAgentStatus(
     const attempt = runAttempt(installSucceeded, setup.source);
     const after = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
     // The attempt's own timeout offers Retry again, even if its request never returns.
-    void Promise.all([
-      Promise.race([attempt, after(FIRST_RUN_AGENT_START_TIMEOUT_MS)]),
-      after(RETRY_FEEDBACK_MS),
-    ]).finally(() => setRequestRunning(false));
+    const timedOut = after(FIRST_RUN_AGENT_START_TIMEOUT_MS).then(() => "timedOut" as const);
+    void Promise.all([Promise.race([attempt, timedOut]), after(RETRY_FEEDBACK_MS)])
+      .then(([result]) => {
+        if (result === "timedOut") setRetriedInstallId(undefined);
+      })
+      .finally(() => setRequestRunning(false));
   };
   const resolved = active
     ? resolveFirstRunAgentStatus({
