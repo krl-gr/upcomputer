@@ -446,7 +446,7 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   html_preview: tool(["Preview", "Previewing", "Previewed", "an HTML page"], "html-preview"),
   html_render: tool(["Render", "Rendering", "Rendered", "an HTML page"], "html-render"),
   send_to_user: tool(["Send", "Sending", "Sent", "a message"], "send-to-user"),
-  provider_sign_in: tool(["Open", "Opening", "Opened", "a sign-in terminal"], "provider-sign-in"),
+  provider_sign_in: tool(["Start", "Starting", "Started", "a sign-in"], "provider-sign-in"),
 };
 
 export const T3_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(T3_MCP_TOOLS));

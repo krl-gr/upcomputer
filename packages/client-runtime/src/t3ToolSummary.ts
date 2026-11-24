@@ -855,13 +855,13 @@ export function summarizeT3ToolCalls(
       label = done
         ? resolve(
             msg(
-              "{count, plural, one {Opened a sign-in terminal {count} time} other {Opened a sign-in terminal {count} times}}",
+              "{count, plural, one {Started a sign-in {count} time} other {Started a sign-in {count} times}}",
               { count },
             ),
           )
         : resolve(
             msg(
-              "{count, plural, one {Tried to open a sign-in terminal {count} time} other {Tried to open a sign-in terminal {count} times}}",
+              "{count, plural, one {Tried to start a sign-in {count} time} other {Tried to start a sign-in {count} times}}",
               { count },
             ),
           );

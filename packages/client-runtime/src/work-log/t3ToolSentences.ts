@@ -770,10 +770,10 @@ const T3_TOOL_SENTENCES: ReadonlyMap<string, T3ToolSentence> = new Map<string, T
     },
   ],
   [
-    "Open\nOpening\nOpened\na sign-in terminal",
+    "Start\nStarting\nStarted\na sign-in",
     {
       detail: msg(
-        "{status, select, inProgress {Opening a sign-in terminal} completed {Opened a sign-in terminal} failed {Failed to open a sign-in terminal} declined {Declined to open a sign-in terminal} stopped {Stopped opening a sign-in terminal} other {Opening a sign-in terminal}}",
+        "{status, select, inProgress {Starting a sign-in} completed {Started a sign-in} failed {Failed to start a sign-in} declined {Declined to start a sign-in} stopped {Stopped starting a sign-in} other {Starting a sign-in}}",
       ),
     },
   ],
