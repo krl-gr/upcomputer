@@ -71,7 +71,8 @@ export function BotMentionNotificationCard(props: ExperimentalWebNotificationCar
       data-v2-item-type="notification"
       className="flex flex-col gap-1.5 rounded-md border border-border/70 px-2.5 py-2"
     >
-      <div className="flex min-w-0 items-center gap-2">
+      {/* The Open chat button takes the row's text size. */}
+      <div className="flex min-w-0 items-center gap-2 text-xs">
         {source.step === "request" ? (
           <MessageCircleIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         ) : replied ? (
