@@ -634,6 +634,7 @@ const startTurn = Effect.fnUntraced(function* (
   runOrdinal = 1,
   threadId = THREAD_ID,
   continuation = false,
+  turnInstructions?: string,
 ) {
   const appThread = yield* makeAppThread(model, threadId);
   const runId = RunId.make(`run:${threadId}:${runOrdinal}`);
@@ -655,6 +656,7 @@ const startTurn = Effect.fnUntraced(function* (
     },
     modelSelection: selection ?? modelSelection(model),
     runtimePolicy,
+    ...(turnInstructions === undefined ? {} : { turnInstructions }),
   });
 });
 
@@ -5913,6 +5915,100 @@ describe("PiAdapterV2", () => {
       Effect.scoped,
       Effect.provide(layerTest),
     ),
+  );
+
+  it.effect(
+    "isolates per-turn instructions per Pi session, keeps prompt text clean, and clears on the next turn",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const fakeA = yield* makeFakePi;
+        const fakeB = yield* makeFakePi;
+        const threadA = ThreadId.make("thread:fixture:pi:a");
+        const threadB = ThreadId.make("thread:fixture:pi:b");
+        const sessionA = yield* openRuntime(
+          fakeA,
+          "default",
+          threadA,
+          ProviderSessionId.make("session:fixture:pi:a"),
+        );
+        const sessionB = yield* openRuntime(
+          fakeB,
+          "default",
+          threadB,
+          ProviderSessionId.make("session:fixture:pi:b"),
+        );
+        const pathA = fakeA.lastSpawn().env.T3_PI_TURN_INSTRUCTIONS_PATH;
+        const pathB = fakeB.lastSpawn().env.T3_PI_TURN_INSTRUCTIONS_PATH;
+        if (typeof pathA !== "string" || typeof pathB !== "string") {
+          return assert.fail("expected per-session turn instructions paths");
+        }
+        assert.notEqual(pathA, pathB);
+
+        const providerThreadA = yield* sessionA.runtime.ensureThread({
+          threadId: threadA,
+          modelSelection: modelSelection("default"),
+          runtimePolicy,
+        });
+        const providerThreadB = yield* sessionB.runtime.ensureThread({
+          threadId: threadB,
+          modelSelection: modelSelection("default"),
+          runtimePolicy,
+        });
+        const note =
+          "[UpComputer onboarding note: this is not the user's first conversation. Do not make the onboarding offer; just answer the message.]";
+
+        yield* startTurn(
+          sessionA.runtime,
+          providerThreadA,
+          "default",
+          [],
+          "Can you continue from here?",
+          undefined,
+          1,
+          threadA,
+          false,
+          note,
+        );
+        const promptA1 = yield* fakeA.takeRequest("prompt");
+        assert.equal(promptA1["message"], "Can you continue from here?");
+        assert.equal(yield* fileSystem.readFileString(pathA), note);
+
+        yield* startTurn(
+          sessionB.runtime,
+          providerThreadB,
+          "default",
+          [],
+          "Other session prompt",
+          undefined,
+          1,
+          threadB,
+          false,
+        );
+        const promptB1 = yield* fakeB.takeRequest("prompt");
+        assert.equal(promptB1["message"], "Other session prompt");
+        assert.isFalse(yield* fileSystem.exists(pathB));
+        assert.equal(yield* fileSystem.readFileString(pathA), note);
+
+        yield* fakeA.emit({ type: "agent_start" });
+        yield* fakeA.emit({ type: "agent_settled" });
+        yield* sessionA.takeEvent((event) => event.type === "turn.terminal");
+
+        yield* startTurn(
+          sessionA.runtime,
+          providerThreadA,
+          "default",
+          [],
+          "Second turn",
+          undefined,
+          2,
+          threadA,
+          false,
+        );
+        const promptA2 = yield* fakeA.takeRequest("prompt");
+        assert.equal(promptA2["message"], "Second turn");
+        assert.isFalse(yield* fileSystem.exists(pathA));
+      }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 
   it.effect("shows compaction progress and completes the same activity row", () =>
