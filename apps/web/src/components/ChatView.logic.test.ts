@@ -739,6 +739,34 @@ describe("resolveComposerProviderSelection", () => {
     ).toBe("Sign in to Antigravity in provider settings before sending.");
   });
 
+  it("skips an unauthenticated sticky candidate on a new draft when another provider is ready", () => {
+    const managedCodex = entry("codex", "codex", {
+      status: "warning",
+      auth: { status: "unauthenticated" },
+      models: [],
+    });
+    const existingCodex = entry("codex", "codex", {
+      status: "error",
+      auth: { status: "unauthenticated" },
+      models: [],
+    });
+    const opencode = entry("opencode", "opencode", {
+      status: "ready",
+      auth: { status: "authenticated" },
+    });
+
+    for (const codex of [managedCodex, existingCodex]) {
+      const selection = resolveComposerProviderSelection({
+        entries: [codex, opencode],
+        candidateInstanceIds: [codex.instanceId],
+        lockedProvider: null,
+        lockedInstanceId: null,
+        preferRunnableCandidate: true,
+      });
+      expect(selection.selectedProviderEntry?.instanceId).toBe(opencode.instanceId);
+    }
+  });
+
   it("blocks a saved model that a ready catalog no longer lists", () => {
     const provider = entry("antigravity", "google_work", {
       status: "ready",

@@ -648,7 +648,12 @@ interface ComposerDraftStoreState {
   ) => void;
   /** Lets the thread's model show again once the server accepted this exact pick. */
   releaseModelSelection: (threadRef: ScopedThreadRef, modelSelection: ModelSelection) => void;
-  applyStickyState: (threadRef: ComposerThreadTarget) => void;
+  applyStickyState: (
+    threadRef: ComposerThreadTarget,
+    options?: {
+      readonly allowActiveProvider?: (instanceId: ProviderInstanceId) => boolean;
+    },
+  ) => void;
   setProviderModelOptions: (
     threadRef: ComposerThreadTarget,
     provider: ProviderDriverKind,
@@ -3331,14 +3336,18 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             };
           });
         },
-        applyStickyState: (threadRef) => {
+        applyStickyState: (threadRef, options) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
           if (threadKey.length === 0) {
             return;
           }
           set((state) => {
             const stickyMap = state.stickyModelSelectionByProvider;
-            const stickyActiveProvider = state.stickyActiveProvider;
+            const stickyActiveProvider =
+              state.stickyActiveProvider !== null &&
+              options?.allowActiveProvider?.(state.stickyActiveProvider) === false
+                ? null
+                : state.stickyActiveProvider;
             const existing = state.draftsByThreadKey[threadKey];
             const base = existing ?? createEmptyThreadDraft();
             const nextMap = compactModelSelectionByProvider(stickyMap);
