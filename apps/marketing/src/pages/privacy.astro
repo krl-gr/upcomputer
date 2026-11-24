@@ -8,7 +8,7 @@ import { GITHUB_REPOSITORY_URL } from "../lib/site";
   <LegalPage
     title="Privacy Policy"
     description="What the Up.computer app and this website collect, and what they don’t."
-    effectiveDate="November 24, 2026"
+    effectiveDate="November 25, 2026"
   >
     <h2>Who operates Up.computer</h2>
     <p>
@@ -34,22 +34,25 @@ import { GITHUB_REPOSITORY_URL } from "../lib/site";
       Tasks, Agents, or Settings, which buttons you click, and when you first create a task, agent,
       or automation. A button is reported by a fixed name from the app’s code, never by the text on
       screen. Events never include prompts, responses, file contents, file paths, credentials, or the
-      names of your chats, tasks, projects, or agents. They are tied to a
-      pseudonymous ID: a SHA-256 hash of your local Codex or Claude Code account ID if there is one,
-      otherwise of a random ID the app creates. To count one person across several installs, the app
-      also sends SHA-256 hashes of its own install ID, your OpenAI user ID (from Codex’s sign-in),
-      your Claude account ID (from Claude Code’s settings), your UpComputer Connect account, and the
-      devices you connect. Raw IDs and tokens never leave your computer. Set{" "}
-      <code>UPCOMPUTER_TELEMETRY_ENABLED=false</code> (or <code>T3CODE_TELEMETRY_ENABLED=false</code>)
-      to turn it off. The code is{" "}
+      names of your chats, tasks, projects, or agents. They are tied to a pseudonymous install ID: a
+      SHA-256 hash of a random ID the app creates. To count one person across several installs, the
+      app also sends SHA-256 hashes of your UpComputer Connect account and the devices you connect.
+      The app never reads or sends identifiers from your provider accounts, such as your OpenAI or
+      Claude account. Raw IDs and tokens never leave your computer.
+    </p>
+    <p>
+      To turn telemetry off, turn off <strong>Share anonymous usage data</strong> in Settings, under
+      About. You can also set <code>UPCOMPUTER_TELEMETRY_ENABLED=false</code> (or{" "}
+      <code>T3CODE_TELEMETRY_ENABLED=false</code>) before starting the app, and an organization can
+      turn it off with a managed policy. The code is{" "}
       <a href={`${GITHUB_REPOSITORY_URL}/tree/main/apps/server/src/telemetry`} target="_blank" rel="noopener noreferrer">open source</a>.
     </p>
 
     <h2>Connection diagnostics</h2>
     <p>
       When you use UpComputer Connect, the app sends traces of relay connections, with timing and
-      errors but not your content, to Axiom so we can fix connection problems. The same setting turns
-      them off, as does <code>OTEL_SDK_DISABLED=true</code>.
+      errors but not your content, to Axiom so we can fix connection problems. Turning telemetry off
+      stops them too, as does <code>OTEL_SDK_DISABLED=true</code>.
     </p>
 
     <h2>Surveys and feedback</h2>
