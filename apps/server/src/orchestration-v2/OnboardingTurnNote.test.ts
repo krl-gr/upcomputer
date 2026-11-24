@@ -25,7 +25,13 @@ const personMessage: Pick<
 
 const claude = ProviderInstanceId.make("claudeAgent");
 const openCode = ProviderInstanceId.make("opencode");
-const turn = (ordinal: number, providerInstanceId = claude) => ({ ordinal, providerInstanceId });
+const freeModel = "opencode/glm-5.3-flash-free";
+const turn = (ordinal: number, providerInstanceId = claude, model = "claude-sonnet-5-5") => ({
+  ordinal,
+  providerInstanceId,
+  modelSelection: { instanceId: providerInstanceId, model },
+});
+const freeTurn = (ordinal: number) => turn(ordinal, openCode, freeModel);
 
 const note = (overrides: Partial<Parameters<typeof onboardingTurnNote<never, never>>[0]> = {}) =>
   onboardingTurnNote({
@@ -36,7 +42,8 @@ const note = (overrides: Partial<Parameters<typeof onboardingTurnNote<never, nev
     message: personMessage,
     isCommand: false,
     freeAgentSetupActive: false,
-    isFreeAgentInstance: (instanceId) => instanceId === openCode,
+    isFreeAgentRun: (run) =>
+      run.providerInstanceId === openCode && run.modelSelection.model === freeModel,
     personMessagedElsewhere: Effect.succeed(false),
     ...overrides,
   });
@@ -151,14 +158,20 @@ it.effect("waits for a real agent while the free agent is the only one that work
     assert.strictEqual(
       yield* note({
         freeAgentSetupActive: true,
-        run: turn(1, openCode),
-        runs: [turn(1, openCode)],
+        run: freeTurn(1),
+        runs: [freeTurn(1)],
         personMessagedElsewhere: unread,
       }),
       "",
     );
     // A real agent's turn gets it even while the registry still says setup.
     assert.include(yield* note({ freeAgentSetupActive: true }), "user's first conversation");
+    // So does the user's own OpenCode on a paid model or their own keys.
+    const ownOpenCode = turn(1, openCode, "anthropic/claude-sonnet-5-5");
+    assert.include(
+      yield* note({ freeAgentSetupActive: true, run: ownOpenCode, runs: [ownOpenCode] }),
+      "user's first conversation",
+    );
   }),
 );
 
@@ -167,27 +180,21 @@ it.effect("comes in the setup chat's first turn after switching to a real agent"
     assert.include(
       yield* note({
         run: turn(4),
-        runs: [turn(1, openCode), turn(2, openCode), turn(3, openCode), turn(4)],
+        runs: [freeTurn(1), freeTurn(2), freeTurn(3), turn(4)],
       }),
       "user's first conversation",
     );
     // The next real turn in that chat is a later turn.
-    assert.strictEqual(
-      yield* note({ run: turn(5), runs: [turn(1, openCode), turn(4), turn(5)] }),
-      "",
-    );
+    assert.strictEqual(yield* note({ run: turn(5), runs: [freeTurn(1), turn(4), turn(5)] }), "");
   }),
 );
 
 it.effect("is never sent on a later free-agent turn once another agent works", () =>
   Effect.gen(function* () {
-    assert.strictEqual(
-      yield* note({ run: turn(3, openCode), runs: [turn(1, openCode), turn(3, openCode)] }),
-      "",
-    );
+    assert.strictEqual(yield* note({ run: freeTurn(3), runs: [freeTurn(1), freeTurn(3)] }), "");
     // A free-agent chat started after setup is a first conversation like any other.
     assert.include(
-      yield* note({ run: turn(1, openCode), runs: [turn(1, openCode)] }),
+      yield* note({ run: freeTurn(1), runs: [freeTurn(1)] }),
       "user's first conversation",
     );
   }),

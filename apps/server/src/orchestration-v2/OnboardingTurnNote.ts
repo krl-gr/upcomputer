@@ -21,8 +21,10 @@ import * as Effect from "effect/Effect";
 export function onboardingTurnNote<E, R>(input: {
   readonly instructions: string | undefined;
   readonly thread: Pick<OrchestrationV2AppThread, "lineage">;
-  readonly run: Pick<OrchestrationV2Run, "ordinal" | "providerInstanceId">;
-  readonly runs: ReadonlyArray<Pick<OrchestrationV2Run, "ordinal" | "providerInstanceId">>;
+  readonly run: Pick<OrchestrationV2Run, "ordinal" | "providerInstanceId" | "modelSelection">;
+  readonly runs: ReadonlyArray<
+    Pick<OrchestrationV2Run, "ordinal" | "providerInstanceId" | "modelSelection">
+  >;
   readonly message: Pick<
     OrchestrationV2ConversationMessage,
     "createdBy" | "creationSource" | "scheduledTaskId" | "senderThreadId"
@@ -30,7 +32,9 @@ export function onboardingTurnNote<E, R>(input: {
   readonly isCommand: boolean;
   /** Whether the free agent is the only working agent. */
   readonly freeAgentSetupActive: boolean;
-  readonly isFreeAgentInstance: (instanceId: string) => boolean;
+  readonly isFreeAgentRun: (
+    run: Pick<OrchestrationV2Run, "providerInstanceId" | "modelSelection">,
+  ) => boolean;
   /**
    * Read only for a person's first message while the block is pending. Messages
    * to the free agent do not count.
@@ -40,9 +44,9 @@ export function onboardingTurnNote<E, R>(input: {
   const { message } = input;
   // The offer waits for the first chat with a real agent; free-agent turns don't make it a
   // later one. A free-agent turn counts every earlier turn, so a setup chat never offers.
-  const freeAgentRun = input.isFreeAgentInstance(input.run.providerInstanceId);
-  const earlierCounts = (run: Pick<OrchestrationV2Run, "providerInstanceId">) =>
-    freeAgentRun || !input.isFreeAgentInstance(run.providerInstanceId);
+  const freeAgentRun = input.isFreeAgentRun(input.run);
+  const earlierCounts = (run: Pick<OrchestrationV2Run, "providerInstanceId" | "modelSelection">) =>
+    freeAgentRun || !input.isFreeAgentRun(run);
   const due =
     !(freeAgentRun && input.freeAgentSetupActive) &&
     hasPendingOnboarding(input.instructions ?? "") &&

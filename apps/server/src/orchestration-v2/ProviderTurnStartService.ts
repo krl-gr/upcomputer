@@ -62,8 +62,7 @@ import {
 import { deliverContextHandoffs, withInlineContext } from "./ContextHandoffDelivery.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import {
-  FREE_AGENT_DRIVER,
-  isFreeAgentInstance,
+  isFreeAgentRun,
   isFreeAgentSetupActive,
 } from "@t3tools/provider-core/server/freeAgentSetup";
 import { currentUserInstructionsBlock } from "@t3tools/provider-core/server/userInstructions";
@@ -1169,10 +1168,10 @@ export const layer: Layer.Layer<
         message,
         isCommand: commandMessageIds.has(run.userMessageId),
         freeAgentSetupActive: isFreeAgentSetupActive(),
-        isFreeAgentInstance,
+        isFreeAgentRun,
         // The run is already marked running; a failed read only withholds the offer.
         personMessagedElsewhere: projectionStore
-          .hasPersonMessageOutsideThread(projection.thread.id, { exceptDriver: FREE_AGENT_DRIVER })
+          .hasPersonMessageOutsideThread(projection.thread.id, { exceptFreeAgent: true })
           .pipe(Effect.orElseSucceed(() => true)),
       });
       // Notes go before the user text. The budget counts the full turn context, since
