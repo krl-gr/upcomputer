@@ -386,13 +386,16 @@ export function FirstRunAgentStarter({
     completed.current = true;
     // A later launch without a working agent no longer shows the no-agent screen.
     updateNoAgentScreenRecord((record) => record && { ...record, agentWorked: true });
-    // The Welcome page at /welcome finished it and reported it already.
+    // An install from the screen on a later launch still reports its `ready`.
+    if (!onboardingCompleted || setup.source !== null) {
+      recordClientEvent(environmentId, {
+        event: "onboarding.first_run_agent",
+        outcome: "ready",
+        ...sourceProps(setup.source),
+      });
+    }
+    // The Welcome page at /welcome finished onboarding and reported it already.
     if (onboardingCompleted) return;
-    recordClientEvent(environmentId, {
-      event: "onboarding.first_run_agent",
-      outcome: "ready",
-      ...sourceProps(setup.source),
-    });
     void completeOnboarding()
       .then(() => {
         recordClientEvent(environmentId, {

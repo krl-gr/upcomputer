@@ -17,6 +17,7 @@ const mocks = await vi.hoisted(async () => {
   const events: Array<Record<string, unknown>> = [];
   return {
     startInstall: vi.fn(),
+    onboardingCompletedAt: null as string | null,
     complete: vi.fn(async () => undefined),
     events,
     record: (_environmentId: string, input: Record<string, unknown>) => {
@@ -59,7 +60,7 @@ vi.mock("../state/query", async () => {
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => mocks.startInstall }));
 vi.mock("../hooks/useSettings", () => ({
   useClientSettings: (select: (settings: { onboardingCompletedAt: string | null }) => unknown) =>
-    select({ onboardingCompletedAt: null }),
+    select({ onboardingCompletedAt: mocks.onboardingCompletedAt }),
 }));
 vi.mock("../hooks/useRecordClientEvent", () => ({ useRecordClientEvent: () => mocks.record }));
 vi.mock("../onboarding/firstRun", () => ({ completeOnboarding: () => mocks.complete() }));
@@ -155,6 +156,7 @@ beforeEach(() => {
   committed = [];
   otherCommitted = [];
   mocks.events.length = 0;
+  mocks.onboardingCompletedAt = null;
   registry = AtomRegistry.make();
   registry.set(testAtoms.threads, []);
   // A signed-out agent of the user's keeps the install that starts by itself.
@@ -461,4 +463,30 @@ it("downloads nothing with no agent installed until the screen's Install, then t
       { event: "onboarding.first_run_agent", outcome: "ready", ...source },
     ]),
   );
+});
+
+it("reports ready for an install from the screen on a launch after onboarding, without completing it again", async () => {
+  // Set up myself, then "Start without an agent": the next launch asks again.
+  mocks.onboardingCompletedAt = "2026-11-24T00:00:00.000Z";
+  registry.set(testAtoms.providers, [openCode({ enabled: false, status: "disabled" })]);
+  await act(async () => {
+    root.render(
+      <RegistryContext.Provider value={registry}>
+        <FirstRunAgentStarter environmentId={environmentId} askAgain />
+        <ScreenInstall />
+      </RegistryContext.Provider>,
+    );
+  });
+  await update(() => vi.advanceTimersByTime(60_000));
+  expect(mocks.startInstall).not.toHaveBeenCalled();
+
+  await update(() => installFromScreen());
+  await update(() => registry.set(testAtoms.providers, [openCode()]));
+  expect(mocks.events).toContainEqual({
+    event: "onboarding.first_run_agent",
+    outcome: "ready",
+    source: "no_agent_screen",
+  });
+  expect(mocks.events.map((event) => event.event)).not.toContain("onboarding.completed");
+  expect(mocks.complete).not.toHaveBeenCalled();
 });
