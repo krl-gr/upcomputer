@@ -157,7 +157,7 @@ describe("ProviderSignIn", () => {
       yield* subprocess(harness, true);
       const running = yield* withViewer(signIn("claudeAgent"));
       assert.strictEqual(running.status, "alreadyOpen");
-      assert.include(running.message, "in the browser");
+      assert.include(running.message, "signing in through the browser");
       assert.deepStrictEqual(harness.written, ["claude auth login"]);
 
       // Cancelled or failed: the shell is back at an empty prompt, so it is typed again,
