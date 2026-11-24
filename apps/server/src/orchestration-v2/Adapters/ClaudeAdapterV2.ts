@@ -2350,6 +2350,7 @@ export function makeClaudeQueryOptions(input: {
   readonly onUserDialog?: ClaudeQueryOptions["onUserDialog"];
   readonly onElicitation?: ClaudeQueryOptions["onElicitation"];
   readonly onStop?: HookCallback;
+  readonly onUserPromptSubmit?: HookCallback;
   readonly supportedDialogKinds?: ClaudeQueryOptions["supportedDialogKinds"];
   readonly allowDangerouslySkipPermissions?: boolean;
   readonly appendSystemPromptFileText?: string;
@@ -2512,13 +2513,16 @@ export function makeClaudeQueryOptions(input: {
         ...launchAppendSystemPrompt,
       ].join("\n\n"),
     },
-    ...(deviceInstructions || input.onStop !== undefined
+    ...(deviceInstructions || input.onStop !== undefined || input.onUserPromptSubmit !== undefined
       ? {
           hooks: {
             ...(deviceInstructions
               ? { SubagentStart: [{ hooks: [subagentDeviceInstructions] }] }
               : {}),
             ...(input.onStop === undefined ? {} : { Stop: [{ hooks: [input.onStop] }] }),
+            ...(input.onUserPromptSubmit === undefined
+              ? {}
+              : { UserPromptSubmit: [{ hooks: [input.onUserPromptSubmit] }] }),
           },
         }
       : {}),
@@ -5365,6 +5369,8 @@ interface ActiveClaudeTurnContext {
   promptEcho: "pending" | "confirmed";
   // MCP app notes this turn's prompt carries, recorded as delivered only if the turn completes.
   appContextOffered?: ReadonlyMap<string, string> | undefined;
+  // One-shot flag so a mid-turn steer does not re-deliver per-turn instructions.
+  turnInstructionsDelivered?: boolean;
   promptStarted: boolean;
   nativeWakeStarted: boolean;
   gatedFramesBeforeEcho: number;
@@ -13192,6 +13198,29 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 return pendingWake !== undefined && (yield* pendingWake) ? { continue: false } : {};
               }),
             );
+          // Per-turn app notes travel via hook additionalContext so Claude never stores them as user text.
+          const onUserPromptSubmit: HookCallback = () =>
+            runPromise(
+              Effect.gen(function* () {
+                const current = yield* Ref.get(activeTurn);
+                if (
+                  current === null ||
+                  current.nativeThreadId !== nativeThreadId ||
+                  current.turnInstructionsDelivered === true
+                ) {
+                  return {};
+                }
+                const note = current.input.turnInstructions;
+                if (note === undefined || note.length === 0) return {};
+                current.turnInstructionsDelivered = true;
+                return {
+                  hookSpecificOutput: {
+                    hookEventName: "UserPromptSubmit" as const,
+                    additionalContext: note,
+                  },
+                };
+              }),
+            );
           const mcpOverrides = claudeMcpQueryOverrides({
             mcpSession,
             readOnlySandbox:
@@ -13373,6 +13402,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             onUserDialog,
             onElicitation,
             onStop,
+            onUserPromptSubmit,
             supportedDialogKinds: ["resume_return"],
             ...(appendSystemPromptFileText === undefined ? {} : { appendSystemPromptFileText }),
             ...(toolSearchOverride === undefined ? {} : { toolSearchOverride }),

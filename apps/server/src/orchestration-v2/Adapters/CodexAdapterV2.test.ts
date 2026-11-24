@@ -299,6 +299,26 @@ describe("CodexAdapterV2 runtime policy", () => {
     }),
   );
 
+  it.effect(
+    "sends per-turn instructions as application additionalContext, never in user input",
+    () =>
+      Effect.gen(function* () {
+        const note =
+          "[UpComputer onboarding note: this is not the user's first conversation. Do not make the onboarding offer; just answer the message.]";
+        const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
+          nativeThreadId: "native-imported-rollout",
+          codexInput: [{ type: "text", text: "Can you continue from here?" }],
+          runtimePolicy: { runtimeMode: "full-access", interactionMode: "default", cwd: null },
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+          turnInstructions: note,
+        });
+        assert.deepEqual(params.input, [{ type: "text", text: "Can you continue from here?" }]);
+        assert.deepEqual(params.additionalContext, {
+          t3_code_onboarding: { kind: "application", value: note },
+        });
+      }),
+  );
+
   it.effect("passes the session's tool call hints to the turn's context", () =>
     Effect.gen(function* () {
       const params = yield* CodexAdapterV2.buildCodexTurnStartParams({

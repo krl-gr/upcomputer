@@ -1170,13 +1170,9 @@ export const layer: Layer.Layer<
       });
       // Notes go before the user text. The budget counts the full turn context, since
       // whether the native conversation already has it is known only once it loads.
+      // Onboarding notes travel via `turnInstructions` so they never pollute CLI user history.
       const notesWith = (turnContextText: string) =>
-        [
-          turnContextText,
-          restartNote,
-          recordedNotificationsNote(recordedNotifications),
-          onboardingNote,
-        ]
+        [turnContextText, restartNote, recordedNotificationsNote(recordedNotifications)]
           .filter((part) => part !== "")
           .join("\n\n");
       const budgetNote = notesWith(
@@ -2183,6 +2179,8 @@ export const layer: Layer.Layer<
           const requestText =
             turnInput.resume && prompted && userText === "" ? RESUME_PROMPT : userText;
           const text = goalCommand ? userText : withInlineContext(context, requestText);
+          const turnInstructions =
+            compact || goalCommand || onboardingNote === "" ? undefined : onboardingNote;
           const operation =
             turnInput.resume && !prompted && session.resumeTurn !== undefined
               ? session.resumeTurn({ ...resumeInput, messageId: resumeMessage.messageId })
@@ -2198,6 +2196,7 @@ export const layer: Layer.Layer<
                   ...(text === userText
                     ? {}
                     : { inlineContextLength: text.length - userText.length }),
+                  ...(turnInstructions === undefined ? {} : { turnInstructions }),
                 });
           yield* operation.pipe(
             // Clear pending handoff markers for refused prompts so the next turn retains the native session.
@@ -2258,6 +2257,7 @@ export const layer: Layer.Layer<
         retryHandoff.attachments.length === 0 &&
         sideChatHandoff === undefined &&
         turnNote === "" &&
+        onboardingNote === "" &&
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);
