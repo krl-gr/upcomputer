@@ -3,8 +3,9 @@
 The Up.computer server sends product usage events to PostHog, associated with a hashed random
 identifier for the installation. To count how many installations one person uses, the server also
 sends a hashed identifier for your UpComputer Connect account when you are signed in to one, and a
-random identifier for each device that connects. Up.computer never reads or sends identifiers
-from your provider accounts, such as your OpenAI or Claude account. Events include the
+random identifier for each device that connects. Usage data never includes identifiers from
+your provider accounts, such as your OpenAI or Claude account, and Up.computer never reads them
+for it. Events include the
 provider, model, reasoning effort, permission mode, turn result and, for a failed turn, a
 category of why (such as a usage limit), duration, release channel, and main-agent token totals
 when available. They also say whether the agent could connect to Up.computer's tools and how
