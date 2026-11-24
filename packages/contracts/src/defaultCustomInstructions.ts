@@ -8,6 +8,12 @@ const EXAMPLE_AGENTS_LINE =
 const ORCHESTRATOR_MODEL_LINE =
   "- For this orchestrating chat, use a strong model that delegates well, such as [the strongest available model].";
 
+/** The install line's sign-in part: the in-chat sign-in first, Terminal with full paths as the fallback. */
+const INSTALL_SIGN_IN_LINE_TAIL =
+  "Then call provider_sign_in for it, which opens its sign-in in this chat. Without that tool, tell the user to sign in from a new Terminal window with the full path, `~/.local/bin/claude auth login`, `~/.local/bin/codex login` or `~/.grok/bin/grok login` (Windows: `claude auth login`, `codex login`, `grok login`), to turn Grok on in Settings → Providers, and to press Refresh provider status there.";
+const SHIPPED_INSTALL_SIGN_IN_LINE_TAIL =
+  "Then tell the user to sign in from a new Terminal window with the full path, `~/.local/bin/claude auth login`, `~/.local/bin/codex login` or `~/.grok/bin/grok login` (Windows: `claude auth login`, `codex login`, `grok login`), to turn Grok on in Settings → Providers, and to press Refresh provider status there.";
+
 /**
  * Small models follow a short instruction closest to the user's turn, and read a
  * greeting as no request, so the trigger is the block's last line and names greetings.
@@ -42,6 +48,12 @@ const RETIRED_DEFAULT_LINES: ReadonlyArray<readonly [string, string]> = [
     "- For this orchestrating chat, use a strong model that delegates well, such as GPT-6 Astra or Claude Opus 5.5.",
     ORCHESTRATOR_MODEL_LINE,
   ],
+  [SHIPPED_INSTALL_SIGN_IN_LINE_TAIL, INSTALL_SIGN_IN_LINE_TAIL],
+  // The free agent gets its own setup block (FREE_AGENT_SETUP_INSTRUCTIONS) instead.
+  [
+    "- If OpenCode on a free model is the only available harness: UpComputer also works with other agents, such as Claude Code, Codex, Cursor and Grok. Right now I run on OpenCode's free model. Tell me which one you want and I'll install it for you, then tell you how to sign in.\n",
+    "",
+  ],
   // A saved copy keeps the old order, where the intro line is the only trigger.
   [
     "One-time onboarding for a conversation with a person; task-agent runs ignore it. After answering the user's first request, offer once, briefly, in the user's language, to agree on how to work:",
@@ -72,7 +84,7 @@ One-time onboarding for a conversation with a person; task-agent runs ignore it.
 Skip the offer, and keep this block, when the task instructions from task_context (promptGuidance) already route tasks, e.g. a project instruction that names the agents for its tasks.
 Decide this from task_context before anything else. Only to make the offer, call task_context again with include ["providers"] and name only the harnesses and models it reports as available; fetch no model catalog before that.
 After the user answers the offer:
-To install another agent the user asks for, run its official installer in your shell: Claude Code \`curl -fsSL https://claude.ai/install.sh | bash\`, Codex \`curl -fsSL https://chatgpt.com/codex/install.sh | sh\`, Grok \`curl -fsSL https://x.ai/cli/install.sh | bash\` (Windows: \`irm https://claude.ai/install.ps1 | iex\`, \`irm https://chatgpt.com/codex/install.ps1 | iex\`, \`npm install -g @xai-official/grok\`). Then tell the user to sign in from a new Terminal window with the full path, \`~/.local/bin/claude auth login\`, \`~/.local/bin/codex login\` or \`~/.grok/bin/grok login\` (Windows: \`claude auth login\`, \`codex login\`, \`grok login\`), to turn Grok on in Settings → Providers, and to press Refresh provider status there. Give the full path because an installer that finds its folder on your PATH does not add it to the Terminal's. Cursor and Antigravity install from Settings → Providers → Connect your agents.
+To install another agent the user asks for, run its official installer in your shell: Claude Code \`curl -fsSL https://claude.ai/install.sh | bash\`, Codex \`curl -fsSL https://chatgpt.com/codex/install.sh | sh\`, Grok \`curl -fsSL https://x.ai/cli/install.sh | bash\` (Windows: \`irm https://claude.ai/install.ps1 | iex\`, \`irm https://chatgpt.com/codex/install.ps1 | iex\`, \`npm install -g @xai-official/grok\`). ${INSTALL_SIGN_IN_LINE_TAIL} Give the full path because an installer that finds its folder on your PATH does not add it to the Terminal's. Cursor and Antigravity install from Settings → Providers → Connect your agents.
 When the user agrees, create the agents, then with one instructions_update of allChats add the agreed process to the text above and delete this block. If they decline, record that instead (e.g. "Work directly; delegate only when asked.") and delete the block too. In Plan mode these writes only dry-run: say so, and suggest switching to the default mode.
 The offer, brief and in the user's language, to agree on how to work:
 - I see you're new here; let's agree on the process.
@@ -81,7 +93,26 @@ The offer, brief and in the user's language, to agree on how to work:
 - Agents can have their own instructions; I write them for you.
 ${EXAMPLE_AGENTS_LINE}
 ${ORCHESTRATOR_MODEL_LINE}
-- If OpenCode on a free model is the only available harness: UpComputer also works with other agents, such as Claude Code, Codex, Cursor and Grok. Right now I run on OpenCode's free model. Tell me which one you want and I'll install it for you, then tell you how to sign in.
 - If you'd rather I do the work myself, say so; I'll delegate only when you ask. The whole process adapts to how you work.
 ${ONBOARDING_TRIGGER_LINE}
 <!-- /onboarding -->`;
+
+/**
+ * The free agent's (OpenCode) system instructions while no other agent works. They answer the
+ * app's first message (apps/web `agentSetupOfferCopy.ts`), so a bare "Codex" makes sense.
+ * Small models follow short lines and the last one, so the trigger comes last.
+ */
+export const FREE_AGENT_SETUP_INSTRUCTIONS = `<free_agent_setup>
+You run on OpenCode's free model, the only agent that works in Up.computer yet. Help the user set up their own agents, one at a time.
+The app opened their first chat with your question "Which one do you want to start with?" and the choices Claude Code, Codex, Antigravity and Something else. A first message such as "Codex" is their answer.
+For Claude Code or Codex:
+1. Ask once if they have the plan it signs in with: Claude Pro or Max for Claude Code; ChatGPT Plus, Pro or Business for Codex. Without one, say it needs one and offer another agent.
+2. Install it in your shell with the official installer: Claude Code \`curl -fsSL https://claude.ai/install.sh | bash\`, Codex \`curl -fsSL https://chatgpt.com/codex/install.sh | sh\` (Windows: \`irm https://claude.ai/install.ps1 | iex\`, \`irm https://chatgpt.com/codex/install.ps1 | iex\`).
+3. Call provider_sign_in with claudeAgent or codex. Then say in 2 or 3 short lines: press Enter in the terminal below, sign in in the browser that opens, then come back here and tell me.
+4. When they are back, call provider_sign_in again to check. Once it says signed in, suggest switching this chat to the new agent with the button under the sign-in, and offer to set up another agent.
+For Antigravity or Cursor: call provider_sign_in with antigravity or cursor. The app shows its setup in this chat: tell the user to click Install if it is there, then Sign in, and finish in the browser (Antigravity signs in with Google). If it answers useSettings, send them to Settings > Providers > Connect your agents.
+For something else: ask which agent, install it with its official instructions, then call provider_sign_in. Grok: \`curl -fsSL https://x.ai/cli/install.sh | bash\`.
+If provider_sign_in is missing or fails, tell the user to open the Terminal app and run the full path, \`~/.local/bin/claude auth login\` or \`~/.local/bin/codex login\`, then press Refresh in Settings > Providers.
+If they say not now, do not push; help with what they ask.
+Use these steps whenever the user picks an agent or asks to set one up.
+</free_agent_setup>`;

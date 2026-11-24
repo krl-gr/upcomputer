@@ -559,9 +559,13 @@ export interface ProjectionStoreV2Shape {
     options: ProjectionTimelinePageOptions,
   ) => Effect.Effect<ProjectionTimelinePage, ProjectionStoreV2Error>;
   readonly getMessageCount: (threadId: ThreadId) => Effect.Effect<number, ProjectionStoreV2Error>;
-  /** Whether a person sent a message, from web or mobile, in any thread other than this one. */
+  /**
+   * Whether a person sent a message, from web or mobile, in any thread other than this one.
+   * With `exceptDriver`, a message whose run went to that provider driver does not count.
+   */
   readonly hasPersonMessageOutsideThread: (
     threadId: ThreadId,
+    options?: { readonly exceptDriver?: string },
   ) => Effect.Effect<boolean, ProjectionStoreV2Error>;
   /** Bytes of tool output a transcript export is sure to hold, or 0 when it can fit in `limit`. */
   readonly getTranscriptByteFloor: (
@@ -6651,13 +6655,26 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
     // Uses the partial index on user messages and stops at the first match.
     const hasPersonMessageOutsideThread: ProjectionStoreV2Shape["hasPersonMessageOutsideThread"] = (
       threadId,
+      options,
     ) =>
-      sql<{ found: number }>`SELECT 1 AS found FROM orchestration_v2_projection_messages
+      (options?.exceptDriver === undefined
+        ? sql<{ found: number }>`SELECT 1 AS found FROM orchestration_v2_projection_messages
         WHERE role = 'user'
           AND thread_id <> ${threadId}
           AND json_extract(payload_json, '$.createdBy') = 'user'
           AND json_extract(payload_json, '$.creationSource') IN ('web', 'mobile')
-        LIMIT 1`.pipe(
+        LIMIT 1`
+        : // A user message's own run_id is often unset; its run names it instead.
+          sql<{ found: number }>`SELECT 1 AS found FROM orchestration_v2_projection_runs AS run
+        JOIN orchestration_v2_projection_messages AS message
+          ON message.message_id = json_extract(run.payload_json, '$.userMessageId')
+        WHERE run.thread_id <> ${threadId}
+          AND run.provider <> ${options.exceptDriver}
+          AND message.role = 'user'
+          AND json_extract(message.payload_json, '$.createdBy') = 'user'
+          AND json_extract(message.payload_json, '$.creationSource') IN ('web', 'mobile')
+        LIMIT 1`
+      ).pipe(
         Effect.map((rows) => rows.length > 0),
         Effect.mapError(controlReadError(threadId)),
       );

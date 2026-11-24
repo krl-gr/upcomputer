@@ -3,6 +3,7 @@ import * as NodeHttp from "node:http";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as OpenCodeServerLedger from "./OpenCodeServerLedger.ts";
+import { setFreeAgentSetup } from "@t3tools/provider-core/server/freeAgentSetup";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { OpencodeClient, ToolPart } from "@opencode-ai/sdk/v2";
@@ -3507,6 +3508,45 @@ describe("OpenCodeAdapterV2", () => {
         assert.include(system ?? "", "<runtime_info>");
         if (orchestrationInstructions) assert.include(system ?? "", "Up.computer orchestration");
         else assert.notInclude(system ?? "", "Up.computer orchestration");
+      }).pipe(
+        Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+        Effect.scoped,
+      ),
+  );
+
+  it.effect.each([true, false])(
+    "sends the free agent's setup steps only while it is the only working agent (%s)",
+    (active) =>
+      Effect.gen(function* () {
+        const suffix = `free-agent-setup-${active}`;
+        setFreeAgentSetup({ active, freeAgentInstanceIds: [] });
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => setFreeAgentSetup({ active: false, freeAgentInstanceIds: [] })),
+        );
+        const prompted = promiseGate<{ readonly system?: string }>();
+        const harness = yield* makeOpenCodeRuntimeHarness(
+          suffix,
+          "root",
+          {
+            event: { subscribe: async () => ({ stream: asyncEventStream().stream }) },
+            session: {
+              create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+              promptAsync: async (input: { readonly system?: string }) => {
+                prompted.resolve(input);
+                return { data: true };
+              },
+              abort: async () => ({ data: true }),
+              children: async () => ({ data: [] }),
+            },
+          },
+          {},
+          { external: false },
+        );
+        yield* harness.startTurn();
+        const { system } = yield* Effect.promise(() => prompted.promise);
+
+        if (active) assert.include(system ?? "", "<free_agent_setup>");
+        else assert.notInclude(system ?? "", "<free_agent_setup>");
       }).pipe(
         Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
         Effect.scoped,
