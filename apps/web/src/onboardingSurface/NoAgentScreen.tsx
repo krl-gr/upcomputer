@@ -1,13 +1,12 @@
 import { ProviderDriverKind } from "@t3tools/contracts";
-import { T, useGT, useMessages } from "gt-react";
+import { useGT, useMessages } from "gt-react";
 import { CheckIcon, ChevronRightIcon, CopyIcon, PlugIcon } from "lucide-react";
-import { useId, useState, type CSSProperties, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 
 import { AntigravityIcon, ClaudeAI, OpenAI } from "../components/Icons";
 import { ProviderPackageIcon } from "../components/chat/ProviderPackageIcon";
 import hermesLogo from "../components/mcp/logos/hermes.png";
 import { providerClients } from "../components/settings/providerDriverMeta";
-import { Badge } from "../components/ui/badge";
 import { InlineButton } from "../components/ui/button";
 import { Spinner } from "../components/ui/spinner";
 import { isElectron } from "../env";
@@ -16,7 +15,6 @@ import { cn } from "../lib/utils";
 import { NO_AGENT_COPY } from "./noAgentScreenCopy";
 import { NO_AGENT_SETUP_PROMPT } from "./noAgentSetupPrompt";
 
-const OPENCODE_URL = "https://opencode.ai";
 const COPIED_NOTE_MS = 4_000;
 
 const openCodeIcon = providerClients.get(ProviderDriverKind.make("opencode"))?.icon;
@@ -47,7 +45,6 @@ export function NoAgentScreen({
   onSetUpAnotherWay,
   onSetUpMyself,
   onCopyPrompt,
-  onOpenCodeLinkClick,
 }: {
   readonly view: NoAgentScreenView;
   /** Forces the copied note, for state sheets. */
@@ -59,7 +56,6 @@ export function NoAgentScreen({
   readonly onSetUpAnotherWay: () => void;
   readonly onSetUpMyself: () => void;
   readonly onCopyPrompt?: () => void;
-  readonly onOpenCodeLinkClick?: () => void;
 }) {
   const m = useMessages();
   const offer = view.kind === "offer";
@@ -80,7 +76,7 @@ export function NoAgentScreen({
       {isElectron ? (
         <div className="drag-region h-(--workspace-topbar-height) shrink-0" aria-hidden />
       ) : null}
-      <div className="flex min-h-0 flex-1 items-center-safe justify-center overflow-y-auto scrollbar-gutter-both px-4 py-8 [@media(max-height:34rem)]:py-3 sm:px-6">
+      <div className="flex min-h-0 flex-1 items-center-safe justify-center overflow-y-auto scrollbar-gutter-both px-4 py-8 [@media(max-height:34rem)]:py-2 sm:px-6">
         <section
           className={cn("w-full max-w-lg", centered && "text-center")}
           aria-labelledby="no-agent-screen-title"
@@ -102,7 +98,6 @@ export function NoAgentScreen({
               onInstall={onInstall}
               onSetUpMyself={onSetUpMyself}
               onCopyPrompt={onCopyPrompt}
-              onOpenCodeLinkClick={onOpenCodeLinkClick}
             />
           ) : view.kind === "installing" ? (
             <Installing phase={view.phase} progress={view.progress} />
@@ -124,13 +119,11 @@ function Offer({
   onInstall,
   onSetUpMyself,
   onCopyPrompt,
-  onOpenCodeLinkClick,
 }: {
   readonly copied: boolean | undefined;
   readonly onInstall: () => void;
   readonly onSetUpMyself: () => void;
   readonly onCopyPrompt: (() => void) | undefined;
-  readonly onOpenCodeLinkClick: (() => void) | undefined;
 }) {
   const m = useMessages();
   const { copyToClipboard, isCopied } = useCopyToClipboard<void>({
@@ -141,7 +134,8 @@ function Offer({
   const copy = NO_AGENT_COPY.offer;
   return (
     <>
-      <p className="mt-3 text-base leading-relaxed text-muted-foreground [@media(max-height:34rem)]:mt-1.5 [@media(max-height:34rem)]:text-sm [@media(max-height:34rem)]:leading-snug">
+      {/* The smallest window drops the intro, so all three cards fit at a readable size. */}
+      <p className="mt-3 text-base leading-relaxed text-muted-foreground [@media(max-height:28rem)]:hidden [@media(max-height:34rem)]:mt-1.5 [@media(max-height:34rem)]:text-sm [@media(max-height:34rem)]:leading-snug">
         {m(copy.intro)}
       </p>
 
@@ -156,22 +150,7 @@ function Offer({
           }
           title={m(copy.installTitle)}
           tag={m(copy.installTag)}
-          description={
-            <T>
-              <a
-                className="relative z-10 font-medium text-foreground underline decoration-current/30 underline-offset-2 hover:decoration-current"
-                href={OPENCODE_URL}
-                target="_blank"
-                rel="noreferrer noopener"
-                onClick={onOpenCodeLinkClick}
-                data-no-agent-action="opencode-link"
-                data-track="onboarding.no_agent.opencode_link"
-              >
-                OpenCode
-              </a>{" "}
-              with free models that don't keep your data. It will help you set up the rest.
-            </T>
-          }
+          description={m(copy.installDescription)}
         />
         <OptionCard
           action="copy-prompt"
@@ -202,10 +181,7 @@ function Offer({
   );
 }
 
-/*
- * One choice. The whole card is the click target: a button stretched over it,
- * so a link in the description can sit above the button without nesting in it.
- */
+/** One choice: the whole card is the button. */
 function OptionCard({
   action,
   track,
@@ -223,51 +199,32 @@ function OptionCard({
   readonly tag?: string;
   readonly description: ReactNode;
 }) {
-  const titleId = useId();
-  const descriptionId = useId();
   return (
-    <div
-      className="group relative flex items-center gap-3.5 rounded-xl border border-border px-4 py-3.5 text-foreground has-[button:hover]:border-foreground/25 has-[button:hover]:bg-accent/60 [@media(max-height:34rem)]:gap-3 [@media(max-height:34rem)]:px-3 [@media(max-height:34rem)]:py-2"
-      data-no-agent-card={action}
+    <button
+      type="button"
+      className="group flex w-full cursor-pointer items-center gap-3.5 rounded-xl border border-border px-4 py-3.5 text-left text-foreground outline-none hover:border-foreground/25 hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [@media(max-height:34rem)]:gap-3 [@media(max-height:34rem)]:px-3 [@media(max-height:34rem)]:py-2"
+      onClick={onClick}
+      data-no-agent-action={action}
+      data-track={track}
     >
-      <button
-        type="button"
-        className="absolute inset-0 cursor-pointer rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-        onClick={onClick}
-        data-no-agent-action={action}
-        data-track={track}
-      />
       <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden>
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2">
-          <span
-            id={titleId}
-            className="text-base leading-snug font-medium [@media(max-height:34rem)]:text-sm"
-          >
-            {title}
-          </span>
-          {tag ? (
-            <Badge variant="secondary" size="sm">
-              {tag}
-            </Badge>
-          ) : null}
+        <span className="block text-base leading-snug [@media(max-height:34rem)]:text-sm">
+          <span className="font-medium">{title}</span>
+          {tag ? <span className="ml-2 text-muted-foreground">{tag}</span> : null}
         </span>
-        <span
-          id={descriptionId}
-          className="mt-0.5 block text-sm leading-snug text-muted-foreground [@media(max-height:34rem)]:mt-0 [@media(max-height:34rem)]:text-xs"
-        >
+        {/* The smallest text on the screen: nothing here goes under it. */}
+        <span className="mt-0.5 block text-sm leading-snug text-muted-foreground [@media(max-height:34rem)]:mt-0">
           {description}
         </span>
       </span>
       <ChevronRightIcon
-        className="size-4.5 shrink-0 text-muted-foreground opacity-70 transition-transform group-has-[button:hover]:translate-x-0.5"
+        className="size-4.5 shrink-0 text-muted-foreground opacity-70 transition-transform group-hover:translate-x-0.5"
         aria-hidden
       />
-    </div>
+    </button>
   );
 }
 
