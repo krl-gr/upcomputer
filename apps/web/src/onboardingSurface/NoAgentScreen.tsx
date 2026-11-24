@@ -39,7 +39,6 @@ export type NoAgentScreenView =
 export function NoAgentScreen({
   view,
   copied: copiedOverride,
-  centeredOffer = false,
   onInstall,
   onTryAgain,
   onSetUpAnotherWay,
@@ -49,8 +48,6 @@ export function NoAgentScreen({
   readonly view: NoAgentScreenView;
   /** Forces the copied note, for state sheets. */
   readonly copied?: boolean;
-  /** Design question: center the offer's picture and text like the state screens. */
-  readonly centeredOffer?: boolean;
   readonly onInstall: () => void;
   readonly onTryAgain: () => void;
   readonly onSetUpAnotherWay: () => void;
@@ -59,7 +56,6 @@ export function NoAgentScreen({
 }) {
   const m = useMessages();
   const offer = view.kind === "offer";
-  const centered = !offer || centeredOffer;
   const title =
     view.kind === "offer"
       ? NO_AGENT_COPY.offer.title
@@ -77,13 +73,10 @@ export function NoAgentScreen({
         <div className="drag-region h-(--workspace-topbar-height) shrink-0" aria-hidden />
       ) : null}
       <div className="flex min-h-0 flex-1 items-center-safe justify-center overflow-y-auto scrollbar-gutter-both px-4 py-8 [@media(max-height:34rem)]:py-2 sm:px-6">
-        <section
-          className={cn("w-full max-w-lg", centered && "text-center")}
-          aria-labelledby="no-agent-screen-title"
-        >
+        <section className="w-full max-w-lg text-center" aria-labelledby="no-agent-screen-title">
           {/* A short window drops the picture so the three cards stay in view. */}
           <div className={cn("mb-8", offer && "[@media(max-height:42rem)]:hidden")}>
-            <AgentIconStack centered={centered} />
+            <AgentIconStack />
           </div>
 
           <h1
@@ -100,7 +93,11 @@ export function NoAgentScreen({
               onCopyPrompt={onCopyPrompt}
             />
           ) : view.kind === "installing" ? (
-            <Installing phase={view.phase} progress={view.progress} />
+            <Installing
+              phase={view.phase}
+              progress={view.progress}
+              onSetUpAnotherWay={onSetUpAnotherWay}
+            />
           ) : (
             <Failed
               reason={view.reason}
@@ -231,9 +228,11 @@ function OptionCard({
 function Installing({
   phase,
   progress,
+  onSetUpAnotherWay,
 }: {
   readonly phase: "downloading" | "starting" | "slow" | "retrying";
   readonly progress: number | null;
+  readonly onSetUpAnotherWay: () => void;
 }) {
   const m = useMessages();
   // Full once installed. The bar never runs backward within one attempt.
@@ -243,21 +242,41 @@ function Installing({
   if (reported > filled) setFilled(reported);
   const copy = NO_AGENT_COPY.installing;
   return (
-    <div className="mx-auto mt-7 w-full max-w-xs" role="status" data-no-agent-progress={phase}>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
-        <div
-          className="h-full rounded-full bg-foreground transition-[width] duration-300 ease-out"
-          style={{ width: `${Math.round(filled * 100)}%` }}
-        />
+    <>
+      <div className="mx-auto mt-7 w-full max-w-xs" role="status" data-no-agent-progress={phase}>
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+          <div
+            className="h-full rounded-full bg-foreground transition-[width] duration-300 ease-out"
+            style={{ width: `${Math.round(filled * 100)}%` }}
+          />
+        </div>
+        <p className="mt-3.5 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          {/* The bar holds still outside the download, so the spinner shows the work goes on. */}
+          {phase === "downloading" ? null : <Spinner size="sm" />}
+          {phase === "downloading"
+            ? m(copy.downloading.line(Math.round((progress ?? 0) * 100)))
+            : m(copy[phase].line)}
+        </p>
       </div>
-      <p className="mt-3.5 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-        {/* The bar holds still outside the download, so the spinner shows the work goes on. */}
-        {phase === "downloading" ? null : <Spinner size="sm" />}
-        {phase === "downloading"
-          ? m(copy.downloading.line(Math.round((progress ?? 0) * 100)))
-          : m(copy[phase].line)}
-      </p>
-    </div>
+      <div className="mt-6 text-sm">
+        <SetUpAnotherWay onClick={onSetUpAnotherWay} />
+      </div>
+    </>
+  );
+}
+
+/** The quiet way back to the three cards, from the installing and failure screens. */
+function SetUpAnotherWay({ onClick }: { readonly onClick: () => void }) {
+  const m = useMessages();
+  return (
+    <InlineButton
+      tone="muted"
+      onClick={onClick}
+      data-no-agent-action="setup-another-way"
+      data-track="onboarding.no_agent.setup_another_way"
+    >
+      {m(NO_AGENT_COPY.setUpAnotherWay)}
+    </InlineButton>
   );
 }
 
@@ -290,14 +309,7 @@ function Failed({
         >
           {m(NO_AGENT_COPY.tryAgain)}
         </button>
-        <InlineButton
-          tone="muted"
-          onClick={onSetUpAnotherWay}
-          data-no-agent-action="setup-another-way"
-          data-track="onboarding.no_agent.setup_another_way"
-        >
-          {m(NO_AGENT_COPY.setUpAnotherWay)}
-        </InlineButton>
+        <SetUpAnotherWay onClick={onSetUpAnotherWay} />
       </div>
     </div>
   );
@@ -342,11 +354,11 @@ const TILES: ReadonlyArray<{
   },
 ];
 
-function AgentIconStack({ centered }: { readonly centered: boolean }) {
+function AgentIconStack() {
   const gt = useGT();
   return (
     <div
-      className={cn("flex h-[4.5rem] items-center", centered ? "justify-center" : "pl-1")}
+      className="flex h-[4.5rem] items-center justify-center"
       role="img"
       aria-label={gt("Claude Code, Codex, Antigravity, Grok, OpenCode and Hermes")}
     >

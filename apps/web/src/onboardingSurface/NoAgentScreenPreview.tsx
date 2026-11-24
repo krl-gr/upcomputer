@@ -11,7 +11,6 @@ import { NoAgentScreen, type NoAgentScreenView } from "./NoAgentScreen";
 const STORAGE_KEY = "upcomputer:dev:no-agent-screen";
 const STATES = [
   "offer",
-  "offerCentered",
   "copied",
   "downloading",
   "starting",
@@ -110,7 +109,6 @@ export function NoAgentScreenPreview({ children }: { readonly children: ReactNod
   return (
     <NoAgentScreen
       view={view}
-      centeredOffer={state === "offerCentered"}
       {...(state === "copied" ? { copied: true } : {})}
       onInstall={() => setPreview({ state: "downloading", progress: 0, running: true })}
       onTryAgain={() => setPreview({ state: "retrying", progress: 0, running: true })}

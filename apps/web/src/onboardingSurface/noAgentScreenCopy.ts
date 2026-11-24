@@ -47,7 +47,7 @@ export const NO_AGENT_COPY = {
     },
     models: {
       title: msg("Free models aren't available"),
-      line: msg("OpenCode can't reach its free models right now. Try again later."),
+      line: msg("OpenCode can't reach its free models right now."),
     },
   },
   tryAgain: msg("Try again"),
