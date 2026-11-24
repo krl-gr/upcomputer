@@ -258,7 +258,7 @@ export const make = Effect.gen(function* () {
   });
   const httpClient = yield* HttpClient.HttpClient;
   const serverConfig = yield* ServerConfig.ServerConfig;
-  // Opted-out installs never read provider account files or write an identity.
+  // Opted-out installs never write an identity.
   const { distinctId, installId } =
     telemetryConfig.enabled && policyAllows
       ? yield* getTelemetryIdentity

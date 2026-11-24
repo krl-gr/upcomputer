@@ -260,8 +260,8 @@ so restart Up.computer after that.
   unavailable. This wins over the user's
   [Preview tunnel setting](./remote-access.md#browser-on-a-remote-environment).
 - `telemetry: false`: the server and desktop app send no [product usage data](./telemetry.md) or
-  relay connection traces. A policy cannot turn them on. A browser that opens the server, such as
-  app.up.computer, still sends its own relay traces.
+  relay connection traces, and neither does a browser opened from the server. A policy cannot turn
+  them on. The hosted web app at app.up.computer still sends its own relay traces.
 
 ### Providers
 
