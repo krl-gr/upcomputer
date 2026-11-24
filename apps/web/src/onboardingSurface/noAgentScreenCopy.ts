@@ -4,9 +4,23 @@ import { msg } from "gt-react";
 export const NO_AGENT_COPY = {
   offer: {
     title: msg("Let's get you an agent"),
-    intro: msg(
-      "We didn't find Claude Code, Codex or another coding agent on this Mac. Up.computer works with the agents you already have.",
-    ),
+    intro: {
+      mac: msg(
+        "We didn't find Claude Code, Codex or another coding agent on this Mac. Up.computer works with the agents you already have.",
+      ),
+      pc: msg(
+        "We didn't find Claude Code, Codex or another coding agent on this PC. Up.computer works with the agents you already have.",
+      ),
+      computer: msg(
+        "We didn't find Claude Code, Codex or another coding agent on this computer. Up.computer works with the agents you already have.",
+      ),
+      /** A client on another device: the agents belong to the named computer. */
+      remote: (computer: string) =>
+        msg(
+          "We didn't find Claude Code, Codex or another coding agent on {computer}. Up.computer works with the agents you already have.",
+          { computer },
+        ),
+    },
     installTitle: msg("Install a free agent"),
     installTag: msg("Easiest"),
     installDescription: msg(

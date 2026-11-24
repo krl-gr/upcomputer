@@ -13,23 +13,13 @@ import { isElectron } from "../env";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { cn } from "../lib/utils";
 import { NO_AGENT_COPY } from "./noAgentScreenCopy";
+import type { NoAgentScreenPlace, NoAgentScreenView } from "./upComputerOnboarding.logic";
 import { NO_AGENT_SETUP_PROMPT } from "./noAgentSetupPrompt";
 
 const COPIED_NOTE_MS = 4_000;
 
 const openCodeIcon = providerClients.get(ProviderDriverKind.make("opencode"))?.icon;
 const grokIcon = providerClients.get(ProviderDriverKind.make("grok"))?.icon;
-
-export type NoAgentScreenView =
-  | { readonly kind: "offer" }
-  | {
-      readonly kind: "installing";
-      /** `slow` is `starting` past 15 seconds. `retrying` runs from Try again until progress reports. */
-      readonly phase: "downloading" | "starting" | "slow" | "retrying";
-      /** 0 to 1 while the download reports bytes. */
-      readonly progress: number | null;
-    }
-  | { readonly kind: "failed"; readonly reason: "install" | "timeout" | "models" };
 
 /**
  * A new user's first screen when no coding agent is on the Mac: three ways to
@@ -38,6 +28,7 @@ export type NoAgentScreenView =
  */
 export function NoAgentScreen({
   view,
+  place,
   copied: copiedOverride,
   onInstall,
   onTryAgain,
@@ -46,13 +37,14 @@ export function NoAgentScreen({
   onCopyPrompt,
 }: {
   readonly view: NoAgentScreenView;
+  readonly place: NoAgentScreenPlace;
   /** Forces the copied note, for state sheets. */
   readonly copied?: boolean;
   readonly onInstall: () => void;
   readonly onTryAgain: () => void;
   readonly onSetUpAnotherWay: () => void;
   readonly onSetUpMyself: () => void;
-  readonly onCopyPrompt?: () => void;
+  readonly onCopyPrompt: () => void;
 }) {
   const m = useMessages();
   const offer = view.kind === "offer";
@@ -87,6 +79,7 @@ export function NoAgentScreen({
           </h1>
           {view.kind === "offer" ? (
             <Offer
+              place={place}
               copied={copiedOverride}
               onInstall={onInstall}
               onSetUpMyself={onSetUpMyself}
@@ -112,15 +105,17 @@ export function NoAgentScreen({
 }
 
 function Offer({
+  place,
   copied: copiedOverride,
   onInstall,
   onSetUpMyself,
   onCopyPrompt,
 }: {
+  readonly place: NoAgentScreenPlace;
   readonly copied: boolean | undefined;
   readonly onInstall: () => void;
   readonly onSetUpMyself: () => void;
-  readonly onCopyPrompt: (() => void) | undefined;
+  readonly onCopyPrompt: () => void;
 }) {
   const m = useMessages();
   const { copyToClipboard, isCopied } = useCopyToClipboard<void>({
@@ -133,7 +128,7 @@ function Offer({
     <>
       {/* The smallest window drops the intro, so all three cards fit at a readable size. */}
       <p className="mt-3 text-base leading-relaxed text-muted-foreground [@media(max-height:28rem)]:hidden [@media(max-height:34rem)]:mt-1.5 [@media(max-height:34rem)]:text-sm [@media(max-height:34rem)]:leading-snug">
-        {m(copy.intro)}
+        {m(place.kind === "remote" ? copy.intro.remote(place.name) : copy.intro[place.kind])}
       </p>
 
       {/* Equal rows: the cards keep one shape, and a state change never moves the block. */}

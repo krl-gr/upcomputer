@@ -66,8 +66,10 @@ vi.mock("../onboarding/firstRun", () => ({ completeOnboarding: () => mocks.compl
 
 import {
   FirstRunAgentStarter,
+  useFirstRunAgentSetup,
   useFirstRunAgentStarterEnvironment,
   useFirstRunAgentStatus,
+  useStartFirstRunAgent,
 } from "./FirstRunAgent";
 import {
   FIRST_RUN_AGENT_SLOW_START_MS,
@@ -111,6 +113,13 @@ function installState(operationId: string, overrides: Partial<ProviderInstallSta
   } as ProviderInstallState;
 }
 
+const signedOutClaude = openCode({
+  instanceId: ProviderInstanceId.make("claudeAgent"),
+  driver: ProviderDriverKind.make("claudeAgent"),
+  status: "error",
+  auth: { status: "unauthenticated" },
+});
+
 /** Every status a committed render showed, as the composer's effects would see it. */
 let committed: Array<ReturnType<typeof useFirstRunAgentStatus>["status"]>;
 let otherCommitted: Array<ReturnType<typeof useFirstRunAgentStatus>["status"]>;
@@ -148,7 +157,11 @@ beforeEach(() => {
   mocks.events.length = 0;
   registry = AtomRegistry.make();
   registry.set(testAtoms.threads, []);
-  registry.set(testAtoms.providers, [openCode({ enabled: false, status: "disabled" })]);
+  // A signed-out agent of the user's keeps the install that starts by itself.
+  registry.set(testAtoms.providers, [
+    signedOutClaude,
+    openCode({ enabled: false, status: "disabled" }),
+  ]);
   registry.set(testAtoms.otherProviders, [openCode({ enabled: false, status: "disabled" })]);
   mocks.startInstall.mockResolvedValue({
     _tag: "Success",
@@ -169,7 +182,7 @@ async function render() {
   await act(async () => {
     root.render(
       <RegistryContext.Provider value={registry}>
-        <FirstRunAgentStarter environmentId={environmentId} />
+        <FirstRunAgentStarter environmentId={environmentId} askAgain={false} />
         <Composer />
         <OtherComposer />
       </RegistryContext.Provider>,
@@ -375,7 +388,7 @@ it("does not report a window that did not onboard a new user", async () => {
 function Gate({ requested }: { readonly requested: EnvironmentId | null }) {
   const starterEnvironmentId = useFirstRunAgentStarterEnvironment(requested);
   return starterEnvironmentId === null ? null : (
-    <FirstRunAgentStarter environmentId={starterEnvironmentId} />
+    <FirstRunAgentStarter environmentId={starterEnvironmentId} askAgain={false} />
   );
 }
 
@@ -397,4 +410,55 @@ it("finishes setup and reports it after the gate stops asking for the starter", 
 
   expect(mocks.events).toContainEqual({ event: "onboarding.first_run_agent", outcome: "ready" });
   expect(mocks.events.map((event) => event.event)).toContain("onboarding.completed");
+});
+
+let installFromScreen: () => void;
+
+/** The no-agent screen's part: its Install card. */
+function ScreenInstall() {
+  const [, setSetup] = useFirstRunAgentSetup(environmentId);
+  const start = useStartFirstRunAgent(environmentId);
+  useEffect(() => {
+    installFromScreen = () => {
+      setSetup((current) => ({ ...current, start: "install", source: "no_agent_screen" }));
+      void start("no_agent_screen");
+    };
+  });
+  return null;
+}
+
+it("downloads nothing with no agent installed until the screen's Install, then tags its events", async () => {
+  registry.set(testAtoms.providers, [openCode({ enabled: false, status: "disabled" })]);
+  mocks.startInstall.mockResolvedValue({
+    _tag: "Success",
+    value: { operationId: "from-screen", phase: "downloading" },
+  });
+  await act(async () => {
+    root.render(
+      <RegistryContext.Provider value={registry}>
+        <FirstRunAgentStarter environmentId={environmentId} askAgain={false} />
+        <Composer />
+        <ScreenInstall />
+      </RegistryContext.Provider>,
+    );
+  });
+  await update(() => vi.advanceTimersByTime(60_000));
+  expect(mocks.startInstall).not.toHaveBeenCalled();
+  expect(new Set(committed)).toEqual(new Set([null]));
+
+  await update(() => installFromScreen());
+  expect(mocks.startInstall).toHaveBeenCalledTimes(1);
+  await update(() =>
+    registry.set(testAtoms.install, installState("from-screen", { phase: "failed" })),
+  );
+  await update(() => registry.set(testAtoms.providers, [openCode()]));
+  const source = { source: "no_agent_screen" };
+  expect(mocks.events).toEqual(
+    expect.arrayContaining([
+      { event: "onboarding.first_run_agent", outcome: "started", ...source },
+      { ...failedOf("install"), ...source },
+      { ...autoRetried, ...source },
+      { event: "onboarding.first_run_agent", outcome: "ready", ...source },
+    ]),
+  );
 });

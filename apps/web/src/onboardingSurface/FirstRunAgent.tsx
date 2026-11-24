@@ -12,6 +12,7 @@ import { serverEnvironment } from "../state/server";
 import { environmentThreadShells } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { getOnboardingProviderState } from "../onboarding/providerReadiness.logic";
+import { updateNoAgentScreenRecord } from "./noAgentScreenRecord";
 import {
   countReadyOnboardingProviders,
   FIRST_RUN_SETUP_FAILED,
@@ -60,6 +61,14 @@ const firstRunAgentAtom = Atom.family((_environmentId: EnvironmentId) =>
     /** When this window finished first-run onboarding, if it did. */
     readonly onboardedAt: number | null;
     readonly firstScreenIdleReported: boolean;
+    /** Set when the user picked the install on the no-agent screen, for its events. */
+    readonly source: FirstRunAgentSource | null;
+    /** The no-agent screen: its cards, the install it shows, or closed for this session. */
+    readonly screen: "offer" | "install" | "closed" | null;
+    readonly screenShownReported: boolean;
+    readonly installClicks: number;
+    readonly sawFailure: boolean;
+    readonly copiedPrompt: boolean;
   }>({
     start: null,
     startError: null,
@@ -67,8 +76,27 @@ const firstRunAgentAtom = Atom.family((_environmentId: EnvironmentId) =>
     autoRetry: null,
     onboardedAt: null,
     firstScreenIdleReported: false,
+    source: null,
+    screen: null,
+    screenShownReported: false,
+    installClicks: 0,
+    sawFailure: false,
+    copiedPrompt: false,
   }).pipe(Atom.keepAlive, Atom.withLabel("web-first-run-agent")),
 );
+
+type FirstRunAgentSource = "no_agent_screen";
+
+const sourceProps = (source: FirstRunAgentSource | null) =>
+  source === null ? {} : ({ source } as const);
+
+/** The first-run setup's state, for the no-agent screen that drives it. */
+export function useFirstRunAgentSetup(environmentId: EnvironmentId) {
+  return [
+    useAtomValue(firstRunAgentAtom(environmentId)),
+    useAtomSet(firstRunAgentAtom(environmentId)),
+  ] as const;
+}
 
 /**
  * Install operations and start attempts whose `started` or `failed` event this
@@ -77,14 +105,14 @@ const firstRunAgentAtom = Atom.family((_environmentId: EnvironmentId) =>
  */
 const reportedOperations = new Set<string>();
 
-function useStartFirstRunAgent(environmentId: EnvironmentId) {
+export function useStartFirstRunAgent(environmentId: EnvironmentId) {
   const setSetup = useAtomSet(firstRunAgentAtom(environmentId));
   const recordClientEvent = useRecordClientEvent();
   const startInstall = useAtomCommand(serverEnvironment.startProviderInstall, {
     reportFailure: false,
     reportDefect: false,
   });
-  return async () => {
+  return async (source: FirstRunAgentSource | null) => {
     setSetup((setup) => ({ ...setup, startError: null }));
     const result = await startInstall({
       environmentId,
@@ -99,7 +127,11 @@ function useStartFirstRunAgent(environmentId: EnvironmentId) {
     if (phase !== "downloading" || operationId === null) return;
     if (reportedOperations.has(`started:${operationId}`)) return;
     reportedOperations.add(`started:${operationId}`);
-    recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "started" });
+    recordClientEvent(environmentId, {
+      event: "onboarding.first_run_agent",
+      outcome: "started",
+      ...sourceProps(source),
+    });
   };
 }
 
@@ -110,10 +142,10 @@ function useRunFirstRunAgentAttempt(environmentId: EnvironmentId) {
     reportFailure: false,
     reportDefect: false,
   });
-  return (installed: boolean): Promise<unknown> =>
+  return (installed: boolean, source: FirstRunAgentSource | null): Promise<unknown> =>
     installed
       ? refreshProviders({ environmentId, input: { instanceId: FIRST_RUN_AGENT_INSTANCE_ID } })
-      : start();
+      : start(source);
 }
 
 /** The next attempt after `startup`, which a failed result from before it says nothing about. */
@@ -150,13 +182,18 @@ const turnRequestedAtom = Atom.make((get) =>
 ).pipe(Atom.withLabel("web-first-run-turn-requested"));
 
 /**
- * Renders nothing. In place of the agent table, a new user's window installs
- * OpenCode unless an agent of theirs already works, then finishes onboarding
- * once any agent works. It saves no default model: OpenCode's automatic
- * model is already a zero-retention free one and moves on by itself if that
- * model leaves the free tier, while a saved one would stay unavailable.
+ * Installs OpenCode unless the user's own agent works, or with none installed opens the
+ * no-agent screen, then finishes onboarding once any agent works. No default model is
+ * saved: OpenCode's own pick stays a free zero-retention one, while a saved one may leave the free tier.
  */
-export function FirstRunAgentStarter({ environmentId }: { readonly environmentId: EnvironmentId }) {
+export function FirstRunAgentStarter({
+  environmentId,
+  askAgain,
+}: {
+  readonly environmentId: EnvironmentId;
+  /** A user who left the no-agent screen on an earlier launch without a working agent. */
+  readonly askAgain: boolean;
+}) {
   const start = useStartFirstRunAgent(environmentId);
   const setup = useAtomValue(firstRunAgentAtom(environmentId));
   const setSetup = useAtomSet(firstRunAgentAtom(environmentId));
@@ -181,6 +218,7 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
   const startDecision = latchFirstRunAgentStart({
     latched: setup.start === "wait" || setup.start === null ? null : setup.start,
     completed: onboardingCompleted,
+    askAgain,
     providers,
     waitOver: checkWaitOver,
   });
@@ -189,8 +227,12 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
   useEffect(() => {
     if (startDecision === null || setup.start === startDecision || decided.current) return;
     decided.current = true;
-    setSetup((current) => ({ ...current, start: startDecision }));
-    if (startDecision === "install") void start();
+    setSetup((current) => ({
+      ...current,
+      start: startDecision,
+      screen: startDecision === "ask" ? "offer" : current.screen,
+    }));
+    if (startDecision === "install") void start(null);
   }, [setSetup, setup.start, start, startDecision]);
 
   const succeededOperation = install?.phase === "succeeded" ? install.operationId : null;
@@ -267,8 +309,9 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
       event: "onboarding.first_run_agent",
       outcome: "failed",
       reason: "install",
+      ...sourceProps(setup.source),
     });
-  }, [environmentId, install?.operationId, install?.phase, recordClientEvent]);
+  }, [environmentId, install?.operationId, install?.phase, recordClientEvent, setup.source]);
 
   const runAttempt = useRunFirstRunAgentAttempt(environmentId);
   const autoRetryRun = resolveFirstRunAgentAutoRetry({
@@ -303,8 +346,9 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
       event: "onboarding.first_run_agent",
       outcome: "retried",
       automatic: true,
+      ...sourceProps(setup.source),
     });
-    void runAttempt(autoRetryRun === "start");
+    void runAttempt(autoRetryRun === "start", setup.source);
   }, [
     autoRetryRun,
     environmentId,
@@ -313,6 +357,7 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
     recordClientEvent,
     runAttempt,
     setSetup,
+    setup.source,
   ]);
 
   const startupFailure = resolveFirstRunAgentStartupFailure({
@@ -330,17 +375,24 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
       event: "onboarding.first_run_agent",
       outcome: "failed",
       reason: startupFailure,
+      ...sourceProps(setup.source),
     });
-  }, [environmentId, recordClientEvent, startupFailure, startupKey]);
+  }, [environmentId, recordClientEvent, setup.source, startupFailure, startupKey]);
 
   const ready = countReadyOnboardingProviders(providers) > 0;
   const completed = useRef(false);
   useEffect(() => {
     if (!ready || completed.current) return;
     completed.current = true;
+    // A later launch without a working agent no longer shows the no-agent screen.
+    updateNoAgentScreenRecord((record) => record && { ...record, agentWorked: true });
     // The Welcome page at /welcome finished it and reported it already.
     if (onboardingCompleted) return;
-    recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "ready" });
+    recordClientEvent(environmentId, {
+      event: "onboarding.first_run_agent",
+      outcome: "ready",
+      ...sourceProps(setup.source),
+    });
     void completeOnboarding()
       .then(() => {
         recordClientEvent(environmentId, {
@@ -356,7 +408,7 @@ export function FirstRunAgentStarter({ environmentId }: { readonly environmentId
       .catch(() => {
         completed.current = false;
       });
-  }, [environmentId, onboardingCompleted, ready, recordClientEvent, setSetup]);
+  }, [environmentId, onboardingCompleted, ready, recordClientEvent, setSetup, setup.source]);
 
   // Only a window that onboarded a new user starts this, so installs onboarded
   // before never report it, and an app closed sooner reports nothing.
@@ -409,6 +461,8 @@ export function useFirstRunAgentStatus(
   active: boolean,
 ): {
   readonly status: FirstRunAgentStatus | null;
+  /** The install finished, so what is left is OpenCode's start. */
+  readonly installed: boolean;
   readonly retrying: boolean;
   readonly retry: () => void;
 } {
@@ -432,7 +486,11 @@ export function useFirstRunAgentStatus(
   );
   const setSetup = useAtomSet(firstRunAgentAtom(environmentId));
   const retry = () => {
-    recordClientEvent(environmentId, { event: "onboarding.first_run_agent", outcome: "retried" });
+    recordClientEvent(environmentId, {
+      event: "onboarding.first_run_agent",
+      outcome: "retried",
+      ...sourceProps(setup.source),
+    });
     setRetrying(true);
     if (installSucceeded) {
       setSetup((current) =>
@@ -445,7 +503,7 @@ export function useFirstRunAgentStatus(
       );
     }
     // Once installed, a failure is OpenCode's own check; installing again would not rerun it.
-    const attempt = runAttempt(installSucceeded);
+    const attempt = runAttempt(installSucceeded, setup.source);
     const after = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
     // The attempt's own timeout offers Retry again, even if its request never returns.
     void Promise.all([
@@ -468,5 +526,5 @@ export function useFirstRunAgentStatus(
     resolved?.kind === "failed" && OWN_FAILURE_MESSAGES.has(resolved.message)
       ? { ...resolved, message: m(resolved.message) }
       : resolved;
-  return { status, retrying, retry };
+  return { status, installed: installSucceeded, retrying, retry };
 }
