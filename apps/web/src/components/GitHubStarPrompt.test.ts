@@ -1,9 +1,9 @@
-import { EnvironmentId, type ServerProvider } from "@t3tools/contracts";
+import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { toastManager } from "./ui/toast";
 
-const { add, update, openExternal, commands, starred, page, agents } = vi.hoisted(() => ({
+const { add, update, openExternal, commands, starred, page } = vi.hoisted(() => ({
   add: vi.fn<typeof toastManager.add>(),
   update: vi.fn<typeof toastManager.update>(),
   openExternal: vi.fn(async (_url: string) => {}),
@@ -14,12 +14,10 @@ const { add, update, openExternal, commands, starred, page, agents } = vi.hoiste
     activeElement: null as { matches: (selector: string) => boolean } | null,
     events: new EventTarget(),
   },
-  agents: { providers: [] as ReadonlyArray<Partial<ServerProvider>> },
 }));
 vi.mock("./ui/toast", () => ({ toastManager: { add, update, close: vi.fn() } }));
 vi.mock("../localApi", () => ({ readLocalApi: () => ({ shell: { openExternal } }) }));
-vi.mock("../rpc/atomRegistry", () => ({ appAtomRegistry: { get: () => agents.providers } }));
-vi.mock("../state/server", () => ({ serverEnvironment: { providersValueAtom: () => ({}) } }));
+vi.mock("../rpc/atomRegistry", () => ({ appAtomRegistry: {} }));
 vi.mock("../state/sourceControl", () => ({ sourceControlEnvironment: commands }));
 vi.mock("@t3tools/client-runtime/state/runtime", () => ({
   runAtomCommand: async (_registry: unknown, command: unknown) => {
@@ -32,24 +30,7 @@ vi.mock("@t3tools/client-runtime/state/runtime", () => ({
 const environmentId = EnvironmentId.make("environment-1");
 const IDLE_MS = 30_000;
 
-const agent = (driver: string): Partial<ServerProvider> => ({
-  instanceId: driver as ServerProvider["instanceId"],
-  driver: driver as ServerProvider["driver"],
-  enabled: true,
-  installed: true,
-  status: "ready",
-  auth: { status: "authenticated" },
-});
-const freeAgent = agent("opencode");
-const realAgent = agent("codex");
-
-function setup({
-  sent = 0,
-  writable = true,
-  alreadyStarred = false,
-  providers = [freeAgent, realAgent],
-} = {}) {
-  agents.providers = providers;
+function setup({ sent = 0, writable = true, alreadyStarred = false } = {}) {
   add.mockReset();
   update.mockReset();
   openExternal.mockClear();
@@ -145,20 +126,6 @@ describe("recordPromptSent", () => {
     session = await startSession();
     for (let sent = 0; sent < 10; sent++) await session.send();
     expect(add).toHaveBeenCalledTimes(2);
-    vi.unstubAllGlobals();
-  });
-
-  it("waits for a real agent: prompts to the free agent alone never count", async () => {
-    const store = setup({ sent: 5, providers: [freeAgent, { ...realAgent, enabled: false }] });
-    const session = await startSession();
-    await session.send();
-    await session.send();
-    expect(add).not.toHaveBeenCalled();
-    expect(store.get("t3code:github-star-prompt:sent")).toBe("5");
-
-    agents.providers = [freeAgent, realAgent];
-    await session.send();
-    expect(add).toHaveBeenCalledOnce();
     vi.unstubAllGlobals();
   });
 

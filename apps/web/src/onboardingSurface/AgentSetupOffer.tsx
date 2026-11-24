@@ -7,6 +7,7 @@ import { AntigravityIcon, ClaudeAI, OpenAI } from "../components/Icons";
 import { Button } from "../components/ui/button";
 import { useRecordClientEvent } from "../hooks/useRecordClientEvent";
 import { getOnboardingProviderState } from "../onboarding/providerReadiness.logic";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import type { TimelineEntry } from "../session-logic";
 import { serverEnvironment } from "../state/server";
 import {
@@ -18,6 +19,7 @@ import {
   useAgentSetupOfferTyping,
 } from "./agentSetupOffer.logic";
 import { AGENT_SETUP_OFFER_COPY } from "./agentSetupOfferCopy";
+import { setStarPromptProviderReader } from "./starPromptGate";
 import { FIRST_RUN_AGENT_INSTANCE_ID } from "./upComputerOnboarding.logic";
 
 type AgentSetupChoice = NonNullable<
@@ -92,6 +94,11 @@ export function SwitchAgentAction({
     </div>
   );
 }
+
+// The chat that sends prompts loads this module, so the star prompt can wait for a real agent.
+setStarPromptProviderReader((environmentId) =>
+  appAtomRegistry.get(serverEnvironment.providersValueAtom(environmentId)),
+);
 
 const OFFER_MESSAGE_ID = MessageId.make("agent-setup-offer");
 const NOT_NOW_MESSAGE_ID = MessageId.make("agent-setup-offer-not-now");

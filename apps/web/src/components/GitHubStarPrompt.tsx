@@ -1,8 +1,4 @@
-import {
-  type EnvironmentId,
-  type ServerProvider,
-  SourceControlProviderKind,
-} from "@t3tools/contracts";
+import { type EnvironmentId, SourceControlProviderKind } from "@t3tools/contracts";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
 import { msg } from "gt-react";
@@ -11,11 +7,10 @@ import { StarIcon } from "lucide-react";
 import { m } from "../i18n/messages";
 import { getLocalStorageItem, setLocalStorageItem } from "../hooks/useLocalStorage";
 import { readLocalApi } from "../localApi";
-import { getOnboardingProviderState } from "../onboarding/providerReadiness.logic";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { serverEnvironment } from "../state/server";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { toastManager } from "./ui/toast";
+import { starPromptWaitsForRealAgent } from "../onboardingSurface/starPromptGate";
 
 // Separate keys so a count written by another tab can never undo a dismissal.
 const SENT_KEY = "t3code:github-star-prompt:sent";
@@ -148,25 +143,12 @@ async function starRepository(environmentId: EnvironmentId) {
   return result._tag === "Success" && result.value;
 }
 
-// The free agent (OpenCode) alone is still setup: the user has not connected an agent of their own.
-function realAgentConnected(environmentId: EnvironmentId) {
-  const providers: ReadonlyArray<ServerProvider> =
-    appAtomRegistry.get(serverEnvironment.providersValueAtom(environmentId)) ?? [];
-  return providers.some(
-    (provider) =>
-      provider.driver !== "opencode" &&
-      provider.enabled &&
-      getOnboardingProviderState(provider) === "ready",
-  );
-}
-
 /**
- * Counts a sent prompt once a real agent works. After more than five, asks once per session for
- * a star until dismissed, unless the environment's GitHub account already starred the repo.
- * Waits until the user is idle.
+ * Counts a sent prompt. After more than five, asks once per session for a star until dismissed,
+ * unless the environment's GitHub account already starred the repo. Waits until the user is idle.
  */
 export async function recordPromptSent(environmentId: EnvironmentId): Promise<void> {
-  if (shownThisSession || !realAgentConnected(environmentId)) return;
+  if (shownThisSession || starPromptWaitsForRealAgent(environmentId)) return;
   try {
     if (getLocalStorageItem(DISMISSED_KEY, Schema.Boolean)) return;
     const sent = (getLocalStorageItem(SENT_KEY, Schema.Number) ?? 0) + 1;
