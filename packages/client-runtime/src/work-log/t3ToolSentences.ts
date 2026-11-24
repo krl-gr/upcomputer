@@ -770,6 +770,14 @@ const T3_TOOL_SENTENCES: ReadonlyMap<string, T3ToolSentence> = new Map<string, T
     },
   ],
   [
+    "Open\nOpening\nOpened\na sign-in terminal",
+    {
+      detail: msg(
+        "{status, select, inProgress {Opening a sign-in terminal} completed {Opened a sign-in terminal} failed {Failed to open a sign-in terminal} declined {Declined to open a sign-in terminal} stopped {Stopped opening a sign-in terminal} other {Opening a sign-in terminal}}",
+      ),
+    },
+  ],
+  [
     "Launch\nLaunching\nLaunched\na project thread",
     {
       detail: msg(

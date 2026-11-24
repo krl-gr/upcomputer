@@ -9,7 +9,8 @@ import type {
   ServerConfig,
   ServerProvider,
 } from "@t3tools/contracts";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { resolveProviderSignInCommand } from "@t3tools/shared/providerSignIn";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { resolveProviderInstanceDisplayName as agentName } from "@t3tools/client-runtime/state/provider-instance-display";
 import {
   isAtomCommandInterrupted,
@@ -40,7 +41,6 @@ import {
 import { msg, T, useGT, useLocale, useMessages, Var } from "gt-react";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
-import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { APP_BASE_NAME, MOBILE_APP_URL } from "../../branding";
 import { isProductFeatureShown } from "../../product/productFlags";
 import {
@@ -67,10 +67,7 @@ import {
   type OnboardingProjectGroup,
   splitOnboardingProjectPath,
 } from "../../onboarding/projectImport.logic";
-import {
-  resolveOnboardingProviderInstallCommand,
-  resolveOnboardingProviderLoginCommand,
-} from "../../onboarding/providerReadiness.logic";
+import { resolveOnboardingProviderInstallCommand } from "../../onboarding/providerReadiness.logic";
 import {
   cliTerminalStep,
   codexCardProvider,
@@ -107,7 +104,7 @@ import { AddProviderInstanceDialog } from "../settings/AddProviderInstanceDialog
 import { useDesktopCliCommand } from "../settings/CliCommandSettingsRow";
 import { CodexSetupSection } from "../settings/CodexSetupSection";
 import { readCodexSetupMode } from "../settings/CodexSetupSection.logic";
-import { TerminalViewport } from "../ThreadTerminalDrawer";
+import { SetupTerminal } from "./SetupTerminal";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { ACPRegistryIcon } from "../Icons";
 import { Button } from "../ui/button";
@@ -535,11 +532,11 @@ function AgentsSection({
       providerInstanceId: provider.instanceId,
       cwd: serverConfig.cwd,
       command: provider.installed
-        ? resolveOnboardingProviderLoginCommand(
+        ? (resolveProviderSignInCommand(
             provider,
             serverConfig.settings,
             serverConfig.environment.platform.os,
-          )
+          ) ?? provider.driver)
         : resolveOnboardingProviderInstallCommand(
             provider.driver,
             serverConfig.environment.platform.os,
@@ -1322,11 +1319,6 @@ function AgentInstallTerminal({
   const { command, cwd, driver, environmentId, keybindings, providerInstanceId } = session;
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   const gt = useGT();
-  const [advancedTypography] = useLocalStorage(
-    TYPOGRAPHY_ADVANCED_STORAGE_KEY,
-    false,
-    Schema.Boolean,
-  );
   const openTerminal = useAtomCommand(terminalEnvironment.open, { reportFailure: false });
   const writeTerminal = useAtomCommand(terminalEnvironment.write, { reportFailure: false });
   const closeTerminal = useAtomCommand(terminalEnvironment.close, { reportFailure: false });
@@ -1334,7 +1326,6 @@ function AgentInstallTerminal({
   const setupGenerationRef = useRef(0);
   const activeSetupGenerationRef = useRef<number | null>(null);
   const [terminalId] = useState(() => `onboarding-${driver}-${randomUUID()}`);
-  const threadRef = scopeThreadRef(environmentId, AGENT_ONBOARDING_THREAD_ID);
   const [setupAttempt, setSetupAttempt] = useState(0);
   const [setupState, setSetupState] = useState<
     "preparing" | "ready" | "openFailed" | "writeFailed"
@@ -1428,31 +1419,39 @@ function AgentInstallTerminal({
   ]);
 
   return (
-    <div
-      data-thread-terminal-drawer
-      className="mt-4 overflow-hidden rounded-lg border border-border/70 bg-background text-foreground"
-    >
-      <div className="flex items-center justify-between border-b border-border/60 bg-background/60 px-3 py-1.5">
-        <span className="text-2xs font-medium text-muted-foreground">
-          {!canOperateTerminal ? (
-            gt("This connection cannot control terminals.")
-          ) : setupState === "writeFailed" ? (
-            <T>
-              Run{" "}
-              <code className="rounded bg-muted px-1 font-mono">
-                <Var>{command}</Var>
-              </code>{" "}
-              in this terminal.
-            </T>
-          ) : setupState === "ready" ? (
-            gt("Review the command, then press Enter to run it.")
-          ) : setupState === "openFailed" ? (
-            gt("Could not open the setup terminal.")
-          ) : (
-            gt("Preparing command...")
-          )}
-        </span>
-        <div className="flex items-center gap-1">
+    <SetupTerminal
+      session={{
+        environmentId,
+        threadId: AGENT_ONBOARDING_THREAD_ID,
+        terminalId,
+        cwd,
+        providerInstanceId,
+        label: gt("Install {agent}", { agent: driver }),
+        keybindings,
+      }}
+      showTerminal={terminalReady}
+      onSessionExited={onClose}
+      status={
+        !canOperateTerminal ? (
+          gt("This connection cannot control terminals.")
+        ) : setupState === "writeFailed" ? (
+          <T>
+            Run{" "}
+            <code className="rounded bg-muted px-1 font-mono">
+              <Var>{command}</Var>
+            </code>{" "}
+            in this terminal.
+          </T>
+        ) : setupState === "ready" ? (
+          gt("Review the command, then press Enter to run it.")
+        ) : setupState === "openFailed" ? (
+          gt("Could not open the setup terminal.")
+        ) : (
+          gt("Preparing command...")
+        )
+      }
+      actions={
+        <>
           {setupState === "openFailed" ? (
             <Button
               size="xs"
@@ -1470,26 +1469,9 @@ function AgentInstallTerminal({
           <Button size="xs" variant="ghost-muted" onClick={onClose}>
             <T>Close</T>
           </Button>
-        </div>
-      </div>
-      <div className="h-64">
-        {terminalReady ? (
-          <TerminalViewport
-            threadRef={threadRef}
-            threadId={AGENT_ONBOARDING_THREAD_ID}
-            terminalId={terminalId}
-            terminalLabel={gt("Install {agent}", { agent: driver })}
-            cwd={cwd}
-            providerInstanceId={providerInstanceId}
-            advancedTypography={advancedTypography}
-            onSessionExited={onClose}
-            autoFocus
-            visible
-            keybindings={keybindings}
-          />
-        ) : null}
-      </div>
-    </div>
+        </>
+      }
+    />
   );
 }
 

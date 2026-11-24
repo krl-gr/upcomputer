@@ -850,6 +850,23 @@ export function summarizeT3ToolCalls(
           );
       break;
     }
+    case "provider-sign-in": {
+      const count = selected.length;
+      label = done
+        ? resolve(
+            msg(
+              "{count, plural, one {Opened a sign-in terminal {count} time} other {Opened a sign-in terminal {count} times}}",
+              { count },
+            ),
+          )
+        : resolve(
+            msg(
+              "{count, plural, one {Tried to open a sign-in terminal {count} time} other {Tried to open a sign-in terminal {count} times}}",
+              { count },
+            ),
+          );
+      break;
+    }
     case "thread-list": {
       const count = selected.length;
       label = done

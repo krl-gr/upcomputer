@@ -15,6 +15,7 @@ import {
   readMcpAppReference,
   type McpAppReference,
 } from "./mcpApp.ts";
+import { PROVIDER_SIGN_IN_TOOL_NAME } from "./providerSignIn.ts";
 import { resolveT3McpToolId } from "./t3McpToolPresentation.ts";
 
 export const SEND_TO_USER_TOOL_NAME = "send_to_user";
@@ -57,6 +58,10 @@ interface CompactToolOutput {
   linkedCount?: number;
   unlinkedCount?: number;
   sentMessage?: string;
+  /** The terminal `provider_sign_in` opened in the caller's thread. */
+  signInTerminalId?: string;
+  /** The app-managed provider whose setup `provider_sign_in` shows in the caller's thread. */
+  appSetupInstanceId?: string;
 }
 
 function readResult(value: unknown, budget: ResultReadBudget, depth = 0): ResultEnvelope {
@@ -153,6 +158,10 @@ export function compactDynamicToolOutput(value: unknown): CompactToolOutput | un
     ) {
       output.sentMessage = data.sentMessage;
     }
+    for (const key of ["signInTerminalId", "appSetupInstanceId"] as const) {
+      const id = boundedId(data[key]);
+      if (id !== undefined) output[key] = id;
+    }
     const htmlRender = readHtmlRenderReference(data.htmlRender);
     if (htmlRender !== undefined) output.htmlRender = htmlRender;
     const mcpApp = readMcpAppReference(data[MCP_APP_OUTPUT_KEY]);
@@ -236,6 +245,32 @@ export function sentMessageFromToolItem(item: {
   }
   const output = compactDynamicToolOutput(item.output);
   return output?.isError ? undefined : output?.sentMessage;
+}
+
+export type ProviderSignInSurface =
+  | { readonly kind: "terminal"; readonly terminalId: string }
+  | { readonly kind: "appSetup"; readonly instanceId: string };
+
+/** What a `provider_sign_in` call shows under itself: its terminal or the app's own setup. */
+export function providerSignInFromToolItem(item: {
+  readonly toolName: string | null | undefined;
+  readonly output?: unknown;
+}): ProviderSignInSurface | undefined {
+  if (
+    item.toolName !== OPENCODE_CODE_MODE_TOOL_NAME &&
+    resolveT3McpToolId(item.toolName) !== PROVIDER_SIGN_IN_TOOL_NAME
+  ) {
+    return undefined;
+  }
+  const output = compactDynamicToolOutput(item.output);
+  if (output === undefined || output.isError) return undefined;
+  if (output.signInTerminalId !== undefined) {
+    return { kind: "terminal", terminalId: output.signInTerminalId };
+  }
+  if (output.appSetupInstanceId !== undefined) {
+    return { kind: "appSetup", instanceId: output.appSetupInstanceId };
+  }
+  return undefined;
 }
 
 /** The thread-owned file `preview_recording_stop` stored for the agent. */

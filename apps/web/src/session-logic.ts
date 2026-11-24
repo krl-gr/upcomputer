@@ -26,6 +26,8 @@ import {
   htmlRenderFromToolItem,
   mcpAppFromToolItem,
   sentMessageFromToolItem,
+  providerSignInFromToolItem,
+  type ProviderSignInSurface,
 } from "@t3tools/shared/toolOutput";
 import {
   contextCompactionLabel,
@@ -142,6 +144,15 @@ export type TimelineEntry = (
       readonly itemId: TurnItemId;
       readonly revision: string;
       readonly mcpApp: McpAppReference;
+    }
+  | {
+      readonly id: string;
+      readonly kind: "provider-sign-in";
+      readonly createdAt: string;
+      readonly runId: RunId | null;
+      /** The thread whose agent called `provider_sign_in`, which owns its terminal. */
+      readonly sourceThreadId: ThreadId;
+      readonly surface: ProviderSignInSurface;
     }
   | {
       readonly id: string;
@@ -743,6 +754,22 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
         itemId: row.sourceItemId,
         revision: turnItemDetailRevision(item),
         mcpApp,
+        ...attemptMetadata,
+      });
+    }
+
+    const signIn =
+      item.type === "dynamic_tool" && item.status === "completed"
+        ? providerSignInFromToolItem(item)
+        : undefined;
+    if (signIn !== undefined) {
+      entries.push({
+        id: `provider-sign-in:${item.id}`,
+        kind: "provider-sign-in",
+        createdAt,
+        runId: item.runId,
+        sourceThreadId: row.sourceThreadId,
+        surface: signIn,
         ...attemptMetadata,
       });
     }

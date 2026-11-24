@@ -1432,6 +1432,47 @@ describe("HTML renders in the timeline", () => {
     expect(turn(send("running")).some((entry) => entry.kind === "sent-message")).toBe(false);
   });
 
+  it("shows what provider_sign_in opened after its tool row, through the turn fold", () => {
+    const call = (output: unknown): OrchestrationV2TurnItem => ({
+      ...base("render", 2),
+      status: "completed",
+      type: "dynamic_tool",
+      toolName: "mcp__t3-code__provider_sign_in",
+      input: { provider: "claude" },
+      output,
+    });
+    const entries = turn(
+      call({
+        structuredContent: { signInTerminalId: "provider-sign-in-claudeAgent" },
+        content: [],
+      }),
+    );
+    expect(entries.find((entry) => entry.kind === "provider-sign-in")).toMatchObject({
+      runId,
+      surface: { kind: "terminal", terminalId: "provider-sign-in-claudeAgent" },
+    });
+    expect(rowsFor(entries, false)).toEqual([
+      "message",
+      "turn-fold",
+      "provider-sign-in",
+      "message",
+    ]);
+    expect(rowsFor(entries, true)).toEqual([
+      "message",
+      "turn-fold",
+      "work-toggle",
+      "provider-sign-in",
+      "work",
+      "message",
+    ]);
+    // A signed-in or refused call shows nothing under it.
+    expect(
+      turn(call({ structuredContent: { status: "signedIn" }, content: [] })).some(
+        (entry) => entry.kind === "provider-sign-in",
+      ),
+    ).toBe(false);
+  });
+
   it("hosts a captured MCP app after its tool row, from any provider's tool", () => {
     const mcpApp = {
       attachmentId: "render-thread-app-html",
