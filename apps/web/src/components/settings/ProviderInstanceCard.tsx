@@ -77,7 +77,10 @@ import {
   pendingCustomModelSaves,
   settleCustomModelSave,
 } from "./customModelSaves.logic";
-import { getProviderRestartNotice } from "../ProviderUpdateLaunchNotification.logic";
+import {
+  getProviderRestartNotice,
+  isProviderUpdateCandidate,
+} from "../ProviderUpdateLaunchNotification.logic";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
@@ -85,6 +88,7 @@ import {
   getProviderSummary,
   getProviderVersionLabel,
   providerAuthLabel,
+  providerCompatibilityRowHint,
   type ProviderStatusKey,
 } from "./providerStatus";
 
@@ -1020,13 +1024,23 @@ export function ProviderInstanceCard({
     ) : null;
   const needsAttention = statusKey === "warning" || statusKey === "error";
   const statusDiagnostic = hasCompatibilityWarning && needsAttention ? summary.detail : null;
-  const inlineStatusDetail = hasCompatibilityWarning
-    ? compatibility?.status === "broken"
-      ? gt("Incompatible")
-      : compatibility?.status === "unsupported"
-        ? gt("Unsupported")
-        : gt("Limited support")
-    : summary.detail;
+  // UpComputer: the next step for an old version, and the sign-in hint when it still applies.
+  const inlineStatusDetail =
+    hasCompatibilityWarning && compatibility
+      ? [
+          providerCompatibilityRowHint(
+            compatibility,
+            liveProvider !== undefined && isProviderUpdateCandidate(liveProvider),
+            m,
+          ),
+          liveProvider?.auth.status === "unauthenticated" &&
+          summary.detail !== compatibility.message
+            ? summary.detail
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : summary.detail;
   const editorStatusNode =
     isAuthenticated && authEmail ? (
       <>
