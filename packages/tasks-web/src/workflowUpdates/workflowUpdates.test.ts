@@ -85,7 +85,25 @@ describe("the bell's card", () => {
       notice("auto", waiting),
       "applies by itself once “We updated how task statuses work” is applied",
     );
-    assert.include(notice("auto", touching, waiting), "so they wait for you");
+    // Before any decision only the first touches edited text; the second waits for it.
+    assert.notInclude(notice("auto", touching, waiting), "These change your own text");
+    assert.include(
+      notice("auto", touching, waiting),
+      "Some change your own text, and the rest build on those",
+    );
+    const touchingBoth = { ...waiting, touchesEditedText: true };
+    assert.include(notice("auto", touching, touchingBoth), "These change your own text");
+    // After "Keep mine" the second builds on the kept one; it did not touch the user's text.
+    const kept = {
+      ...status("bot-vs-worker-agent-creation", "pending"),
+      touchesEditedText: true,
+      keptFrom: ENTRY,
+    };
+    assert.notInclude(notice("auto", kept), "changes your own text");
+    assert.include(
+      notice("auto", kept),
+      "builds on “We updated how task statuses work”, which you kept, so it waits for you",
+    );
   });
 });
 

@@ -90,17 +90,31 @@ export function instructionUpdatesNoticeDetail(
   if (first === undefined) return "";
   if (notice.length > 1) {
     const release = notice.at(-1)?.entry.release ?? first.entry.release;
-    return mode === "auto"
+    if (mode === "ask") {
+      return gt("Up.computer {release} changed its defaults. Nothing changes until you decide.", {
+        release,
+      });
+    }
+    return notice.every(({ status }) => status.touchesEditedText && status.keptFrom === undefined)
       ? gt(
           "Up.computer {release} changed its defaults. These change your own text, so they wait for you.",
           { release },
         )
-      : gt("Up.computer {release} changed its defaults. Nothing changes until you decide.", {
-          release,
-        });
+      : gt(
+          "Up.computer {release} changed its defaults. Some change your own text, and the rest build on those, so they wait for you.",
+          { release },
+        );
   }
   const summary = instructionUpdateCopy(gt, first.entry).summary;
   if (mode === "ask") return gt("{summary} Nothing changes until you decide.", { summary });
+  const keptFrom =
+    first.status.keptFrom === undefined ? undefined : instructionUpdateById(first.status.keptFrom);
+  if (keptFrom !== undefined) {
+    return gt("{summary} It builds on “{update}”, which you kept, so it waits for you.", {
+      summary,
+      update: instructionUpdateCopy(gt, keptFrom).title,
+    });
+  }
   const waitsFor =
     first.status.waitsFor === undefined ? undefined : instructionUpdateById(first.status.waitsFor);
   return waitsFor !== undefined && !first.status.touchesEditedText
