@@ -107,17 +107,21 @@ function rememberedWhileLoading(
 /**
  * The scoped keys of the bot chats each computer had when its list last loaded, for those whose
  * list is loading again, so Threads does not list them until the Bots section does. A computer
- * with no remembered list claims all its threads (`allSidebarThreadsClaimKey`) until it loads.
+ * that serves Tasks but has no remembered list claims all its threads (`allSidebarThreadsClaimKey`)
+ * until its list loads.
  */
 export function rememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string[] {
-  return rememberedWhileLoading(environmentIds).flatMap(([environmentId, threadIds]) =>
+  return rememberedWhileLoading(environmentIds).flatMap(([environmentId, threadIds]) => {
+    if (threadIds !== undefined)
+      return threadIds.map((threadId) =>
+        scopedThreadKey(scopeThreadRef(environmentId, ThreadId.make(threadId))),
+      );
     // Nothing remembered, as on the first start after an update: any thread may be a bot chat.
-    threadIds === undefined
+    // Only a computer that serves Tasks is held, as its list then loads or fails.
+    return readTasksWebAccess(environmentId).canReadAgents
       ? [allSidebarThreadsClaimKey(environmentId)]
-      : threadIds.map((threadId) =>
-          scopedThreadKey(scopeThreadRef(environmentId, ThreadId.make(threadId))),
-        ),
-  );
+      : [];
+  });
 }
 
 /**

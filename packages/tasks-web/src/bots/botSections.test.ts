@@ -160,8 +160,9 @@ describe("Bots section lists", () => {
     const here = EnvironmentId.make("sections-first-start");
     let answer: (bots: unknown) => void = () => {};
     servers.lists.set(here, () => new Promise((resolve) => (answer = resolve)));
+    // Until the computer says it serves Tasks, its list may never come: nothing is held.
     setAccess("loading");
-    expect(rememberedBotChatKeys([here])).toEqual([allSidebarThreadsClaimKey(here)]);
+    expect(rememberedBotChatKeys([here])).toEqual([]);
 
     setAccess("enabled");
     const { view } = await render([here]);
