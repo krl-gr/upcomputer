@@ -558,6 +558,8 @@ export interface ProviderAdapterV2TurnInput {
   readonly message: ProviderAdapterV2TurnMessage;
   /** Leading characters of `message.text` that are inline handoff context, not the user's words. */
   readonly inlineContextLength?: number;
+  /** Per-turn app instructions (such as onboarding notes) that must not be persisted as user text. */
+  readonly turnInstructions?: string;
   readonly modelSelection: ModelSelection;
   readonly runtimePolicy: ProviderAdapterV2RuntimePolicy;
   readonly appContext?: ReadonlyArray<{ readonly key: string; readonly text: string }>;

@@ -108,6 +108,8 @@ import type { PreviewMiniPlayerSource } from "../previewMiniPlayerStore";
 import type { DesktopPreviewOverlay } from "../previewStateStore";
 import type { RightPanelSurface } from "../rightPanelStore";
 import {
+  isProviderInstanceHealthy,
+  isProviderInstanceRunnable,
   NO_PROVIDER_MODEL_SELECTION,
   resolveSelectableProviderInstanceEntry,
   type ProviderInstanceEntry,
@@ -500,6 +502,8 @@ export function resolveComposerProviderSelection(input: {
   candidateInstanceIds: ReadonlyArray<ProviderInstanceId | null | undefined>;
   lockedProvider: ProviderDriverKind | null;
   lockedInstanceId: ProviderInstanceId | null | undefined;
+  /** True for unstarted drafts with no explicit user pick, so sticky/default candidates cannot pick an unrunnable provider over a ready one. */
+  preferRunnableCandidate?: boolean;
 }) {
   const requestedInstanceId = input.candidateInstanceIds.find(
     (candidate) => candidate != null && candidate !== NO_PROVIDER_MODEL_SELECTION.instanceId,
@@ -524,19 +528,29 @@ export function resolveComposerProviderSelection(input: {
       (!lockedContinuationGroupKey || entry.continuationGroupKey === lockedContinuationGroupKey) &&
       (!requiresExactInstance || entry.instanceId === input.lockedInstanceId),
   );
-  const selectedProviderEntry =
+  const findCandidate = (requireRunnable: boolean) =>
     input.candidateInstanceIds
       .map((candidate) =>
         compatibleEntries.find(
-          (entry) => entry.instanceId === candidate && entry.enabled && entry.isAvailable,
+          (entry) =>
+            entry.instanceId === candidate &&
+            entry.enabled &&
+            entry.isAvailable &&
+            (!requireRunnable || isProviderInstanceRunnable(entry)),
         ),
       )
-      .find((entry) => entry !== undefined) ??
-    resolveSelectableProviderInstanceEntry(
-      compatibleEntries.filter((entry) => entry.driverKind === requestedDriverKind),
-      undefined,
-    ) ??
+      .find((entry) => entry !== undefined);
+  const driverEntries = compatibleEntries.filter(
+    (entry) => entry.driverKind === requestedDriverKind,
+  );
+  const runnableFallback =
+    driverEntries.find(isProviderInstanceHealthy) ??
+    compatibleEntries.find(isProviderInstanceHealthy) ??
+    resolveSelectableProviderInstanceEntry(driverEntries, undefined) ??
     resolveSelectableProviderInstanceEntry(compatibleEntries, undefined);
+  const selectedProviderEntry = input.preferRunnableCandidate
+    ? (findCandidate(true) ?? runnableFallback ?? findCandidate(false))
+    : (findCandidate(false) ?? runnableFallback);
   const unavailableProviderInstanceId = selectedProviderEntry
     ? undefined
     : input.lockedProvider

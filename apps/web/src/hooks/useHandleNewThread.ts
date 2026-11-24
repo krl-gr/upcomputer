@@ -54,7 +54,10 @@ import { useAtomValue } from "@effect/atom-react";
 import { defaultProjectFallbackReadyAtom } from "../state/projects";
 import { useThreadRouteTarget } from "./useThreadRouteTarget";
 import { readUnloadedThreadCount } from "../state/olderSettledShelf";
-import { resolveProjectDefaultProviderModelSelection } from "../providerInstances";
+import {
+  isProviderInstanceIdRunnableForProject,
+  resolveProjectDefaultProviderModelSelection,
+} from "../providerInstances";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 
 export const LAST_USED_PROJECT_STORAGE_KEY = "t3code:last-used-project:v1";
@@ -185,19 +188,43 @@ export function createNewThreadHandler(router: AnyRouter) {
       project?.id ?? null,
       project,
     );
-    const configuredDefaultModelSelection = projectSettings.settings.defaultModelSelection ?? null;
+    const targetProviders = environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [];
+    const allowActiveProvider = (
+      instanceId: NonNullable<typeof carryModelSelection>["instanceId"],
+    ) =>
+      targetProviders.length === 0 ||
+      isProviderInstanceIdRunnableForProject(
+        targetProviders,
+        targetServerSettings,
+        projectRef.projectId,
+        instanceId,
+      );
+    const runnableCarryModelSelection =
+      carryModelSelection && allowActiveProvider(carryModelSelection.instanceId)
+        ? carryModelSelection
+        : null;
+    const rawConfiguredDefaultModelSelection =
+      projectSettings.settings.defaultModelSelection ?? null;
+    const configuredDefaultModelSelection =
+      rawConfiguredDefaultModelSelection &&
+      allowActiveProvider(rawConfiguredDefaultModelSelection.instanceId)
+        ? rawConfiguredDefaultModelSelection
+        : null;
+    const stickyActiveProvider = useComposerDraftStore.getState().stickyActiveProvider;
+    const hasRunnableStickyProvider =
+      stickyActiveProvider !== null && allowActiveProvider(stickyActiveProvider);
     const fallbackResolution = resolveNewThreadModelSelection({
       defaultSelection:
         configuredDefaultModelSelection ??
-        (carryModelSelection || useComposerDraftStore.getState().stickyActiveProvider !== null
+        (runnableCarryModelSelection || hasRunnableStickyProvider
           ? null
           : resolveProjectDefaultProviderModelSelection(
-              environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
+              targetProviders,
               targetServerSettings,
               projectRef.projectId,
             )),
       fallbackSelection: targetServerSettings.fallbackModelSelection ?? null,
-      providers: environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
+      providers: targetProviders,
       settings: targetServerSettings,
       projectId: projectRef.projectId,
       now: Date.now(),
@@ -209,7 +236,7 @@ export function createNewThreadHandler(router: AnyRouter) {
     const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
       resolveNewThreadModelSelectionOverride({
         projectDefaultSelection: projectDefaultModelSelection ?? null,
-        carrySelection: carryModelSelection,
+        carrySelection: runnableCarryModelSelection,
         carrySourceDraftId:
           currentRouteTarget?.kind === "draft" ? currentRouteTarget.draftId : null,
         destinationDraftId,
@@ -344,7 +371,7 @@ export function createNewThreadHandler(router: AnyRouter) {
         const storedDraft = getComposerDraft(emptyStoredDraftThread.draftId);
         const storedDraftHasExplicitModelPick = hasExplicitComposerModelSelection(storedDraft);
         if (!storedDraftHasExplicitModelPick) {
-          applyStickyState(emptyStoredDraftThread.draftId);
+          applyStickyState(emptyStoredDraftThread.draftId, { allowActiveProvider });
           const modelSelectionOverride = resolveModelSelectionOverride(
             emptyStoredDraftThread.draftId,
           );
@@ -461,7 +488,7 @@ export function createNewThreadHandler(router: AnyRouter) {
         runtimeMode: defaultRuntimeMode,
         ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
       });
-      applyStickyState(draftId);
+      applyStickyState(draftId, { allowActiveProvider });
       const modelSelectionOverride = resolveModelSelectionOverride(draftId);
       if (modelSelectionOverride) {
         setModelSelection(draftId, modelSelectionOverride, { replaceOptions: true });

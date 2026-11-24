@@ -1173,11 +1173,19 @@ function OnboardingCodexSetup({
     instance.config !== null && typeof instance.config === "object" ? instance.config : {};
   const mode = readCodexSetupMode(config);
   const welcomeTelemetry = useWelcomeTelemetry(environmentId);
-  const changeMode = (setupMode: "managed" | "existing") => {
-    welcomeTelemetry.codexModeChosen(setupMode);
-    // "Use existing CLI" also opens a terminal to install or sign in to the CLI.
-    onUseCliChange(setupMode === "existing");
-    const unchanged = mode === setupMode && provider.enabled;
+  const changeMode = (
+    setupMode: "managed" | "existing",
+    options?: { readonly restore?: boolean },
+  ) => {
+    const restoring = options?.restore === true;
+    if (!restoring) {
+      welcomeTelemetry.codexModeChosen(setupMode);
+      // "Use existing CLI" also opens a terminal to install or sign in to the CLI.
+      onUseCliChange(setupMode === "existing");
+    } else {
+      onUseCliChange(false);
+    }
+    const unchanged = !restoring && mode === setupMode && provider.enabled;
     if (unchanged || !readEnvironmentScope(environmentId, AuthProvidersManageScope)) return;
     // One-instance upsert keeps a provider another client added in the meantime.
     void persistProviderInstance({

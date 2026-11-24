@@ -43,6 +43,7 @@ function makeHarness(name: string) {
     const cwd = yield* checkpointWorkspace(name);
     const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
     const prompts: string[] = [];
+    const turnInstructions: Array<string | undefined> = [];
     let beforeThreadReady: Effect.Effect<void> | undefined;
     const threadReady = <A>(value: A) =>
       Effect.suspend(() => {
@@ -116,6 +117,7 @@ function makeHarness(name: string) {
             startTurn: (turn) =>
               Effect.gen(function* () {
                 prompts.push(turn.message.text);
+                turnInstructions.push(turn.turnInstructions);
                 const at = yield* DateTime.now;
                 yield* Queue.offer(events, providerTurn(turn, "running", at));
                 yield* Queue.offer(events, providerTurn(turn, "completed", at));
@@ -146,6 +148,7 @@ function makeHarness(name: string) {
     return {
       cwd,
       prompts,
+      turnInstructions,
       layer,
       setBeforeThreadReady: (hook: Effect.Effect<void>) => {
         beforeThreadReady = hook;
@@ -276,23 +279,24 @@ it.effect(
         yield* Effect.gen(function* () {
           const { send } = yield* scenario(harness.cwd);
           yield* send("hi");
+          assert.strictEqual(harness.prompts[0], "hi");
           assert.isTrue(
-            harness.prompts[0]!.startsWith(
+            harness.turnInstructions[0]?.startsWith(
               "[UpComputer onboarding note: this is the user's first conversation",
             ),
           );
-          assert.isTrue(harness.prompts[0]!.endsWith("User message:\nhi"));
           yield* send("second");
           assert.strictEqual(harness.prompts[1], "second");
+          assert.isUndefined(harness.turnInstructions[1]);
           // A new chat after the first one, which never answered the offer.
           const next = yield* scenario(harness.cwd, ThreadId.make("thread:next-chat"));
           yield* next.send("hello again");
+          assert.strictEqual(harness.prompts[2], "hello again");
           assert.isTrue(
-            harness.prompts[2]!.startsWith(
+            harness.turnInstructions[2]?.startsWith(
               "[UpComputer onboarding note: this is not the user's first conversation",
             ),
           );
-          assert.isTrue(harness.prompts[2]!.endsWith("User message:\nhello again"));
         }).pipe(
           Effect.provide(harness.layer),
           Effect.ensuring(Effect.sync(() => setUserInstructions(""))),

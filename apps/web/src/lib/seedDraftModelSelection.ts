@@ -3,7 +3,10 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 
 import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
-import { resolveProjectDefaultProviderModelSelection } from "../providerInstances";
+import {
+  isProviderInstanceIdRunnableForProject,
+  resolveProjectDefaultProviderModelSelection,
+} from "../providerInstances";
 import { readProject } from "../state/entities";
 import { readEnvironment, readEnvironmentProviders } from "../state/environments";
 import { hasExplicitComposerModelSelection } from "./chatThreadActions";
@@ -12,18 +15,28 @@ import { hasExplicitComposerModelSelection } from "./chatThreadActions";
 export function seedDraftModelSelection(draftId: DraftId, projectRef: ScopedProjectRef): void {
   const store = useComposerDraftStore.getState();
   if (hasExplicitComposerModelSelection(store.getComposerDraft(draftId))) return;
-  store.applyStickyState(draftId);
   const project = readProject(projectRef);
   const settings = readEnvironment(projectRef.environmentId)?.serverConfig?.settings;
   const providers = readEnvironmentProviders(projectRef.environmentId) ?? [];
-  const defaultSelection = settings
+  const allowActiveProvider = (instanceId: NonNullable<typeof store.stickyActiveProvider>) =>
+    providers.length === 0 ||
+    isProviderInstanceIdRunnableForProject(providers, settings, projectRef.projectId, instanceId);
+  store.applyStickyState(draftId, { allowActiveProvider });
+  const rawDefaultSelection = settings
     ? resolveProjectSettings(settings, projectRef.projectId, project ?? undefined).settings
         .defaultModelSelection
     : (project?.defaultModelSelection ?? null);
+  const defaultSelection =
+    rawDefaultSelection && allowActiveProvider(rawDefaultSelection.instanceId)
+      ? rawDefaultSelection
+      : null;
+  const stickyActiveProvider = useComposerDraftStore.getState().stickyActiveProvider;
+  const hasRunnableStickyProvider =
+    stickyActiveProvider !== null && allowActiveProvider(stickyActiveProvider);
   const resolution = resolveNewThreadModelSelection({
     defaultSelection:
       defaultSelection ??
-      (useComposerDraftStore.getState().stickyActiveProvider !== null || !settings
+      (hasRunnableStickyProvider || !settings
         ? null
         : resolveProjectDefaultProviderModelSelection(providers, settings, projectRef.projectId)),
     fallbackSelection: settings?.fallbackModelSelection ?? null,

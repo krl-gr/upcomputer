@@ -14,6 +14,8 @@ export const T3_PI_MCP_EXTENSION_PATH_ENV = "T3_PI_MCP_EXTENSION_PATH";
  * outlives a change to the instructions; the adapter rewrites it before each turn.
  */
 export const T3_PI_USER_INSTRUCTIONS_PATH_ENV = "T3_PI_USER_INSTRUCTIONS_PATH";
+/** Per-session file holding one-turn instructions, consumed once on before_agent_start. */
+export const T3_PI_TURN_INSTRUCTIONS_PATH_ENV = "T3_PI_TURN_INSTRUCTIONS_PATH";
 /** Set to "omit" when the session's agent should not get the orchestration block. */
 export const T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV = "T3_PI_ORCHESTRATION_INSTRUCTIONS";
 export const PI_T3_SERVICE_TIER_COMMAND = "t3-service-tier";
@@ -33,6 +35,7 @@ const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
 const USER_INSTRUCTIONS_PATH_ENV = ${JSON.stringify(T3_PI_USER_INSTRUCTIONS_PATH_ENV)};
+const TURN_INSTRUCTIONS_PATH_ENV = ${JSON.stringify(T3_PI_TURN_INSTRUCTIONS_PATH_ENV)};
 const ORCHESTRATION_INSTRUCTIONS_ENV = ${JSON.stringify(T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV)};
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
 const PULL_REQUEST_LINKING_INSTRUCTIONS = ${JSON.stringify(PULL_REQUEST_LINKING_INSTRUCTIONS)};
@@ -406,6 +409,18 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     }
   };
 
+  const turnInstructions = async () => {
+    const path = env(TURN_INSTRUCTIONS_PATH_ENV);
+    if (path === undefined) return "";
+    try {
+      const text = (await NodeFSP.readFile(path, "utf8")).trim();
+      await NodeFSP.unlink(path).catch(() => undefined);
+      return text;
+    } catch {
+      return "";
+    }
+  };
+
   // Deliver guidance through pi's real system-prompt channel. Wrapping the
   // first user message instead would stop it from starting with "/" and
   // silently break slash-command expansion. Registered before the MCP check:
@@ -416,6 +431,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event, ctx) => {
     reconcileOnPrompt?.(ctx);
     const instructions = await userInstructions();
+    const perTurnInstructions = await turnInstructions();
     const wantsOrchestration =
       endpoint !== undefined && token !== undefined && env(ORCHESTRATION_INSTRUCTIONS_ENV) !== "omit";
     const orchestrationInstructions =
@@ -426,12 +442,17 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
       // Pi's later section rendering, so that case appends to the prompt below.
       if (wantsOrchestration) sections.t3_code_orchestration = orchestrationInstructions;
       if (instructions !== "") sections.t3_code_user_instructions = instructions;
+      if (perTurnInstructions !== "") sections.t3_code_turn_instructions = perTurnInstructions;
+      else delete sections.t3_code_turn_instructions;
       return undefined;
     }
     const orchestration = wantsOrchestration ? "\\n\\n" + orchestrationInstructions : "";
     return {
       systemPrompt:
-        event.systemPrompt + orchestration + (instructions === "" ? "" : "\\n\\n" + instructions),
+        event.systemPrompt +
+        orchestration +
+        (instructions === "" ? "" : "\\n\\n" + instructions) +
+        (perTurnInstructions === "" ? "" : "\\n\\n" + perTurnInstructions),
     };
   });
 

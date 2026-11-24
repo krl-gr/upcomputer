@@ -887,6 +887,16 @@ function codexCyberAccess(
   return descriptor?.type === "select" ? { defaultProgram: descriptor.currentValue } : undefined;
 }
 
+const CODEX_TURN_INSTRUCTIONS_CONTEXT_KEY = "t3_code_onboarding";
+
+function stripTurnOnlyAdditionalContext(
+  context: CodexTurnStartParams["additionalContext"],
+): NonNullable<CodexTurnStartParams["additionalContext"]> | undefined {
+  if (context === undefined) return undefined;
+  const { [CODEX_TURN_INSTRUCTIONS_CONTEXT_KEY]: _turnOnly, ...persistent } = context;
+  return Object.keys(persistent).length > 0 ? persistent : undefined;
+}
+
 export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTurnStartParams")(
   function* (input: {
     readonly nativeThreadId: string;
@@ -901,6 +911,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
     /** ChatGPT token sharing does not accept service tiers. */
     readonly omitServiceTier?: boolean;
     readonly appContext?: ProviderAdapter.ProviderAdapterV2TurnInput["appContext"];
+    readonly turnInstructions?: string;
     /** Set only for a model that offers Cyber Access; custom models never do. */
     readonly cyberAccess?: { readonly defaultProgram: string | undefined } | undefined;
     /** The user's `model_reasoning_summary` from the Codex config, when set. */
@@ -953,10 +964,21 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
             },
           )
         : undefined;
+    const turnInstructionsContext =
+      input.turnInstructions !== undefined && input.turnInstructions.length > 0
+        ? {
+            [CODEX_TURN_INSTRUCTIONS_CONTEXT_KEY]: {
+              kind: "application" as const,
+              value: input.turnInstructions,
+            },
+          }
+        : undefined;
     const additionalContext =
-      t3Context === undefined && Object.keys(appContext).length === 0
+      t3Context === undefined &&
+      turnInstructionsContext === undefined &&
+      Object.keys(appContext).length === 0
         ? undefined
-        : { ...t3Context, ...appContext };
+        : { ...t3Context, ...turnInstructionsContext, ...appContext };
     return yield* decodeCodexTurnStartParams({
       threadId: input.nativeThreadId,
       input: input.codexInput,
@@ -7827,6 +7849,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               ...(mcpSession?.toolCallHints ? { toolCallHints: mcpSession.toolCallHints } : {}),
               omitServiceTier: adapterOptions.resolveRuntime !== undefined,
               ...(turnInput.appContext === undefined ? {} : { appContext: turnInput.appContext }),
+              ...(turnInput.turnInstructions === undefined
+                ? {}
+                : { turnInstructions: turnInput.turnInstructions }),
               ...(configuredReasoningSummary === undefined ? {} : { configuredReasoningSummary }),
             });
             yield* Ref.update(pendingRootTurns, (current) => {
@@ -7834,10 +7859,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               updated.set(threadId, turnInput);
               return updated;
             });
+            const persistentAdditionalContext = stripTurnOnlyAdditionalContext(
+              turnStartParams.additionalContext,
+            );
             yield* Ref.update(additionalContextByThread, (current) => {
               const next = new Map(current);
-              if (turnStartParams.additionalContext)
-                next.set(threadId, turnStartParams.additionalContext);
+              if (persistentAdditionalContext) next.set(threadId, persistentAdditionalContext);
               else next.delete(threadId);
               return next;
             });

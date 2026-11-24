@@ -308,6 +308,7 @@ interface ActiveOpenCodeTurn {
   /** UpComputer: a free Zen model the server no longer serves is swapped when prompted. */
   modelSelection: ModelSelection;
   readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+  readonly turnInstructions?: string;
   readonly providerTurnId: OrchestrationV2ProviderTurn["id"];
   readonly providerThreadId: OrchestrationV2ProviderTurn["providerThreadId"];
   readonly runOrdinal: number;
@@ -3771,6 +3772,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               orchestrationSystemPrompt,
               hasT3Mcp ? OPENCODE_T3_TOOL_SEARCH_INSTRUCTIONS : undefined,
               buildRuntimeInstructions({ harness: "OpenCode", model: turn.modelSelection.model }),
+              turn.turnInstructions,
             ]
               .filter(Boolean)
               .join("\n\n"),
@@ -4072,6 +4074,9 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 appThread: turnInput.appThread,
                 modelSelection: turnInput.modelSelection,
                 runtimePolicy: turnInput.runtimePolicy,
+                ...(turnInput.turnInstructions === undefined
+                  ? {}
+                  : { turnInstructions: turnInput.turnInstructions }),
                 providerTurnId,
                 providerThreadId: turnInput.providerThread.id,
                 runOrdinal: turnInput.runOrdinal,

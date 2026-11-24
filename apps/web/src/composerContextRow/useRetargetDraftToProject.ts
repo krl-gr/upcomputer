@@ -10,7 +10,8 @@ import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
-import { useEnvironments } from "../state/environments";
+import { isProviderInstanceIdRunnableForProject } from "../providerInstances";
+import { readEnvironmentProviders, useEnvironments } from "../state/environments";
 
 /**
  * Moves an unsent draft into a project in place, as the draft headline's
@@ -33,13 +34,22 @@ export function retargetDraftToProject(
     draftId,
   );
   if (hasExplicitComposerModelSelection(currentDraft)) return;
-  store.applyStickyState(draftId);
-  const defaultModelSelection = context.serverSettings
+  const providers = readEnvironmentProviders(project.environmentId) ?? [];
+  const allowActiveProvider = (instanceId: NonNullable<typeof store.stickyActiveProvider>) =>
+    providers.length === 0 ||
+    isProviderInstanceIdRunnableForProject(
+      providers,
+      context.serverSettings,
+      project.id,
+      instanceId,
+    );
+  store.applyStickyState(draftId, { allowActiveProvider });
+  const rawDefaultModelSelection = context.serverSettings
     ? resolveProjectSettings(context.serverSettings, project.id, project).settings
         .defaultModelSelection
     : project.defaultModelSelection;
-  if (defaultModelSelection) {
-    store.setModelSelection(draftId, defaultModelSelection, { replaceOptions: true });
+  if (rawDefaultModelSelection && allowActiveProvider(rawDefaultModelSelection.instanceId)) {
+    store.setModelSelection(draftId, rawDefaultModelSelection, { replaceOptions: true });
   }
 }
 

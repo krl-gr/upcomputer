@@ -771,6 +771,155 @@ describe("CursorAdapterV2", () => {
     ),
   );
 
+  it.effect("appends per-turn instructions alongside runtime instructions when provided", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const workspace = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "cursor-v2-turn-instructions-",
+      });
+      const instanceId = ProviderInstanceId.make("cursor");
+      const threadId = ThreadId.make("cursor-turn-instructions-thread");
+      const modelSelection = { instanceId, model: "composer-2.5" };
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: workspace,
+      });
+      const sentMessages: Array<string> = [];
+      let runCount = 0;
+      const adapter = yield* makeCursorAdapterV2({
+        instanceId,
+        environment: { HOME: workspace },
+      }).pipe(
+        Effect.provideService(CursorAgentSdk.CursorAgentSdkRunner, {
+          assertComplete: Effect.void,
+          open: () =>
+            Effect.succeed({
+              agentId: "native-cursor-turn-instructions",
+              listMessages: Effect.succeed([]),
+              close: Effect.void,
+              send: (input) => {
+                runCount += 1;
+                sentMessages.push(
+                  typeof input.message === "string" ? input.message : input.message.text,
+                );
+                return Effect.succeed({
+                  agentId: "native-cursor-turn-instructions",
+                  runId: `native-cursor-run-${runCount}`,
+                  wait: Effect.succeed({
+                    id: `native-cursor-run-${runCount}`,
+                    requestId: `native-request-${runCount}`,
+                    status: "finished" as const,
+                    model: { id: "composer-2.5" },
+                    durationMs: 1,
+                  }),
+                  cancel: Effect.void,
+                });
+              },
+            }),
+        }),
+        Effect.provide(TestProviderHost.layer({ cwd: workspace })),
+      );
+      const runtime = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make("cursor-turn-instructions-session"),
+        modelSelection,
+        runtimePolicy,
+      });
+      const providerThread = yield* runtime.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      const now = yield* DateTime.now;
+      const appThread = {
+        id: threadId,
+        projectId: ProjectId.make("cursor-turn-instructions-project"),
+        createdBy: "user" as const,
+        creationSource: "web" as const,
+        title: "Cursor turn instructions",
+        providerInstanceId: instanceId,
+        modelSelection,
+        runtimeMode: "full-access" as const,
+        interactionMode: "default" as const,
+        branch: null,
+        worktreePath: null,
+        activeProviderThreadId: providerThread.id,
+        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+        forkedFrom: null,
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        settledOverride: null,
+        settledAt: null,
+        lastVisitedAt: null,
+        deletedAt: null,
+      };
+      const note =
+        "[UpComputer onboarding note: this is the user's first conversation. Make the onboarding offer once.]";
+      yield* runtime.startTurn({
+        threadId,
+        providerThread,
+        modelSelection,
+        runtimePolicy,
+        runId: RunId.make("cursor-turn-instructions-run-1"),
+        runOrdinal: 1,
+        providerTurnOrdinal: 1,
+        attemptId: RunAttemptId.make("cursor-turn-instructions-attempt-1"),
+        rootNodeId: NodeId.make("cursor-turn-instructions-root-1"),
+        appThread,
+        message: {
+          messageId: MessageId.make("cursor-turn-instructions-message-1"),
+          createdBy: "user",
+          creationSource: "web",
+          text: "Hello Cursor",
+          attachments: [],
+        },
+        turnInstructions: note,
+      });
+      yield* runtime.events.pipe(
+        Stream.filter((event) => event.type === "turn.terminal"),
+        Stream.runHead,
+      );
+      yield* runtime.startTurn({
+        threadId,
+        providerThread,
+        modelSelection,
+        runtimePolicy,
+        runId: RunId.make("cursor-turn-instructions-run-2"),
+        runOrdinal: 2,
+        providerTurnOrdinal: 2,
+        attemptId: RunAttemptId.make("cursor-turn-instructions-attempt-2"),
+        rootNodeId: NodeId.make("cursor-turn-instructions-root-2"),
+        appThread,
+        message: {
+          messageId: MessageId.make("cursor-turn-instructions-message-2"),
+          createdBy: "user",
+          creationSource: "web",
+          text: "Follow up",
+          attachments: [],
+        },
+      });
+      yield* runtime.events.pipe(
+        Stream.filter((event) => event.type === "turn.terminal"),
+        Stream.runHead,
+      );
+
+      assert.lengthOf(sentMessages, 2);
+      assert.include(sentMessages[0]!, "Hello Cursor");
+      assert.include(sentMessages[0]!, "<runtime_info>");
+      assert.include(sentMessages[0]!, note);
+      assert.include(sentMessages[1]!, "Follow up");
+      assert.include(sentMessages[1]!, "<runtime_info>");
+      assert.notInclude(sentMessages[1]!, note);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(NodeServices.layer, IdAllocator.layer, McpProviderSessions.layer),
+      ),
+    ),
+  );
+
   it.effect.each([
     {
       name: "a run that ends with Cursor's error",

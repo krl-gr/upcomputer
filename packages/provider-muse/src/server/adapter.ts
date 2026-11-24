@@ -2190,11 +2190,16 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
                 input: [
                   {
                     type: "text",
-                    text: buildRuntimeInstructions({
-                      harness: "Muse Code",
-                      model: session.model ?? undefined,
-                      reasoningEffort: effort,
-                    }),
+                    text: [
+                      buildRuntimeInstructions({
+                        harness: "Muse Code",
+                        model: session.model ?? undefined,
+                        reasoningEffort: effort,
+                      }),
+                      turnInput.turnInstructions,
+                    ]
+                      .filter((part) => part !== undefined && part.length > 0)
+                      .join("\n\n"),
                   },
                   ...parts,
                 ],

@@ -79,6 +79,8 @@ import {
 import {
   buildPiRpcLaunch,
   materializePiT3McpExtension,
+  piTurnInstructionsPath,
+  writePiTurnInstructions,
   writePiUserInstructions,
   resolvePiLaunchArgs,
 } from "./mcpInjection.ts";
@@ -511,6 +513,10 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
       const extensionPath = yield* provideCacheFs(
         materializePiT3McpExtension(host.paths.providerStatusCacheDir),
       );
+      const turnInstructionsPath = piTurnInstructionsPath(extensionPath, input.providerSessionId);
+      yield* Effect.addFinalizer(() =>
+        fileSystem.remove(turnInstructionsPath, { force: true }).pipe(Effect.ignore),
+      );
       const resolvedLaunchArgs = resolvePiLaunchArgs(options.settings.launchArgs);
       if (!resolvedLaunchArgs.ok) {
         return yield* protocolError(resolvedLaunchArgs.message);
@@ -545,6 +551,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             environment: { ...options.environment, T3CODE_THREAD_ID: input.threadId },
             mcpSession,
             extensionPath,
+            turnInstructionsPath,
             sessionPath,
             runtimeMode: input.runtimePolicy.runtimeMode,
           });
@@ -3443,6 +3450,15 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                 ),
               );
             }
+            yield* writePiTurnInstructions(
+              turnInstructionsPath,
+              payload !== null ? turnInput.turnInstructions : undefined,
+            ).pipe(
+              Effect.provideService(FileSystem.FileSystem, fileSystem),
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Could not refresh Pi's turn instructions", { cause }),
+              ),
+            );
             const startedAt = yield* DateTime.now;
             const syntheticNativeTurnId = `${state.providerThread.id}:attempt:${turnInput.attemptId}`;
             const providerTurn: OrchestrationV2ProviderTurn = {

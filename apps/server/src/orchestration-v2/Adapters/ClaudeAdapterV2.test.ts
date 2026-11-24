@@ -25220,6 +25220,71 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     );
 
     it.effect(
+      "delivers per-turn instructions through UserPromptSubmit hook additionalContext once, never in user message text",
+      () =>
+        Effect.gen(function* () {
+          const harness = yield* makeWakeHarness;
+          const note =
+            "[UpComputer onboarding note: this is not the user's first conversation. Do not make the onboarding offer; just answer the message.]";
+          yield* harness.runtime.startTurn({
+            ...makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make("onboarding-hook-attempt"),
+              text: "Can you continue from here?",
+              attachments: [],
+            }),
+            turnInstructions: note,
+          });
+          const offered = harness.offeredMessages.at(-1)?.message.content;
+          assert.isString(offered);
+          assert.include(offered, "Can you continue from here?");
+          assert.notInclude(offered, "UpComputer onboarding note");
+          const submit = () =>
+            Effect.promise(() =>
+              Promise.all(
+                (harness.getOpenedOptions()?.hooks?.UserPromptSubmit ?? []).flatMap((matcher) =>
+                  matcher.hooks.map((hook) =>
+                    hook(
+                      {
+                        hook_event_name: "UserPromptSubmit",
+                        prompt: "Can you continue from here?",
+                        session_id: WAKE_NATIVE_SESSION,
+                        transcript_path: "/transcript.jsonl",
+                        cwd: "/workspace",
+                      },
+                      undefined,
+                      { signal: new AbortController().signal },
+                    ),
+                  ),
+                ),
+              ),
+            );
+          assert.deepEqual(yield* submit(), [
+            {
+              hookSpecificOutput: {
+                hookEventName: "UserPromptSubmit",
+                additionalContext: note,
+              },
+            },
+          ]);
+          // One-shot per turn: a second invocation on the same turn gets nothing.
+          assert.deepEqual(yield* submit(), [{}]);
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(
+            Layer.mergeAll(
+              IdAllocator.layer,
+              McpProviderSessions.layer,
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
+          ),
+        ),
+    );
+
+    it.effect(
       "defers goal completion until an ambient subagent finishes and Claude checks again",
       () =>
         Effect.gen(function* () {

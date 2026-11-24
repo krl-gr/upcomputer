@@ -14,6 +14,7 @@ import {
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
   T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV,
+  T3_PI_TURN_INSTRUCTIONS_PATH_ENV,
   T3_PI_USER_INSTRUCTIONS_PATH_ENV,
 } from "./mcpExtensionSource.ts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
@@ -276,11 +277,33 @@ export const writePiUserInstructions = Effect.fn("writePiUserInstructions")(func
   yield* fs.rename(temporary, dest);
 });
 
+export function piTurnInstructionsPath(extensionPath: string, sessionId: string): string {
+  const normalized = extensionPath.replace(/\\/g, "/");
+  const encoded = Buffer.from(sessionId, "utf8").toString("base64url");
+  return `${normalized.slice(0, normalized.lastIndexOf("/") + 1)}pi-t3-turn-instructions-${encoded}.md`;
+}
+
+export const writePiTurnInstructions = Effect.fn("writePiTurnInstructions")(function* (
+  dest: string,
+  instructions: string | undefined,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const trimmed = instructions?.trim() ?? "";
+  if (trimmed.length === 0) {
+    yield* fs.remove(dest, { force: true });
+    return;
+  }
+  const temporary = `${dest}.${yield* randomUuidV4}.tmp`;
+  yield* fs.writeFileString(temporary, trimmed);
+  yield* fs.rename(temporary, dest);
+});
+
 export function buildPiRpcLaunch(input: {
   readonly launchArgs: ReadonlyArray<string>;
   readonly environment: NodeJS.ProcessEnv;
   readonly mcpSession: McpProviderSessionConfig | undefined;
   readonly extensionPath: string | undefined;
+  readonly turnInstructionsPath?: string | undefined;
   readonly sessionPath?: string | undefined;
   readonly ephemeral?: boolean;
   // T3 stops these processes as soon as they answer. They run --offline because Pi's startup
@@ -328,6 +351,7 @@ export function buildPiRpcLaunch(input: {
   delete environment[T3_MCP_BEARER_ENV];
   delete environment[T3_PI_MCP_EXTENSION_PATH_ENV];
   delete environment[T3_PI_USER_INSTRUCTIONS_PATH_ENV];
+  delete environment[T3_PI_TURN_INSTRUCTIONS_PATH_ENV];
   delete environment[T3_PI_ORCHESTRATION_INSTRUCTIONS_ENV];
 
   return {
@@ -338,6 +362,9 @@ export function buildPiRpcLaunch(input: {
         ? {
             [T3_PI_MCP_EXTENSION_PATH_ENV]: input.extensionPath,
             [T3_PI_USER_INSTRUCTIONS_PATH_ENV]: piUserInstructionsPath(input.extensionPath),
+            ...(input.turnInstructionsPath !== undefined
+              ? { [T3_PI_TURN_INSTRUCTIONS_PATH_ENV]: input.turnInstructionsPath }
+              : {}),
           }
         : {}),
       ...(hasT3Extension && input.runtimeMode !== undefined
