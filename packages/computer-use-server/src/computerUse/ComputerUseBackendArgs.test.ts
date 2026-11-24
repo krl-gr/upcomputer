@@ -64,6 +64,17 @@ test("maps keyboard, scroll, secondary actions and drag to supported backend arg
     key: "super+shift+Return",
   });
   NodeAssert.deepEqual(normalize("press_key", { app, key: "ArrowDown" }), { app, key: "Down" });
+  // The exact strings the sidecars parse: plain keys, chords and browser names they lack.
+  for (const [args, key] of [
+    [{ key: "End" }, "End"],
+    [{ key: "End", modifiers: ["ctrl"] }, "ctrl+End"],
+    [{ key: "a", modifiers: ["ctrl", "shift"] }, "ctrl+shift+a"],
+    [{ key: "ctrl+a", modifiers: ["shift"] }, "ctrl+a"],
+    [{ key: "PageDown" }, "Page_Down"],
+    [{ key: "PageUp", modifiers: ["alt"] }, "alt+Page_Up"],
+  ] as const) {
+    NodeAssert.deepEqual(normalize("press_key", { app, ...args }), { app, key });
+  }
   NodeAssert.deepEqual(
     normalize("scroll", { app, elementIndex: 2, direction: "down", amount: 0.5 }),
     {
