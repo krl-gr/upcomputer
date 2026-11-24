@@ -1,4 +1,5 @@
 import { copySnapshot } from "./copySnapshot";
+import { useAgentSetupOfferComposerPlaceholder } from "../../onboardingSurface/AgentSetupOfferPreview";
 import { VoiceInputSetup } from "./VoiceInputSetup";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
@@ -990,6 +991,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     recordClientEvent,
     showProviderUnavailable,
   ]);
+  // UpComputer design preview (dev builds): "Something else" asks for the agent's name.
+  const agentSetupOfferPlaceholder = useAgentSetupOfferComposerPlaceholder();
   const firstRunAgentPlaceholder =
     firstRunAgentStatus?.kind === "preparing"
       ? firstRunAgentStatus.slow
@@ -4034,7 +4037,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             : showProviderUnavailable
                               ? (firstRunAgentPlaceholder ??
                                 gt("Enable a provider in Settings to send a message"))
-                              : (offeredPromptSuggestion ??
+                              : (agentSetupOfferPlaceholder ??
+                                offeredPromptSuggestion ??
                                 m(composerIdlePlaceholder(routeKind === "server")))
                     }
                     placeholderSuffix={
