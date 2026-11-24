@@ -1232,6 +1232,10 @@ export const FirstRunAgentFailureReason = Schema.Literals([
 ]);
 export type FirstRunAgentFailureReason = typeof FirstRunAgentFailureReason.Type;
 
+/** The failures the no-agent screen tells apart. */
+export const NoAgentScreenFailure = Schema.Literals(["install", "timeout", "models"]);
+export type NoAgentScreenFailure = typeof NoAgentScreenFailure.Type;
+
 /**
  * UI events the server records as product telemetry, so they share the
  * install's identity with its server events. Bounded values only.
@@ -1269,6 +1273,45 @@ export const ClientTelemetryEvent = Schema.Union([
     reason: Schema.optionalKey(FirstRunAgentFailureReason),
     /** With `retried`: the app's own second attempt after the first failed, not a Retry press. */
     automatic: Schema.optionalKey(Schema.Literal(true)),
+    /** The user picked the install on the no-agent screen; without it, the app installed on its own. */
+    source: Schema.optionalKey(Schema.Literal("no_agent_screen")),
+  }),
+  Schema.Struct({
+    /** The first-launch screen for a user with no coding agent installed, and each click on it. */
+    event: Schema.Literal("onboarding.no_agent_screen"),
+    action: Schema.Literals([
+      "shown",
+      "install_clicked",
+      "copy_prompt_clicked",
+      "setup_myself_clicked",
+      "try_again_clicked",
+      "setup_another_way_clicked",
+    ]),
+    /** With `shown`: the user's agents found installed, and those of them signed out. */
+    installedAgents: Schema.optionalKey(NonNegativeInt),
+    signedOutAgents: Schema.optionalKey(NonNegativeInt),
+    /** With `shown`: some agent checks had not answered when the wait for them ran out. */
+    checksTimedOut: Schema.optionalKey(Schema.Boolean),
+    /** With `install_clicked`: 1 for this window's first click, higher for later ones. */
+    attempt: Schema.optionalKey(PositiveInt),
+    /** With `copy_prompt_clicked` and `setup_myself_clicked`: a failed install was shown before. */
+    afterFailure: Schema.optionalKey(Schema.Boolean),
+    /** With `setup_myself_clicked`: the setup prompt was copied before. */
+    copiedPrompt: Schema.optionalKey(Schema.Boolean),
+    /** With `try_again_clicked`: the failure it retries. */
+    reason: Schema.optionalKey(NoAgentScreenFailure),
+    /** With `setup_another_way_clicked`: the install in progress, or the failure shown. */
+    during: Schema.optionalKey(Schema.Literals(["installing", ...NoAgentScreenFailure.literals])),
+  }),
+  Schema.Struct({
+    /** The first message after the no-agent screen, once per install of the app. */
+    event: Schema.Literal("onboarding.first_message_sent"),
+    /** The way the user chose on the screen last, if any. */
+    path: Schema.optionalKey(
+      Schema.Literals(["installed_free_agent", "setup_myself", "copied_prompt"]),
+    ),
+    provider: TelemetryProvider,
+    msSinceScreen: NonNegativeInt,
   }),
   Schema.Struct({
     event: Schema.Literal("onboarding.completed"),

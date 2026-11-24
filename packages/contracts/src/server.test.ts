@@ -191,6 +191,27 @@ describe("ClientTelemetryEvent", () => {
     expect(decode(idle)._tag).toBe("Failure");
   });
 
+  it("bounds the no-agent screen's events to their reasons and counts", () => {
+    const screen = { event: "onboarding.no_agent_screen" };
+    expect(decode({ ...screen, action: "try_again_clicked", reason: "models" })._tag).toBe(
+      "Success",
+    );
+    expect(
+      decode({ ...screen, action: "setup_another_way_clicked", during: "installing" })._tag,
+    ).toBe("Success");
+    expect(decode({ ...screen, action: "try_again_clicked", reason: "startup_timeout" })._tag).toBe(
+      "Failure",
+    );
+    expect(decode({ ...screen, action: "install_clicked", attempt: 0 })._tag).toBe("Failure");
+    expect(
+      decode({ event: "onboarding.first_run_agent", outcome: "started", source: "welcome" })._tag,
+    ).toBe("Failure");
+    const sent = { event: "onboarding.first_message_sent", provider: "opencode", msSinceScreen: 0 };
+    expect(decode({ ...sent, path: "installed_free_agent" })._tag).toBe("Success");
+    expect(decode(sent)._tag).toBe("Success");
+    expect(decode({ ...sent, path: "elsewhere" })._tag).toBe("Failure");
+  });
+
   it("takes click targets only from code-shaped names and drops other properties", () => {
     const click = { event: "ui.click", view: "tasks", role: "button" };
     expect(decode({ ...click, target: "tasks.create" })._tag).toBe("Success");
