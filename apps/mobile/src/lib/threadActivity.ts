@@ -549,6 +549,7 @@ function itemIcon(item: OrchestrationV2TurnItem): ThreadFeedActivity["icon"] {
       case "subagent":
       case "delegated_task":
       case "task_agent_run":
+      case "bot_mention":
         return "hammer";
       case "command":
         return "command";
