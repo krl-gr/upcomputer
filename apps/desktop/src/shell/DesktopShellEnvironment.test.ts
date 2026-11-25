@@ -337,12 +337,14 @@ describe("DesktopShellEnvironment", () => {
               JAVA_HOME: "/old/java",
               PNPM_HOME: "/old/pnpm",
               SSL_CERT_FILE: "/old/cert.pem",
+              T3CODE_TELEMETRY_ENABLED: "false",
             }),
         });
         const cachePath = `${stateDir}/shell-environment-cache.json`;
         const cached = yield* fs.readFileString(cachePath).pipe(Effect.flatMap(decodeCache));
         assert.equal(cached.environment.PATH, "/old/bin:/usr/bin");
         assert.equal(cached.environment.PNPM_HOME, "/old/pnpm");
+        assert.equal(cached.environment.T3CODE_TELEMETRY_ENABLED, "false");
         assert.notProperty(cached.environment, "SSH_AUTH_SOCK");
         const started = yield* Deferred.make<void>();
         const release = yield* Deferred.make<void>();
@@ -380,6 +382,8 @@ describe("DesktopShellEnvironment", () => {
               yield* service.installIntoProcess;
               assert.equal(env.PATH, "/old/bin:/usr/bin:/launcher/bin");
               assert.equal(env.SSH_AUTH_SOCK, "/current-session.sock");
+              // The backend starts opted out until the shell is read.
+              assert.equal(env.T3CODE_TELEMETRY_ENABLED, "false");
               const replay = yield* Stream.runHead(service.updates);
               assert.isTrue(Option.isSome(replay));
               if (Option.isSome(replay))
@@ -393,10 +397,13 @@ describe("DesktopShellEnvironment", () => {
               assert.isUndefined(env.JAVA_HOME);
               assert.isUndefined(env.PNPM_HOME);
               assert.isUndefined(env.SSL_CERT_FILE);
+              assert.isUndefined(env.T3CODE_TELEMETRY_ENABLED);
               const fresh = yield* Stream.runHead(service.updates);
               assert.isTrue(Option.isSome(fresh));
               if (Option.isSome(fresh)) {
                 assert.equal(fresh.value.environment.PATH, env.PATH);
+                // The backend drops an opt-out only the cache supplied.
+                assert.isNull(fresh.value.environment.T3CODE_TELEMETRY_ENABLED);
                 assert.isTrue(fresh.value.discovered);
               }
               return true;
@@ -407,6 +414,7 @@ describe("DesktopShellEnvironment", () => {
         assert.notProperty(refreshed.environment, "JAVA_HOME");
         assert.notProperty(refreshed.environment, "PNPM_HOME");
         assert.notProperty(refreshed.environment, "SSL_CERT_FILE");
+        assert.notProperty(refreshed.environment, "T3CODE_TELEMETRY_ENABLED");
       }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -505,8 +513,7 @@ describe("DesktopShellEnvironment", () => {
         assert.equal(env.NODE_EXTRA_CA_CERTS, "/launcher/ca.pem");
         assert.equal(env.SSL_CERT_FILE, "");
         assert.equal(env.SSL_CERT_DIR, "/cached/certs");
-        // A cached opt-out outlived the variable by a launch; the server waits for the shell.
-        assert.isUndefined(env.T3CODE_TELEMETRY_ENABLED);
+        assert.equal(env.T3CODE_TELEMETRY_ENABLED, "false");
         assert.equal(env.SSH_AUTH_SOCK, "/current.sock");
         assert.isUndefined(env.NODE_OPTIONS);
         assert.equal(yield* fs.readFileString(cachePath), contents);

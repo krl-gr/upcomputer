@@ -39,7 +39,11 @@ const POLICY_OFF: ManagedPolicyDocument = {
 const runServer = <A, E>(
   baseDir: string,
   use: (analytics: AnalyticsService.AnalyticsService["Service"]) => Effect.Effect<A, E>,
-  options: { readonly envEnabled?: boolean; readonly policy?: ManagedPolicyDocument } = {},
+  options: {
+    readonly envEnabled?: boolean;
+    readonly policy?: ManagedPolicyDocument;
+    readonly hostEnv?: NodeJS.ProcessEnv;
+  } = {},
 ) =>
   Effect.gen(function* () {
     const sent: Array<SentEvent> = [];
@@ -73,6 +77,9 @@ const runServer = <A, E>(
               Layer.succeed(HostProcess.Architecture, "arm64"),
               Layer.succeed(HttpClient.HttpClient, client),
               ManagedPolicy.layerTest(options.policy),
+              options.hostEnv === undefined
+                ? Layer.empty
+                : Layer.succeed(HostProcess.Environment, options.hostEnv),
             ),
           ),
         ),
@@ -118,6 +125,38 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("telemetry prefer
         policy: POLICY_OFF,
       });
       assert.deepEqual(both.result, { enabled: false, lockedBy: "policy" });
+    }),
+  );
+
+  it.effect("a cached opt-out the login shell no longer sets unlocks once the shell is read", () =>
+    Effect.gen(function* () {
+      const baseDir = yield* tempBaseDir;
+      // The desktop starts the server from its shell-env cache, then the shell snapshot drops it.
+      const env: NodeJS.ProcessEnv = {
+        T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING: "1",
+        T3CODE_TELEMETRY_ENABLED: "false",
+      };
+      const { result, sent } = yield* runServer(
+        baseDir,
+        (analytics) =>
+          Effect.gen(function* () {
+            const pending = yield* analytics.preference;
+            yield* analytics.record("test.pending");
+            delete env.T3CODE_TELEMETRY_ENABLED;
+            delete env.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING;
+            const discovered = yield* analytics.preference;
+            yield* analytics.record("test.discovered");
+            yield* analytics.flush;
+            return { pending, discovered };
+          }),
+        { envEnabled: false, hostEnv: env },
+      );
+      assert.deepEqual(result, {
+        pending: { enabled: false, lockedBy: "environment" },
+        discovered: { enabled: true, lockedBy: null },
+      });
+      // A launch that started opted out writes no identity, so it still sends nothing.
+      assert.deepEqual(sent, []);
     }),
   );
 

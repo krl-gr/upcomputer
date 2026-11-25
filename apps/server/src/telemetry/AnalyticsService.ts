@@ -247,12 +247,11 @@ export const make = Effect.gen(function* () {
   const shellConsentPending = Effect.sync(
     () => awaitingShellConsent && hostEnvironment.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING === "1",
   );
-  // True once the environment turns telemetry off. A cached PATH does not establish
-  // consent from the current login shell, so a late opt-out is read after discovery.
+  // True once the environment turns telemetry off. The desktop starts this server from its
+  // shell-env cache, so after discovery the live value wins, in either direction.
   const environmentOptOut = Effect.suspend(() => {
-    if (!telemetryConfig.enabled) return Effect.succeed(true);
     if (!awaitingShellConsent || hostEnvironment.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING === "1")
-      return Effect.succeed(false);
+      return Effect.succeed(!telemetryConfig.enabled);
     const preference = hostEnvironment.T3CODE_TELEMETRY_ENABLED;
     return Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(
       Config.withDefault(true),
