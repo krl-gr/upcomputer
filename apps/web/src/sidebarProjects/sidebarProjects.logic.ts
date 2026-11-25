@@ -3,6 +3,11 @@
  * through upstream's project scope, so its rows are project scope keys.
  */
 
+import {
+  isThreadInProjectScope,
+  type LinkedProjectScopeThread,
+} from "../linkedProjects/projectScope";
+
 /** Rows shown before "More". */
 const SIDEBAR_PROJECT_PREVIEW_COUNT = 3;
 
@@ -118,4 +123,30 @@ export function sidebarProjectsDragOrder(input: {
   const shown = input.rowOrderKeys.flat();
   const shownSet = new Set(shown);
   return [...shown, ...input.projectOrder.filter((key) => !shownSet.has(key))];
+}
+
+export type SidebarProjectPick<TThread> =
+  | { readonly kind: "stay" }
+  | { readonly kind: "thread"; readonly thread: TThread }
+  | { readonly kind: "new-chat" };
+
+/**
+ * Where picking a project takes the open chat. One from another project would stay
+ * on screen as if it were in the pick, so the pick opens the project's most recent
+ * thread, or a new chat in it. With no chat open, the page stays.
+ */
+export function resolveSidebarProjectPick<TThread extends LinkedProjectScopeThread>(input: {
+  /** The open thread or draft, null on a page that is no chat. */
+  readonly openChat: LinkedProjectScopeThread | null;
+  /** The picked project's members, as `environmentId:projectId`. */
+  readonly projectKeys: ReadonlySet<string>;
+  readonly projectLinks: ReadonlyMap<string, ReadonlyArray<string>>;
+  /** The threads Threads can list, most recent first. */
+  readonly threads: ReadonlyArray<TThread>;
+}): SidebarProjectPick<TThread> {
+  const inPick = (thread: LinkedProjectScopeThread) =>
+    isThreadInProjectScope(thread, input.projectKeys, input.projectLinks);
+  if (input.openChat === null || inPick(input.openChat)) return { kind: "stay" };
+  const thread = input.threads.find(inPick);
+  return thread === undefined ? { kind: "new-chat" } : { kind: "thread", thread };
 }

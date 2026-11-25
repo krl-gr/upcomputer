@@ -1,5 +1,12 @@
 import type { ComponentType, ReactNode } from "react";
-import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  OrchestrationV2NotificationSource,
+  OrchestrationV2TurnItem,
+  ProjectId,
+  ThreadId,
+} from "@t3tools/contracts";
+import type { TimestampFormat } from "@t3tools/contracts/settings";
 import type { NavigateOptions } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
@@ -73,10 +80,58 @@ export interface ExperimentalWebThreadAction {
   /** A context menu icon name, such as "bot"; desktop menus show none. */
   readonly icon?: string;
   /** Makes the entry a submenu; `run` receives the chosen id. */
-  readonly choices?: ReadonlyArray<{ readonly id: string; readonly label: string }>;
+  readonly choices?: ReadonlyArray<{
+    readonly id: string;
+    readonly label: string;
+    /** The label is `msg()` text to translate, not a name. */
+    readonly message?: boolean;
+  }>;
   /** Why the action cannot run now, shown greyed out in its submenu instead of choices. */
   readonly unavailableReason?: string;
   readonly run: (context: ExperimentalWebThreadActionContext, choiceId?: string) => void;
+}
+
+/** The chat whose composer asks; `threadId` is null to name every recipient, as a chip does. */
+export interface ExperimentalWebComposerRecipientContext {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId | null;
+}
+
+/** Who a composer message can go to instead of the open chat, such as a bot. */
+export interface ExperimentalWebComposerRecipient {
+  /** Unique within the feature. */
+  readonly id: string;
+  /**
+   * A message goes to the recipient when it opens with `@` and this name, or holds the recipient
+   * picked from the `@` menu.
+   */
+  readonly name: string;
+  readonly description: string;
+  readonly icon?: ComponentType<{ readonly className?: string }>;
+  /** The recipient's own chat, which `@` then offers only as the recipient, not as a thread. */
+  readonly chatThreadId?: ThreadId;
+  /**
+   * Sends the text as the person's own message; rejects with the reason it was not sent.
+   * `repliesHere` says the answer comes back to the open chat.
+   */
+  readonly send: (text: string) => Promise<{ readonly repliesHere: boolean }>;
+  /** Opens where the message went. */
+  readonly open: (context: ExperimentalWebThreadActionContext) => void;
+}
+
+/** A feature-rendered timeline card for its own notification kinds, such as bot mentions. */
+export interface ExperimentalWebNotificationCardProps {
+  readonly environmentId: EnvironmentId;
+  readonly notification: Extract<OrchestrationV2TurnItem, { type: "notification" }>;
+  readonly createdAt: string;
+  readonly timestampFormat: TimestampFormat;
+  readonly onOpenThread: (threadId: ThreadId) => void;
+  readonly renderMarkdown: (text: string) => ReactNode;
+}
+
+export interface ExperimentalWebNotificationCardContribution {
+  readonly kinds: ReadonlyArray<OrchestrationV2NotificationSource["kind"]>;
+  readonly component: ComponentType<ExperimentalWebNotificationCardProps>;
 }
 
 export interface ExperimentalWebThreadRowAccessoryProps extends ExperimentalWebThreadAccessoryProps {
@@ -99,6 +154,8 @@ export interface ExperimentalWebRightPanelSurfaceContribution {
   readonly id: string;
   /** The launcher entry and the tab title. */
   readonly label: string;
+  /** One line under the label in Settings, where the entry can be turned off. */
+  readonly description?: string;
   /** One letter that opens the surface from the launcher; core's letters are taken. */
   readonly shortcut: string;
   readonly icon: ComponentType<{ readonly className?: string }>;
@@ -129,6 +186,23 @@ export interface ExperimentalWebFeatureContribution {
   readonly threadActions?: (
     thread: ExperimentalWebThreadAccessoryProps,
   ) => ReadonlyArray<ExperimentalWebThreadAction>;
+  /**
+   * Recipients the open thread's composer offers after `@`, asked as the person types and
+   * sends, so answer from state the feature already holds.
+   */
+  readonly composerRecipients?: (
+    context: ExperimentalWebComposerRecipientContext,
+  ) => ReadonlyArray<ExperimentalWebComposerRecipient>;
+  /**
+   * Called while a composer of the environment is mounted, to load and follow what
+   * `composerRecipients` answers from; `onChange` asks again. Returns the unsubscribe.
+   */
+  readonly subscribeComposerRecipients?: (
+    environmentId: EnvironmentId,
+    onChange: () => void,
+  ) => () => void;
+  /** Renders timeline cards for the declared notification source kinds. */
+  readonly notificationCard?: ExperimentalWebNotificationCardContribution;
   readonly sidebarSection?: ComponentType;
   /**
    * Mounted once in the app shell while the primary environment is signed in,

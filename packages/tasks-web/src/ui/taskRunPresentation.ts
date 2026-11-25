@@ -1,3 +1,5 @@
+import { msg } from "gt-react";
+
 /** Run-count status for a blocked run that is no longer its task's latest run. */
 const SUPERSEDED_BLOCKED_RUN_STATUS = "blocked:superseded";
 
@@ -23,6 +25,7 @@ export function isFinishedRunStatus(status: string): boolean {
 }
 
 export interface TaskRunPresentation {
+  /** English, from `msg()`; the component that shows it translates it with `useMessages()`. */
   readonly label: string;
   readonly className: string;
 }
@@ -32,41 +35,45 @@ export function taskRunPresentation(
   hasPendingApproval: boolean,
 ): TaskRunPresentation | null {
   if (hasPendingApproval) {
-    return { label: "Approval", className: "text-amber-600 dark:text-amber-300" };
+    return { label: msg("Approval"), className: "text-amber-600 dark:text-amber-300" };
   }
   const normalized = runStatus?.trim().toLowerCase();
   if (!normalized) return null;
   if (normalized === "finalizing:interrupted" || normalized === "finalizing:failed") {
     return {
-      label: normalized === "finalizing:failed" ? "Failed" : "Interrupted",
+      label: normalized === "finalizing:failed" ? msg("Failed") : msg("Interrupted"),
       className: "text-red-700 dark:text-red-300",
     };
   }
   if (normalized === "finalizing:stopped" || normalized === "finalizing:result") {
     return {
-      label: "Finalizing",
+      label: msg("Finalizing"),
       className: "text-muted-foreground dark:text-white/64",
     };
   }
   if (normalized === "completed") {
-    return { label: "Completed", className: "text-emerald-600 dark:text-emerald-300/90" };
+    return { label: msg("Completed"), className: "text-emerald-600 dark:text-emerald-300/90" };
   }
   if (normalized === "running") {
-    return { label: "Working", className: "text-sky-600 dark:text-sky-400" };
+    return { label: msg("Working"), className: "text-sky-600 dark:text-sky-400" };
   }
   if (normalized === "blocked") {
-    return { label: "Awaiting Input", className: "text-indigo-600 dark:text-indigo-300" };
+    return { label: msg("Awaiting Input"), className: "text-indigo-600 dark:text-indigo-300" };
   }
   // A blocked run a newer run replaced: history, not a call to action.
   if (normalized === SUPERSEDED_BLOCKED_RUN_STATUS) {
-    return { label: "Blocked", className: "text-orange-600 dark:text-orange-300" };
+    return { label: msg("Blocked"), className: "text-orange-600 dark:text-orange-300" };
   }
   if (normalized === "failed" || normalized === "interrupted") {
     return {
-      label: normalized === "failed" ? "Failed" : "Interrupted",
+      label: normalized === "failed" ? msg("Failed") : msg("Interrupted"),
       className: "text-red-700 dark:text-red-300",
     };
   }
+  if (normalized === "stopped") {
+    return { label: msg("Stopped"), className: "text-muted-foreground dark:text-white/64" };
+  }
+  // A status this UI doesn't know yet shows as the server wrote it.
   return {
     label: normalized.charAt(0).toUpperCase() + normalized.slice(1),
     className: "text-muted-foreground dark:text-white/64",

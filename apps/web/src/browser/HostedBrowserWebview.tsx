@@ -13,7 +13,7 @@ import {
 } from "~/components/preview/thumbButtons";
 import { usePreviewBridge } from "~/components/preview/usePreviewBridge";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
-import { cn, isMacPlatform } from "~/lib/utils";
+import { cn, isMacPlatform, isWindowsPlatform } from "~/lib/utils";
 import { useHiddenBrowserBackdrop } from "~/sidebarVibrancy/hiddenBrowserBackdrop";
 
 import { resolveBrowserSurfacePanelRect, useBrowserSurfaceStore } from "./browserSurfaceStore";
@@ -21,6 +21,7 @@ import { useActiveBrowserRecordingTabIds } from "./browserRecording";
 import {
   browserViewportSettingKey,
   resolveBrowserViewportLayout,
+  resolveBrowserViewportTransform,
   resolveFittedBrowserViewport,
 } from "./browserViewportLayout";
 import { BrowserDeviceToolbar } from "./BrowserDeviceToolbar";
@@ -317,6 +318,23 @@ export function HostedBrowserWebview(props: {
   const renderingActive = active || backgroundActivity || pictureInPicture || recordingActive;
   const hiddenBackdrop = useHiddenBrowserBackdrop(renderingActive && !active);
 
+  // Captures copy the guest's raster, which a scaled guest only keeps at full detail on request.
+  const fullDetail = backgroundActivity || pictureInPicture || recordingActive;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the desktop host once the guest is drawn at full detail, so its screenshot waits for that frame
+  useEffect(() => {
+    const bridge = window.desktopBridge?.preview;
+    if (!clientSettingsHydrated || !bridge || !serverDriven || !fullDetail) return;
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() =>
+        withDesktopTab(runtimeTabId, () => bridge.setCaptureDrawn(runtimeTabId, true)),
+      );
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      withDesktopTab(runtimeTabId, () => bridge.setCaptureDrawn(runtimeTabId, false));
+    };
+  }, [clientSettingsHydrated, fullDetail, runtimeTabId, serverDriven]);
+
   if (!clientSettingsHydrated || !config) return null;
 
   // This fixed wrapper sits outside the right panel shell, so it takes thumb presses itself.
@@ -325,11 +343,14 @@ export function HostedBrowserWebview(props: {
     else void previewBridge?.goForward(runtimeTabId);
   };
 
+  const viewportTransform = resolveBrowserViewportTransform(layout.viewportScale, fullDetail);
   const wrapperStyle = resolveHostedBrowserWebviewWrapperStyle({
     active,
     renderingActive,
-    // Electron 43 can permanently blank a macOS webview after `visibility: hidden`.
-    keepPaintableWhenInactive: isMacPlatform(navigator.platform),
+    // Electron 43 can permanently blank a macOS webview after `visibility: hidden`; Windows guests
+    // hidden that way missed agent screenshots taken while their thread was off screen.
+    keepPaintableWhenInactive:
+      isMacPlatform(navigator.platform) || isWindowsPlatform(navigator.platform),
     cornerRadius: presentation.cornerRadius,
     zIndex: presentation.zIndex,
     rect: lastRect,
@@ -358,47 +379,56 @@ export function HostedBrowserWebview(props: {
             onChange={commitViewportChange}
           />
         ) : null}
-        <webview
-          key={webviewGeneration}
-          ref={setWebviewRef}
-          // Electron needs allowpopups at attachment. React drops boolean values for unknown attributes.
-          {...({ allowpopups: "true" } as unknown as { readonly allowpopups?: boolean })}
-          src={webviewGeneration === 0 ? initialSrc : recoverySrc}
-          partition={config.partition}
-          webpreferences={config.webPreferences}
-          {...(config.preloadUrl ? { preload: config.preloadUrl } : {})}
-          data-preview-tab={runtimeTabId}
-          data-preview-server-tab={tabId}
-          data-preview-viewport-mode={effectiveViewport._tag}
-          data-preview-viewport-key={browserViewportSettingKey(effectiveViewport)}
-          data-preview-css-width={
-            fittedSourceViewport
-              ? fittedSourceViewport.width
-              : effectiveViewport._tag === "fill"
-                ? Math.max(1, Math.round(layout.viewportWidth / layoutZoomFactor))
-                : effectiveViewport.width
-          }
-          data-preview-css-height={
-            fittedSourceViewport
-              ? fittedSourceViewport.height
-              : effectiveViewport._tag === "fill"
-                ? Math.max(1, Math.round(layout.viewportHeight / layoutZoomFactor))
-                : effectiveViewport.height
-          }
-          aria-hidden={active ? undefined : true}
-          className={cn(
-            "absolute flex overflow-hidden bg-white",
-            active && !layout.fillsPanel && "ring-1 ring-border/70 shadow-sm",
-          )}
+        <div
+          className="absolute"
           style={{
             left: layout.viewportX,
             top: layout.viewportY,
-            width: layout.viewportWidth / layout.viewportScale,
-            height: layout.viewportHeight / layout.viewportScale,
-            transform: layout.viewportScale < 1 ? `scale(${layout.viewportScale})` : undefined,
-            transformOrigin: "top left",
+            width: layout.viewportWidth,
+            height: layout.viewportHeight,
+            transformStyle: viewportTransform && fullDetail ? "preserve-3d" : undefined,
           }}
-        />
+        >
+          <webview
+            key={webviewGeneration}
+            ref={setWebviewRef}
+            // Electron needs allowpopups at attachment. React drops boolean values for unknown attributes.
+            {...({ allowpopups: "true" } as unknown as { readonly allowpopups?: boolean })}
+            src={webviewGeneration === 0 ? initialSrc : recoverySrc}
+            partition={config.partition}
+            webpreferences={config.webPreferences}
+            {...(config.preloadUrl ? { preload: config.preloadUrl } : {})}
+            data-preview-tab={runtimeTabId}
+            data-preview-server-tab={tabId}
+            data-preview-viewport-mode={effectiveViewport._tag}
+            data-preview-viewport-key={browserViewportSettingKey(effectiveViewport)}
+            data-preview-css-width={
+              fittedSourceViewport
+                ? fittedSourceViewport.width
+                : effectiveViewport._tag === "fill"
+                  ? Math.max(1, Math.round(layout.viewportWidth / layoutZoomFactor))
+                  : effectiveViewport.width
+            }
+            data-preview-css-height={
+              fittedSourceViewport
+                ? fittedSourceViewport.height
+                : effectiveViewport._tag === "fill"
+                  ? Math.max(1, Math.round(layout.viewportHeight / layoutZoomFactor))
+                  : effectiveViewport.height
+            }
+            aria-hidden={active ? undefined : true}
+            className={cn(
+              "absolute top-0 left-0 flex overflow-hidden bg-white",
+              active && !layout.fillsPanel && "ring-1 ring-border/70 shadow-sm",
+            )}
+            style={{
+              width: layout.viewportWidth / layout.viewportScale,
+              height: layout.viewportHeight / layout.viewportScale,
+              transform: viewportTransform,
+              transformOrigin: "top left",
+            }}
+          />
+        </div>
         {active && effectiveViewport._tag !== "fill" && !fittedSourceViewport ? (
           <>
             <BrowserViewportResizeHandles

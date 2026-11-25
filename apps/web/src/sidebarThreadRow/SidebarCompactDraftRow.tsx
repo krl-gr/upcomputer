@@ -1,6 +1,8 @@
+import type { ContextMenuSource } from "@t3tools/contracts";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import { useGT } from "gt-react";
 import { EllipsisIcon } from "lucide-react";
 import {
   memo,
@@ -12,6 +14,7 @@ import {
 
 import { resolveSidebarRowAccessibility } from "../components/Sidebar.logic";
 import type { ComposerThreadDraftState, DraftId, DraftSessionState } from "../composerDraftStore";
+import { contextMenuSourceOf } from "../contextMenuSource";
 import { cn } from "../lib/utils";
 import { SIDEBAR_LIST_ROW_SPACING } from "../sidebarMetrics/sidebarMetrics";
 import {
@@ -31,7 +34,7 @@ const NO_LINKED_PROJECTS: ReadonlyArray<never> = [];
 const MENU_CLOSING_KEYS = new Set(["Escape", "Enter", " ", "Tab"]);
 
 /** The draft's first line, or its attachment count when it has no text. */
-function draftPreview(composer: ComposerThreadDraftState): string {
+function draftPreview(composer: ComposerThreadDraftState, gt: ReturnType<typeof useGT>): string {
   const prompt =
     assistantCitationsToPlainText(
       replaceComposerContextReferences(composer.prompt, (occurrence) => occurrence.label),
@@ -46,7 +49,7 @@ function draftPreview(composer: ComposerThreadDraftState): string {
     composer.terminalContexts.length +
     composer.previewAnnotations.length +
     composer.reviewComments.length;
-  return `${count} attachment${count === 1 ? "" : "s"}`;
+  return gt("{count, plural, one {# attachment} other {# attachments}}", { count });
 }
 
 /**
@@ -62,13 +65,18 @@ export const SidebarCompactDraftRow = memo(function SidebarCompactDraftRow(props
   readonly projectDisplayName: string | null;
   readonly isActive: boolean;
   readonly onNavigate: (draftId: DraftId) => void;
-  readonly onContextMenu: (draftId: DraftId, position: { x: number; y: number }) => void;
+  readonly onContextMenu: (
+    draftId: DraftId,
+    position: { x: number; y: number },
+    source: ContextMenuSource,
+  ) => void;
 }) {
   const { draftId, onContextMenu, onNavigate } = props;
-  const preview = draftPreview(props.composer);
+  const gt = useGT();
+  const preview = draftPreview(props.composer, gt);
   const accessibility = resolveSidebarRowAccessibility({
     title: preview,
-    statusLabel: "Unsent draft",
+    statusLabel: gt("Unsent draft"),
     projectDisplayName: props.projectDisplayName,
     isActive: props.isActive,
   });
@@ -94,14 +102,14 @@ export const SidebarCompactDraftRow = memo(function SidebarCompactDraftRow(props
     event.stopPropagation();
     const rect = event.currentTarget.getBoundingClientRect();
     setMenuOpen(true);
-    onContextMenu(draftId, { x: rect.left, y: rect.bottom + 4 });
+    onContextMenu(draftId, { x: rect.left, y: rect.bottom + 4 }, contextMenuSourceOf(event));
   };
   const handleKeyDown = (event: ReactKeyboardEvent) => {
     if ((event.target as HTMLElement).closest("button")) return;
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
       event.preventDefault();
       const rect = event.currentTarget.getBoundingClientRect();
-      onContextMenu(draftId, { x: rect.left, y: rect.bottom });
+      onContextMenu(draftId, { x: rect.left, y: rect.bottom }, "keyboard");
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       onNavigate(draftId);
@@ -128,7 +136,11 @@ export const SidebarCompactDraftRow = memo(function SidebarCompactDraftRow(props
         onClick={() => onNavigate(draftId)}
         onContextMenu={(event) => {
           event.preventDefault();
-          onContextMenu(draftId, { x: event.clientX, y: event.clientY });
+          onContextMenu(
+            draftId,
+            { x: event.clientX, y: event.clientY },
+            contextMenuSourceOf(event),
+          );
         }}
         onKeyDown={handleKeyDown}
       >
@@ -148,7 +160,7 @@ export const SidebarCompactDraftRow = memo(function SidebarCompactDraftRow(props
           action={
             <button
               type="button"
-              aria-label={`Draft actions for ${preview}`}
+              aria-label={gt("Draft actions for {draft}", { draft: preview })}
               className={sidebarListRowActionClassName(menuOpen)}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={openMenu}

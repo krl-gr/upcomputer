@@ -5,6 +5,7 @@ import { collectWrappedTerminalLinkLine, extractTerminalLinks } from "../../term
 import {
   GHOSTTY_CELL_WIDE,
   GhosttyTerminalCore,
+  ghosttyColorsEqual,
   type GhosttyCell,
   type GhosttyScrollbar,
   type GhosttySnapshot,
@@ -20,6 +21,9 @@ import {
 import symbolsFontUrl from "./fonts/SymbolsNerdFontMono-Regular.woff2?url";
 import { isMonospaceFamily } from "../../appearanceFonts";
 import { observeResize } from "../../lib/observeResize";
+import { PromptResizeHandoff } from "./promptHandoff";
+import { msg } from "gt-react";
+import { m } from "../../i18n/messages";
 
 const DEFAULT_TERMINAL_FONT_SIZE = 12;
 const MIN_TERMINAL_FONT_SIZE = 6;
@@ -399,15 +403,20 @@ function shouldReportTerminalMouse(
 }
 
 type TerminalMouseAction = "press" | "release" | "motion";
+type TerminalMouseReport = ReturnType<GhosttyTerminalCore["encodeMouse"]>;
 
 export function resolveTerminalMouseData(
   action: TerminalMouseAction,
-  data: string,
-  previousMotionData: string,
-): { readonly send: boolean; readonly nextMotionData: string } {
-  const nextMotionData = action === "motion" ? data : "";
+  report: TerminalMouseReport,
+  previousMotionData: TerminalMouseReport | null,
+): { readonly send: boolean; readonly nextMotionData: TerminalMouseReport | null } {
+  const nextMotionData = action === "motion" ? report : null;
   return {
-    send: data.length > 0 && (action !== "motion" || data !== previousMotionData),
+    send:
+      report.data.length > 0 &&
+      (action !== "motion" ||
+        report.data !== previousMotionData?.data ||
+        report.binary !== previousMotionData?.binary),
     nextMotionData,
   };
 }
@@ -415,11 +424,11 @@ export function resolveTerminalMouseData(
 function resolveTerminalMouseTrackingState(
   previousTracking: boolean,
   tracking: boolean,
-  motionData: string,
-): { readonly tracking: boolean; readonly motionData: string } {
+  motionData: TerminalMouseReport | null,
+): { readonly tracking: boolean; readonly motionData: TerminalMouseReport | null } {
   return {
     tracking,
-    motionData: previousTracking === tracking ? motionData : "",
+    motionData: previousTracking === tracking ? motionData : null,
   };
 }
 
@@ -522,6 +531,10 @@ export interface GhosttyTerminalSurfaceOptions {
   /** Read after font and WASM loading. */
   readonly visible?: boolean;
   readonly onData: (data: string) => void;
+  /** Input bytes that are not UTF-8, one UTF-16 code unit per byte. */
+  readonly onBinary: (data: string) => void;
+  /** The terminal's own answers to queries from the PTY (DA, DSR, DECRQM), never typed input. */
+  readonly onReply: (data: string) => void;
   readonly onResize: (cols: number, rows: number) => void;
   readonly onSelectionChange: () => void;
   readonly beforeKey: (event: KeyboardEvent) => boolean;
@@ -548,6 +561,7 @@ export class GhosttyTerminalSurface {
   private sharedGrid: { readonly cols: number; readonly rows: number } | null = null;
   private readonly context: CanvasRenderingContext2D;
   private readonly core: GhosttyTerminalCore;
+  private readonly promptHandoff: PromptResizeHandoff;
   private readonly options: GhosttyTerminalSurfaceOptions;
   private visible: boolean;
   private hasSize = false;
@@ -636,7 +650,7 @@ export class GhosttyTerminalSurface {
     remainder: number;
     moved: boolean;
   } | null = null;
-  private lastMouseMotionData = "";
+  private lastMouseMotionData: TerminalMouseReport | null = null;
   private mouseAnyEventTracking = false;
   private dprMedia: MediaQueryList | null = null;
   // Watch reduced motion changes to restart blink cycles that have no remaining timer.
@@ -663,6 +677,7 @@ export class GhosttyTerminalSurface {
     this.scrollbarThumb = scrollbarThumb;
     this.context = context;
     this.core = core;
+    this.promptHandoff = new PromptResizeHandoff(core);
     this.mouseAnyEventTracking = core.isMouseAnyEventTracking();
     this.metrics = metrics;
     this.options = options;
@@ -672,6 +687,8 @@ export class GhosttyTerminalSurface {
     this.requestedFontFamily = options.font?.family;
     this.fontSize = terminalFontSize(options.font?.size);
     this.installEvents();
+    // The input is mounted before the core loads, so focus can land before the listeners.
+    this.focused = document.activeElement === input;
     this.watchDevicePixelRatio();
     this.reducedMotionMedia?.addEventListener("change", this.onReducedMotionChange);
     document.fonts.addEventListener("loadingdone", this.onFontsLoaded);
@@ -689,7 +706,7 @@ export class GhosttyTerminalSurface {
 
     const input = document.createElement("textarea");
     input.className = "t3-ghostty-input";
-    input.setAttribute("aria-label", "Terminal input");
+    input.setAttribute("aria-label", m(msg("Terminal input")));
     input.autocapitalize = "off";
     input.autocomplete = "off";
     input.spellcheck = false;
@@ -700,7 +717,7 @@ export class GhosttyTerminalSurface {
     scrollbar.className =
       "group absolute top-1 right-px bottom-1 z-1 w-[var(--app-scrollbar-width)] cursor-default touch-none";
     scrollbar.setAttribute("role", "scrollbar");
-    scrollbar.setAttribute("aria-label", "Terminal scrollback");
+    scrollbar.setAttribute("aria-label", m(msg("Terminal scrollback")));
     scrollbar.setAttribute("aria-orientation", "vertical");
     scrollbar.tabIndex = 0;
     scrollbar.hidden = true;
@@ -728,7 +745,7 @@ export class GhosttyTerminalSurface {
       metrics.width,
       metrics.height,
       options.theme,
-      options.onData,
+      options.onReply,
     );
     const surface = new GhosttyTerminalSurface(
       mount,
@@ -765,6 +782,7 @@ export class GhosttyTerminalSurface {
 
   write(data: string): void {
     if (this.disposed) return;
+    this.promptHandoff.discard();
     this.core.write(
       data,
       this.synchronizedRenderTimer === null
@@ -780,7 +798,8 @@ export class GhosttyTerminalSurface {
   resetAndWrite(data: string): void {
     if (this.disposed) return;
     this.cancelSynchronizedRenderTimer();
-    this.lastMouseMotionData = "";
+    this.lastMouseMotionData = null;
+    this.promptHandoff.discard();
     this.core.resetAndWrite(data);
     this.synchronizeMouseTrackingState();
     this.cursorOn = true;
@@ -932,14 +951,24 @@ export class GhosttyTerminalSurface {
   setSharedGrid(grid: { readonly cols: number; readonly rows: number } | null): void {
     if (this.disposed) return;
     if (this.sharedGrid?.cols === grid?.cols && this.sharedGrid?.rows === grid?.rows) return;
+    const shellCols = this.sharedGrid?.cols;
+    const ptyColsChanged = shellCols !== undefined && grid !== null && grid.cols !== shellCols;
     this.sharedGrid = grid;
-    if (this.hasSize && this.applyGrid()) this.requestRender();
+    const resized = this.hasSize && this.applyGrid(shellCols);
+    // The PTY has its new width, so the shell's SIGWINCH redraw comes next.
+    const released = ptyColsChanged && this.promptHandoff.release(this.cols);
+    if (resized || released) this.requestRender();
   }
 
-  private applyGrid(): boolean {
+  /** `shellCols` is the PTY width the shell last drew at. */
+  private applyGrid(shellCols = this.sharedGrid?.cols): boolean {
     const cols = Math.min(this.sharedGrid?.cols ?? this.measuredCols, this.measuredCols);
     const rows = Math.min(this.sharedGrid?.rows ?? this.measuredRows, this.measuredRows);
     if (cols === this.cols && rows === this.rows) return false;
+    // Only a grid as wide as the PTY shows the prompt as the shell last drew it.
+    if (cols !== this.cols && shellCols === this.cols) {
+      this.promptHandoff.beforeReflow(this.cols);
+    }
     this.cols = cols;
     this.rows = rows;
     this.core.resize(cols, rows, this.metrics.width, this.metrics.height);
@@ -1082,6 +1111,7 @@ export class GhosttyTerminalSurface {
       window.clearTimeout(this.compositionSuppressionTimer);
     }
     this.removeEvents();
+    this.promptHandoff.discard();
     this.core.dispose();
     if (
       this.canvas.parentElement === this.mount ||
@@ -1241,18 +1271,26 @@ export class GhosttyTerminalSurface {
   };
 
   private readonly onFocus = () => {
-    this.focused = true;
+    this.setFocused(true);
     this.cursorOn = true;
     this.requestRender();
   };
 
   private readonly onBlur = () => {
-    this.focused = false;
+    this.setFocused(false);
     this.pasteShortcutGesture = null;
     this.refreshHoveredLink();
     this.cursorOn = true;
     this.requestRender();
   };
+
+  // DOM focus events can repeat without a change; report only real transitions.
+  private setFocused(focused: boolean): void {
+    if (this.focused === focused) return;
+    this.focused = focused;
+    const data = this.core.encodeFocus(focused);
+    if (data.length > 0) this.options.onData(data);
+  }
 
   private readonly onDevicePixelRatioChange = () => {
     this.watchDevicePixelRatio();
@@ -1503,7 +1541,7 @@ export class GhosttyTerminalSurface {
       this.sendMouse("motion", this.buttonFromButtons(event.buttons), event);
       return;
     }
-    this.lastMouseMotionData = "";
+    this.lastMouseMotionData = null;
     if (!this.selectionAnchorScreen || !this.canvas.hasPointerCapture(event.pointerId)) {
       this.updateHoverCursor(event);
       return;
@@ -1581,7 +1619,7 @@ export class GhosttyTerminalSurface {
   }
 
   private readonly onPointerLeave = () => {
-    this.lastMouseMotionData = "";
+    this.lastMouseMotionData = null;
     this.clearHoveredLink();
   };
 
@@ -2039,7 +2077,12 @@ export class GhosttyTerminalSurface {
       this.canvasConfigured = true;
       this.canvasDevicePixelRatio = canvasConfiguration.ratio;
     }
+    const previousBackground = this.snapshot?.background;
     this.snapshot = this.core.snapshot();
+    // Only a full render repaints the padding around the rows in the new default background.
+    if (previousBackground && !ghosttyColorsEqual(previousBackground, this.snapshot.background)) {
+      this.forceFullRender = true;
+    }
     if (!this.blinkEnabled()) this.cursorOn = true;
     // Move the origin only on full repaint; dirty-row updates cannot mix origins.
     const scrollState = this.readScrollbarState();
@@ -2241,7 +2284,7 @@ export class GhosttyTerminalSurface {
 
   private sendMouse(action: TerminalMouseAction, button: number | null, event: MouseEvent): void {
     const bounds = this.canvas.getBoundingClientRect();
-    const data = this.core.encodeMouse({
+    const report = this.core.encodeMouse({
       action,
       button,
       mods:
@@ -2261,9 +2304,11 @@ export class GhosttyTerminalSurface {
       paddingBottom: Math.max(0, bounds.height - this.originY - this.rows * this.metrics.height),
       anyButtonPressed: event.buttons !== 0,
     });
-    const resolution = resolveTerminalMouseData(action, data, this.lastMouseMotionData);
+    const resolution = resolveTerminalMouseData(action, report, this.lastMouseMotionData);
     this.lastMouseMotionData = resolution.nextMotionData;
-    if (resolution.send) this.options.onData(data);
+    if (!resolution.send) return;
+    if (report.binary) this.options.onBinary(report.data);
+    else this.options.onData(report.data);
   }
 
   private synchronizeMouseTrackingState(): boolean {

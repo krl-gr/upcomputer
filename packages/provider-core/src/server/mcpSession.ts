@@ -2,8 +2,8 @@ import type { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contr
 import type * as Effect from "effect/Effect";
 
 /**
- * Sent by MCP clients that cannot defer tools themselves. The T3 MCP server then
- * lists only a core set plus `tool_search`, which lists the rest on demand.
+ * Sent by MCP clients that cannot defer tools themselves: `deferred` lists a few direct
+ * tools plus `tool_search`, `core` all but the groups McpToolExposure leaves to the search.
  */
 export const MCP_TOOL_EXPOSURE_HEADER = "t3-tool-exposure";
 

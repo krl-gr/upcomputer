@@ -2,7 +2,13 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { assert, test } from "vite-plus/test";
 
-import { TaskArchiveInput, TaskSearchInput, TaskUpdateInput } from "./tasks.ts";
+import {
+  sameTaskStatus,
+  statusForPersonAudience,
+  TaskArchiveInput,
+  TaskSearchInput,
+  TaskUpdateInput,
+} from "./tasks.ts";
 
 const decodeArchive = Schema.decodeUnknownResult(TaskArchiveInput);
 const decodeSearch = Schema.decodeUnknownResult(TaskSearchInput);
@@ -29,4 +35,12 @@ test("a task update cannot archive: closedAt is no longer part of it", () => {
     closedAt: "2026-10-07T10:00:00.000Z",
   });
   assert.deepEqual(Object.keys(result), ["id"]);
+});
+
+test("statuses compare without case or spacing, so a lowercase Done stays done for a person", () => {
+  assert.ok(sameTaskStatus("done", "Done"));
+  assert.ok(sameTaskStatus(" to  verify ", "To Verify"));
+  assert.ok(!sameTaskStatus("To Do", "Done"));
+  assert.equal(statusForPersonAudience("done"), "Done");
+  assert.equal(statusForPersonAudience("in progress"), "To Do");
 });

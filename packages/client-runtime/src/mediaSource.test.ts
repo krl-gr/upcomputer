@@ -37,6 +37,15 @@ describe("resolveMediaSource", () => {
         name: "render",
       });
     });
+
+    it("names a data URI by its kind, not its payload", () => {
+      const href =
+        "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=";
+      expect(resolveMediaSource(href, { threadId, imageEmbed: true })).toMatchObject({
+        kind: "image",
+        name: "image",
+      });
+    });
   });
 
   describe("host paths", () => {
@@ -109,10 +118,19 @@ describe("resolveMediaSource", () => {
       });
     });
 
-    it("cannot be loaded without a thread to mint through", () => {
+    it("cannot be loaded without a thread or a workspace to mint through", () => {
       expect(resolveMediaSource("/tmp/clip.mp4", { threadId: undefined })).toMatchObject({
         kind: "video",
         access: "unavailable",
+      });
+    });
+
+    it("loads through the workspace when there is no thread", () => {
+      expect(
+        resolveMediaSource("/elsewhere/shot.png", { threadId: undefined, workspaceRoot: "/repo" }),
+      ).toMatchObject({
+        access: "environment",
+        resource: { _tag: "draft-workspace-file", cwd: "/repo", path: "/elsewhere/shot.png" },
       });
     });
   });

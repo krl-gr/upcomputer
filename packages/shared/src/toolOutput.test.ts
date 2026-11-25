@@ -6,6 +6,7 @@ import {
   mcpToolResultOutput,
   SEND_TO_USER_MAX_LENGTH,
   sentMessageFromToolItem,
+  providerSignInFromToolItem,
   toolOutputImages,
   toolOutputIndicatesFailure,
 } from "./toolOutput.ts";
@@ -35,6 +36,41 @@ describe("compactDynamicToolOutput", () => {
     // OpenCode 2 Code Mode reports a script's nested send_to_user call as one `execute` item.
     const output = JSON.stringify({ sentMessage: "Draft", message: "Shown to the user." });
     expect(sentMessageFromToolItem({ toolName: "execute", output })).toBe("Draft");
+  });
+
+  it("keeps what provider_sign_in shows, and nothing from a failed or other call", () => {
+    const output = JSON.stringify({
+      status: "opened",
+      command: "claude auth login",
+      signInTerminalId: "provider-sign-in-claudeAgent",
+      message: "Opened a terminal.",
+    });
+    const terminal = { kind: "terminal", terminalId: "provider-sign-in-claudeAgent" };
+    for (const toolName of [
+      "mcp__t3-code__provider_sign_in",
+      "t3-code_provider_sign_in",
+      "execute",
+    ]) {
+      expect(providerSignInFromToolItem({ toolName, output })).toEqual(terminal);
+    }
+    expect(compactDynamicToolOutput(output)).toEqual({
+      signInTerminalId: "provider-sign-in-claudeAgent",
+    });
+    expect(
+      providerSignInFromToolItem({
+        toolName: "mcp__t3-code__provider_sign_in",
+        output: { status: "appSetup", appSetupInstanceId: "antigravity", message: "Shown." },
+      }),
+    ).toEqual({ kind: "appSetup", instanceId: "antigravity" });
+    expect(providerSignInFromToolItem({ toolName: "mcp__other__provider_sign_in", output })).toBe(
+      undefined,
+    );
+    expect(
+      providerSignInFromToolItem({
+        toolName: "mcp__t3-code__provider_sign_in",
+        output: { isError: true, content: output },
+      }),
+    ).toBeUndefined();
   });
 
   it("keeps nested thread identity and scalar task IDs without result bodies", () => {

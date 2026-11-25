@@ -54,12 +54,14 @@ function replaceProjectionArrayItem<T>(
   return next;
 }
 
+// Streamed updates land on the newest entities, so search from the end.
 function upsertEntity<T extends { readonly id: unknown }>(
   items: ReadonlyArray<T>,
   item: T,
 ): ReadonlyArray<T> {
-  const index = items.findIndex((candidate) => candidate.id === item.id);
+  const index = items.findLastIndex((candidate) => candidate.id === item.id);
   if (index === -1) return [...items, item];
+  if (items[index] === item) return items;
   const next = [...items];
   next[index] = item;
   return next;
@@ -314,6 +316,7 @@ export function applyOrchestrationV2ProjectionEvent(
     case "thread.active-reordered":
     case "thread.metadata-updated":
     case "thread.pull-request-synced":
+    case "thread.issue-synced":
     case "thread.runtime-mode-updated":
     case "thread.interaction-mode-updated":
     case "thread.model-selection-updated":

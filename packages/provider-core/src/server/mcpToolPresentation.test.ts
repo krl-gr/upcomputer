@@ -20,4 +20,15 @@ describe("mcpToolPresentation", () => {
       toolSource: { key: "mcp:weather", name: "weather", kind: "integration" },
     });
   });
+
+  it.each(["t3-code", "t3_code_direct"])(
+    "names the app's own %s server by product",
+    (serverName) => {
+      expect(mcpToolPresentation({ serverName, toolName: "task_update" }).toolSource).toEqual({
+        key: `mcp:${serverName}`,
+        name: "Up.computer",
+        kind: "integration",
+      });
+    },
+  );
 });

@@ -1,5 +1,6 @@
 import type { ProviderInstanceId } from "@t3tools/contracts";
 import type { CSSProperties } from "react";
+import { msg, type useGT } from "gt-react";
 
 import { resolveModelPickerSelectedModel } from "../components/chat/ModelPickerContent";
 import { getTriggerDisplayModelName, type ModelEsque } from "../components/chat/providerIconUtils";
@@ -22,9 +23,11 @@ import {
  * exactly what upstream's composer did.
  */
 
-export const NEW_THREAD_COMPOSER_PLACEHOLDER =
-  "Ask anything, @tag files/folders, $use skills, or / for commands";
-export const FOLLOW_UP_COMPOSER_PLACEHOLDER = "Ask for follow-up changes or attach images";
+// Shown through `useMessages()`; without options msg() keeps the English text.
+export const NEW_THREAD_COMPOSER_PLACEHOLDER = msg(
+  "Ask anything, @tag files/folders, $use skills, or / for commands",
+);
+export const FOLLOW_UP_COMPOSER_PLACEHOLDER = msg("Ask for follow-up changes or attach images");
 
 /** Whether the composer renders the UpComputer footer row. */
 export function showsUpComputerComposerFooter(): boolean {
@@ -102,12 +105,15 @@ export function composerIdlePlaceholder(isExistingThread: boolean): string {
  * "Claude · Claude Opus 5.5": the provider and model in one label, as V1's
  * picker showed them. Null when the picker should keep upstream's trigger.
  */
-export function composerModelPickerLabel(input: {
-  activeInstanceId: ProviderInstanceId;
-  model: string;
-  instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
-  modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
-}): string | null {
+export function composerModelPickerLabel(
+  input: {
+    activeInstanceId: ProviderInstanceId;
+    model: string;
+    instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
+    modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
+  },
+  gt: ReturnType<typeof useGT>,
+): string | null {
   const entry = input.instanceEntries.find(
     (candidate) => candidate.instanceId === input.activeInstanceId,
   );
@@ -128,8 +134,12 @@ export function composerModelPickerLabel(input: {
   if (entry.snapshot.statusPending === true && (!selected || selected.isUnavailable)) {
     return entry.displayName;
   }
-  const modelName = selected
-    ? `${getTriggerDisplayModelName(selected, entry.driverKind)}${selected.isUnavailable ? " (Unavailable)" : ""}`
-    : input.model || "Choose model";
+  const selectedName = selected ? getTriggerDisplayModelName(selected, entry.driverKind) : null;
+  const modelName =
+    selectedName === null
+      ? input.model || gt("Choose model")
+      : selected?.isUnavailable
+        ? gt("{model} (Unavailable)", { model: selectedName })
+        : selectedName;
   return `${entry.displayName} · ${modelName}`;
 }

@@ -1,3 +1,4 @@
+import { msg, useGT, useLocale, useMessages } from "gt-react";
 import { useState } from "react";
 import {
   ChevronLeftIcon,
@@ -38,7 +39,16 @@ import { usePlanner } from "./plannerContext.ts";
 import { ReminderSettings } from "./ReminderSettings.tsx";
 import { ConfirmDeleteDialog } from "./TaskDialogs.tsx";
 
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+/** By `Date.getDay`, Sunday first. */
+const WEEKDAYS = [
+  msg("Sunday"),
+  msg("Monday"),
+  msg("Tuesday"),
+  msg("Wednesday"),
+  msg("Thursday"),
+  msg("Friday"),
+  msg("Saturday"),
+];
 const DEFAULT_DURATIONS = [15, 20, 30, 45, 60, 90, 120];
 
 /**
@@ -49,16 +59,18 @@ const DEFAULT_DURATIONS = [15, 20, 30, 45, 60, 90, 120];
 function PlannerSettings(props: {
   readonly onChange: (patch: Partial<PlannerPreferences>) => void;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const { preferences } = usePlanner();
   return (
     <Popover>
       <PopoverTrigger render={<Button size="sm" variant="ghost" className="justify-start" />}>
-        Settings
+        {gt("Settings")}
       </PopoverTrigger>
       <PopoverPopup align="end" side="left" width="sm">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <Label>Week starts on</Label>
+            <Label>{gt("Week starts on")}</Label>
             <Select
               value={String(preferences.weekStartDay)}
               onValueChange={(value) => {
@@ -66,19 +78,19 @@ function PlannerSettings(props: {
               }}
             >
               <SelectTrigger size="sm">
-                <SelectValue>{WEEKDAYS[preferences.weekStartDay]}</SelectValue>
+                <SelectValue>{m(WEEKDAYS[preferences.weekStartDay])}</SelectValue>
               </SelectTrigger>
               <SelectPopup>
                 {WEEKDAYS.map((day, index) => (
                   <SelectItem key={day} value={String(index)}>
-                    {day}
+                    {m(day)}
                   </SelectItem>
                 ))}
               </SelectPopup>
             </Select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>Default task duration</Label>
+            <Label>{gt("Default task duration")}</Label>
             <Select
               value={String(preferences.defaultTaskDuration)}
               onValueChange={(value) => {
@@ -86,21 +98,21 @@ function PlannerSettings(props: {
               }}
             >
               <SelectTrigger size="sm">
-                <SelectValue>{formatDuration(preferences.defaultTaskDuration)}</SelectValue>
+                <SelectValue>{formatDuration(preferences.defaultTaskDuration, gt)}</SelectValue>
               </SelectTrigger>
               <SelectPopup>
                 {[...new Set([...DEFAULT_DURATIONS, preferences.defaultTaskDuration])]
                   .sort((a, b) => a - b)
                   .map((minutes) => (
                     <SelectItem key={minutes} value={String(minutes)}>
-                      {formatDuration(minutes)}
+                      {formatDuration(minutes, gt)}
                     </SelectItem>
                   ))}
               </SelectPopup>
             </Select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>Default routine duration</Label>
+            <Label>{gt("Default routine duration")}</Label>
             <Select
               value={String(preferences.defaultRoutineDuration)}
               onValueChange={(value) => {
@@ -108,21 +120,21 @@ function PlannerSettings(props: {
               }}
             >
               <SelectTrigger size="sm">
-                <SelectValue>{formatDuration(preferences.defaultRoutineDuration)}</SelectValue>
+                <SelectValue>{formatDuration(preferences.defaultRoutineDuration, gt)}</SelectValue>
               </SelectTrigger>
               <SelectPopup>
                 {[...new Set([...DEFAULT_DURATIONS, preferences.defaultRoutineDuration])]
                   .sort((a, b) => a - b)
                   .map((minutes) => (
                     <SelectItem key={minutes} value={String(minutes)}>
-                      {formatDuration(minutes)}
+                      {formatDuration(minutes, gt)}
                     </SelectItem>
                   ))}
               </SelectPopup>
             </Select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>Card style</Label>
+            <Label>{gt("Card style")}</Label>
             <ToggleGroup
               value={[preferences.cardStyle]}
               onValueChange={(value) => {
@@ -130,12 +142,16 @@ function PlannerSettings(props: {
                 if (next === "classic" || next === "modern") props.onChange({ cardStyle: next });
               }}
             >
-              <ToggleGroupItem value="classic">Classic</ToggleGroupItem>
-              <ToggleGroupItem value="modern">Modern</ToggleGroupItem>
+              <ToggleGroupItem value="classic">
+                {gt("Classic", { $context: "card style" })}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="modern">
+                {gt("Modern", { $context: "card style" })}
+              </ToggleGroupItem>
             </ToggleGroup>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>Calendar slot height</Label>
+            <Label>{gt("Calendar slot height")}</Label>
             <ToggleGroup
               value={[String(preferences.slotHeight)]}
               onValueChange={(value) => {
@@ -151,7 +167,7 @@ function PlannerSettings(props: {
             </ToggleGroup>
           </div>
           <Label className="flex items-center justify-between gap-3">
-            Show schedule counters
+            {gt("Show schedule counters")}
             <Switch
               checked={preferences.showProgress}
               onCheckedChange={(checked) => props.onChange({ showProgress: checked })}
@@ -165,8 +181,6 @@ function PlannerSettings(props: {
     </Popover>
   );
 }
-
-const monthFormatter = new Intl.DateTimeFormat(undefined, { month: "long" });
 
 /**
  * Wande's week header: month and year, `<< < Today > >>`, the three-dots
@@ -196,6 +210,8 @@ export function WeekHeader(props: {
   /** Stacked on the page: the planner's first row, so it clears the collapsed sidebar. */
   readonly leftEdge: boolean;
 }) {
+  const gt = useGT();
+  const locale = useLocale();
   const { preferences } = usePlanner();
   const header = {
     electron: isElectron && props.titleBar,
@@ -218,15 +234,15 @@ export function WeekHeader(props: {
     return (
       <WorkspacePageHeader {...header}>
         <h2 className="text-sm font-semibold text-foreground">
-          Selected{" "}
+          {gt("Selected", { $context: "heading of the selected entries" })}{" "}
           <span className="font-medium text-muted-foreground tabular-nums">
-            {props.selectedCount} {props.selectedCount === 1 ? "item" : "items"}
+            {gt("{count, plural, one {# item} other {# items}}", { count: props.selectedCount })}
           </span>
         </h2>
         <div className="flex items-center gap-1">
           <Popover open={moveOpen} onOpenChange={setMoveOpen}>
             <PopoverTrigger render={<Button size="sm" variant="ghost" disabled={none} />}>
-              Move
+              {gt("Move", { $context: "button that moves the selected entries to a date" })}
             </PopoverTrigger>
             <PopoverPopup align="end">
               <Calendar
@@ -252,7 +268,7 @@ export function WeekHeader(props: {
             }}
           >
             <PopoverTrigger render={<Button size="sm" variant="ghost" disabled={none} />}>
-              Copy
+              {gt("Copy", { $context: "button that copies the selected entries to dates" })}
             </PopoverTrigger>
             <PopoverPopup align="end">
               <div className="flex flex-col gap-3">
@@ -269,12 +285,14 @@ export function WeekHeader(props: {
                     if (value === "top" || value === "bottom") setCopyAt(value);
                   }}
                 >
-                  <SelectTrigger size="sm" aria-label="Position">
-                    <SelectValue>Position: {copyAt === "top" ? "At top" : "At bottom"}</SelectValue>
+                  <SelectTrigger size="sm" aria-label={gt("Position")}>
+                    <SelectValue>
+                      {copyAt === "top" ? gt("Position: At top") : gt("Position: At bottom")}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectPopup>
-                    <SelectItem value="bottom">At bottom</SelectItem>
-                    <SelectItem value="top">At top</SelectItem>
+                    <SelectItem value="bottom">{gt("At bottom")}</SelectItem>
+                    <SelectItem value="top">{gt("At top")}</SelectItem>
                   </SelectPopup>
                 </Select>
                 <div className="flex gap-2">
@@ -285,7 +303,7 @@ export function WeekHeader(props: {
                     disabled={copyDates.length === 0}
                     onClick={() => setCopyDates([])}
                   >
-                    Clear
+                    {gt("Clear")}
                   </Button>
                   <Button
                     className="flex-1"
@@ -297,17 +315,17 @@ export function WeekHeader(props: {
                       setCopyDates([]);
                     }}
                   >
-                    Copy
+                    {gt("Copy", { $context: "button that copies the selected entries to dates" })}
                   </Button>
                 </div>
               </div>
             </PopoverPopup>
           </Popover>
           <Button size="sm" variant="destructive" disabled={none} onClick={() => setDeleting(true)}>
-            Delete
+            {gt("Delete")}
           </Button>
           <IconAction
-            label="Cancel"
+            label={gt("Cancel")}
             size="icon-sm"
             onClick={() => props.onSelectionModeChange(false)}
           >
@@ -316,8 +334,11 @@ export function WeekHeader(props: {
         </div>
         <ConfirmDeleteDialog
           open={deleting}
-          title="Delete selected entries"
-          description={`${props.selectedCount} ${props.selectedCount === 1 ? "entry is" : "entries are"} taken off the schedule. The tasks stay.`}
+          title={gt("Delete selected entries")}
+          description={gt(
+            "{count, plural, one {# entry is taken off the schedule. The tasks stay.} other {# entries are taken off the schedule. The tasks stay.}}",
+            { count: props.selectedCount },
+          )}
           onOpenChange={setDeleting}
           onConfirm={props.onDeleteSelected}
         />
@@ -327,12 +348,12 @@ export function WeekHeader(props: {
   return (
     <WorkspacePageHeader {...header}>
       <h2 className="truncate text-sm font-semibold text-foreground">
-        {monthFormatter.format(first)}{" "}
+        {first.toLocaleDateString(locale, { month: "long" })}{" "}
         <span className="text-muted-foreground">{first.getFullYear()}</span>
       </h2>
       <div className="flex items-center gap-1">
         <IconAction
-          label="Previous week"
+          label={gt("Previous week")}
           variant="outline"
           size="icon-sm"
           onClick={() => props.onNavigate("previous-week")}
@@ -340,7 +361,7 @@ export function WeekHeader(props: {
           <ChevronsLeftIcon />
         </IconAction>
         <IconAction
-          label="Previous day"
+          label={gt("Previous day")}
           variant="outline"
           size="icon-sm"
           className="@max-[22rem]:hidden"
@@ -349,10 +370,10 @@ export function WeekHeader(props: {
           <ChevronLeftIcon />
         </IconAction>
         <Button size="sm" variant="outline" onClick={() => props.onNavigate("today")}>
-          Today
+          {gt("Today")}
         </Button>
         <IconAction
-          label="Next day"
+          label={gt("Next day")}
           variant="outline"
           size="icon-sm"
           className="@max-[22rem]:hidden"
@@ -361,7 +382,7 @@ export function WeekHeader(props: {
           <ChevronRightIcon />
         </IconAction>
         <IconAction
-          label="Next week"
+          label={gt("Next week")}
           variant="outline"
           size="icon-sm"
           onClick={() => props.onNavigate("next-week")}
@@ -370,7 +391,7 @@ export function WeekHeader(props: {
         </IconAction>
         <Popover open={menuOpen} onOpenChange={setMenuOpen}>
           <PopoverTrigger
-            render={<Button size="icon-sm" variant="outline" aria-label="View options" />}
+            render={<Button size="icon-sm" variant="outline" aria-label={gt("View options")} />}
           >
             <MoreHorizontalIcon />
           </PopoverTrigger>
@@ -380,7 +401,7 @@ export function WeekHeader(props: {
                 <PopoverTrigger
                   render={<Button size="sm" variant="ghost" className="justify-start" />}
                 >
-                  Go to date
+                  {gt("Go to date")}
                 </PopoverTrigger>
                 <PopoverPopup align="end" side="left">
                   <Calendar
@@ -406,11 +427,11 @@ export function WeekHeader(props: {
                   props.onSelectionModeChange(true);
                 }}
               >
-                Select items
+                {gt("Select items")}
               </Button>
               <PlannerSettings onChange={props.onPreferencesChange} />
               <span className="px-2 pt-2 text-xs font-semibold text-muted-foreground">
-                Days shown
+                {gt("Days shown")}
               </span>
               <ToggleGroup
                 className="w-full"
@@ -427,7 +448,9 @@ export function WeekHeader(props: {
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
-              <span className="px-2 pt-2 text-xs font-semibold text-muted-foreground">View</span>
+              <span className="px-2 pt-2 text-xs font-semibold text-muted-foreground">
+                {gt("View", { $context: "heading: how the week is shown" })}
+              </span>
               <ToggleGroup
                 className="w-full"
                 value={[preferences.weekViewMode]}
@@ -438,10 +461,10 @@ export function WeekHeader(props: {
                 }}
               >
                 <ToggleGroupItem value="queue" className="flex-1">
-                  Queue
+                  {gt("Queue", { $context: "week view that lists each day's entries in order" })}
                 </ToggleGroupItem>
                 <ToggleGroupItem value="calendar" className="flex-1">
-                  Calendar
+                  {gt("Calendar", { $context: "week view with entries placed by time" })}
                 </ToggleGroupItem>
               </ToggleGroup>
             </div>

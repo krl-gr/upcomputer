@@ -25,6 +25,8 @@ import {
   selectRecentTimelineWindow,
   THREAD_HISTORY_PAGE_POLICY,
 } from "./threadHistoryPaging.ts";
+import { encodeThreadHistoryCursorBeforeRow } from "@t3tools/shared/threadHistoryCursor";
+
 import { projectThreadProjectionForWire } from "./WireProjection.ts";
 
 const NOW = DateTime.makeUnsafe("2026-06-20T00:00:00.000Z");
@@ -637,6 +639,18 @@ describe("threadHistoryPaging", () => {
       "item-14",
     ]);
     expect(older.hasMoreHistory).toBe(true);
+    // A client that trimmed its window names its first kept row, by its own position.
+    const trimmed = selectHistoryPageFromCursor({
+      items: grown,
+      cursor: encodeThreadHistoryCursorBeforeRow({
+        sourceThreadId: THREAD,
+        sourceItemId: "item-15",
+        position: 0,
+      }),
+      snapshotSequence: 5,
+      policy: { maxItems: 5, maxEncodedBytes: 10_000_000 },
+    });
+    expect(trimmed.items).toEqual(older.items);
   });
 
   it("builds a bounded projection that preserves non-timeline control state", () => {

@@ -172,3 +172,38 @@ it("still reports an unreadable setup status", () => {
     "Could not read setup status. Reconnect and try again.",
   );
 });
+
+it("restores existing CLI mode when cancelling Continue with ChatGPT on the Welcome card", async () => {
+  let mode: "managed" | "existing" = "existing";
+  const onModeChange = vi.fn((next: "managed" | "existing") => {
+    mode = next;
+  });
+  const renderCard = () =>
+    act(() => {
+      root.render(
+        <CodexSetupSection
+          presentation="onboarding"
+          environmentId={EnvironmentId.make("env")}
+          instanceId={ProviderInstanceId.make("codex")}
+          provider={provider}
+          mode={mode}
+          enabled
+          onModeChange={onModeChange}
+        />,
+      );
+    });
+
+  renderCard();
+  const continueButton = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Continue with ChatGPT"),
+  );
+  await act(async () => continueButton?.click());
+  expect(onModeChange).toHaveBeenCalledWith("managed");
+
+  renderCard();
+  const cancelButton = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Cancel",
+  );
+  await act(async () => cancelButton?.click());
+  expect(onModeChange).toHaveBeenLastCalledWith("existing", { restore: true });
+});

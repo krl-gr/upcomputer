@@ -1,16 +1,26 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import { MCP_TOOL_EXPOSURE_HEADER } from "@t3tools/provider-core/server/mcpSession";
 import { UPCOMPUTER_PRODUCT_FLAGS } from "@t3tools/shared/productFlags";
+import * as Effect from "effect/Effect";
 
-import { COMPUTER_USE_TOOL_NAMES } from "../../../../packages/computer-use-server/src/computerUse/ComputerUseToolDefinitions.ts";
-import { openCodePermissionRules } from "../../../../packages/provider-opencode/src/server/adapter.ts";
+import { COMPUTER_USE_TOOLS } from "../../../../packages/computer-use-server/src/computerUse/ComputerUseToolDefinitions.ts";
+import {
+  OPENCODE_T3_TOOL_SEARCH_INSTRUCTIONS,
+  openCodePermissionRules,
+  openCodeT3McpHeaders,
+} from "../../../../packages/provider-opencode/src/server/adapter.ts";
+import { BotToolkit } from "../../../../packages/tasks-server/src/bots/BotToolDefinitions.ts";
 import { TASK_TOOL_SPECS } from "../../../../packages/tasks-server/src/tools/TaskToolDefinitions.ts";
 import { WorkspaceToolkit } from "../linkedProjects/WorkspaceMcpTools.ts";
+import * as McpToolExposure from "./McpToolExposure.ts";
 import { AttachmentToolkit } from "./toolkits/attachment/tools.ts";
 import { DeviceToolkit } from "./toolkits/device/tools.ts";
 import { EnvironmentToolkit } from "./toolkits/environment/tools.ts";
 import { HtmlToolkit } from "./toolkits/html/tools.ts";
+import { IssuesToolkit } from "./toolkits/issues/tools.ts";
 import { MessageToolkit } from "./toolkits/message/tools.ts";
+import { ProviderToolkit } from "./toolkits/provider/tools.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
 import { PreviewToolkit } from "./toolkits/preview/tools.ts";
 import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
@@ -18,6 +28,7 @@ import { ProjectToolkit } from "./toolkits/project/tools.ts";
 import { ThemeToolkit } from "./toolkits/theme/tools.ts";
 import { PullRequestsToolkit } from "./toolkits/pullRequests/tools.ts";
 import { ThreadToolkit } from "./toolkits/thread/tools.ts";
+import { ToolSearchToolkit } from "./toolkits/toolSearch/tools.ts";
 import { WorktreeToolkit } from "./toolkits/worktree/tools.ts";
 
 /** The limit OpenAI-compatible APIs put on one request's tools. */
@@ -25,84 +36,198 @@ const API_TOOL_LIMIT = 128;
 /** OpenCode 1.19 sends about 15 tools of its own; leave room for more. */
 const OPENCODE_OWN_TOOLS_ALLOWANCE = 24;
 
-const names = (toolkit: { readonly tools: Record<string, unknown> }) => Object.keys(toolkit.tools);
+const listed = (toolkit: {
+  readonly tools: Record<
+    string,
+    { readonly name: string; readonly description?: string | undefined }
+  >;
+}) =>
+  Object.values(toolkit.tools).map((tool) => ({
+    name: tool.name,
+    description: tool.description ?? "",
+  }));
 
 /**
  * Every tool `/mcp` serves in the Up.computer product: McpHttpServer.layer plus
  * its features, where a feature's tool replaces a core tool of the same name.
  */
-const upComputerT3Tools = new Set([
-  ...names(PreviewToolkit),
-  ...names(OrchestratorToolkit),
-  ...names(ThreadToolkit),
-  ...names(AttachmentToolkit),
-  ...names(ProjectToolkit),
-  ...names(EnvironmentToolkit),
-  ...names(PreviewControlsToolkit),
-  ...names(WorktreeToolkit),
-  ...(UPCOMPUTER_PRODUCT_FLAGS.pullRequestAgentTools ? names(PullRequestsToolkit) : []),
-  ...(UPCOMPUTER_PRODUCT_FLAGS.devices ? names(DeviceToolkit) : []),
-  ...names(HtmlToolkit),
-  ...names(ThemeToolkit),
-  ...names(MessageToolkit),
-  ...names(WorkspaceToolkit),
-  ...TASK_TOOL_SPECS.map((spec) => spec.name),
-  ...COMPUTER_USE_TOOL_NAMES,
-]);
+const upComputerT3Tools = [
+  ...new Map(
+    [
+      ...listed(PreviewToolkit),
+      ...listed(OrchestratorToolkit),
+      ...listed(ThreadToolkit),
+      ...listed(AttachmentToolkit),
+      ...listed(ProjectToolkit),
+      ...listed(EnvironmentToolkit),
+      ...listed(PreviewControlsToolkit),
+      ...listed(WorktreeToolkit),
+      ...(UPCOMPUTER_PRODUCT_FLAGS.pullRequestAgentTools ? listed(PullRequestsToolkit) : []),
+      ...listed(IssuesToolkit),
+      ...(UPCOMPUTER_PRODUCT_FLAGS.devices ? listed(DeviceToolkit) : []),
+      ...listed(HtmlToolkit),
+      ...listed(ThemeToolkit),
+      ...listed(MessageToolkit),
+      ...listed(ProviderToolkit),
+      ...listed(WorkspaceToolkit),
+      ...TASK_TOOL_SPECS.map(({ name, description }) => ({ name, description })),
+      ...listed(BotToolkit),
+      ...COMPUTER_USE_TOOLS.map(({ name, description }) => ({ name, description })),
+      ...listed(ToolSearchToolkit),
+    ].map((tool) => [tool.name, tool] as const),
+  ).values(),
+];
 
-// OpenCode's Wildcard.match and Permission.disabled: a tool is left out when the
-// last rule whose permission matches its name denies it for every pattern.
-const wildcard = (pattern: string) =>
-  new RegExp(
-    `^${pattern
-      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-      .replaceAll("*", ".*")
-      .replaceAll("?", ".")}$`,
-    "s",
+const SESSION = "opencode-session";
+
+/** What McpHttpServer lists the session in a listing mode, by OpenCode's tool name. */
+const sentToModel = (
+  exposure: McpToolExposure.McpToolExposure["Service"],
+  mode: McpToolExposure.ListingMode = "core",
+) =>
+  upComputerT3Tools
+    .filter((tool) => exposure.isListed(SESSION, tool.name, mode))
+    .map((tool) => `t3-code_${tool.name}`);
+
+const exposureFor = () =>
+  McpToolExposure.make(
+    () => upComputerT3Tools,
+    () => Effect.void,
   );
 
-function toolsOpenCodeSends(tools: ReadonlySet<string>) {
-  const rules = openCodePermissionRules(
-    ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      cwd: null,
-    }),
-  );
-  return [...tools]
-    .map((tool) => `t3-code_${tool}`)
-    .filter((tool) => {
-      const rule = rules.findLast((entry) => wildcard(entry.permission).test(tool));
-      return !(rule?.pattern === "*" && rule.action === "deny");
-    });
-}
+const withinLimit = (sent: ReadonlyArray<string>) =>
+  expect(sent.length + OPENCODE_OWN_TOOLS_ALLOWANCE).toBeLessThanOrEqual(API_TOOL_LIMIT);
 
 describe("OpenCode session tools", () => {
-  it("stay within the API's 128-tool limit with OpenCode's own", () => {
-    const sent = toolsOpenCodeSends(upComputerT3Tools);
-
-    // Without the pruning the session would reach the limit.
-    expect(upComputerT3Tools.size + OPENCODE_OWN_TOOLS_ALLOWANCE).toBeGreaterThanOrEqual(
-      API_TOOL_LIMIT,
+  it("ask the T3 MCP server for the core listing and deny none of its tools", () => {
+    expect(openCodeT3McpHeaders("Bearer token")).toEqual({
+      Authorization: "Bearer token",
+      [MCP_TOOL_EXPOSURE_HEADER]: "core",
+    });
+    const rules = openCodePermissionRules(
+      ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: null,
+      }),
     );
-    expect(sent.length + OPENCODE_OWN_TOOLS_ALLOWANCE).toBeLessThanOrEqual(API_TOOL_LIMIT);
+    expect(rules.filter((rule) => rule.permission.startsWith("t3-code"))).toEqual([]);
   });
 
-  it("keep the tools Up.computer's instructions name", () => {
-    const sent = toolsOpenCodeSends(upComputerT3Tools);
-
+  it("list the task, bot and thread tools from the first request, as 0.0.39 did", () => {
+    const sent = sentToModel(exposureFor());
     for (const tool of [
-      "task_get",
+      "task_create",
+      "task_context",
       "task_update",
+      "task_get",
+      "task_search",
+      "task_event_append",
+      "agent_create",
+      "agent_run_message",
+      "bot_create",
+      "bot_memory",
+      "bot_remember",
       "t3_thread_launch",
+      "t3_thread_read",
+      "create_threads",
+      "delegate_task",
+      "orchestrator_capabilities",
       "html_render",
       "link_pull_request",
       "watch_pull_request",
+      "send_to_user",
+      "request_secret",
+      "provider_sign_in",
+      "instructions_update",
+      "tool_search",
     ]) {
       expect(sent).toContain(`t3-code_${tool}`);
     }
-    for (const tool of ["preview_snapshot", "t3_preview_list", "computer_click"]) {
+    // Computer use and the browser stay behind tool_search.
+    for (const tool of [
+      "computer_screenshot",
+      "computer_click",
+      "preview_open",
+      "t3_preview_list",
+    ]) {
       expect(sent).not.toContain(`t3-code_${tool}`);
     }
+    withinLimit(sent);
+  });
+
+  it.effect("stay within the API's 128-tool limit and load computer use and the browser", () =>
+    Effect.gen(function* () {
+      const exposure = exposureFor();
+      // Listing everything would go over the limit.
+      expect(upComputerT3Tools.length + OPENCODE_OWN_TOOLS_ALLOWANCE).toBeGreaterThan(
+        API_TOOL_LIMIT,
+      );
+
+      const computerUse = yield* exposure.search(SESSION, "computer");
+      expect(computerUse.map((tool) => tool.name).sort()).toEqual(
+        COMPUTER_USE_TOOLS.map((tool) => tool.name).sort(),
+      );
+      // "use" also matches send_to_user, so the loosest query still finds the screenshot tool.
+      expect((yield* exposure.search(SESSION, "computer use")).map((tool) => tool.name)).toContain(
+        "computer_screenshot",
+      );
+      const browser = yield* exposure.search(SESSION, "browser preview");
+      expect(browser.map((tool) => tool.name)).toContain("preview_open");
+      // The search words OPENCODE_T3_TOOL_SEARCH_INSTRUCTIONS names, one tool each finds.
+      for (const [query, tool] of [
+        ["preview", "preview_open"],
+        ["issue", "create_issue"],
+        ["pull_request", "pull_request_create"],
+        ["ci", "ci_logs"],
+        ["device", "device_open"],
+        ["environment", "t3_environment_link"],
+        ["theme", "t3_theme_set"],
+        ["attachment", "t3_attachment_prepare_upload"],
+        ["worktree", "t3_worktree_handoff"],
+        ["scheduled", "schedule_task"],
+      ] as const) {
+        expect(OPENCODE_T3_TOOL_SEARCH_INSTRUCTIONS).toContain(`\`${query}\``);
+        expect((yield* exposureFor().search(SESSION, query)).map((found) => found.name)).toContain(
+          tool,
+        );
+      }
+
+      const sent = sentToModel(exposure);
+      for (const tool of ["computer_screenshot", "computer_click", "preview_open", "task_update"]) {
+        expect(sent).toContain(`t3-code_${tool}`);
+      }
+      withinLimit(sent);
+    }),
+  );
+
+  it.effect("stay within the limit after a long session searched for every tool", () =>
+    Effect.gen(function* () {
+      const exposure = exposureFor();
+      const searchable = upComputerT3Tools.filter(
+        (tool) => tool.name !== McpToolExposure.TOOL_SEARCH,
+      );
+      for (const tool of searchable) yield* exposure.search(SESSION, tool.name);
+
+      for (const mode of ["core", "deferred"] as const) {
+        const sent = sentToModel(exposure, mode);
+        withinLimit(sent);
+        expect(sent).toContain("t3-code_tool_search");
+        expect(sent).toContain("t3-code_delegate_task");
+        expect(sent).toContain(`t3-code_${searchable.at(-1)?.name}`);
+      }
+      expect(sentToModel(exposure, "core")).toContain("t3-code_task_create");
+    }),
+  );
+
+  it("keep the deferred listing Copilot asks for: only the direct tools before a search", () => {
+    expect(sentToModel(exposureFor(), "deferred").sort()).toEqual(
+      [
+        "t3-code_delegate_task",
+        "t3-code_orchestrator_capabilities",
+        "t3-code_task_status",
+        "t3-code_tool_search",
+      ].sort(),
+    );
   });
 });

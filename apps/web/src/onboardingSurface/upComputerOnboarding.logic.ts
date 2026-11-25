@@ -1,10 +1,17 @@
 import {
   defaultInstanceIdForDriver,
+  type EnvironmentId,
+  type ExecutionEnvironmentPlatformOs,
+  type FirstRunAgentFailureReason,
+  type NoAgentScreenFailure,
   ProviderDriverKind,
   type ProviderInstallState,
   type ProviderInstanceId,
   type ServerProvider,
 } from "@t3tools/contracts";
+import { msg } from "gt-react";
+
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 
 import { hasProviderSetup } from "../components/chat/ProviderStatusBanner";
 import { getOnboardingProviderState } from "../onboarding/providerReadiness.logic";
@@ -80,55 +87,106 @@ export function isFirstRunAgentChecking(entry: ProviderInstanceEntry | undefined
   return snapshot.statusPending === true || !snapshot.enabled || snapshot.status === "disabled";
 }
 
+/**
+ * The projects that tell the first-run gate a workspace already exists. Home
+ * opens the primary environment's scratch project ("No project") for a new
+ * user at once, so it says nothing about them: counted, it would end first-run
+ * setup before their first agent works.
+ */
+export function firstRunWorkspaceProjects<
+  Project extends { readonly environmentId: EnvironmentId; readonly workspaceRoot: string },
+>(
+  projects: ReadonlyArray<Project>,
+  primary: {
+    readonly environmentId: EnvironmentId | null;
+    readonly scratchWorkspaceRoot: string | null | undefined;
+  },
+): ReadonlyArray<Project> {
+  return projects.filter(
+    (project) =>
+      project.environmentId !== primary.environmentId ||
+      !isScratchProject(project, primary.scratchWorkspaceRoot),
+  );
+}
+
 /** How long a new user's setup waits for the agents already on the Mac to answer their first check. */
 export const FIRST_RUN_AGENT_CHECK_WAIT_MS = 10_000;
 
 /**
- * Whether a new user's window installs OpenCode. A user whose own agent works
- * needs no download, so this waits for each turned-on agent's first check, but
- * a check that does not answer within `FIRST_RUN_AGENT_CHECK_WAIT_MS` does not
- * hold setup back.
+ * Waits for each turned-on agent's first check, up to `FIRST_RUN_AGENT_CHECK_WAIT_MS`.
+ * With none of the user's agents installed, the no-agent screen asks first (`ask`);
+ * one installed but not working, such as signed out, keeps the install that starts by itself.
  */
 export function resolveFirstRunAgentStart(input: {
   readonly providers: ReadonlyArray<ServerProvider> | null | undefined;
   readonly waitOver: boolean;
-}): "wait" | "install" | "skip" {
-  const others =
-    input.providers?.filter(
-      (provider) => provider.enabled && provider.instanceId !== FIRST_RUN_AGENT_INSTANCE_ID,
-    ) ?? [];
+}): "wait" | FirstRunAgentStart {
+  const others = usersOwnAgents(input.providers);
   if (others.some((provider) => getOnboardingProviderState(provider) === "ready")) return "skip";
-  if (input.waitOver) return "install";
+  const install = others.some(foundInstalled) ? "install" : "ask";
+  if (input.waitOver) return install;
   if (!input.providers || others.some((provider) => provider.statusPending === true)) {
     return "wait";
   }
-  return "install";
+  return install;
 }
 
-export type FirstRunAgentStart = "install" | "skip";
+/**
+ * Installed by what its check reported: some drivers (Kiro) start from an "installed"
+ * placeholder before their first check, with no version and no sign-in state yet.
+ */
+function foundInstalled(provider: ServerProvider): boolean {
+  return provider.installed && (provider.version !== null || provider.auth.status !== "unknown");
+}
+
+/** The turned-on agents other than the OpenCode first-run setup installs. */
+function usersOwnAgents(
+  providers: ReadonlyArray<ServerProvider> | null | undefined,
+): ReadonlyArray<ServerProvider> {
+  return (
+    providers?.filter(
+      (provider) => provider.enabled && provider.instanceId !== FIRST_RUN_AGENT_INSTANCE_ID,
+    ) ?? []
+  );
+}
+
+export type FirstRunAgentStart = "install" | "ask" | "skip";
 
 /**
- * The starter decides once per window session. After `skip`, or once
- * onboarding is complete, an agent of the user's that later stops working
- * (turned off, signed out, a failed recheck) starts no download.
+ * Decides once per window session; after `skip` or onboarding, nothing downloads by itself.
+ * `askAgain`: the user left the no-agent screen without a working agent, so a later
+ * launch shows it again.
  */
 export function latchFirstRunAgentStart(input: {
   readonly latched: FirstRunAgentStart | null;
   readonly completed: boolean;
+  readonly askAgain: boolean;
   readonly providers: ReadonlyArray<ServerProvider> | null | undefined;
   readonly waitOver: boolean;
 }): FirstRunAgentStart | null {
   if (input.latched !== null) return input.latched;
-  if (input.completed) return "skip";
+  if (input.completed && !input.askAgain) return "skip";
   const next = resolveFirstRunAgentStart(input);
-  return next === "wait" ? null : next;
+  if (next === "wait") return null;
+  return input.completed && next === "install" ? "skip" : next;
 }
 
 export type FirstRunAgentStatus =
-  | { readonly kind: "preparing"; readonly progress: number | null }
-  | { readonly kind: "failed"; readonly message: string };
+  | {
+      readonly kind: "preparing";
+      readonly progress: number | null;
+      /** Installed, and still starting past `FIRST_RUN_AGENT_SLOW_START_MS`. */
+      readonly slow: boolean;
+    }
+  | {
+      readonly kind: "failed";
+      readonly message: string;
+      readonly reason: FirstRunAgentFailureReason;
+    };
 
-const FIRST_RUN_SETUP_FAILED = "Could not set up your agent.";
+/** Shown through `useMessages()`, like the status's other text of ours. */
+export const FIRST_RUN_SETUP_FAILED = msg("Could not set up your agent.");
+export const FIRST_RUN_START_TIMED_OUT = msg("Your agent is taking too long to start.");
 
 /**
  * How long a new user may stay on the first screen with a working agent and
@@ -138,73 +196,347 @@ const FIRST_RUN_SETUP_FAILED = "Could not set up your agent.";
  */
 export const FIRST_SCREEN_IDLE_THRESHOLD_MS = 3 * 60_000;
 
-/** How long setup still shows once the install succeeds, while the server turns OpenCode on. */
-export const FIRST_RUN_AGENT_ACTIVATION_WAIT_MS = 10_000;
+/**
+ * The first start of a freshly installed OpenCode: a healthy Mac answers within
+ * about 15 s of the install, while the server's own deadlines for a cold start
+ * (a 20 s `--version`, a 15 s catalog refresh, a 30 s `serve`, a 15 s model
+ * list) add up to about 80 s, on Windows behind a Defender scan of a new exe.
+ */
+export const FIRST_RUN_AGENT_SLOW_START_MS = 15_000;
+export const FIRST_RUN_AGENT_START_TIMEOUT_MS = 90_000;
 
-/** The activation wait the starter is running, or has finished, for one succeeded install. */
-export interface FirstRunAgentActivation {
+/**
+ * One attempt to start the installed OpenCode: the install's own, then one per
+ * Retry. The starter times it, so the composer always shows where it is.
+ */
+export interface FirstRunAgentStartup {
   readonly operationId: string;
-  readonly active: boolean;
+  readonly attempt: number;
+  readonly startedAt: number;
+  /** The failed result a Retry was pressed on, which says nothing about this attempt. */
+  readonly retriedCheckedAt: string | null;
+  /** `ready` once OpenCode worked: what it does later is no first-run failure. */
+  readonly phase: "starting" | "slow" | "timedOut" | "ready";
+  /** The app's own second attempt, which goes on from the first one's "still starting". */
+  readonly automatic: boolean;
+  /** OpenCode was on during this install's start, so turning it off is the user's choice. */
+  readonly sawEnabled: boolean;
 }
 
 /**
- * The starter records the wait in an effect, a render after the install
- * succeeds. Until then a running starter counts the wait as begun, or the
- * composer would offer "Open provider settings" for that one frame.
+ * A first run retries a failure once by itself before it offers Retry:
+ * `available` until then, `used` after, recording the failed install it
+ * replaced, and `off` for a window that is not setting up its own OpenCode.
  */
-export function isFirstRunAgentActivating(input: {
-  readonly succeededOperationId: string | null;
-  readonly starterRunning: boolean;
-  readonly activation: FirstRunAgentActivation | null;
-}): boolean {
-  if (input.succeededOperationId === null) return false;
-  if (input.activation?.operationId === input.succeededOperationId) {
-    return input.activation.active;
-  }
-  return input.starterRunning;
+export type FirstRunAgentAutoRetry =
+  | { readonly kind: "available" }
+  | { readonly kind: "used"; readonly failedInstallId: string | null }
+  | { readonly kind: "off" };
+
+/** A sign-in or an empty model list fails the same way again, so those wait for the user. */
+const AUTO_RETRY_REASONS: ReadonlySet<FirstRunAgentFailureReason> = new Set([
+  "install",
+  "startup_timeout",
+  "migration",
+  "unknown",
+]);
+
+export function firstRunAgentStartupPhase(elapsedMs: number): "starting" | "slow" | "timedOut" {
+  if (elapsedMs >= FIRST_RUN_AGENT_START_TIMEOUT_MS) return "timedOut";
+  return elapsedMs >= FIRST_RUN_AGENT_SLOW_START_MS ? "slow" : "starting";
 }
 
-export function resolveFirstRunAgentStatus(input: {
+function providerFailureReason(provider: ServerProvider | undefined): FirstRunAgentFailureReason {
+  return (
+    provider?.statusReason ?? (provider?.auth.status === "unauthenticated" ? "auth" : "unknown")
+  );
+}
+
+const preparing = (progress: number | null, slow = false): FirstRunAgentStatus => ({
+  kind: "preparing",
+  progress,
+  slow,
+});
+
+/** After the install succeeded. `startup` is the starter's record for that install, if any yet. */
+function resolveInstalledAgentStatus(
+  provider: ServerProvider | undefined,
+  startup: FirstRunAgentStartup | null,
+  starterRunning: boolean,
+): FirstRunAgentStatus | null {
+  const state = getOnboardingProviderState(provider);
+  if (state === "ready") return null;
+  if (state === "disabled" && startup?.sawEnabled === true) return null;
+  const answered =
+    startup?.retriedCheckedAt == null || provider?.checkedAt !== startup.retriedCheckedAt;
+  if (answered && (state === "attention" || state === "install" || state === "signIn")) {
+    return {
+      kind: "failed",
+      message: provider?.message ?? FIRST_RUN_SETUP_FAILED,
+      reason: providerFailureReason(provider),
+    };
+  }
+  const checking = state === "checking" && provider?.enabled === true;
+  switch (startup?.phase) {
+    case "starting":
+      return preparing(null, startup.automatic);
+    case "slow":
+      return preparing(null, true);
+    case "timedOut":
+      return { kind: "failed", message: FIRST_RUN_START_TIMED_OUT, reason: "startup_timeout" };
+    case "ready":
+      // A later recheck. Off now is the user's choice.
+      return checking ? preparing(null) : null;
+    default:
+      // The starter records the attempt in an effect, a render after the install
+      // succeeds. Without a starter, this install is not this window's setup.
+      return checking || starterRunning ? preparing(null) : null;
+  }
+}
+
+interface FirstRunAgentStatusInput {
   readonly requested: boolean;
   readonly startError: string | null;
   readonly install: ProviderInstallState | null;
   readonly provider: ServerProvider | undefined;
-  /** Within `FIRST_RUN_AGENT_ACTIVATION_WAIT_MS` of this window seeing the install succeed. */
-  readonly activating: boolean;
-}): FirstRunAgentStatus | null {
+  readonly startup: FirstRunAgentStartup | null;
+  readonly starterRunning: boolean;
+}
+
+function resolveFirstRunAgentOwnStatus(
+  input: FirstRunAgentStatusInput,
+): FirstRunAgentStatus | null {
   const { install } = input;
-  if (input.startError !== null && (install === null || install.phase === "idle")) {
-    return { kind: "failed", message: input.startError };
+  // A new start's own error: it clears any earlier one before it asks the server.
+  if (
+    input.startError !== null &&
+    (install === null ||
+      install.phase === "idle" ||
+      install.phase === "failed" ||
+      install.phase === "cancelled")
+  ) {
+    return { kind: "failed", message: input.startError, reason: "install" };
   }
   switch (install?.phase) {
     case "downloading":
-      return {
-        kind: "preparing",
-        progress:
-          install.totalBytes !== null && install.totalBytes > 0
-            ? Math.min(1, install.downloadedBytes / install.totalBytes)
-            : null,
-      };
+      return preparing(
+        install.totalBytes !== null && install.totalBytes > 0
+          ? Math.min(1, install.downloadedBytes / install.totalBytes)
+          : null,
+      );
     case "extracting":
     case "verifying":
-      return { kind: "preparing", progress: 1 };
+      return preparing(1);
     case "failed":
     case "cancelled":
-      return { kind: "failed", message: install.message ?? FIRST_RUN_SETUP_FAILED };
-    case "succeeded": {
-      const state = getOnboardingProviderState(input.provider);
-      if (state === "ready") return null;
-      if (state === "attention" || state === "install" || state === "signIn") {
-        return { kind: "failed", message: input.provider?.message ?? FIRST_RUN_SETUP_FAILED };
-      }
-      if (state === "checking" && input.provider?.enabled === true) {
-        return { kind: "preparing", progress: null };
-      }
-      // Until the turned-on instance reports, the stream still holds the disabled
-      // one. Past that wait, OpenCode is off by the user's choice.
-      return input.activating ? { kind: "preparing", progress: null } : null;
-    }
+      return {
+        kind: "failed",
+        message: install.message ?? FIRST_RUN_SETUP_FAILED,
+        reason: "install",
+      };
+    case "succeeded":
+      return resolveInstalledAgentStatus(
+        input.provider,
+        input.startup?.operationId === install.operationId ? input.startup : null,
+        input.starterRunning,
+      );
     default:
-      return input.requested ? { kind: "preparing", progress: null } : null;
+      return input.requested ? preparing(null) : null;
   }
+}
+
+/** What the automatic retry of a first run runs now, if it is due. */
+export function resolveFirstRunAgentAutoRetry(
+  input: FirstRunAgentStatusInput & { readonly autoRetry: FirstRunAgentAutoRetry },
+): "install" | "start" | null {
+  if (input.autoRetry.kind !== "available") return null;
+  const status = resolveFirstRunAgentOwnStatus(input);
+  if (status?.kind !== "failed" || !AUTO_RETRY_REASONS.has(status.reason)) return null;
+  if (status.reason === "install") return "install";
+  // The starter records the attempt a render after the install; the retry is its next one.
+  return input.startup !== null && input.startup.operationId === input.install?.operationId
+    ? "start"
+    : null;
+}
+
+export function resolveFirstRunAgentStatus(
+  input: FirstRunAgentStatusInput & { readonly autoRetry: FirstRunAgentAutoRetry },
+): FirstRunAgentStatus | null {
+  const status = resolveFirstRunAgentOwnStatus(input);
+  if (status?.kind !== "failed" || !AUTO_RETRY_REASONS.has(status.reason)) return status;
+  const { autoRetry, install } = input;
+  // The retry is due, or still waits for the server to replace the install it retried.
+  const retrying =
+    autoRetry.kind === "available" ||
+    (autoRetry.kind === "used" &&
+      input.startError === null &&
+      (install?.phase === "failed" || install?.phase === "cancelled") &&
+      install.operationId !== null &&
+      install.operationId === autoRetry.failedInstallId);
+  return retrying ? preparing(null, status.reason !== "install") : status;
+}
+
+/**
+ * Why the attempt failed after a good install, for `onboarding.first_run_agent`
+ * `failed`: OpenCode's reported error, or no answer by the timeout. Null while
+ * it may still work, and once it worked.
+ */
+export function resolveFirstRunAgentStartupFailure(input: {
+  readonly install: ProviderInstallState | null;
+  readonly provider: ServerProvider | undefined;
+  readonly startup: FirstRunAgentStartup | null;
+}): FirstRunAgentFailureReason | null {
+  const { install, startup } = input;
+  if (install?.phase !== "succeeded" || startup === null) return null;
+  if (startup.operationId !== install.operationId || startup.phase === "ready") return null;
+  const status = resolveInstalledAgentStatus(input.provider, startup, true);
+  return status?.kind === "failed" ? status.reason : null;
+}
+
+/*
+ * The no-agent screen: a new user with no coding agent installed picks how to
+ * get one, and OpenCode installs only after "Install a free agent".
+ */
+
+export type NoAgentScreenView =
+  | { readonly kind: "offer" }
+  | {
+      readonly kind: "installing";
+      /** `slow` is `starting` past 15 seconds. `retrying` runs from Try again until progress reports. */
+      readonly phase: "downloading" | "starting" | "slow" | "retrying";
+      /** 0 to 1 while the download reports bytes. */
+      readonly progress: number | null;
+    }
+  | { readonly kind: "failed"; readonly reason: NoAgentScreenFailure };
+
+/** The download's whole percent, as the installing line shows it. */
+export function noAgentScreenDownloadPercent(progress: number | null): number {
+  return Math.round((progress ?? 0) * 100);
+}
+
+/**
+ * Try again shows "Trying again" while its request runs, and after a failed
+ * install until the new download's line would read at least 1%. `retriedInstallId`
+ * is the failed install it retried, `undefined` for a retry of OpenCode's start.
+ */
+export function firstRunAgentRetrying(input: {
+  readonly requestRunning: boolean;
+  readonly retriedInstallId: string | null | undefined;
+  readonly startError: string | null;
+  readonly install: ProviderInstallState | null | undefined;
+}): boolean {
+  if (input.requestRunning) return true;
+  const { install, retriedInstallId } = input;
+  if (retriedInstallId === undefined || input.startError !== null || !install) return false;
+  if (retriedInstallId !== null && install.operationId === retriedInstallId) return true;
+  if (install.phase !== "downloading") return false;
+  return install.totalBytes !== null && install.totalBytes > 0
+    ? noAgentScreenDownloadPercent(install.downloadedBytes / install.totalBytes) === 0
+    : install.downloadedBytes === 0;
+}
+
+/** `startup_timeout`, `auth`, `migration` and `unknown` all read as "OpenCode didn't respond". */
+function noAgentScreenFailure(reason: FirstRunAgentFailureReason): NoAgentScreenFailure {
+  if (reason === "install") return "install";
+  return reason === "models_missing" ? "models" : "timeout";
+}
+
+/** The screen after "Install a free agent", from the first-run setup's status. */
+export function resolveNoAgentScreenInstallView(input: {
+  readonly status: FirstRunAgentStatus | null;
+  /** The install finished, so what is left is OpenCode's start. */
+  readonly installed: boolean;
+  /** Try again ran and its attempt has not answered yet. */
+  readonly retrying: boolean;
+}): Exclude<NoAgentScreenView, { readonly kind: "offer" }> {
+  const { status, installed, retrying } = input;
+  const installing = (phase: "downloading" | "starting" | "slow" | "retrying") =>
+    ({ kind: "installing", phase, progress: null }) as const;
+  if (status?.kind === "failed") {
+    return retrying
+      ? installing("retrying")
+      : { kind: "failed", reason: noAgentScreenFailure(status.reason) };
+  }
+  // No status left means OpenCode works: the screen closes.
+  if (status === null) return installing(retrying ? "retrying" : "starting");
+  if (!installed) {
+    return retrying && noAgentScreenDownloadPercent(status.progress) === 0
+      ? installing("retrying")
+      : { kind: "installing", phase: "downloading", progress: status.progress };
+  }
+  if (retrying) return installing("retrying");
+  return installing(status.slow ? "slow" : "starting");
+}
+
+/**
+ * The screen closes by itself once an agent works: one of the user's own at
+ * any time, OpenCode while its install is on the screen. After "Set up another
+ * way" a finished install leaves the choice to the user.
+ */
+export function noAgentScreenClosesForAgent(
+  providers: ReadonlyArray<ServerProvider> | null | undefined,
+  installOnScreen: boolean,
+): boolean {
+  return (
+    providers?.some(
+      (provider) =>
+        provider.enabled &&
+        getOnboardingProviderState(provider) === "ready" &&
+        (installOnScreen || provider.instanceId !== FIRST_RUN_AGENT_INSTANCE_ID),
+    ) ?? false
+  );
+}
+
+/**
+ * OpenCode works, for example after "Set up another way" let its install finish:
+ * the install card offers it as ready to use.
+ */
+export function noAgentScreenFreeAgentReady(
+  providers: ReadonlyArray<ServerProvider> | null | undefined,
+): boolean {
+  const openCode = providers?.find(
+    (provider) => provider.instanceId === FIRST_RUN_AGENT_INSTANCE_ID,
+  );
+  return openCode?.enabled === true && getOnboardingProviderState(openCode) === "ready";
+}
+
+/** What `onboarding.no_agent_screen` `shown` reports of the agent checks. */
+export function noAgentScreenShownDetails(
+  providers: ReadonlyArray<ServerProvider> | null | undefined,
+): {
+  readonly installedAgents: number;
+  readonly signedOutAgents: number;
+  readonly checksTimedOut: boolean;
+} {
+  const installed = usersOwnAgents(providers).filter(foundInstalled);
+  return {
+    installedAgents: installed.length,
+    signedOutAgents: installed.filter((provider) => provider.auth.status === "unauthenticated")
+      .length,
+    checksTimedOut:
+      !providers || usersOwnAgents(providers).some((provider) => provider.statusPending === true),
+  };
+}
+
+/**
+ * Where the intro says no agent was found. The agents belong to the
+ * environment's machine, so a client on another device names that machine.
+ */
+export type NoAgentScreenPlace =
+  | { readonly kind: "mac" | "pc" | "computer" }
+  | { readonly kind: "remote"; readonly name: string };
+
+export function noAgentScreenPlace(input: {
+  readonly os: ExecutionEnvironmentPlatformOs | null;
+  /** The client runs on the environment's machine: the desktop app, or a browser on localhost. */
+  readonly local: boolean;
+  readonly environmentLabel: string | null;
+}): NoAgentScreenPlace {
+  if (!input.local) {
+    return input.environmentLabel === null
+      ? { kind: "computer" }
+      : { kind: "remote", name: input.environmentLabel };
+  }
+  if (input.os === "darwin") return { kind: "mac" };
+  return { kind: input.os === "windows" ? "pc" : "computer" };
 }

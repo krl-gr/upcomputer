@@ -36,7 +36,9 @@ function sameKeys(left: ReadonlyArray<string> | null, right: ReadonlyArray<strin
  * projects, No project and the projects in one order, which holds still while
  * the pointer is in the sidebar. Pass `holdSurface` as the ref of an element inside it.
  */
-export function useSidebarProjectsList(projectGroups: ReadonlyArray<SidebarProjectSnapshot>) {
+export function useSidebarProjectsList(allProjectGroups: ReadonlyArray<SidebarProjectSnapshot>) {
+  // Archived projects leave the list; Threads reads an archived project's scope as All projects.
+  const projectGroups = allProjectGroups.filter((group) => !group.archived);
   // Our Projects section scopes to one project; upstream's scope can hold several.
   const scopeKey = useUiStateStore((store) => store.sidebarProjectScopeKeys[0] ?? null);
   const setScopeKeys = useUiStateStore((store) => store.setSidebarProjectScopeKeys);
@@ -115,6 +117,7 @@ export function useSidebarProjectsList(projectGroups: ReadonlyArray<SidebarProje
   };
 
   return {
+    projectGroups,
     rows,
     selectedKey,
     select,

@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { useMemo, useState } from "react";
 import {
   ArchiveIcon,
@@ -52,11 +53,12 @@ function FullScreenDescription(props: {
   readonly onChange: (value: string) => void;
   readonly onOpenChange: (open: boolean) => void;
 }) {
+  const gt = useGT();
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogPopup className="max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Description</DialogTitle>
+          <DialogTitle>{gt("Description")}</DialogTitle>
         </DialogHeader>
         <DialogPanel>
           <DescriptionField
@@ -88,6 +90,7 @@ export function TaskDetailWindow(
     readonly queueDate: string | null;
   },
 ) {
+  const gt = useGT();
   const { store, windows, projects, preferences, agents, openInTable, openInPlanner } =
     usePlanner();
   const window = props.window;
@@ -131,7 +134,7 @@ export function TaskDetailWindow(
     }
     const next = title.trim();
     if (!next) {
-      toastManager.add({ type: "warning", title: "Please enter a task title" });
+      toastManager.add({ type: "warning", title: gt("Please enter a task title") });
       return;
     }
     // The draft store, not this render: Escape can close in the event that
@@ -162,13 +165,13 @@ export function TaskDetailWindow(
         <>
           <TitleInput
             value={title}
-            placeholder="Enter task title"
+            placeholder={gt("Enter task title")}
             onChange={(value) => updateDraft({ title: value })}
             onBlur={saveTitle}
           />
           <Menu>
             <MenuTrigger
-              render={<Button size="icon-sm" variant="outline" aria-label="More actions" />}
+              render={<Button size="icon-sm" variant="outline" aria-label={gt("More actions")} />}
             >
               <MoreHorizontalIcon />
             </MenuTrigger>
@@ -179,10 +182,10 @@ export function TaskDetailWindow(
                   setFullScreen(true);
                 }}
               >
-                Open full screen
+                {gt("Open full screen")}
               </MenuItem>
               <MenuItem disabled={!task} onClick={() => openInTable(props.taskId)}>
-                Open in table (runs)
+                {gt("Open in table (runs)")}
               </MenuItem>
               {routine ? null : <MenuSeparator />}
               {routine ? null : task?.audience === "agent" ? (
@@ -190,25 +193,25 @@ export function TaskDetailWindow(
                   onClick={() =>
                     void store.updateTask(task.id, { audience: "person" }).then((moved) => {
                       if (moved)
-                        toastAudienceMoved("person", task.title, () => openInPlanner(task.id));
+                        toastAudienceMoved("person", task.title, () => openInPlanner(task.id), gt);
                     })
                   }
                 >
-                  Take back from workers
+                  {gt("Take back from workers")}
                 </MenuItem>
               ) : (
                 <MenuItem disabled={!task} onClick={() => setHandingOff(true)}>
-                  Hand to a worker…
+                  {gt("Hand to a worker…")}
                 </MenuItem>
               )}
               <MenuSeparator />
               <MenuItem variant="destructive" disabled={!task} onClick={() => setMenuDelete(true)}>
-                Delete task
+                {gt("Delete task")}
               </MenuItem>
             </MenuPopup>
           </Menu>
           <IconAction
-            label="Save and close"
+            label={gt("Save and close")}
             variant="outline"
             size="icon-sm"
             onClick={saveAndClose}
@@ -219,9 +222,11 @@ export function TaskDetailWindow(
       }
     >
       {missing && !task ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">This task was deleted.</p>
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          {gt("This task was deleted.")}
+        </p>
       ) : !task ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
+        <p className="py-8 text-center text-sm text-muted-foreground">{gt("Loading…")}</p>
       ) : (
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-1">
@@ -234,7 +239,7 @@ export function TaskDetailWindow(
             />
             {finished ? (
               <IconAction
-                label="Restore"
+                label={gt("Restore", { $context: "button that unarchives the task" })}
                 variant="outline"
                 onClick={() => void store.restore([task.id])}
               >
@@ -243,14 +248,14 @@ export function TaskDetailWindow(
             ) : (
               <>
                 <IconAction
-                  label="Mark as done"
+                  label={gt("Mark as done")}
                   variant="outline"
                   onClick={() => void store.markDone([task.id])}
                 >
                   <CircleCheckIcon />
                 </IconAction>
                 <IconAction
-                  label="Archive"
+                  label={gt("Archive", { $context: "button that archives the task" })}
                   variant="outline"
                   onClick={() => void store.archive([task.id])}
                 >
@@ -261,7 +266,7 @@ export function TaskDetailWindow(
             <RunSummary task={task} />
             {props.queueDate && preferences.weekViewMode === "queue" ? (
               <IconAction
-                label={`Add to queue for ${props.queueDate}`}
+                label={gt("Add to queue for {date}", { date: props.queueDate })}
                 variant="outline"
                 onClick={() =>
                   void store.addEntries({ taskIds: [task.id], date: props.queueDate! })
@@ -271,7 +276,9 @@ export function TaskDetailWindow(
               </IconAction>
             ) : null}
             <IconAction
-              label={viewMode === "description" ? "Show the schedule" : "Show the description"}
+              label={
+                viewMode === "description" ? gt("Show the schedule") : gt("Show the description")
+              }
               variant={viewMode === "instances" ? "secondary" : "outline"}
               size={progress ? "xs" : "icon-xs"}
               pressed={viewMode === "instances"}
@@ -307,21 +314,27 @@ export function TaskDetailWindow(
       />
       <ConfirmHandOffDialog
         open={handingOff}
-        title={task?.title ?? "This task"}
+        title={task?.title ?? gt("This task")}
         agents={agentsForTask}
         onOpenChange={setHandingOff}
         onConfirm={(agentId) => {
           if (!task) return;
           const agent = agentsForTask.find(({ id }) => id === agentId) ?? null;
           void store.updateTask(task.id, handOffPatch(task, agent)).then((moved) => {
-            if (moved) toastAudienceMoved("agent", title, () => openInTable(props.taskId));
+            if (moved) toastAudienceMoved("agent", title, () => openInTable(props.taskId), gt);
           });
         }}
       />
       <ConfirmDeleteDialog
         open={menuDelete}
-        title="Delete task"
-        description={`"${task?.title ?? "This task"}" and its schedule are deleted. This cannot be undone.`}
+        title={gt("Delete task")}
+        description={
+          task
+            ? gt('"{title}" and its schedule are deleted. This cannot be undone.', {
+                title: task.title,
+              })
+            : gt("This task and its schedule are deleted. This cannot be undone.")
+        }
         onOpenChange={setMenuDelete}
         onConfirm={() => {
           close();
@@ -336,11 +349,11 @@ export function TaskDetailWindow(
 export function CreateTaskWindow(
   props: WindowFrameProps & { readonly defaultProjectId: string | null },
 ) {
+  const gt = useGT();
   const { store, windows, projects } = usePlanner();
   const window = props.window;
   const initial = window.kind === "create" ? window.initial : {};
   const kind = initial.kind ?? "task";
-  const noun = kind === "routine" ? "routine" : "task";
   const [draft, updateDraft] = useDraft(window.id);
   const [fullScreen, setFullScreen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -355,7 +368,11 @@ export function CreateTaskWindow(
   const create = async () => {
     const title = (draft.title ?? "").trim();
     if (!title) {
-      toastManager.add({ type: "warning", title: `Please enter a ${noun} title` });
+      toastManager.add({
+        type: "warning",
+        title:
+          kind === "routine" ? gt("Please enter a routine title") : gt("Please enter a task title"),
+      });
       return;
     }
     setSaving(true);
@@ -382,17 +399,17 @@ export function CreateTaskWindow(
         <>
           <TitleInput
             value={draft.title ?? ""}
-            placeholder={`Enter ${noun} title`}
+            placeholder={kind === "routine" ? gt("Enter routine title") : gt("Enter task title")}
             onChange={(value) => updateDraft({ title: value })}
           />
           <Menu>
             <MenuTrigger
-              render={<Button size="icon-sm" variant="outline" aria-label="More actions" />}
+              render={<Button size="icon-sm" variant="outline" aria-label={gt("More actions")} />}
             >
               <MoreHorizontalIcon />
             </MenuTrigger>
             <MenuPopup align="end">
-              <MenuItem onClick={() => setFullScreen(true)}>Open full screen</MenuItem>
+              <MenuItem onClick={() => setFullScreen(true)}>{gt("Open full screen")}</MenuItem>
             </MenuPopup>
           </Menu>
         </>
@@ -400,10 +417,10 @@ export function CreateTaskWindow(
       footer={
         <div className="flex gap-2">
           <Button className="flex-1" disabled={saving} onClick={() => void create()}>
-            Create
+            {gt("Create")}
           </Button>
           <Button className="flex-1" variant="outline" onClick={close}>
-            Cancel
+            {gt("Cancel")}
           </Button>
         </div>
       }

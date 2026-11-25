@@ -3,6 +3,7 @@ import type { SqlError } from "effect/sql/SqlError";
 
 import type { ExperimentalFeatureMigrationContribution } from "../product/FeatureMigrations.ts";
 import ProjectionLinkedProjects from "./CoreFeatureMigrations/001_ProjectionLinkedProjects.ts";
+import ProjectionThreadsSidebarHiddenIndex from "./CoreFeatureMigrations/003_ProjectionThreadsSidebarHiddenIndex.ts";
 
 /**
  * Schema that exists only in UpComputer. It is versioned in its own
@@ -18,5 +19,10 @@ export const CORE_FEATURE_MIGRATIONS: ExperimentalFeatureMigrationContribution<S
     { version: 1, name: "ProjectionLinkedProjects", run: ProjectionLinkedProjects },
     // V1 stored the thread's unlink pin in a column; v2 keeps it in the thread record.
     { version: 2, name: "ProjectionThreadProjectLinksPinned", run: Effect.void },
+    {
+      version: 3,
+      name: "ProjectionThreadsSidebarHiddenIndex",
+      run: ProjectionThreadsSidebarHiddenIndex,
+    },
   ],
 };

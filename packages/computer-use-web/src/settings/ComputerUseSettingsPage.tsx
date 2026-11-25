@@ -5,6 +5,7 @@ import type {
 } from "@t3tools/computer-use-contracts/rpc";
 import { CheckIcon, RotateCwIcon, XIcon } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { msg, T, useGT, useMessages } from "gt-react";
 
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { Switch } from "../../../../apps/web/src/components/ui/switch.tsx";
@@ -26,8 +27,14 @@ import { parseLines, useComputerUseApi } from "./useComputerUseApi.ts";
 const PERMISSIONS: Readonly<
   Record<string, { readonly label: string; readonly pane: "accessibility" | "screen-recording" }>
 > = {
-  accessibility: { label: "Accessibility", pane: "accessibility" },
-  screenRecording: { label: "Screen Recording", pane: "screen-recording" },
+  accessibility: {
+    label: msg("Accessibility", { $context: "macOS privacy permission name" }),
+    pane: "accessibility",
+  },
+  screenRecording: {
+    label: msg("Screen Recording", { $context: "macOS privacy permission name" }),
+    pane: "screen-recording",
+  },
 };
 
 /** Only the desktop app can open System Settings; elsewhere the button does nothing. */
@@ -60,15 +67,15 @@ function statusSummary(computerUse: ComputerUseRuntimeSnapshot): {
 } {
   switch (computerUse.status) {
     case "disabled":
-      return { tone: "muted", text: "Off" };
+      return { tone: "muted", text: msg("Off", { $context: "Computer Use status" }) };
     case "stopped":
-      return { tone: "ok", text: "Ready, starts when an agent needs it" };
+      return { tone: "ok", text: msg("Ready, starts when an agent needs it") };
     case "starting":
-      return { tone: "busy", text: "Starting…" };
+      return { tone: "busy", text: msg("Starting…") };
     case "ready":
-      return { tone: "ok", text: "Running" };
+      return { tone: "ok", text: msg("Running", { $context: "Computer Use status" }) };
     case "error":
-      return { tone: "error", text: "Could not start" };
+      return { tone: "error", text: msg("Could not start") };
   }
 }
 
@@ -80,6 +87,8 @@ const TONE_DOT: Record<ReturnType<typeof statusSummary>["tone"], string> = {
 };
 
 function ComputerUseSettingsPage() {
+  const gt = useGT();
+  const m = useMessages();
   const api = useComputerUseApi();
   const [snapshot, setSnapshot] = useState<ComputerUseStateSnapshot>();
   const [allowedAppsDraft, setAllowedAppsDraft] = useState("");
@@ -157,8 +166,8 @@ function ComputerUseSettingsPage() {
   let status: ReactNode;
   if (!computerUse) {
     status = unavailable
-      ? "Connect to an environment to manage Computer Use."
-      : "Loading Computer Use status…";
+      ? gt("Connect to an environment to manage Computer Use.")
+      : gt("Loading Computer Use status…");
   } else {
     const summary = statusSummary(computerUse);
     const checking = busyAction === "doctor";
@@ -170,17 +179,21 @@ function ComputerUseSettingsPage() {
       <span className="flex flex-col gap-1.5">
         <span className="flex items-center gap-1.5">
           <span className={cn("size-1.5 shrink-0 rounded-full", TONE_DOT[summary.tone])} />
-          {summary.text}
+          {m(summary.text)}
         </span>
         {computerUse.status === "error" && computerUse.lastError ? (
           <span className="break-words text-destructive">
-            {computerUse.lastError} It starts again on the next request.
+            {gt("{error} It starts again on the next request.", {
+              error: computerUse.lastError,
+            })}
           </span>
         ) : null}
         {toolsMissing ? (
           <span className="text-orange-600 dark:text-orange-300">
-            This Open Computer Use version lacks {computerUse.missingRequiredTools.length} required
-            tools. Update Up.computer.
+            {gt(
+              "This Open Computer Use version lacks {count, plural, one {# required tool} other {# required tools}}. Update Up.computer.",
+              { count: computerUse.missingRequiredTools.length },
+            )}
           </span>
         ) : null}
         {computerUse.settings.enabled ? (
@@ -193,7 +206,7 @@ function ComputerUseSettingsPage() {
                   ) : (
                     <XIcon className="size-3 text-orange-500" />
                   )}
-                  {permission.label}
+                  {m(permission.label)}
                   {permission.granted ? null : (
                     <Button
                       size="xs"
@@ -201,17 +214,19 @@ function ComputerUseSettingsPage() {
                       className="ms-1"
                       onClick={() => openPrivacySettings(permission.pane)}
                     >
-                      Open settings
+                      <T>Open settings</T>
                     </Button>
                   )}
                 </span>
               ))
             ) : computerUse.doctorStatus && computerUse.doctorStatus !== "ok" ? (
               <span className="whitespace-pre-wrap text-orange-600 dark:text-orange-300">
-                {computerUse.doctorMessage ?? "The permission check did not pass."}
+                {computerUse.doctorMessage ?? gt("The permission check did not pass.")}
               </span>
             ) : checking ? (
-              <span>Checking macOS permissions…</span>
+              <span>
+                <T>Checking macOS permissions…</T>
+              </span>
             ) : (
               <Button
                 size="xs"
@@ -219,7 +234,7 @@ function ComputerUseSettingsPage() {
                 disabled={unavailable || busy}
                 onClick={checkPermissions}
               >
-                Check macOS permissions
+                <T>Check macOS permissions</T>
               </Button>
             )}
             {computerUse.checkedAt ? (
@@ -228,7 +243,7 @@ function ComputerUseSettingsPage() {
                   render={
                     <button
                       type="button"
-                      aria-label="Check permissions again"
+                      aria-label={gt("Check permissions again")}
                       className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
                       disabled={unavailable || busy}
                       onClick={checkPermissions}
@@ -237,7 +252,9 @@ function ComputerUseSettingsPage() {
                 >
                   <RotateCwIcon className={cn("size-3", checking && "animate-spin")} />
                 </TooltipTrigger>
-                <TooltipPopup side="top">Check again</TooltipPopup>
+                <TooltipPopup side="top">
+                  <T>Check again</T>
+                </TooltipPopup>
               </Tooltip>
             ) : null}
           </span>
@@ -248,24 +265,29 @@ function ComputerUseSettingsPage() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection title="Computer Use" hideTitle>
+      <SettingsSection title={gt("Computer Use")} hideTitle>
         <SettingsRow
-          title="Native desktop access"
-          description="Let agents see and use apps on this Mac."
+          title={gt("Native desktop access")}
+          description={<T>Let agents see and use apps on this Mac.</T>}
           status={status}
           control={
             <Switch
               checked={settings?.enabled ?? false}
               disabled={unavailable || busy || !settings}
-              aria-label="Enable Computer Use"
+              aria-label={gt("Enable Computer Use")}
               onCheckedChange={(checked) => setEnabled(Boolean(checked))}
             />
           }
         />
 
         <SettingsRow
-          title="Mode"
-          description="Observe reads application state and screenshots. Control additionally permits clicking, typing, keys, scrolling, and dragging."
+          title={gt("Mode", { $context: "Computer Use mode: observe or control" })}
+          description={
+            <T>
+              Observe reads application state and screenshots. Control additionally permits
+              clicking, typing, keys, scrolling, and dragging.
+            </T>
+          }
           control={
             <div className="grid grid-cols-2 overflow-hidden rounded-md border">
               {(["observe", "control"] as const).map((mode) => (
@@ -281,7 +303,9 @@ function ComputerUseSettingsPage() {
                   )}
                   onClick={() => updateSettings({ mode })}
                 >
-                  {mode === "observe" ? "Observe" : "Control"}
+                  {mode === "observe"
+                    ? gt("Observe", { $context: "Computer Use mode that only reads the screen" })
+                    : gt("Control", { $context: "Computer Use mode that can also click and type" })}
                 </button>
               ))}
             </div>
@@ -289,13 +313,19 @@ function ComputerUseSettingsPage() {
         />
 
         <SettingsRow
-          title="Action approvals"
-          description="Always ask before native control actions execute, even when the thread otherwise has full access. Agents that cannot ask for approval are refused control actions while this is on."
+          title={gt("Action approvals")}
+          description={
+            <T>
+              Always ask before native control actions execute, even when the thread otherwise has
+              full access. Agents that cannot ask for approval are refused control actions while
+              this is on.
+            </T>
+          }
           control={
             <Switch
               checked={settings?.requireActionApproval ?? false}
               disabled={unavailable || busy || !settings}
-              aria-label="Require Computer Use approvals"
+              aria-label={gt("Require Computer Use approvals")}
               onCheckedChange={(checked) =>
                 updateSettings({ requireActionApproval: Boolean(checked) })
               }
@@ -304,8 +334,13 @@ function ComputerUseSettingsPage() {
         />
 
         <SettingsRow
-          title="Allowed applications"
-          description="Only these apps, one per line, exactly as named. Leave empty to allow visible apps except protected credential surfaces."
+          title={gt("Allowed applications")}
+          description={
+            <T>
+              Only these apps, one per line, exactly as named. Leave empty to allow visible apps
+              except protected credential surfaces.
+            </T>
+          }
         >
           <div className="mt-3 space-y-3 pb-4">
             <Textarea
@@ -322,7 +357,7 @@ function ComputerUseSettingsPage() {
                   disabled={unavailable || busy}
                   onClick={() => updateSettings({ allowedApps: parseLines(allowedAppsDraft) })}
                 >
-                  Save applications
+                  <T>Save applications</T>
                 </Button>
               </div>
             ) : null}
@@ -330,13 +365,18 @@ function ComputerUseSettingsPage() {
         </SettingsRow>
 
         <SettingsRow
-          title="Coordinate fallback"
-          description="Allow raw x/y targeting when a stable element index is unavailable. Off by default because element targeting is safer."
+          title={gt("Coordinate fallback")}
+          description={
+            <T>
+              Allow raw x/y targeting when a stable element index is unavailable. Off by default
+              because element targeting is safer.
+            </T>
+          }
           control={
             <Switch
               checked={settings?.allowCoordinateFallback ?? false}
               disabled={unavailable || busy || !settings}
-              aria-label="Allow coordinate fallback"
+              aria-label={gt("Allow coordinate fallback")}
               onCheckedChange={(checked) =>
                 updateSettings({ allowCoordinateFallback: Boolean(checked) })
               }

@@ -60,6 +60,7 @@ const layerElectronApp = (calls: ElectronAppCalls) =>
     setAppUserModelId: () => Effect.void,
     getAppMetrics: Effect.succeed([]),
     setAsDefaultProtocolClient: () => Effect.succeed(true),
+    withoutDefaultProtocolClientClaims: (effect) => effect,
     setDesktopName: () => Effect.void,
     setDockIcon: (iconPath) =>
       Effect.sync(() => {

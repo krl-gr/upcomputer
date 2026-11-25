@@ -1,5 +1,6 @@
 import { TaskArchiveFilter } from "@t3tools/tasks-contracts/v1";
 import * as Schema from "effect/Schema";
+import { msg } from "gt-react";
 
 import { useLocalStorage } from "../../../../apps/web/src/hooks/useLocalStorage.ts";
 
@@ -11,8 +12,17 @@ import { useLocalStorage } from "../../../../apps/web/src/hooks/useLocalStorage.
 export const PAGES_PROJECT_STORAGE_KEY = "upcomputer:pages:project";
 const PagesProjectKey = Schema.NullOr(Schema.String);
 
-export function usePagesProjectKey() {
-  return useLocalStorage(PAGES_PROJECT_STORAGE_KEY, null, PagesProjectKey);
+/**
+ * A list with filters of its own, such as the right panel's Worker tasks entry,
+ * which keeps them apart from the Tasks page's. Part of storage keys: never rename one.
+ */
+export type TaskFiltersScope = "panel.workers";
+
+const scopedKey = (key: string, scope: TaskFiltersScope | undefined) =>
+  scope === undefined ? key : `${key}:${scope}`;
+
+export function usePagesProjectKey(scope?: TaskFiltersScope) {
+  return useLocalStorage(scopedKey(PAGES_PROJECT_STORAGE_KEY, scope), null, PagesProjectKey);
 }
 
 /** "No restriction" value of the Tasks status and last-run dropdowns. */
@@ -22,13 +32,13 @@ export const NO_RUNS_FILTER = "__none__";
 
 /** Last-run dropdown options: the task system's raw run statuses. */
 export const LAST_RUN_OPTIONS: ReadonlyArray<{ readonly value: string; readonly label: string }> = [
-  { value: "running", label: "Working" },
-  { value: "completed", label: "Completed" },
-  { value: "failed", label: "Failed" },
-  { value: "stopped", label: "Stopped" },
-  { value: "blocked", label: "Blocked" },
-  { value: "interrupted", label: "Interrupted" },
-  { value: NO_RUNS_FILTER, label: "No runs" },
+  { value: "running", label: msg("Working") },
+  { value: "completed", label: msg("Completed") },
+  { value: "failed", label: msg("Failed") },
+  { value: "stopped", label: msg("Stopped") },
+  { value: "blocked", label: msg("Blocked") },
+  { value: "interrupted", label: msg("Interrupted") },
+  { value: NO_RUNS_FILTER, label: msg("No runs") },
 ];
 
 /** Archive dropdown options; archived tasks are hidden unless chosen here. */
@@ -36,9 +46,9 @@ export const ARCHIVE_OPTIONS: ReadonlyArray<{
   readonly value: TaskArchiveFilter;
   readonly label: string;
 }> = [
-  { value: "active", label: "Active" },
-  { value: "archived", label: "Archived" },
-  { value: "all", label: "Active and archived" },
+  { value: "active", label: msg("Active") },
+  { value: "archived", label: msg("Archived") },
+  { value: "all", label: msg("Active and archived") },
 ];
 
 /** Filters of the Tasks table besides the shared project, kept across visits. */
@@ -73,9 +83,9 @@ export function appliedTaskFilterCount(filters: TasksPageFilters, projectChosen:
   ].filter(Boolean).length;
 }
 
-export function useTasksPageFilters() {
+export function useTasksPageFilters(scope?: TaskFiltersScope) {
   return useLocalStorage(
-    TASKS_PAGE_FILTERS_STORAGE_KEY,
+    scopedKey(TASKS_PAGE_FILTERS_STORAGE_KEY, scope),
     DEFAULT_TASKS_PAGE_FILTERS,
     TasksPageFilters,
   );
@@ -97,9 +107,15 @@ export function matchesLastRunFilter(
   return task.latestRunStatus === lastRun;
 }
 
-/** Tags an enabled agent starts on; the table renders them dimmer. */
+/** Tags an enabled, unarchived agent starts on; the table renders them dimmer. */
 export function agentTriggerTags(
-  agents: ReadonlyArray<{ readonly enabled: boolean; readonly startTags: ReadonlyArray<string> }>,
+  agents: ReadonlyArray<{
+    readonly enabled: boolean;
+    readonly archivedAt?: string | null;
+    readonly startTags: ReadonlyArray<string>;
+  }>,
 ): ReadonlySet<string> {
-  return new Set(agents.flatMap((agent) => (agent.enabled ? agent.startTags : [])));
+  return new Set(
+    agents.flatMap((agent) => (agent.enabled && agent.archivedAt == null ? agent.startTags : [])),
+  );
 }

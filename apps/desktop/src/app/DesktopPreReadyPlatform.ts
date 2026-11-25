@@ -18,6 +18,7 @@ import {
   renderUrlHandlerDesktopEntry,
   replacedVersionedAppImagePath,
 } from "./DesktopLinuxUrlHandler.ts";
+import { resolveWindowsDisableFeaturesSwitch } from "./UpcomputerWindowsOcclusion.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 
 export interface DesktopPreReadyCommandLineReader {
@@ -75,6 +76,13 @@ export const make = Effect.gen(function* () {
         : null;
     const linux =
       platform === "linux" ? resolveEarlyLinuxElectronOptionsFromProcess(homeDirectory) : null;
+    const windowsDisableFeatures = resolveWindowsDisableFeaturesSwitch({
+      platform,
+      disableFeatures: readCommandLineSwitchValue(Electron.app.commandLine, "disable-features"),
+    });
+    if (windowsDisableFeatures !== null) {
+      Electron.app.commandLine.appendSwitch("disable-features", windowsDisableFeatures);
+    }
 
     if (linux !== null) {
       DesktopEarlyElectronStartup.restoreEarlyLinuxDeviceScaleFactor({

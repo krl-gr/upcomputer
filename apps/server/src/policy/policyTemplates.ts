@@ -96,7 +96,7 @@ const policies = (): ReadonlyArray<Policy> => [
         kind: "checkbox",
         list: "Clients",
         name: "remote",
-        label: "Remote: phones, other computers, app.t3.codes",
+        label: "Remote: phones, other computers, app.up.computer",
         defaultChecked: false,
       },
     ],
@@ -118,6 +118,12 @@ const policies = (): ReadonlyArray<Policy> => [
     title: "Allow importing browser cookies",
     help: "Disabled stops users from importing cookies from another browser into Up.computer's browser.",
     toggle: "BrowserCookieImport",
+  },
+  {
+    id: "PreviewTunnel",
+    title: "Allow the preview tunnel",
+    help: "Disabled stops other devices from opening this machine's local servers through Up.computer: no in-app browser tabs loaded on the device, no Open on this device, no port forwarding. Browser tabs still stream from this machine.",
+    toggle: "PreviewTunnel",
   },
   {
     id: "Telemetry",

@@ -9,6 +9,7 @@ import {
 import { AuthClientPresentationMetadata, ServerAuthDescriptor } from "./auth.ts";
 import {
   ForwardCompatibleArray,
+  ForwardCompatibleOptional,
   IsoDateTime,
   NonNegativeInt,
   PositiveInt,
@@ -54,6 +55,16 @@ const ServerConfigIssues = ForwardCompatibleArray(ServerConfigIssue);
 export const ServerProviderState = Schema.Literals(["ready", "warning", "error", "disabled"]);
 export type ServerProviderState = typeof ServerProviderState.Type;
 
+/** UpComputer: why a status check did not reach `ready`, in categories only, never its text. */
+export const ServerProviderStatusReason = Schema.Literals([
+  "migration",
+  "startup_timeout",
+  "models_missing",
+  "auth",
+  "unknown",
+]);
+export type ServerProviderStatusReason = typeof ServerProviderStatusReason.Type;
+
 export const ServerProviderAuthStatus = Schema.Literals([
   "authenticated",
   "unauthenticated",
@@ -92,6 +103,14 @@ export const ServerProviderModel = Schema.Struct({
   capabilities: Schema.NullOr(ModelCapabilities),
 });
 export type ServerProviderModel = typeof ServerProviderModel.Type;
+
+/** A backend a provider's models run on, such as one of fx's. */
+export const ServerProviderSubProvider = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  /** Why none of its models can run now, such as a signed-out backend. */
+  unavailableReason: Schema.optional(TrimmedNonEmptyString),
+});
+export type ServerProviderSubProvider = typeof ServerProviderSubProvider.Type;
 
 export const ServerProviderUpdateRequiredModel = Schema.Struct({
   slug: TrimmedNonEmptyString,
@@ -270,9 +289,15 @@ export const ServerProvider = Schema.Struct({
   // UpComputer: set on the placeholder a driver publishes until its first
   // status check finishes, so clients do not present it as a real result.
   statusPending: Schema.optionalKey(Schema.Boolean),
+  // A category this build does not know reads as absent, so the provider still decodes.
+  statusReason: ForwardCompatibleOptional(ServerProviderStatusReason),
   availability: Schema.optional(ServerProviderAvailability),
   unavailableReason: Schema.optional(TrimmedNonEmptyString),
   models: Schema.Array(ServerProviderModel),
+  // Pickers group `models` under these, in order, by `subProvider`.
+  subProviders: Schema.optional(Schema.Array(ServerProviderSubProvider)),
+  // Set for the one failed check that follows a ready one: pickers keep offering `models`.
+  modelsRetained: Schema.optionalKey(Schema.Boolean),
   // Kept apart from `models` so clients that predate it never offer them.
   updateRequiredModels: Schema.optionalKey(Schema.Array(ServerProviderUpdateRequiredModel)),
   slashCommands: Schema.Array(ServerProviderSlashCommand).pipe(
@@ -280,6 +305,11 @@ export const ServerProvider = Schema.Struct({
   ),
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   workspaceSnapshots: Schema.optionalKey(Schema.Array(ServerProviderWorkspaceSnapshot)),
+  /**
+   * Set when the server rescanned a workspace after a session start and its skills or commands
+   * changed. Clients holding fetched workspace snapshots for this provider fetch them again.
+   */
+  workspaceRescannedAt: Schema.optionalKey(IsoDateTime),
   usageLimits: Schema.optional(ServerProviderUsageLimits),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   compatibilityAdvisory: Schema.optionalKey(ServerProviderCompatibilityAdvisory),
@@ -382,6 +412,8 @@ export const ServerObservability = Schema.Struct({
   otlpLogsSource: Schema.optional(OtlpEndpointSource),
   otlpLogsVariable: Schema.optional(TrimmedNonEmptyString),
   otlpLogsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Relay tracing policy for browsers opened from this server. */
+  relayTracingAllowed: Schema.optionalKey(Schema.Boolean),
 });
 export type ServerObservability = typeof ServerObservability.Type;
 
@@ -411,6 +443,28 @@ export class TelemetryInternalDeviceError extends Schema.TaggedError<TelemetryIn
 ) {
   override get message(): string {
     return "Could not change the internal device setting.";
+  }
+}
+
+/**
+ * The install's "Share anonymous usage data" switch. `lockedBy` names what keeps it off
+ * whatever the user picks: an environment variable or the organization's managed policy.
+ */
+export const TelemetryPreference = Schema.Struct({
+  enabled: Schema.Boolean,
+  lockedBy: Schema.NullOr(Schema.Literals(["environment", "policy"])),
+});
+export type TelemetryPreference = typeof TelemetryPreference.Type;
+
+export const SetTelemetryPreferenceInput = Schema.Struct({ enabled: Schema.Boolean });
+export type SetTelemetryPreferenceInput = typeof SetTelemetryPreferenceInput.Type;
+
+export class TelemetryPreferenceError extends Schema.TaggedError<TelemetryPreferenceError>()(
+  "TelemetryPreferenceError",
+  { cause: Schema.optional(Schema.Defect()) },
+) {
+  override get message(): string {
+    return "Could not save the usage data setting.";
   }
 }
 
@@ -651,7 +705,7 @@ const EnvironmentThemeColors = Schema.Record(
   TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
 );
 
-export const THEME_CSS_MAX_LENGTH = 20_000;
+export const THEME_CSS_MAX_LENGTH = 100_000;
 
 const environmentThemeFields = {
   version: Schema.optional(Schema.Literal(1)),
@@ -677,6 +731,8 @@ export type EnvironmentThemeFile = typeof EnvironmentThemeFile.Type;
 export const EnvironmentTheme = Schema.Struct({
   id: EnvironmentThemeId,
   ...environmentThemeFields,
+  /** Revision of the image file published beside the theme; absent without one. */
+  background: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(64))),
 });
 export type EnvironmentTheme = typeof EnvironmentTheme.Type;
 
@@ -749,6 +805,8 @@ export const ServerConfig = Schema.Struct({
   environment: ExecutionEnvironmentDescriptor,
   auth: ServerAuthDescriptor,
   cwd: TrimmedNonEmptyString,
+  /** The machine's own name, which file URIs from its shells may carry. Older servers omit it. */
+  hostname: Schema.optionalKey(Schema.String),
   keybindingsConfigPath: TrimmedNonEmptyString,
   keybindings: ResolvedKeybindingsConfig,
   issues: ServerConfigIssues,
@@ -1192,6 +1250,16 @@ export const UI_TRACK_TARGET_PATTERN = /^[a-z0-9_.-]{1,64}$/;
 /** A click on an element without a valid `data-track` name. */
 export const UI_UNTRACKED_TARGET = "untracked";
 
+export const FirstRunAgentFailureReason = Schema.Literals([
+  "install",
+  ...ServerProviderStatusReason.literals,
+]);
+export type FirstRunAgentFailureReason = typeof FirstRunAgentFailureReason.Type;
+
+/** The failures the no-agent screen tells apart. */
+export const NoAgentScreenFailure = Schema.Literals(["install", "timeout", "models"]);
+export type NoAgentScreenFailure = typeof NoAgentScreenFailure.Type;
+
 /**
  * UI events the server records as product telemetry, so they share the
  * install's identity with its server events. Bounded values only.
@@ -1225,6 +1293,58 @@ export const ClientTelemetryEvent = Schema.Union([
   Schema.Struct({
     event: Schema.Literal("onboarding.first_run_agent"),
     outcome: Schema.Literals(["started", "ready", "failed", "retried", "connect_other"]),
+    /** With `failed`: the install, or the first agent's start after it. */
+    reason: Schema.optionalKey(FirstRunAgentFailureReason),
+    /** With `retried`: the app's own second attempt after the first failed, not a Retry press. */
+    automatic: Schema.optionalKey(Schema.Literal(true)),
+    /** The user picked the install on the no-agent screen; without it, the app installed on its own. */
+    source: Schema.optionalKey(Schema.Literal("no_agent_screen")),
+  }),
+  Schema.Struct({
+    /** The first-launch screen for a user with no coding agent installed, and each click on it. */
+    event: Schema.Literal("onboarding.no_agent_screen"),
+    action: Schema.Literals([
+      "shown",
+      "install_clicked",
+      "copy_prompt_clicked",
+      "setup_myself_clicked",
+      "try_again_clicked",
+      "setup_another_way_clicked",
+    ]),
+    /** With `shown`: the user's agents found installed, and those of them signed out. */
+    installedAgents: Schema.optionalKey(NonNegativeInt),
+    signedOutAgents: Schema.optionalKey(NonNegativeInt),
+    /** With `shown`: some agent checks had not answered when the wait for them ran out. */
+    checksTimedOut: Schema.optionalKey(Schema.Boolean),
+    /** With `install_clicked`: 1 for this window's first click, higher for later ones. */
+    attempt: Schema.optionalKey(PositiveInt),
+    /** With `copy_prompt_clicked` and `setup_myself_clicked`: a failed install was shown before. */
+    afterFailure: Schema.optionalKey(Schema.Boolean),
+    /** With `setup_myself_clicked`: the setup prompt was copied before. */
+    copiedPrompt: Schema.optionalKey(Schema.Boolean),
+    /** With `try_again_clicked`: the failure it retries. */
+    reason: Schema.optionalKey(NoAgentScreenFailure),
+    /** With `setup_another_way_clicked`: the install in progress, or the failure shown. */
+    during: Schema.optionalKey(Schema.Literals(["installing", ...NoAgentScreenFailure.literals])),
+  }),
+  Schema.Struct({
+    /** The free agent's first message, and each quick reply clicked under it. */
+    event: Schema.Literal("onboarding.agent_setup_offer"),
+    action: Schema.Literals(["shown", "choice_clicked"]),
+    /** With `choice_clicked`. Typed names after `something_else` are never sent. */
+    choice: Schema.optionalKey(
+      Schema.Literals(["claude", "codex", "antigravity", "something_else", "not_now"]),
+    ),
+  }),
+  Schema.Struct({
+    /** The first message after the no-agent screen, once per install of the app. */
+    event: Schema.Literal("onboarding.first_message_sent"),
+    /** The way the user chose on the screen last, if any. */
+    path: Schema.optionalKey(
+      Schema.Literals(["installed_free_agent", "setup_myself", "copied_prompt"]),
+    ),
+    provider: TelemetryProvider,
+    msSinceScreen: NonNegativeInt,
   }),
   Schema.Struct({
     event: Schema.Literal("onboarding.completed"),

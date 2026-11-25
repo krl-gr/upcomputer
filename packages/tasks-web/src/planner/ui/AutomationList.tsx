@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import type { TaskAutomationListItem } from "@t3tools/tasks-contracts/v1";
@@ -21,6 +22,7 @@ export function AutomationList(props: {
   readonly snapshot: AutomationSnapshot;
   readonly indicator: ListDropIndicator | null;
 }) {
+  const gt = useGT();
   const { automations } = usePlanner();
   const [menu, setMenu] = useState<{
     automation: TaskAutomationListItem;
@@ -36,15 +38,17 @@ export function AutomationList(props: {
     <div
       className={cn("mx-auto w-full max-w-3xl py-2", rows.length === 0 && "flex h-full flex-col")}
     >
-      {props.snapshot.error ? (
-        <p className="px-6 py-2 text-sm text-destructive-foreground">{props.snapshot.error}</p>
-      ) : null}
       {rows.length === 0 ? (
         // Blank while the first page loads; it arrives within a moment.
-        props.snapshot.status === "loading" ? null : (
+        props.snapshot.status === "loading" ? null : props.snapshot.error ? (
           <ListEmptyState
-            title="No automations yet"
-            hint="An automation creates a task for workers on a schedule. Click + to add one."
+            title={gt("Automations didn't load")}
+            hint={gt("Notifications has the details.")}
+          />
+        ) : (
+          <ListEmptyState
+            title={gt("No automations yet")}
+            hint={gt("An automation creates a task for workers on a schedule. Click + to add one.")}
           />
         )
       ) : (
@@ -69,19 +73,28 @@ export function AutomationList(props: {
                 )
               }
             >
-              {menu.automation.status === "enabled" ? "Disable" : "Enable"}
+              {menu.automation.status === "enabled" ? gt("Disable") : gt("Enable")}
             </MenuItem>
             <MenuSeparator />
             <MenuItem variant="destructive" onClick={() => setDeleting(menu.automation)}>
-              Delete automation
+              {gt("Delete automation")}
             </MenuItem>
           </>
         ) : null}
       </PointMenu>
       <ConfirmDeleteDialog
         open={deleting !== null}
-        title="Delete automation"
-        description={`"${deleting?.name ?? "This automation"}" stops creating tasks. The tasks it created stay in the table. This cannot be undone.`}
+        title={gt("Delete automation")}
+        description={
+          deleting
+            ? gt(
+                '"{name}" stops creating tasks. The tasks it created stay in the table. This cannot be undone.',
+                { name: deleting.name },
+              )
+            : gt(
+                "This automation stops creating tasks. The tasks it created stay in the table. This cannot be undone.",
+              )
+        }
         onOpenChange={(open) => {
           if (!open) setDeleting(null);
         }}

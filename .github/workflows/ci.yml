@@ -280,6 +280,11 @@ jobs:
           fi
 
       - name: Test
+        env:
+          # Chromium crbug.com/530892387 (Vitest #12024): on Linux, 304 module
+          # responses leak 2 MiB memfd mappings until major GC, without filling
+          # /tmp below Vitest's 4 GiB default. Trigger CDP GC after each file.
+          VITEST_CHROMIUM_GC_DISK_THRESHOLD_GB: "100000"
         run: vp run --filter @t3tools/web test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 
       # Browser tests run source modules; this boots the production chunk graph.

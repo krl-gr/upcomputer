@@ -6,14 +6,21 @@
 export const TASK_TABLE_MIN_WIDTH = 1200;
 
 /**
- * The table where its columns and the header's filters fit, cards below that
- * and always in the right panel. Before the list is measured the page shows
- * the table.
+ * How far under its least width a table already shown stays. The table scrolls in the page,
+ * so its scrollbar narrows the measured list, and the cards scroll in a box of their own;
+ * without this slack a width just over the threshold flips the layouts forever. It exceeds
+ * any scrollbar: ours is 6px, a classic Windows one 17px.
  */
-export function taskListLayout(input: {
-  readonly panel: boolean;
-  readonly width: number | null;
-}): "table" | "cards" {
-  if (input.panel) return "cards";
-  return input.width === null || input.width >= TASK_TABLE_MIN_WIDTH ? "table" : "cards";
+export const TASK_TABLE_KEEP_SLACK = 24;
+
+export type TaskListLayout = "table" | "cards";
+
+/**
+ * The page's list: the table where its columns and the header's filters fit,
+ * cards below that. `shown` is the layout the width was measured in.
+ */
+export function taskListLayout(width: number, shown: TaskListLayout): TaskListLayout {
+  const least =
+    shown === "table" ? TASK_TABLE_MIN_WIDTH - TASK_TABLE_KEEP_SLACK : TASK_TABLE_MIN_WIDTH;
+  return width >= least ? "table" : "cards";
 }

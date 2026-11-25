@@ -2,6 +2,7 @@ import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { T, useGT } from "gt-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { isElectron } from "../env";
@@ -196,7 +197,8 @@ function HomeWaiting({
 }: {
   readonly waitingOn: ReadonlyArray<WaitingWorkspaceEnvironment>;
 }) {
-  const { text, unreachable } = describeWorkspaceWaiting(waitingOn);
+  const gt = useGT();
+  const { text, unreachable } = describeWorkspaceWaiting(waitingOn, gt);
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
       {isElectron ? <WorkspacePageHeader electron /> : null}
@@ -206,7 +208,7 @@ function HomeWaiting({
           {unreachable ? (
             <div className="mt-5 flex justify-center">
               <Button render={<Link to="/settings/connections" />} size="sm" variant="outline">
-                Check Connections
+                {gt("Check Connections")}
               </Button>
             </div>
           ) : null}
@@ -217,7 +219,8 @@ function HomeWaiting({
 }
 
 function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
-  const contentArea = workspaceAreaProps("home", 1, "Home");
+  const gt = useGT();
+  const contentArea = workspaceAreaProps("home", 1, gt("Home", { $context: "the home screen" }));
   return (
     <SidebarInset
       {...contentArea}
@@ -227,14 +230,16 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
       {isElectron ? <WorkspacePageHeader electron /> : null}
       <Empty className="flex-1">
         <EmptyHeader className="max-w-md">
-          <EmptyTitle>Couldn’t start a new thread</EmptyTitle>
+          <EmptyTitle>
+            <T>Couldn’t start a new thread</T>
+          </EmptyTitle>
           <EmptyDescription>
-            The project is still available. Try opening the draft again.
+            <T>The project is still available. Try opening the draft again.</T>
           </EmptyDescription>
           <div className="mt-5 flex justify-center">
             <Button size="sm" onClick={onRetry}>
               <RefreshIcon size="md" />
-              Try again
+              <T>Try again</T>
             </Button>
           </div>
         </EmptyHeader>

@@ -1,3 +1,4 @@
+import { msg, useGT, useLocale, useMessages } from "gt-react";
 import { useId, useState } from "react";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import type { TaskScheduleEntry, TaskScheduleEntryStatus } from "@t3tools/tasks-contracts/v1";
@@ -42,26 +43,23 @@ import { DurationField, TimeField } from "./TimeField.tsx";
 
 const PAGE = 10;
 const STATUS_LABELS: Record<TaskScheduleEntryStatus, string> = {
-  open: "Not done",
-  done: "Done",
-  skipped: "Skipped",
+  open: msg("Not done"),
+  done: msg("Done", { $context: "status of a planned day entry" }),
+  skipped: msg("Skipped"),
 };
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "long" });
-const dateYearFormatter = new Intl.DateTimeFormat(undefined, {
-  day: "2-digit",
-  month: "long",
-  year: "numeric",
-});
-
-function formatEntryDate(key: string) {
+function formatEntryDate(key: string, locale: string) {
   const date = dateOfKey(key);
-  return (
-    date.getFullYear() === new Date().getFullYear() ? dateFormatter : dateYearFormatter
-  ).format(date);
+  return date.toLocaleDateString(locale, {
+    day: "2-digit",
+    month: "long",
+    ...(date.getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }),
+  });
 }
 
 function TimeCell(props: { readonly entry: TaskScheduleEntry }) {
+  const gt = useGT();
+  const locale = useLocale();
   const { store } = usePlanner();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(props.entry.startTime ?? "");
@@ -80,7 +78,9 @@ function TimeCell(props: { readonly entry: TaskScheduleEntry }) {
       }}
     >
       <PopoverTrigger render={<Button size="xs" variant="ghost" />}>
-        {props.entry.startTime ? formatTime(props.entry.startTime) : "Set"}
+        {props.entry.startTime
+          ? formatTime(props.entry.startTime, locale)
+          : gt("Set", { $context: "button that sets a missing value" })}
       </PopoverTrigger>
       <PopoverPopup align="start" padding="compact">
         <form
@@ -93,10 +93,10 @@ function TimeCell(props: { readonly entry: TaskScheduleEntry }) {
           <TimeField value={value} onChange={setValue} autoFocus />
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
+              {gt("Cancel")}
             </Button>
             <Button size="sm" type="submit">
-              Save
+              {gt("Save")}
             </Button>
           </div>
         </form>
@@ -106,12 +106,15 @@ function TimeCell(props: { readonly entry: TaskScheduleEntry }) {
 }
 
 function DurationCell(props: { readonly entry: TaskScheduleEntry }) {
+  const gt = useGT();
   const { store } = usePlanner();
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger render={<Button size="xs" variant="ghost" />}>
-        {props.entry.durationMinutes !== null ? formatDuration(props.entry.durationMinutes) : "Set"}
+        {props.entry.durationMinutes !== null
+          ? formatDuration(props.entry.durationMinutes, gt)
+          : gt("Set", { $context: "button that sets a missing value" })}
       </PopoverTrigger>
       <PopoverPopup align="start" padding="compact">
         <div className="w-44">
@@ -128,12 +131,13 @@ function DurationCell(props: { readonly entry: TaskScheduleEntry }) {
 }
 
 function DateCell(props: { readonly entry: TaskScheduleEntry }) {
+  const locale = useLocale();
   const { store, preferences } = usePlanner();
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger render={<Button size="xs" variant="ghost" />}>
-        {formatEntryDate(props.entry.date)}
+        {formatEntryDate(props.entry.date, locale)}
       </PopoverTrigger>
       <PopoverPopup align="start">
         <Calendar
@@ -160,6 +164,7 @@ function AddEntryDialog(props: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
 }) {
+  const gt = useGT();
   const { store, preferences } = usePlanner();
   const id = useId();
   const [date, setDate] = useState<Date | undefined>();
@@ -180,9 +185,9 @@ function AddEntryDialog(props: {
     >
       <DialogPopup>
         <DialogHeader>
-          <DialogTitle>Add to the schedule</DialogTitle>
+          <DialogTitle>{gt("Add to the schedule")}</DialogTitle>
           <DialogDescription>
-            Pick a day, and a time and duration if the task has them.
+            {gt("Pick a day, and a time and duration if the task has them.")}
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>
@@ -196,11 +201,11 @@ function AddEntryDialog(props: {
             />
             <div className="flex w-44 flex-col gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor={`${id}-time`}>Time (optional)</Label>
+                <Label htmlFor={`${id}-time`}>{gt("Time (optional)")}</Label>
                 <TimeField id={`${id}-time`} value={time} onChange={setTime} />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label>Duration</Label>
+                <Label>{gt("Duration")}</Label>
                 <DurationField value={duration} onChange={setDuration} />
               </div>
             </div>
@@ -208,7 +213,7 @@ function AddEntryDialog(props: {
         </DialogPanel>
         <DialogFooter>
           <Button variant="outline" onClick={close}>
-            Cancel
+            {gt("Cancel")}
           </Button>
           <Button
             disabled={!date}
@@ -223,7 +228,7 @@ function AddEntryDialog(props: {
               close();
             }}
           >
-            Add
+            {gt("Add")}
           </Button>
         </DialogFooter>
       </DialogPopup>
@@ -239,6 +244,8 @@ export function ScheduleTable(props: {
   readonly taskId: string;
   readonly entries: readonly TaskScheduleEntry[] | undefined;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const { store } = usePlanner();
   const [visible, setVisible] = useState(PAGE);
   const [adding, setAdding] = useState(false);
@@ -249,12 +256,12 @@ export function ScheduleTable(props: {
   return (
     <div className="flex flex-col gap-2">
       {props.entries === undefined ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
+        <p className="py-6 text-center text-sm text-muted-foreground">{gt("Loading…")}</p>
       ) : entries.length === 0 ? (
         <div className="flex justify-center py-6">
           <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
             <PlusIcon />
-            Add first entry
+            {gt("Add first entry")}
           </Button>
         </div>
       ) : (
@@ -262,12 +269,12 @@ export function ScheduleTable(props: {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Start</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>{gt("Date")}</TableHead>
+                <TableHead>{gt("Start", { $context: "column header: start time" })}</TableHead>
+                <TableHead>{gt("Duration")}</TableHead>
+                <TableHead>{gt("Status")}</TableHead>
                 <TableHead>
-                  <span className="sr-only">Delete</span>
+                  <span className="sr-only">{gt("Delete")}</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -292,12 +299,12 @@ export function ScheduleTable(props: {
                       }}
                     >
                       <SelectTrigger size="xs" variant="ghost" className="w-28 min-w-0">
-                        <SelectValue>{STATUS_LABELS[entry.status]}</SelectValue>
+                        <SelectValue>{m(STATUS_LABELS[entry.status])}</SelectValue>
                       </SelectTrigger>
                       <SelectPopup>
                         {(Object.keys(STATUS_LABELS) as TaskScheduleEntryStatus[]).map((status) => (
                           <SelectItem key={status} value={status}>
-                            {STATUS_LABELS[status]}
+                            {m(STATUS_LABELS[status])}
                           </SelectItem>
                         ))}
                       </SelectPopup>
@@ -307,7 +314,7 @@ export function ScheduleTable(props: {
                     <Button
                       size="icon-xs"
                       variant="ghost-destructive"
-                      aria-label="Delete entry"
+                      aria-label={gt("Delete entry")}
                       onClick={() => setDeleting(entry.id)}
                     >
                       <Trash2Icon />
@@ -319,11 +326,11 @@ export function ScheduleTable(props: {
           </Table>
           <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
             <PlusIcon />
-            Add entry
+            {gt("Add entry")}
           </Button>
           {remaining > 0 ? (
             <Button size="sm" variant="ghost" onClick={() => setVisible((count) => count + PAGE)}>
-              Load more ({remaining})
+              {gt("Load more ({count})", { count: remaining })}
             </Button>
           ) : null}
         </>
@@ -331,8 +338,8 @@ export function ScheduleTable(props: {
       <AddEntryDialog taskId={props.taskId} open={adding} onOpenChange={setAdding} />
       <ConfirmDeleteDialog
         open={deleting !== null}
-        title="Delete entry"
-        description="This day is taken off the task's schedule. The task stays."
+        title={gt("Delete entry")}
+        description={gt("This day is taken off the task's schedule. The task stays.")}
         onOpenChange={(open) => {
           if (!open) setDeleting(null);
         }}

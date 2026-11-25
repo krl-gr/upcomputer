@@ -1,3 +1,5 @@
+import { msg, useMessages } from "gt-react";
+
 import type { SidebarThreadStatus } from "../components/Sidebar.logic";
 import { resolveSidebarV2TopStatus, type ThreadTopStatusKind } from "./topStatus";
 import { cn } from "../lib/utils";
@@ -8,6 +10,7 @@ export type ThreadStatusLabelKind = Exclude<ThreadTopStatusKind, "woke">;
 export interface ThreadStatusLabelEntry {
   /** "draft": a typed, unsent message, named only when no status applies. */
   readonly kind: ThreadStatusLabelKind | "draft";
+  /** English, from `msg()`; shown through `useMessages()`. */
   readonly label: string;
   readonly className: string;
 }
@@ -21,21 +24,21 @@ export const THREAD_STATUS_LABELS: {
   readonly [Kind in ThreadStatusLabelKind]: Omit<ThreadStatusLabelEntry, "kind">;
 } = {
   // Upstream's word for worktree setup, in Working's hue.
-  preparing: { label: "Setting up", className: "text-info-foreground" },
-  working: { label: "Working", className: "text-info-foreground" },
-  approval: { label: "Pending Approval", className: "text-warning-foreground" },
-  input: { label: "Awaiting Input", className: "text-indigo-600 dark:text-indigo-300" },
-  request: { label: "Guest Request", className: "text-guest-foreground" },
-  done: { label: "Completed", className: "text-success-foreground" },
-  failed: { label: "Failed", className: "text-error-foreground" },
-  limited: { label: "Limited", className: "text-warning-foreground" },
-  waiting: { label: "Waiting", className: "text-muted-foreground" },
+  preparing: { label: msg("Setting up"), className: "text-info-foreground" },
+  working: { label: msg("Working"), className: "text-info-foreground" },
+  approval: { label: msg("Pending Approval"), className: "text-warning-foreground" },
+  input: { label: msg("Awaiting Input"), className: "text-indigo-600 dark:text-indigo-300" },
+  request: { label: msg("Guest Request"), className: "text-guest-foreground" },
+  done: { label: msg("Completed"), className: "text-success-foreground" },
+  failed: { label: msg("Failed"), className: "text-error-foreground" },
+  limited: { label: msg("Limited"), className: "text-warning-foreground" },
+  waiting: { label: msg("Waiting"), className: "text-muted-foreground" },
 };
 
 /** A draft's label: as quiet as Waiting. */
 export const DRAFT_STATUS_LABEL: ThreadStatusLabelEntry = {
   kind: "draft",
-  label: "Draft",
+  label: msg("Draft"),
   className: "text-muted-foreground",
 };
 
@@ -61,6 +64,7 @@ export function resolveThreadStatusLabel(input: {
  * UpComputer surface, by upstream's detailed rows.
  */
 export function ThreadStatusLabel(props: { readonly status: ThreadStatusLabelEntry | null }) {
+  const m = useMessages();
   if (props.status === null) return null;
   return (
     <span
@@ -69,7 +73,7 @@ export function ThreadStatusLabel(props: { readonly status: ThreadStatusLabelEnt
       data-status={props.status.kind}
       className={cn("shrink-0 whitespace-nowrap", props.status.className)}
     >
-      {props.status.label}
+      {m(props.status.label)}
     </span>
   );
 }

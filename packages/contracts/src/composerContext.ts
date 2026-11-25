@@ -1,6 +1,8 @@
 import * as Schema from "effect/Schema";
 
-import { AssistantCitation } from "./assistantCitations.ts";
+import { SnapShotSource } from "./chatAttachment.ts";
+
+import { AssistantMessageCitation } from "./assistantCitations.ts";
 import {
   EnvironmentId,
   ForwardCompatibleArray,
@@ -100,6 +102,7 @@ export const ImageContextRecord = Schema.Struct({
   ...recordBase,
   kind: Schema.Literal("image"),
   ...attachmentBinding,
+  source: Schema.optional(SnapShotSource),
 });
 export type ImageContextRecord = typeof ImageContextRecord.Type;
 
@@ -236,7 +239,7 @@ export const ResponseContextRecord = Schema.Struct({
   ...recordBase,
   kind: Schema.Literal("response"),
   /** Where the response is and how it starts, as the reader saw it. */
-  citation: AssistantCitation,
+  citation: AssistantMessageCitation,
   itemId: TurnItemId,
   /** The subagents whose results that response reported on. */
   subagents: Schema.optional(

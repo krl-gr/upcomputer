@@ -2,6 +2,7 @@ import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { describeError } from "@t3tools/client-runtime/errors";
 import { ThreadId, type EnvironmentId } from "@t3tools/contracts";
+import { gtFallback, msg, type useGT } from "gt-react";
 import {
   defaultBotAppearance,
   type Bot,
@@ -15,12 +16,23 @@ import { appAtomRegistry } from "../../../../apps/web/src/rpc/atomRegistry.ts";
 import { resolveThreadLastVisitedAt } from "../../../../apps/web/src/components/Sidebar.logic.ts";
 import { useUiStateStore } from "../../../../apps/web/src/uiStateStore.ts";
 import { ConfigurableBotCharacter } from "../../../../apps/web/src/components/bot-character-configurable/ConfigurableBotCharacter.tsx";
+import { holdClientNotice } from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
+import { allSidebarThreadsClaimKey } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
+import { writeLocalStorageValue } from "../../../../apps/web/src/hooks/useLocalStorage.ts";
 import {
   readTasksWebAccess,
   readTasksWebClient,
   subscribeTasksWebAccess,
   useTasksWebAccess,
 } from "../environmentApi.ts";
+import { isDisconnectError } from "../state/taskPageLoader.ts";
+import { useOmittedThreadShell } from "../ui/useOmittedThreadShell.ts";
+import {
+  BOT_CHATS_STORAGE_KEY,
+  BotChats,
+  botChatKeys,
+  readRememberedBotChats,
+} from "./rememberedBotChats.ts";
 import {
   botChatStatus,
   botStatus,
@@ -33,7 +45,8 @@ import {
 interface BotList {
   readonly bots: ReadonlyArray<Bot>;
   readonly loaded: boolean;
-  readonly error: string;
+  /** The last load failed; Notifications says so. */
+  readonly failed: boolean;
   /** The environment's server predates bots: it has no Bots section and no error. */
   readonly unsupported: boolean;
 }
@@ -51,22 +64,87 @@ interface BotListStore {
   fetching: boolean;
   again: boolean;
   stopChanges: (() => void) | undefined;
+  /** Holds the Notifications card while the list fails to load. */
+  releaseNotice: (() => void) | undefined;
 }
 
-const EMPTY: BotList = { bots: [], loaded: false, error: "", unsupported: false };
+const EMPTY: BotList = { bots: [], loaded: false, failed: false, unsupported: false };
 const stores = new Map<EnvironmentId, BotListStore>();
 
+function rememberBotChats(environmentId: EnvironmentId, bots: ReadonlyArray<Bot>) {
+  const threadIds = bots.map((bot) => bot.threadId);
+  const remembered = readRememberedBotChats()[environmentId];
+  if (remembered?.join("\n") === threadIds.join("\n")) return;
+  writeLocalStorageValue(
+    BOT_CHATS_STORAGE_KEY,
+    (current) => ({ ...current, [environmentId]: threadIds }),
+    {},
+    BotChats,
+  );
+}
+
+/**
+ * The computers whose bot list is loading, each with the chat thread ids its last loaded list
+ * had (undefined when none is remembered). A computer whose Tasks access is still being checked
+ * counts as loading: at startup that check comes first.
+ */
+function rememberedWhileLoading(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): Array<readonly [EnvironmentId, ReadonlyArray<string> | undefined]> {
+  const loading = environmentIds.filter((environmentId) => {
+    const access = readTasksWebAccess(environmentId);
+    if (access.availability !== "loading" && !access.canReadAgents) return false;
+    const { list } = storeFor(environmentId);
+    return !list.loaded && !list.failed;
+  });
+  if (loading.length === 0) return [];
+  const remembered = readRememberedBotChats();
+  return loading.map((environmentId) => [environmentId, remembered[environmentId]] as const);
+}
+
+/**
+ * The scoped keys of the bot chats each computer had when its list last loaded, for those whose
+ * list is loading again, so Threads does not list them until the Bots section does. A computer
+ * with no remembered list claims all its threads (`allSidebarThreadsClaimKey`) until its list
+ * loads, or until it turns out not to serve Tasks.
+ */
+export function rememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string[] {
+  return rememberedWhileLoading(environmentIds).flatMap(([environmentId, threadIds]) => {
+    if (threadIds !== undefined) return botChatKeys(environmentId, threadIds);
+    // Nothing remembered, as on the first start after an update: any thread may be a bot chat.
+    // At startup the Tasks check often runs before the connection, so it is held through it.
+    return [allSidebarThreadsClaimKey(environmentId)];
+  });
+}
+
+/**
+ * How many bots the loading computers had when their lists last loaded, so the Bots section
+ * keeps their room meanwhile. Null when none is loading or one has nothing remembered.
+ */
+export function rememberedBotCount(environmentIds: ReadonlyArray<EnvironmentId>): number | null {
+  const loading = rememberedWhileLoading(environmentIds);
+  if (loading.length === 0) return null;
+  let count = 0;
+  for (const [, threadIds] of loading) {
+    if (threadIds === undefined) return null;
+    count += threadIds.length;
+  }
+  return count;
+}
+
+type GT = ReturnType<typeof useGT>;
+
 /** A failed bot action in plain words; the raw text goes behind Details. */
-export const errorText = (error: unknown) => {
+export const errorText = (error: unknown, gt: GT = gtFallback) => {
   const { reason } = describeError(error);
   return reason === undefined
-    ? "Something went wrong. Try again."
+    ? gt("Something went wrong. Try again.")
     : `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.`;
 };
 
 /** The reason inside a sentence, such as "Couldn't save Nova's settings: <reason>." */
-export const errorReason = (error: unknown) =>
-  describeError(error).reason ?? "something went wrong";
+export const errorReason = (error: unknown, gt: GT = gtFallback) =>
+  describeError(error).reason ?? gt("something went wrong");
 
 /**
  * A server without the bots methods, such as another computer on an older version, rejects
@@ -91,10 +169,16 @@ function storeFor(environmentId: EnvironmentId) {
       fetching: false,
       again: false,
       stopChanges: undefined,
+      releaseNotice: undefined,
     };
     stores.set(environmentId, store);
   }
   return store;
+}
+
+function releaseNotice(store: BotListStore) {
+  store.releaseNotice?.();
+  store.releaseNotice = undefined;
 }
 
 function publish(store: BotListStore, list: BotList) {
@@ -111,14 +195,33 @@ async function refresh(environmentId: EnvironmentId, store: BotListStore) {
   store.fetching = true;
   try {
     const bots = await readTasksWebClient(environmentId).bots.list({});
-    publish(store, { bots, loaded: true, error: "", unsupported: false });
+    rememberBotChats(environmentId, bots);
+    releaseNotice(store);
+    publish(store, { bots, loaded: true, failed: false, unsupported: false });
   } catch (cause) {
-    publish(
-      store,
-      isUnknownMethodError(cause)
-        ? { ...EMPTY, loaded: true, unsupported: true }
-        : { ...store.list, error: "Couldn't load bots." },
-    );
+    if (isUnknownMethodError(cause)) {
+      releaseNotice(store);
+      publish(store, { ...EMPTY, loaded: true, unsupported: true });
+    } else {
+      // A view that went away since the request no longer shows the list, and a computer that
+      // went away is its outage card; its reconnect loads the list again.
+      if (store.listeners.size > 0 && !isDisconnectError(cause)) {
+        const previous = store.releaseNotice;
+        store.releaseNotice = holdClientNotice(
+          {
+            id: "bots:list",
+            environmentId,
+            severity: "error",
+            title: msg("Bots didn't load on {computer}"),
+            message: msg("The list shows what it had before."),
+            detail: describeError(cause).detail ?? String(cause),
+          },
+          () => void refresh(environmentId, store),
+        );
+        previous?.();
+      }
+      publish(store, { ...store.list, failed: true });
+    }
   } finally {
     store.fetching = false;
   }
@@ -145,7 +248,7 @@ export function readShownBots(environmentId: EnvironmentId) {
   return list?.loaded ? list.bots : null;
 }
 
-function subscribeBots(environmentId: EnvironmentId, listener: () => void) {
+export function subscribeBots(environmentId: EnvironmentId, listener: () => void) {
   const store = storeFor(environmentId);
   store.listeners.add(listener);
   if (store.listeners.size === 1) {
@@ -171,6 +274,7 @@ function subscribeBots(environmentId: EnvironmentId, listener: () => void) {
     if (store.listeners.size === 0) {
       store.stopChanges?.();
       store.stopChanges = undefined;
+      releaseNotice(store);
     }
   };
 }
@@ -197,19 +301,14 @@ export function useBots(environmentId: EnvironmentId) {
 export interface BotSectionList {
   readonly environmentId: EnvironmentId;
   readonly bots: ReadonlyArray<Bot>;
-  readonly error: string;
+  /** False while its first load failed: `bots` is then empty, not the computer's bots. */
+  readonly loaded: boolean;
 }
 
-/**
- * The lists, in the given environments' order, that the one Bots section merges: those that
- * answered, or failed in a way worth showing. One still loading or whose server predates bots
- * adds nothing.
- */
-export function useBotSectionLists(
-  environmentIds: ReadonlyArray<EnvironmentId>,
-): ReadonlyArray<BotSectionList> {
+/** Follows the given computers' Tasks access and, where it allows, their bot lists. */
+function useSubscribeBotSectionLists(environmentIds: ReadonlyArray<EnvironmentId>) {
   const key = environmentIds.join("\n");
-  const subscribe = useCallback(
+  return useCallback(
     (listener: () => void) => {
       const ids = key ? (key.split("\n") as Array<EnvironmentId>) : [];
       // Lists are read only where Tasks access allows it, which can change while subscribed.
@@ -237,13 +336,40 @@ export function useBotSectionLists(
     },
     [key],
   );
+}
+
+/**
+ * `rememberedBotChatKeys` as a store snapshot, one key per line, so it is read again when a
+ * computer's access is decided or its list loads.
+ */
+export function useRememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string {
+  const subscribe = useSubscribeBotSectionLists(environmentIds);
+  const read = () => rememberedBotChatKeys(environmentIds).join("\n");
+  return useSyncExternalStore(subscribe, read, read);
+}
+
+export function useRememberedBotCount(environmentIds: ReadonlyArray<EnvironmentId>): number | null {
+  const subscribe = useSubscribeBotSectionLists(environmentIds);
+  const read = () => rememberedBotCount(environmentIds);
+  return useSyncExternalStore(subscribe, read, read);
+}
+
+/**
+ * The lists, in the given environments' order, that the one Bots section merges: those that
+ * answered, or failed in a way worth showing. One still loading or whose server predates bots
+ * adds nothing.
+ */
+export function useBotSectionLists(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): ReadonlyArray<BotSectionList> {
+  const subscribe = useSubscribeBotSectionLists(environmentIds);
   const read = () =>
     environmentIds
       .flatMap((environmentId) => {
         if (!readTasksWebAccess(environmentId).canReadAgents) return [];
         const store = storeFor(environmentId);
         const { list } = store;
-        return !list.unsupported && (list.loaded || list.error !== "")
+        return !list.unsupported && (list.loaded || list.failed)
           ? [`${environmentId}\t${store.version}`]
           : [];
       })
@@ -254,8 +380,8 @@ export function useBotSectionLists(
       shown
         ? shown.split("\n").map((entry) => {
             const environmentId = entry.slice(0, entry.lastIndexOf("\t")) as EnvironmentId;
-            const { bots, error } = storeFor(environmentId).list;
-            return { environmentId, bots, error };
+            const { bots, loaded } = storeFor(environmentId).list;
+            return { environmentId, bots, loaded };
           })
         : [],
     [shown],
@@ -340,8 +466,10 @@ export function useBotStatus(environmentId: EnvironmentId, bot: Bot | undefined)
   const localLastVisitedAt = useUiStateStore((state) =>
     chatRef ? state.threadLastVisitedAtById[scopedThreadKey(chatRef)] : undefined,
   );
-  const background = useThreadShell(
+  // A finished run's thread is not in the shell; only a failure reads it, for its error class.
+  const background = useOmittedThreadShell(
     bot?.latestTaskRun ? scopeThreadRef(environmentId, bot.latestTaskRun.threadId) : null,
+    bot?.latestTaskRun?.status === "failed",
   );
   const taskRunRequest = useBotTaskRunRequest(environmentId, bot);
   const lastVisitedAt = thread

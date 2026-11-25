@@ -24,7 +24,15 @@ import {
   type TaskActor,
   type TaskSearchInput,
   type TaskPageInput,
+  type TaskListSettings as TaskListSettingsValue,
+  type TaskWorkflowVersion,
+  CURRENT_TASK_WORKFLOW_VERSION,
+  LEGACY_TASK_WORKFLOW_VERSION,
+  taskWorkflowVersionOf,
   type TaskThreadTasksInput,
+  TASK_LAST_RUN_NONE,
+  TaskListSettings,
+  DEFAULT_TASK_LIST_SETTINGS,
   TaskRank,
   TaskRunCount,
   type TaskChange,
@@ -34,6 +42,7 @@ import {
   TaskThreadRunCountsResult,
   DEFAULT_TASK_REMINDER_LEAD_MINUTES,
   PERSON_DONE_STATUS,
+  sameTaskStatus,
   personTaskStatusError,
   statusForPersonAudience,
   taskKindAudienceError,
@@ -89,6 +98,8 @@ import {
   TaskRepository,
   TouchTaskInput,
   type SetTasksArchivedInput,
+  type RenameTaskStatusInput,
+  type RenameTaskStatusResult,
   type SetTasksArchivedResult,
   type TaskRepositoryShape,
 } from "./TaskRepository.ts";
@@ -151,6 +162,7 @@ const TaskAgentDbRow = Schema.Struct({
   config: Schema.fromJsonString(TaskAgent.fields.config),
   createdAt: TaskAgent.fields.createdAt,
   updatedAt: TaskAgent.fields.updatedAt,
+  archivedAt: Schema.NullOr(TaskAgent.fields.createdAt),
 });
 
 const TaskAgentRunDbRow = Schema.Struct({
@@ -294,6 +306,28 @@ function filterTasksByTags(tasks: ReadonlyArray<Task>, tags: ReadonlyArray<TaskT
     return true;
   });
 }
+
+const ListConditionFields = Schema.Struct({
+  projectId: Schema.NullOr(Task.fields.projectId),
+  status: Schema.NullOr(Task.fields.status),
+  tagsJson: Schema.String,
+  tagCount: Schema.Number,
+  archive: TaskArchiveFilter,
+  audience: TaskAudienceFilter,
+  kind: TaskKindFilter,
+  excludeStatusesJson: Schema.NullOr(Schema.String),
+  createdBy: Schema.NullOr(Schema.String),
+  excludeAutomationTasks: Schema.Number,
+  lastRun: Schema.NullOr(Schema.String),
+});
+
+const decodeListSettings = Schema.decodeUnknownOption(Schema.fromJsonString(TaskListSettings));
+
+/** A version a newer build stored reads as this build's newest workflow. */
+const workflowVersionOf = (stored: number | undefined): TaskWorkflowVersion =>
+  stored === undefined || stored <= LEGACY_TASK_WORKFLOW_VERSION
+    ? LEGACY_TASK_WORKFLOW_VERSION
+    : CURRENT_TASK_WORKFLOW_VERSION;
 
 /** The audience, kind and excluded statuses of a list, with their defaults. */
 function listFilters(input: TaskSearchInput) {
@@ -542,6 +576,38 @@ const makeTaskRepository = Effect.gen(function* () {
       audience === "all" ? sql.literal("1 = 1") : sql`audience = ${audience}`;
     return kind === "all" ? audienceCondition : sql`${audienceCondition} AND kind = ${kind}`;
   };
+
+  /** The latest run (latest start) has this raw status; `none`: the task never ran. */
+  const lastRunCondition = (lastRun: string | null) =>
+    lastRun === null
+      ? sql.literal("1 = 1")
+      : lastRun === TASK_LAST_RUN_NONE
+        ? sql.literal("NOT EXISTS (SELECT 1 FROM task_agent_runs r WHERE r.task_id = tasks.id)")
+        : sql`(SELECT r.status FROM task_agent_runs r WHERE r.task_id = tasks.id
+            ORDER BY r.started_at DESC, r.id ASC LIMIT 1) = ${lastRun}`;
+
+  /** A list's filters as a WHERE condition on `tasks`, shared by its pages and its counts. */
+  const listCondition = (filter: typeof ListConditionFields.Encoded) => sql`
+    (${filter.projectId} IS NULL OR project_id = ${filter.projectId})
+    AND (${filter.status} IS NULL OR status = ${filter.status} COLLATE NOCASE)
+    AND ${archiveCondition(filter.archive)}
+    AND ${membershipCondition(filter.audience, filter.kind)}
+    AND (${filter.excludeStatusesJson} IS NULL
+      OR status COLLATE NOCASE NOT IN (SELECT value FROM json_each(${filter.excludeStatusesJson})))
+    AND (${filter.createdBy} IS NULL OR created_by = ${filter.createdBy})
+    AND (${filter.excludeAutomationTasks} = 0
+      OR created_by NOT GLOB ${`${AUTOMATION_TASK_CREATOR_PREFIX}*`})
+    AND (
+      ${filter.tagCount} = 0
+      OR id IN (
+        SELECT task_id
+        FROM task_tags
+        WHERE tag IN (SELECT value FROM json_each(${filter.tagsJson}))
+        GROUP BY task_id
+        HAVING COUNT(DISTINCT tag) = ${filter.tagCount}
+      )
+    )
+    AND ${lastRunCondition(filter.lastRun)}`;
 
   /**
    * History events the server records itself. A caller-supplied id makes the
@@ -886,66 +952,33 @@ const makeTaskRepository = Effect.gen(function* () {
 
   const searchTaskRows = SqlSchema.findAll({
     Request: Schema.Struct({
-      projectId: Schema.NullOr(Task.fields.projectId),
-      status: Schema.NullOr(Task.fields.status),
-      tagsJson: Schema.String,
-      tagCount: Schema.Number,
-      archive: TaskArchiveFilter,
-      audience: TaskAudienceFilter,
-      kind: TaskKindFilter,
-      excludeStatusesJson: Schema.NullOr(Schema.String),
-      createdBy: Schema.NullOr(Schema.String),
-      excludeAutomationTasks: Schema.Number,
+      ...ListConditionFields.fields,
       afterRank: Schema.NullOr(Task.fields.rank),
       afterId: Schema.NullOr(TaskId),
       fromBottom: Schema.Boolean,
       limit: Schema.Number,
     }),
     Result: TaskDbRow,
-    execute: ({
-      projectId,
-      status,
-      tagsJson,
-      tagCount,
-      archive,
-      audience,
-      kind,
-      excludeStatusesJson,
-      createdBy,
-      excludeAutomationTasks,
-      afterRank,
-      afterId,
-      fromBottom,
-      limit,
-    }) =>
+    execute: ({ afterRank, afterId, fromBottom, limit, ...filter }) =>
       sql`
         SELECT
           ${TASK_COLUMNS}
         FROM tasks
-        WHERE (${projectId} IS NULL OR project_id = ${projectId})
-          AND (${status} IS NULL OR status = ${status})
-          AND ${archiveCondition(archive)}
-          AND ${membershipCondition(audience, kind)}
-          AND (${excludeStatusesJson} IS NULL
-            OR status NOT IN (SELECT value FROM json_each(${excludeStatusesJson})))
-          AND (${createdBy} IS NULL OR created_by = ${createdBy})
-          AND (${excludeAutomationTasks} = 0
-            OR created_by NOT GLOB ${`${AUTOMATION_TASK_CREATOR_PREFIX}*`})
-          AND (
-            ${tagCount} = 0
-            OR id IN (
-              SELECT task_id
-              FROM task_tags
-              WHERE tag IN (SELECT value FROM json_each(${tagsJson}))
-              GROUP BY task_id
-              HAVING COUNT(DISTINCT tag) = ${tagCount}
-            )
-          )
+        WHERE ${listCondition(filter)}
           AND (${afterRank} IS NULL OR rank > ${afterRank}
             OR (rank = ${afterRank} AND id > ${afterId}))
         ORDER BY ${fromBottom ? sql`rank DESC, id DESC` : sql`rank ASC, id ASC`}
         LIMIT ${limit}
       `,
+  });
+
+  const statusCountRows = SqlSchema.findAll({
+    Request: ListConditionFields,
+    Result: Schema.Struct({ status: Schema.String, count: Schema.Number }),
+    execute: (filter) =>
+      sql`SELECT status, COUNT(*) AS count FROM tasks
+        WHERE ${listCondition(filter)}
+        GROUP BY status ORDER BY status`,
   });
 
   const listAllTaskRows = SqlSchema.findAll({
@@ -1084,7 +1117,8 @@ const makeTaskRepository = Effect.gen(function* () {
           config_json,
           start_run_statuses_json,
           created_at,
-          updated_at
+          updated_at,
+          archived_at
         )
         VALUES (
           ${agent.id},
@@ -1096,7 +1130,8 @@ const makeTaskRepository = Effect.gen(function* () {
           ${stringifyJsonColumn(agent.config)},
           ${stringifyJsonColumn(agent.startRunStatuses)},
           ${agent.createdAt},
-          ${agent.updatedAt}
+          ${agent.updatedAt},
+          ${agent.archivedAt}
         )
         ON CONFLICT (id)
         DO UPDATE SET
@@ -1107,7 +1142,8 @@ const makeTaskRepository = Effect.gen(function* () {
           start_tags_json = excluded.start_tags_json,
           config_json = excluded.config_json,
           start_run_statuses_json = excluded.start_run_statuses_json,
-          updated_at = excluded.updated_at
+          updated_at = excluded.updated_at,
+          archived_at = excluded.archived_at
       `,
   });
 
@@ -1126,7 +1162,8 @@ const makeTaskRepository = Effect.gen(function* () {
           config_json AS "config",
           start_run_statuses_json AS "startRunStatuses",
           created_at AS "createdAt",
-          updated_at AS "updatedAt"
+          updated_at AS "updatedAt",
+          archived_at AS "archivedAt"
         FROM task_agents
         WHERE id = ${id}
         LIMIT 1
@@ -1137,10 +1174,11 @@ const makeTaskRepository = Effect.gen(function* () {
     Request: Schema.Struct({
       projectId: Schema.NullOr(Task.fields.projectId),
       enabled: Schema.NullOr(Schema.Number),
+      includeArchived: Schema.Number,
       limit: Schema.Number,
     }),
     Result: TaskAgentDbRow,
-    execute: ({ projectId, enabled, limit }) =>
+    execute: ({ projectId, enabled, includeArchived, limit }) =>
       sql`
         SELECT
           id,
@@ -1152,10 +1190,12 @@ const makeTaskRepository = Effect.gen(function* () {
           config_json AS "config",
           start_run_statuses_json AS "startRunStatuses",
           created_at AS "createdAt",
-          updated_at AS "updatedAt"
+          updated_at AS "updatedAt",
+          archived_at AS "archivedAt"
         FROM task_agents
         WHERE (${projectId} IS NULL OR project_id IS NULL OR project_id = ${projectId})
           AND (${enabled} IS NULL OR enabled = ${enabled})
+          AND (${includeArchived} = 1 OR archived_at IS NULL)
         ORDER BY updated_at DESC, created_at DESC, id ASC
         LIMIT ${limit}
       `,
@@ -1176,7 +1216,8 @@ const makeTaskRepository = Effect.gen(function* () {
           config_json AS "config",
           start_run_statuses_json AS "startRunStatuses",
           created_at AS "createdAt",
-          updated_at AS "updatedAt"
+          updated_at AS "updatedAt",
+          archived_at AS "archivedAt"
         FROM task_agents
         ORDER BY updated_at DESC, created_at DESC, id ASC
       `,
@@ -1262,7 +1303,10 @@ const makeTaskRepository = Effect.gen(function* () {
                 SELECT json_array_length(start_tags_json) FROM task_agents WHERE id = ${run.agentId}
               ) > 0)))
           )
-          AND EXISTS (SELECT 1 FROM task_agents WHERE id = ${run.agentId} AND enabled = 1)
+          AND EXISTS (
+            SELECT 1 FROM task_agents
+            WHERE id = ${run.agentId} AND enabled = 1 AND archived_at IS NULL
+          )
           AND NOT EXISTS (
             SELECT 1 FROM bots WHERE agent_id = ${run.agentId}
             AND NOT EXISTS (
@@ -2074,6 +2118,7 @@ const makeTaskRepository = Effect.gen(function* () {
         tagCount: tags.length,
         archive: input.archive ?? "active",
         ...listFilters(input),
+        lastRun: null,
         afterRank: null,
         afterId: null,
         fromBottom: input.from === "bottom",
@@ -2123,12 +2168,20 @@ const makeTaskRepository = Effect.gen(function* () {
     }));
   });
 
+  // About 10 KB of a worker task's row is its description and output, which only details show.
+  const listRowsText = <
+    Row extends { readonly description: string; readonly output: string | null },
+  >(
+    rows: ReadonlyArray<Row>,
+    omitText: boolean | undefined,
+  ) => (omitText === true ? rows.map(({ description: _, output: __, ...row }) => row) : rows);
+
   const items: TaskRepositoryShape["items"] = (input) =>
     sql
       .withTransaction(
         Effect.gen(function* () {
           const rows = yield* taskRowsByIds({ idsJson: JSON.stringify(input.ids) });
-          return { tasks: yield* decorateTaskRows(rows) };
+          return { tasks: listRowsText(yield* decorateTaskRows(rows), input.omitText) };
         }),
       )
       .pipe(
@@ -2170,13 +2223,14 @@ const makeTaskRepository = Effect.gen(function* () {
             tagCount: tags.length,
             archive: input.archive ?? "active",
             ...listFilters(input),
+            lastRun: input.lastRun ?? null,
             afterRank: input.cursor?.rank ?? null,
             afterId: input.cursor?.id ?? null,
             fromBottom: false,
             limit: limit + 1,
           });
           const visible = rows.slice(0, limit);
-          const tasks = yield* decorateTaskRows(visible);
+          const tasks = listRowsText(yield* decorateTaskRows(visible), input.omitText);
           // Status facets follow the project, archive, audience and kind filters
           // only, never the selected or excluded statuses or the page cursor.
           const filters = listFilters(input);
@@ -2197,6 +2251,101 @@ const makeTaskRepository = Effect.gen(function* () {
         Effect.mapError(
           toSqlOrDecodeError("TaskRepository.page:query", "TaskRepository.page:decode"),
         ),
+      );
+
+  const statusCounts: TaskRepositoryShape["statusCounts"] = (input) => {
+    const tags = uniqueTags(input.tags ?? []);
+    return statusCountRows({
+      projectId: input.projectId ?? null,
+      status: null,
+      tagsJson: JSON.stringify(tags),
+      tagCount: tags.length,
+      archive: input.archive ?? "active",
+      ...listFilters(input),
+      lastRun: input.lastRun ?? null,
+    }).pipe(
+      Effect.map((rows) => ({ counts: rows })),
+      Effect.mapError(
+        toSqlOrDecodeError(
+          "TaskRepository.statusCounts:query",
+          "TaskRepository.statusCounts:decode",
+        ),
+      ),
+    );
+  };
+
+  // A row a newer build wrote, or none yet, reads as the defaults.
+  const readListSettings = sql<{
+    json: string | null;
+    workflowVersion: number;
+  }>`SELECT list_settings_json AS json, workflow_version AS "workflowVersion"
+    FROM task_settings WHERE id = 1`.pipe(
+    Effect.map(([row]): TaskListSettingsValue => {
+      const stored = Option.getOrElse(
+        decodeListSettings(row?.json ?? null),
+        () => DEFAULT_TASK_LIST_SETTINGS,
+      );
+      return {
+        groupByStatus: stored.groupByStatus,
+        statusGroupOrder: stored.statusGroupOrder,
+        statusGroupOpen: stored.statusGroupOpen,
+        workflowVersion: workflowVersionOf(row?.workflowVersion),
+      };
+    }),
+  );
+
+  const workflowVersion: TaskRepositoryShape["workflowVersion"] = () =>
+    readListSettings.pipe(
+      Effect.map(taskWorkflowVersionOf),
+      Effect.mapError(toTaskPersistenceSqlError("TaskRepository.workflowVersion:query")),
+    );
+
+  const setWorkflowVersion: TaskRepositoryShape["setWorkflowVersion"] = (input) =>
+    sql`UPDATE task_settings SET workflow_version = ${input.version} WHERE id = 1`.pipe(
+      Effect.tap(() =>
+        publishChange({
+          taskIds: [],
+          rootThreadIds: [],
+          listChanged: false,
+          runsChanged: false,
+          listSettingsChanged: true,
+        }),
+      ),
+      Effect.asVoid,
+      Effect.mapError(toTaskPersistenceSqlError("TaskRepository.setWorkflowVersion:query")),
+    );
+
+  const listSettings: TaskRepositoryShape["listSettings"] = () =>
+    readListSettings.pipe(
+      Effect.mapError(toTaskPersistenceSqlError("TaskRepository.listSettings:query")),
+    );
+
+  const updateListSettings: TaskRepositoryShape["updateListSettings"] = (input) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const current = yield* readListSettings;
+          const next: TaskListSettingsValue = {
+            groupByStatus: input.groupByStatus ?? current.groupByStatus,
+            statusGroupOrder: input.statusGroupOrder ?? current.statusGroupOrder,
+            statusGroupOpen: { ...current.statusGroupOpen, ...input.statusGroupOpen },
+          };
+          yield* sql`UPDATE task_settings SET list_settings_json = ${JSON.stringify(next)}
+            WHERE id = 1`;
+          return { ...next, workflowVersion: current.workflowVersion };
+        }),
+      )
+      .pipe(
+        Effect.tap(() =>
+          publishChange({
+            taskIds: [],
+            rootThreadIds: [],
+            listChanged: false,
+            runsChanged: false,
+            listSettingsChanged: true,
+          }),
+        ),
+        Effect.mapError(toTaskPersistenceSqlError("TaskRepository.updateListSettings:query")),
       );
 
   const listAllTasks: TaskRepositoryShape["listAllTasks"] = () =>
@@ -2328,6 +2477,93 @@ const makeTaskRepository = Effect.gen(function* () {
           ),
         ),
       );
+
+  const renameTaskStatus = (input: RenameTaskStatusInput) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const timestamp = yield* nowIso;
+          const tags = [...new Set(input.tags ?? [])];
+          const candidates = yield* sql<{ id: string }>`
+            SELECT id FROM tasks
+            WHERE lower(trim(status)) = ${input.from.trim().toLowerCase()}
+              AND (${input.projectId ?? null} IS NULL OR project_id = ${input.projectId ?? null})
+              AND (${input.ids === undefined ? null : JSON.stringify(input.ids)} IS NULL
+                OR id IN (SELECT value FROM json_each(${input.ids === undefined ? "[]" : JSON.stringify(input.ids)})))
+              AND (${tags.length} = 0 OR id IN (
+                SELECT task_id FROM task_tags
+                WHERE tag IN (SELECT value FROM json_each(${JSON.stringify(tags)}))
+                GROUP BY task_id
+                HAVING COUNT(DISTINCT tag) = ${tags.length}
+              ))
+            ORDER BY rank DESC
+          `;
+          const renamed: TaskId[] = [];
+          const skipped: Array<RenameTaskStatusResult["skipped"][number]> = [];
+          for (const { id: rawId } of candidates) {
+            const id = TaskId.make(rawId);
+            const task = Option.getOrNull(yield* getById({ id }));
+            if (task === null || !sameTaskStatus(task.status, input.from)) continue;
+            if (sameTaskStatus(task.status, input.to) && task.status === input.to) continue;
+            const invalid = personTaskStatusError(task.audience, input.to);
+            if (invalid !== null) {
+              skipped.push({ id, reason: invalid });
+              continue;
+            }
+            renamed.push(id);
+            if (input.dryRun) continue;
+            yield* sql`UPDATE tasks SET status = ${input.to}, updated_at = ${timestamp} WHERE id = ${id}`;
+            yield* followTask({
+              taskId: id,
+              kind: task.kind,
+              from: { status: task.status, archived: task.archivedAt !== null },
+              to: { status: input.to, archived: task.archivedAt !== null },
+              at: timestamp,
+            });
+            yield* insertHistoryEvent({
+              taskId: id,
+              kind: TASK_STATUS_CHANGED_EVENT,
+              payload: { from: task.status, to: input.to, actor: input.actor, rename: true },
+              createdAt: timestamp,
+            });
+          }
+          const automations: string[] = [];
+          if (input.automationTemplates) {
+            const rows = yield* sql<{ id: string; status: string }>`
+              SELECT id, json_extract(template_json, '$.status') AS status FROM task_automations
+              WHERE ${input.projectId ?? null} IS NULL OR project_id = ${input.projectId ?? null}
+            `;
+            for (const row of rows) {
+              if (typeof row.status !== "string" || !sameTaskStatus(row.status, input.from))
+                continue;
+              automations.push(row.id);
+              if (input.dryRun) continue;
+              yield* sql`UPDATE task_automations
+                SET template_json = json_set(template_json, '$.status', ${input.to}),
+                  updated_at = ${timestamp}
+                WHERE id = ${row.id}`;
+            }
+          }
+          return { renamed, skipped, automations } satisfies RenameTaskStatusResult;
+        }),
+      )
+      .pipe(
+        Effect.mapError(
+          toSqlOrDecodeError(
+            "TaskRepository.renameTaskStatus:query",
+            "TaskRepository.renameTaskStatus:decodeRows",
+          ),
+        ),
+      );
+
+  const announceInstructionUpdatesChanged = () =>
+    publishChange({
+      taskIds: [],
+      rootThreadIds: [],
+      listChanged: false,
+      runsChanged: false,
+      instructionUpdatesChanged: true,
+    }).pipe(Effect.asVoid);
 
   const taskEventRows = SqlSchema.findAll({
     Request: Schema.Struct({
@@ -2501,6 +2737,7 @@ const makeTaskRepository = Effect.gen(function* () {
         Effect.gen(function* () {
           const dates = yield* schedule.datesForTask(input.id);
           yield* deleteTaskTags({ taskId: input.id });
+          yield* sql`DELETE FROM task_events WHERE task_id = ${input.id}`;
           yield* schedule.deleteForTask(input.id);
           yield* deleteTaskRow(input);
           return dates;
@@ -2717,7 +2954,7 @@ const makeTaskRepository = Effect.gen(function* () {
   const lastDoneAt = (taskId: TaskId) =>
     sql<{ createdAt: string }>`SELECT created_at AS "createdAt" FROM task_events
       WHERE task_id = ${taskId} AND kind = ${TASK_STATUS_CHANGED_EVENT}
-        AND json_extract(payload_json, '$.to') = ${PERSON_DONE_STATUS}
+        AND TRIM(json_extract(payload_json, '$.to')) = ${PERSON_DONE_STATUS} COLLATE NOCASE
       ORDER BY created_at DESC, rowid DESC LIMIT 1`.pipe(
       Effect.map((rows) => rows[0]?.createdAt ?? null),
     );
@@ -2892,7 +3129,9 @@ const makeTaskRepository = Effect.gen(function* () {
           }> = [];
           const reminders = due.flatMap((row): TaskReminder[] => {
             if (row.status !== "open" || row.startTime === null || row.title === null) return [];
-            if (row.taskStatus === PERSON_DONE_STATUS || row.archivedAt !== null) return [];
+            if (row.archivedAt !== null) return [];
+            if (row.taskStatus !== null && sameTaskStatus(row.taskStatus, PERSON_DONE_STATUS))
+              return [];
             const startsAt = scheduledInstant(row.date, row.startTime, settings.timeZone);
             if (startsAt === null) return [];
             if (startsAt <= DateTime.toEpochMillis(now)) {
@@ -2981,7 +3220,15 @@ const makeTaskRepository = Effect.gen(function* () {
   const appendEvent: TaskRepositoryShape["appendEvent"] = (input) =>
     sql
       .withTransaction(
-        insertTaskEvent(input).pipe(
+        sql`SELECT 1 FROM tasks WHERE id = ${input.taskId}`.pipe(
+          Effect.flatMap((rows) =>
+            rows.length === 0
+              ? Effect.fail(
+                  toTaskPersistenceSqlError("TaskRepository.appendEvent:get")("Task not found"),
+                )
+              : Effect.void,
+          ),
+          Effect.andThen(insertTaskEvent(input)),
           Effect.andThen(getTaskEventRow({ id: input.id })),
           Effect.flatMap(
             Option.match({
@@ -3059,6 +3306,7 @@ const makeTaskRepository = Effect.gen(function* () {
     return searchAgentRows({
       projectId: input.projectId ?? null,
       enabled: input.enabled === undefined ? null : input.enabled ? 1 : 0,
+      includeArchived: input.includeArchived === true ? 1 : 0,
       limit,
     }).pipe(
       Effect.map((rows) => rows.map(mapAgentRow)),
@@ -3130,12 +3378,67 @@ const makeTaskRepository = Effect.gen(function* () {
         ),
       );
 
+  /** Moves an agent task out of `from` for a run starting on it; triggers stay as they were. */
+  const reopenTask = Effect.fn("TaskRepositoryLive.reopenTask")(function* (input: {
+    readonly runId: TaskAgentRunId;
+    readonly taskId: TaskId;
+    readonly from: string;
+    readonly to: string;
+    readonly at: string;
+  }) {
+    const [before] = yield* sql<{
+      status: string;
+      kind: TaskKind;
+      audience: TaskAudience;
+      archivedAt: string | null;
+    }>`SELECT status, kind, audience, archived_at AS "archivedAt" FROM tasks
+      WHERE id = ${input.taskId}`;
+    if (
+      before === undefined ||
+      before.audience !== "agent" ||
+      !sameTaskStatus(before.status, input.from)
+    )
+      return;
+    yield* sql`
+      UPDATE tasks SET status = ${input.to}, updated_at = ${input.at}
+      WHERE id = ${input.taskId}
+    `;
+    const archived = before.archivedAt !== null;
+    yield* followTask({
+      taskId: input.taskId,
+      kind: before.kind,
+      from: { status: before.status, archived },
+      to: { status: input.to, archived },
+      at: input.at,
+    });
+    yield* insertHistoryEvent({
+      id: `${input.runId}:task-status-reopened`,
+      taskId: input.taskId,
+      kind: TASK_STATUS_CHANGED_EVENT,
+      payload: {
+        from: before.status,
+        to: input.to,
+        actor: { type: "server" } satisfies TaskActor,
+      },
+      createdAt: input.at,
+    });
+  });
+
   const startAgentRun: TaskRepositoryShape["startAgentRun"] = (input) =>
     sql
       .withTransaction(
         Effect.gen(function* () {
-          const inserted = yield* startAgentRunRow(input);
+          const { reopenTaskStatus, ...row } = input;
+          const inserted = yield* startAgentRunRow(row);
           if (inserted.length === 0) return Option.none<TaskAgentRun>();
+          if (reopenTaskStatus !== undefined) {
+            yield* reopenTask({
+              runId: input.id,
+              taskId: input.taskId,
+              at: input.startedAt,
+              ...reopenTaskStatus,
+            });
+          }
           // The run holds its task from the start, unless another active run
           // holds it; the agent does not spend a turn claiming it.
           yield* sql`
@@ -3241,22 +3544,35 @@ const makeTaskRepository = Effect.gen(function* () {
           if (completed.length === 0) return false;
 
           const statusBefore =
-            input.taskStatus === undefined
+            input.taskStatus === undefined && input.heldTaskStatus === undefined
               ? []
               : yield* sql<{
                   status: string;
                   kind: TaskKind;
                   audience: TaskAudience;
                   archivedAt: string | null;
-                }>`SELECT status, kind, audience, archived_at AS "archivedAt" FROM tasks
+                  assigneeAgentRunId: string | null;
+                }>`SELECT status, kind, audience, archived_at AS "archivedAt",
+                    assignee_worker_id AS "assigneeAgentRunId" FROM tasks
                   WHERE id = ${input.taskId}`;
+          const held = statusBefore[0];
           // A run's status is an agent status: a task a person took back meanwhile keeps its own.
-          const taskStatus =
+          const reportedStatus =
             input.taskStatus !== undefined &&
-            statusBefore[0] !== undefined &&
-            personTaskStatusError(statusBefore[0].audience, input.taskStatus) !== null
+            held !== undefined &&
+            personTaskStatusError(held.audience, input.taskStatus) !== null
               ? undefined
               : input.taskStatus;
+          const heldStatus =
+            input.taskStatus === undefined &&
+            input.heldTaskStatus !== undefined &&
+            held !== undefined &&
+            held.audience === "agent" &&
+            held.assigneeAgentRunId === input.id &&
+            !sameTaskStatus(held.status, input.heldTaskStatus)
+              ? input.heldTaskStatus
+              : undefined;
+          const taskStatus = reportedStatus ?? heldStatus;
           if (
             taskStatus !== undefined ||
             input.taskOutput !== undefined ||
@@ -3279,7 +3595,7 @@ const makeTaskRepository = Effect.gen(function* () {
                 ELSE assignee_worker_id
               END,
               trigger_changed_at = CASE
-                WHEN ${taskStatus ?? null} IS NOT NULL AND ${taskStatus ?? null} <> status
+                WHEN ${reportedStatus ?? null} IS NOT NULL AND ${reportedStatus ?? null} <> status
                   THEN ${input.completedAt}
                 ELSE trigger_changed_at
               END,
@@ -3287,7 +3603,7 @@ const makeTaskRepository = Effect.gen(function* () {
             WHERE id = ${input.taskId}
           `;
           }
-          const before = statusBefore[0];
+          const before = held;
           const from = before?.status;
           if (before !== undefined && taskStatus !== undefined) {
             const archived = before.archivedAt !== null;
@@ -3307,7 +3623,9 @@ const makeTaskRepository = Effect.gen(function* () {
               payload: {
                 from,
                 to: taskStatus,
-                actor: { type: "agent-run", agentRunId: input.id } satisfies TaskActor,
+                actor: (reportedStatus === undefined
+                  ? { type: "server" }
+                  : { type: "agent-run", agentRunId: input.id }) satisfies TaskActor,
               },
               createdAt: input.completedAt,
             });
@@ -3702,6 +4020,11 @@ const makeTaskRepository = Effect.gen(function* () {
     getById,
     search,
     page,
+    statusCounts,
+    listSettings,
+    workflowVersion,
+    setWorkflowVersion,
+    updateListSettings,
     items,
     changes,
     runCounts,
@@ -3718,6 +4041,9 @@ const makeTaskRepository = Effect.gen(function* () {
         (results) => results.flatMap(({ id, task }) => (task === null ? [] : [id])),
         true,
       ),
+    renameTaskStatus: (input) =>
+      withChanges(renameTaskStatus(input), (result) => (input.dryRun ? [] : result.renamed)),
+    announceInstructionUpdatesChanged,
     reorder: (input) => withChanges(reorder(input), () => [input.id]),
     reorderMany: (input) => withChanges(reorderMany(input), (tasks) => tasks.map(({ id }) => id)),
     deleteTask: (input) =>

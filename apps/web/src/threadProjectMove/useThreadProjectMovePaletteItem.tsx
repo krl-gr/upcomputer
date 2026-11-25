@@ -1,5 +1,6 @@
 import { AuthOrchestrationOperateScope, type ScopedThreadRef } from "@t3tools/contracts";
 import { isBotChatThread } from "@t3tools/tasks-web/feature";
+import { useGT, useMessages } from "gt-react";
 import { FolderIcon, FolderInputIcon, MessageSquareDashedIcon } from "lucide-react";
 
 import {
@@ -22,6 +23,8 @@ const SEARCH_TERMS = ["move", "project", "folder", "change project"];
 export function useThreadProjectMovePaletteItem(
   threadRef: ScopedThreadRef | null,
 ): CommandPaletteActionItem | CommandPaletteSubmenuItem | null {
+  const gt = useGT();
+  const m = useMessages();
   const thread = useThreadShell(threadRef);
   const projects = useProjects();
   const canOperate = useEnvironmentScope(
@@ -37,15 +40,15 @@ export function useThreadProjectMovePaletteItem(
     return null;
   const targets = threadProjectMoveTargets(projects, thread);
   const unavailableReason = canOperate
-    ? threadProjectMoveUnavailableReason(thread, targets)
-    : "This connection cannot change threads";
+    ? m(threadProjectMoveUnavailableReason(thread, targets))
+    : gt("This connection cannot change threads");
   const icon = <FolderInputIcon className={ITEM_ICON_CLASS} />;
   if (unavailableReason !== null) {
     return {
       kind: "action",
       value: "action:move-thread-to-project",
       searchTerms: SEARCH_TERMS,
-      title: "Move thread to project...",
+      title: gt("Move thread to project..."),
       description: unavailableReason,
       icon,
       disabled: true,
@@ -56,18 +59,19 @@ export function useThreadProjectMovePaletteItem(
     kind: "submenu",
     value: "action:move-thread-to-project",
     searchTerms: SEARCH_TERMS,
-    title: "Move thread to project...",
+    title: gt("Move thread to project..."),
     icon,
     addonIcon: <FolderInputIcon className={ADDON_ICON_CLASS} />,
     groups: [
       {
         value: "move-thread-to-project",
-        label: "Projects",
+        label: gt("Projects"),
         items: targets.map((target) => ({
           kind: "action" as const,
           value: `move-thread-to-project:${target.id}`,
           searchTerms: [target.label, target.workspaceRoot],
-          title: target.label,
+          // The scratch project's label is msg() text; other labels are project names.
+          title: target.isScratch ? m(target.label) : target.label,
           description: target.workspaceRoot,
           icon: target.isScratch ? (
             <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />

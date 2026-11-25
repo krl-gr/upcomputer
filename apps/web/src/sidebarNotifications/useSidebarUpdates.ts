@@ -6,6 +6,7 @@ import {
 } from "@t3tools/contracts";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { type ReactNode, useState } from "react";
+import { useGT } from "gt-react";
 
 import {
   getDesktopUpdateDownloadedVersion,
@@ -40,6 +41,7 @@ function toastError(title: string, description: ReactNode) {
 export async function confirmAndInstallLocalUpdate(
   bridge: DesktopBridge,
   state: DesktopUpdateState,
+  gt: ReturnType<typeof useGT>,
 ) {
   try {
     const confirmed = await ensureLocalApi().dialogs.confirm(
@@ -47,7 +49,7 @@ export async function confirmAndInstallLocalUpdate(
     );
     if (confirmed) await installLocalUpdate(bridge);
   } catch (error) {
-    toastError("Could not confirm update", plainErrorSentence(error));
+    toastError(gt("Could not confirm update"), plainErrorSentence(error));
   }
 }
 
@@ -65,10 +67,11 @@ export interface ProviderUpdateCard {
  * list, a provider stays while its own update runs, so its card can show it.
  */
 function useProviderUpdateCards(): ReadonlyArray<ProviderUpdateCard> {
+  const gt = useGT();
   const { environments } = useEnvironments();
   const providersByEnvironment = useEnvironmentProviders();
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
-    failureToast: "Could not update the provider",
+    failureToast: gt("Could not update the provider"),
   });
   const machines = environments.flatMap((environment) => {
     if (environment.connection.phase !== "connected") return [];
@@ -99,6 +102,7 @@ function useProviderUpdateCards(): ReadonlyArray<ProviderUpdateCard> {
  * and provider CLIs, and the run, whose capsule stays upstream's.
  */
 export function useSidebarUpdates() {
+  const gt = useGT();
   const state = useDesktopUpdateState();
   const [pending, setPending] = useState(false);
   const [confirmingEverything, setConfirmingEverything] = useState(false);
@@ -133,11 +137,11 @@ export function useSidebarUpdates() {
       .then((result) => {
         if (result.checked) return;
         toastError(
-          "Could not check for updates",
-          result.state.message ?? "Automatic updates are not available in this build.",
+          gt("Could not check for updates"),
+          result.state.message ?? gt("Automatic updates are not available in this build."),
         );
       })
-      .catch((error) => toastError("Could not check for updates", plainErrorSentence(error)))
+      .catch((error) => toastError(gt("Could not check for updates"), plainErrorSentence(error)))
       .finally(() => setPending(false));
   };
 
@@ -150,7 +154,7 @@ export function useSidebarUpdates() {
   const install = async () => {
     if (!bridge || !state) return;
     setPending(true);
-    await confirmAndInstallLocalUpdate(bridge, state);
+    await confirmAndInstallLocalUpdate(bridge, state, gt);
     setPending(false);
   };
 
@@ -172,7 +176,7 @@ export function useSidebarUpdates() {
     );
     if (result._tag === "Failure") {
       toastError(
-        "Could not update everything",
+        gt("Could not update everything"),
         errorToastDescription(squashAtomCommandFailure(result)),
       );
     }

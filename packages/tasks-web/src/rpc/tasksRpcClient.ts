@@ -40,12 +40,14 @@ export interface TasksWebRpcClient {
     readonly acceptProposal: RpcUnaryMethod<typeof BOTS_RPC_METHODS.acceptProposal>;
     readonly rejectProposal: RpcUnaryMethod<typeof BOTS_RPC_METHODS.rejectProposal>;
     readonly assign: RpcUnaryMethod<typeof BOTS_RPC_METHODS.assign>;
+    readonly mention: RpcUnaryMethod<typeof BOTS_RPC_METHODS.mention>;
   };
 
   readonly tasks: {
     readonly create: RpcUnaryMethod<typeof TASKS_RPC_METHODS.create>;
     readonly search: RpcUnaryMethod<typeof TASKS_RPC_METHODS.search>;
     readonly page: RpcUnaryMethod<typeof TASKS_RPC_METHODS.page>;
+    readonly statusCounts: RpcUnaryMethod<typeof TASKS_RPC_METHODS.statusCounts>;
     readonly runCounts: RpcUnaryMethod<typeof TASKS_RPC_METHODS.runCounts>;
     readonly threadRunCounts: RpcUnaryMethod<typeof TASKS_RPC_METHODS.threadRunCounts>;
     readonly markThreadsSeen: RpcUnaryMethod<typeof TASKS_RPC_METHODS.markThreadsSeen>;
@@ -77,6 +79,12 @@ export interface TasksWebRpcClient {
     readonly getScheduleSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.getScheduleSettings>;
     readonly updateScheduleSettings: RpcUnaryMethod<
       typeof TASKS_RPC_METHODS.updateScheduleSettings
+    >;
+    readonly getListSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.getListSettings>;
+    readonly updateListSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.updateListSettings>;
+    readonly getInstructionUpdates: RpcUnaryMethod<typeof TASKS_RPC_METHODS.getInstructionUpdates>;
+    readonly updateInstructionUpdates: RpcUnaryMethod<
+      typeof TASKS_RPC_METHODS.updateInstructionUpdates
     >;
   };
   readonly agents: {
@@ -180,11 +188,15 @@ export function createTasksWebRpcClient(
       rejectProposal: (input) =>
         request("bots.rejectProposal", "canMutateAgents", BOTS_RPC_METHODS.rejectProposal, input),
       assign: (input) => request("bots.assign", "canMutateAgents", BOTS_RPC_METHODS.assign, input),
+      mention: (input) =>
+        request("bots.mention", "canMutateAgents", BOTS_RPC_METHODS.mention, input),
     },
     tasks: {
       create: (input) => request("tasks.create", "canMutateTasks", TASKS_RPC_METHODS.create, input),
       search: (input) => request("tasks.search", "canReadTasks", TASKS_RPC_METHODS.search, input),
       page: (input) => request("tasks.page", "canReadTasks", TASKS_RPC_METHODS.page, input),
+      statusCounts: (input) =>
+        request("tasks.statusCounts", "canReadTasks", TASKS_RPC_METHODS.statusCounts, input),
       items: (input) => request("tasks.items", "canReadTasks", TASKS_RPC_METHODS.items, input),
       runCounts: (input) =>
         request("tasks.runCounts", "canReadTasks", TASKS_RPC_METHODS.runCounts, input),
@@ -266,6 +278,29 @@ export function createTasksWebRpcClient(
           "tasks.updateScheduleSettings",
           "canMutateTasks",
           TASKS_RPC_METHODS.updateScheduleSettings,
+          input,
+        ),
+      getListSettings: (input) =>
+        request("tasks.getListSettings", "canReadTasks", TASKS_RPC_METHODS.getListSettings, input),
+      updateListSettings: (input) =>
+        request(
+          "tasks.updateListSettings",
+          "canMutateTasks",
+          TASKS_RPC_METHODS.updateListSettings,
+          input,
+        ),
+      getInstructionUpdates: (input) =>
+        request(
+          "tasks.getInstructionUpdates",
+          "canReadTasks",
+          TASKS_RPC_METHODS.getInstructionUpdates,
+          input,
+        ),
+      updateInstructionUpdates: (input) =>
+        request(
+          "tasks.updateInstructionUpdates",
+          "canMutateTasks",
+          TASKS_RPC_METHODS.updateInstructionUpdates,
           input,
         ),
     },

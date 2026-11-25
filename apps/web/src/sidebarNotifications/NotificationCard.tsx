@@ -1,6 +1,7 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { CheckIcon, CopyIcon, XIcon } from "lucide-react";
 import { type ComponentProps, type ReactNode, useState } from "react";
+import { msg, useGT } from "gt-react";
 
 import { Button, InlineButton } from "../components/ui/button";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
@@ -67,8 +68,15 @@ export function NotificationCard({
   readonly below?: ReactNode;
   readonly onDismiss?: (() => void) | undefined;
 }) {
+  const gt = useGT();
   const [open, setOpen] = useState(false);
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "error details" });
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    target: {
+      target: "error details",
+      unavailableMessage: msg("Clipboard API is unavailable while copying error details."),
+      failureMessage: msg("Failed to copy error details to the clipboard."),
+    },
+  });
   const detailText = details?.trim() || null;
   return (
     <li className="relative grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-start gap-x-2.5 gap-y-0.5 rounded-lg bg-foreground/4 p-2.5">
@@ -106,14 +114,14 @@ export function NotificationCard({
           {links}
           {detailText ? (
             <InlineButton tone="muted" aria-expanded={open} onClick={() => setOpen(!open)}>
-              {open ? "Hide details" : "Details"}
+              {open ? gt("Hide details") : gt("Details")}
             </InlineButton>
           ) : null}
           {detailText && open ? (
             <Button
               size="icon-micro"
               variant="ghost-muted"
-              aria-label={isCopied ? "Copied details" : "Copy details"}
+              aria-label={isCopied ? gt("Copied details") : gt("Copy details")}
               onClick={() => copyToClipboard(detailText, undefined)}
             >
               {isCopied ? <CheckIcon /> : <CopyIcon />}
@@ -128,7 +136,12 @@ export function NotificationCard({
       ) : null}
       {onDismiss ? (
         <span className="absolute top-1.5 right-1.5">
-          <Button size="icon-micro" variant="ghost-muted" aria-label="Dismiss" onClick={onDismiss}>
+          <Button
+            size="icon-micro"
+            variant="ghost-muted"
+            aria-label={gt("Dismiss")}
+            onClick={onDismiss}
+          >
             <XIcon />
           </Button>
         </span>

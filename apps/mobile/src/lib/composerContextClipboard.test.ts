@@ -73,6 +73,13 @@ const image = {
   mimeType: "image/png",
   sizeBytes: 7,
   attachmentId: "source-file",
+  source: {
+    kind: "snap-shot" as const,
+    capturedAt: "2026-01-01T00:00:00.000Z",
+    appName: "Finder",
+    windowTitle: "Downloads",
+    accessibleText: "Downloads",
+  },
 };
 const terminal = {
   version: 1 as const,
@@ -146,7 +153,11 @@ describe("mobile context clipboard imports", () => {
     const signal = { aborted: false } as AbortSignal;
     const result = await importComposerContextClipboard(clipboard, 0, signal);
     expect(result?.failures).toEqual([]);
-    expect(result?.attachments[0]).toMatchObject({ fileUri: "file:///owned.png", sizeBytes: 42 });
+    expect(result?.attachments[0]).toMatchObject({
+      fileUri: "file:///owned.png",
+      sizeBytes: 42,
+      source: image.source,
+    });
     expect(result?.context.records[0]).toMatchObject({
       contextId: "import-1",
       attachmentId: result?.attachments[0]?.id,
@@ -342,7 +353,7 @@ describe("mobile context clipboard imports", () => {
 
   it("pastes a thread link as a chip only where the destination's agent reads its machine", async () => {
     const text = [
-      "https://app.t3.codes/threads/destination/local-thread",
+      "https://app.up.computer/threads/destination/local-thread",
       "<t3-thread://v2/source/foreign-thread>",
     ].join(" ");
     const result = await importComposerContextClipboard(

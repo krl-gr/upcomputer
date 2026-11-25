@@ -10,6 +10,7 @@ export {
   voiceInputBlocksSubmission,
   type VoiceDraftSnapshot,
   type VoiceInputControllerDependencies,
+  type VoiceInputErrorCode,
   type VoiceInputPhase,
   type VoiceInputState,
   type VoiceRecorder,
@@ -26,6 +27,9 @@ export {
   transcribeCloudPcm,
   getEnvironmentSpeechStatus,
   getEnvironmentSpeechStreamUrl,
+  getSpeechModelDownloadOutcome,
+  /** @public */
+  installEnvironmentSpeechModel,
   linkEnvironmentSpeechModels,
   postProcessEnvironmentTranscript,
   removeEnvironmentSpeechModel,

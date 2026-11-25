@@ -1,4 +1,9 @@
-import type { BackgroundNotice, DesktopUpdateState } from "@t3tools/contracts";
+import type { BackgroundNotice, DesktopUpdateState, EnvironmentId } from "@t3tools/contracts";
+import { connectionErrorText } from "@t3tools/client-runtime/connection";
+import {
+  InstructionUpdatesNotification,
+  useInstructionUpdatesNoticeCount,
+} from "@t3tools/tasks-web/workflowUpdates";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
@@ -9,12 +14,14 @@ import {
   CircleAlertIcon,
   ExternalLinkIcon,
   InfoIcon,
+  MessageSquareTextIcon,
   RefreshCwIcon,
   RotateCcwIcon,
   ServerIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { Fragment, memo, type ReactNode, useState } from "react";
+import { Fragment, memo, type ReactNode, useEffect, useEffectEvent, useState } from "react";
+import { T, useGT, useMessages } from "gt-react";
 
 import {
   getDesktopUpdateDownloadedVersion,
@@ -28,11 +35,18 @@ import { UpdateEverythingDialog } from "../components/sidebar/UpdateEverythingDi
 import { dismissSettledUpdateRunMachines } from "../components/sidebar/updateEverythingRun";
 import { InlineButton } from "../components/ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
-import { SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
+import { SidebarMenuButton, SidebarMenuItem, useSidebar } from "../components/ui/sidebar";
 import { Spinner } from "../components/ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { APP_BASE_NAME } from "../branding";
+import { environmentCatalog } from "../connection/catalog";
 import { useLocalStorage } from "../hooks/useLocalStorage";
+import { computerName } from "../sidebarComputers/useSidebarComputers";
 import { useServerConfigs } from "../state/entities";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+import { useAtomCommand } from "../state/use-atom-command";
+import { type ListedClientNotice, useClientNotices } from "./clientNotices";
+import { useComputerOutages } from "./computerOutages";
 import {
   NotificationButton,
   NotificationCard,
@@ -52,10 +66,19 @@ import {
   type SidebarNotificationsDot,
   updateRunFailed,
   visibleBackgroundNotices,
+  withoutUnreachableComputers,
 } from "./sidebarNotifications.logic";
 import { type SidebarUpdates, useSidebarUpdates } from "./useSidebarUpdates";
 import { useSidebarFooterTooltipSide } from "../adaptiveSidebar/adaptiveSidebar";
 import { BadgedIcon } from "../badgedIcon/BadgedIcon";
+import { WithConnectAccountEmail } from "../sendFeedback/ConnectAccountEmail";
+import { SendFeedbackForm } from "../sendFeedback/SendFeedbackForm";
+import { onSendFeedbackRequest } from "../sendFeedback/sendFeedbackStore";
+import { useSendFeedback, useSendFeedbackForm } from "../sendFeedback/useSendFeedback";
+import { SurveyAction, SurveyAutoHeight, useSurveyForm } from "../userSurvey/surveyParts";
+import { UserSurveyCard } from "../userSurvey/UserSurveyCard";
+import { UserSurveyDialog } from "../userSurvey/UserSurveyDialog";
+import { useUserSurvey } from "../userSurvey/useUserSurvey";
 
 const DISMISSED_KEY = "upcomputer:background-notices-dismissed:v1";
 const DismissedNotices = Schema.Array(Schema.String);
@@ -69,18 +92,89 @@ const DOT_CLASS: Record<SidebarNotificationsDot, string> = {
 const PROGRESS_RADIUS = 14;
 const PROGRESS_CIRCUMFERENCE = 2 * Math.PI * PROGRESS_RADIUS;
 
-/** Failures that belong to no thread (reminders, automations, scheduled runs, worktree cleanup, remote access). */
+/**
+ * Failures that belong to no thread: the servers' (reminders, automations, scheduled runs,
+ * worktree cleanup, remote access) and this client's (an unreachable computer, a list that
+ * didn't load).
+ */
 function useBackgroundNotices() {
+  const gt = useGT();
+  const m = useMessages();
   const configs = useServerConfigs();
+  const { environments } = useEnvironments();
+  const primaryId = usePrimaryEnvironmentId();
+  const outages = useComputerOutages();
+  const clientNotices = useClientNotices();
+  const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const [dismissedList, setDismissedList] = useLocalStorage(
     DISMISSED_KEY,
     [] as ReadonlyArray<string>,
     DismissedNotices,
   );
-  const notices = visibleBackgroundNotices(
-    [...configs].map(([environmentId, config]) =>
-      config.backgroundNotices?.map((notice) => ({ ...notice, environmentId })),
+  const presentationOf = (environmentId: EnvironmentId) =>
+    environments.find((environment) => environment.environmentId === environmentId);
+  const nameOf = (environmentId: EnvironmentId) => {
+    const presentation = presentationOf(environmentId);
+    return presentation ? computerName(presentation, primaryId, gt) : null;
+  };
+  const local: ListedClientNotice[] = [
+    ...outages.shown.flatMap(({ environmentId, since }): ListedClientNotice[] => {
+      const computer = nameOf(environmentId);
+      if (computer === null) return [];
+      const connection = presentationOf(environmentId)?.connection;
+      // A connection stopped on an error (a revoked pairing) waits for Retry or a fix.
+      const stopped = connection?.phase === "error";
+      const detail = stopped ? connectionErrorText(connection, m) : null;
+      return [
+        {
+          id: `client:${environmentId}:computer:${stopped ? "blocked" : "unreachable"}`,
+          area: "app",
+          severity: stopped ? "error" : "warning",
+          title: stopped
+            ? gt("Can't connect to {computer}", { computer })
+            : gt("Can't reach {computer}", { computer }),
+          message: stopped
+            ? gt("{appName} stopped trying. Retry, or open Connections to see why.", {
+                appName: APP_BASE_NAME,
+              })
+            : gt("{appName} keeps trying. Its chats, bots and tasks show what they had.", {
+                appName: APP_BASE_NAME,
+              }),
+          ...(detail ? { detail } : {}),
+          link: { label: gt("Connections"), path: "/settings/connections" },
+          occurredAt: new Date(since).toISOString(),
+          environmentId,
+          retry: () => void retryEnvironment(environmentId),
+        },
+      ];
+    }),
+    ...withoutUnreachableComputers(clientNotices, outages.unreachable).flatMap(
+      (notice): ListedClientNotice[] => {
+        const computer = nameOf(notice.environmentId);
+        if (computer === null) return [];
+        return [
+          {
+            id: `client:${notice.environmentId}:${notice.id}`,
+            area: "app",
+            severity: notice.severity,
+            title: m(notice.title, { computer }),
+            message: m(notice.message, { computer }),
+            ...(notice.detail ? { detail: notice.detail } : {}),
+            occurredAt: notice.occurredAt,
+            environmentId: notice.environmentId,
+            ...(notice.retry ? { retry: notice.retry } : {}),
+          },
+        ];
+      },
     ),
+  ];
+  const notices = visibleBackgroundNotices<ListedClientNotice>(
+    [
+      ...[...configs].map(([environmentId, config]) =>
+        config.backgroundNotices?.map((notice) => ({ ...notice, environmentId })),
+      ),
+      local,
+    ],
     new Set(dismissedList),
   );
   const dismiss = (keys: ReadonlyArray<string>) =>
@@ -94,24 +188,65 @@ function useBackgroundNotices() {
  * Update everything shows a ring on the button and upstream's capsule in a card.
  */
 export const SidebarNotifications = memo(function SidebarNotifications() {
+  const gt = useGT();
   const updates = useSidebarUpdates();
   const { notices, dismiss } = useBackgroundNotices();
+  const userSurvey = useUserSurvey();
+  const instructionUpdates = useInstructionUpdatesNoticeCount();
   const [open, setOpen] = useState(false);
-  const { dot, label } = describeSidebarNotificationsButton({
-    severities: notices.map((notice) => notice.severity),
-    update: updates.signal,
-    updateFailed: hasFailedUpdate({
-      app: updates.state ? describeAppUpdateCard(updates.state, updates.action) : null,
-      providerStatuses: updates.providers.map((card) => card.provider.updateState?.status),
-      run: updates.run,
-    }),
+  const [surveyOpen, setSurveyOpen] = useState(false);
+  const surveyForm = useSurveyForm(
+    userSurvey?.survey ?? null,
+    userSurvey?.submit ?? null,
+    userSurvey?.partial ?? null,
+  );
+  const feedbackSource = useSendFeedback();
+  const feedback = useSendFeedbackForm(feedbackSource);
+  const [view, setView] = useState<"list" | "feedback">("list");
+  const sidebar = useSidebar();
+  const openFeedbackForm = useEffectEvent(() => {
+    if (!feedbackSource.available) return;
+    if (sidebar.isMobile) sidebar.setOpenMobile(true);
+    else if (!sidebar.open) sidebar.setOpen(true);
+    setView("feedback");
+    setOpen(true);
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the command palette asks for the form from outside this tree
+  useEffect(() => onSendFeedbackRequest(openFeedbackForm), []);
+  const showList = () => {
+    setView("list");
+    if (feedback.status.kind === "sent") feedback.reset();
+  };
+  const { dot, label } = describeSidebarNotificationsButton(
+    {
+      severities: notices.map((notice) => notice.severity),
+      survey: userSurvey !== null,
+      instructionUpdates,
+      update: updates.signal,
+      updateFailed: hasFailedUpdate({
+        app: updates.state ? describeAppUpdateCard(updates.state, updates.action, gt) : null,
+        providerStatuses: updates.providers.map((card) => card.provider.updateState?.status),
+        run: updates.run,
+      }),
+    },
+    gt,
+  );
   const tooltipSide = useSidebarFooterTooltipSide();
 
   return (
     <>
       <SidebarMenuItem className="shrink-0">
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next);
+            if (next) userSurvey?.shown();
+          }}
+          // Closing keeps the draft, and the bell opens on the notifications again.
+          onOpenChangeComplete={(next) => {
+            if (!next) showList();
+          }}
+        >
           <Tooltip>
             <TooltipTrigger
               render={
@@ -140,14 +275,52 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
             side={tooltipSide}
             align={tooltipSide === "top" ? "start" : "end"}
             padding="compact"
-            className="w-85"
+            className="w-85 max-w-[calc(100vw-1rem)]"
           >
-            <NotificationsPanel
-              updates={updates}
-              notices={notices}
-              dismiss={dismiss}
-              onClose={() => setOpen(false)}
-            />
+            <SurveyAutoHeight>
+              {view === "feedback" ? (
+                <WithConnectAccountEmail>
+                  {(accountEmail) => (
+                    <SendFeedbackForm
+                      draft={feedback.draft}
+                      status={feedback.status}
+                      accountEmail={accountEmail}
+                      systemInfo={feedbackSource.systemInfo}
+                      onDraftChange={feedback.setDraft}
+                      onSubmit={() => feedback.submit(accountEmail)}
+                      onBack={showList}
+                      onDone={showList}
+                    />
+                  )}
+                </WithConnectAccountEmail>
+              ) : (
+                <NotificationsPanel
+                  updates={updates}
+                  notices={notices}
+                  dismiss={dismiss}
+                  instructionUpdates={instructionUpdates > 0}
+                  surveyCard={
+                    userSurvey ? (
+                      <UserSurveyCard
+                        key={userSurvey.survey.id}
+                        survey={userSurvey.survey}
+                        draft={surveyForm.draft}
+                        onStart={(draft) => {
+                          surveyForm.start(draft);
+                          setOpen(false);
+                          setSurveyOpen(true);
+                        }}
+                        onDismiss={() => {
+                          if (surveyForm.leftOn) userSurvey.dismiss(surveyForm.leftOn);
+                        }}
+                      />
+                    ) : null
+                  }
+                  onClose={() => setOpen(false)}
+                  onSendFeedback={feedbackSource.available ? () => setView("feedback") : null}
+                />
+              )}
+            </SurveyAutoHeight>
           </PopoverPopup>
         </Popover>
         <UpdateEverythingDialog
@@ -159,6 +332,26 @@ export const SidebarNotifications = memo(function SidebarNotifications() {
           restarts={updates.everything.restarts}
           onConfirm={updates.runEverything}
         />
+        {userSurvey ? (
+          <UserSurveyDialog
+            key={userSurvey.survey.id}
+            survey={userSurvey.survey}
+            draft={surveyForm.draft}
+            status={surveyForm.status}
+            step={surveyForm.step}
+            back={surveyForm.back}
+            onDraftChange={surveyForm.setDraft}
+            onStepChange={surveyForm.goTo}
+            onSubmit={surveyForm.submit}
+            open={surveyOpen}
+            onOpenChange={setSurveyOpen}
+            onBackToCard={() => {
+              setSurveyOpen(false);
+              setOpen(true);
+            }}
+            onSent={userSurvey.finish}
+          />
+        ) : null}
       </SidebarMenuItem>
     </>
   );
@@ -225,13 +418,23 @@ function NotificationsPanel({
   updates,
   notices,
   dismiss,
+  instructionUpdates,
+  surveyCard,
   onClose,
+  onSendFeedback,
 }: {
   readonly updates: SidebarUpdates;
   readonly notices: ReturnType<typeof useBackgroundNotices>["notices"];
   readonly dismiss: (keys: ReadonlyArray<string>) => void;
+  /** A release's instruction updates wait for a decision; they rank with the updates. */
+  readonly instructionUpdates: boolean;
+  /** The survey the server offers, as its card; it ranks with the notices. */
+  readonly surveyCard: ReactNode;
   readonly onClose: () => void;
+  /** Turns the popover to the feedback form; null when this client may not send feedback. */
+  readonly onSendFeedback: (() => void) | null;
 }) {
+  const gt = useGT();
   const navigate = useNavigate();
   const { state, action, run, pending } = updates;
   const updateEverything = () => {
@@ -252,6 +455,13 @@ function NotificationsPanel({
         }}
         detail={notice.message}
         details={notice.detail}
+        action={
+          notice.retry ? (
+            <NotificationButton tone="secondary" onClick={notice.retry}>
+              {gt("Retry")}
+            </NotificationButton>
+          ) : null
+        }
         links={
           notice.link ? (
             <NotificationButton
@@ -283,7 +493,7 @@ function NotificationsPanel({
         <NotificationCard
           tone="info"
           icon={<RefreshCwIcon />}
-          {...describeUpdateRun(run)}
+          {...describeUpdateRun(run, gt)}
           onDismiss={updateRunFailed(run) ? dismissSettledUpdateRunMachines : undefined}
           below={
             // Upstream's capsule keeps the run's own actions: retry, Later and Restart.
@@ -295,7 +505,7 @@ function NotificationsPanel({
       ),
     });
   } else {
-    const app = state ? describeAppUpdateCard(state, action) : null;
+    const app = state ? describeAppUpdateCard(state, action, gt) : null;
     if (state && app) {
       if (action !== "none") pendingUpdates += 1;
       const runAction =
@@ -327,10 +537,10 @@ function NotificationsPanel({
                   onClick={runAction}
                 >
                   {app.kind === "failed"
-                    ? "Retry"
+                    ? gt("Retry")
                     : app.action === "install"
-                      ? "Restart"
-                      : "Download"}
+                      ? gt("Restart")
+                      : gt("Download")}
                 </NotificationButton>
               ) : null
             }
@@ -370,28 +580,37 @@ function NotificationsPanel({
             }
             title={
               failed
-                ? `${card.name} update failed`
+                ? gt("{provider} update failed", { provider: card.name })
                 : `${card.name} ${provider.versionAdvisory.latestVersion}`
             }
             detail={
               failed
-                ? (provider.updateState?.message ?? "The update did not finish.")
-                : `${current ? `You have ${current}` : "Update available"}${card.machineLabel ? ` on ${card.machineLabel}` : ""}`
+                ? (provider.updateState?.message ?? gt("The update did not finish."))
+                : current
+                  ? card.machineLabel
+                    ? gt("You have {version} on {machine}", {
+                        version: current,
+                        machine: card.machineLabel,
+                      })
+                    : gt("You have {version}", { version: current })
+                  : card.machineLabel
+                    ? gt("Update available on {machine}", { machine: card.machineLabel })
+                    : gt("Update available")
             }
             details={failed ? provider.updateState?.output : null}
             action={
               status === "queued" ? (
-                <UpdateStatus label="Waiting" />
+                <UpdateStatus label={gt("Waiting")} />
               ) : status === "running" ? (
-                <UpdateStatus label="Updating" icon={<Spinner size="xs" />} />
+                <UpdateStatus label={gt("Updating")} icon={<Spinner size="xs" />} />
               ) : status === "succeeded" ? (
                 <UpdateStatus
-                  label="Updated"
+                  label={gt("Updated")}
                   icon={<CheckIcon className="size-3.5 text-success-foreground" />}
                 />
               ) : (
                 <NotificationButton tone="secondary" disabled={pending} onClick={card.update}>
-                  {failed ? "Retry" : "Update"}
+                  {failed ? gt("Retry") : gt("Update")}
                 </NotificationButton>
               )
             }
@@ -412,14 +631,14 @@ function NotificationsPanel({
             title={server.label}
             detail={
               server.version
-                ? `Server ${server.version} is behind this app.`
-                : "Its server is behind this app."
+                ? gt("Server {version} is behind this app.", { version: server.version })
+                : gt("Its server is behind this app.")
             }
             action={
               // Update everything is the one way to update a server from here.
               updates.runsEverything ? (
                 <NotificationButton tone="secondary" disabled={pending} onClick={updateEverything}>
-                  Update
+                  <T>Update</T>
                 </NotificationButton>
               ) : null
             }
@@ -429,32 +648,51 @@ function NotificationsPanel({
     }
   }
 
+  if (instructionUpdates) {
+    cards.push({
+      key: "instruction-updates",
+      rank: "update",
+      occurredAt: null,
+      node: <InstructionUpdatesNotification onClose={onClose} />,
+    });
+  }
+
+  if (surveyCard) {
+    cards.push({ key: "survey", rank: "info", occurredAt: null, node: surveyCard });
+  }
+
   const showsUpdateAll = run === null && updates.runsEverything && pendingUpdates >= 2;
   // The compact popup pads 8px vertically and 12px at the sides; pb-1 evens the bottom.
   return (
     <div className="flex flex-col pb-1">
       <div className="flex min-h-7 items-center gap-2 px-1 pb-2">
-        <PopoverTitle className="flex-1">Notifications</PopoverTitle>
+        <PopoverTitle className="flex-1">
+          <T>Notifications</T>
+        </PopoverTitle>
         {notices.length > 0 ? (
           <span className="text-xs">
             <InlineButton
               tone="muted"
               onClick={() => dismiss(notices.map(backgroundNoticeDismissalKey))}
             >
-              Clear all
+              <T>Clear all</T>
             </InlineButton>
           </span>
         ) : null}
         {showsUpdateAll ? (
           <NotificationButton tone="secondary" disabled={pending} onClick={updateEverything}>
-            Update all
+            <T>Update all</T>
           </NotificationButton>
         ) : null}
       </div>
       {cards.length === 0 ? (
         <div className="px-2 pt-5 pb-4 text-center">
-          <p className="text-sm font-medium">You're all caught up</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">Updates and alerts show here.</p>
+          <p className="text-sm font-medium">
+            <T>You're all caught up</T>
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            <T>Updates and alerts show here.</T>
+          </p>
         </div>
       ) : (
         <ol className="flex flex-col gap-1.5">
@@ -463,6 +701,19 @@ function NotificationsPanel({
           ))}
         </ol>
       )}
+      {onSendFeedback ? (
+        <div className="mt-2 flex border-t border-foreground/7 pt-1.5">
+          <SurveyAction
+            size="sm"
+            tone="quiet"
+            data-track="notifications.send-feedback"
+            onClick={onSendFeedback}
+          >
+            <MessageSquareTextIcon aria-hidden />
+            <T>Send feedback</T>
+          </SurveyAction>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -483,16 +734,23 @@ function ReleaseNotesLink({
   readonly state: DesktopUpdateState;
   readonly title: string;
 }) {
+  const gt = useGT();
   const shell = window.desktopBridge;
   if (hasNightlyReleaseNotes(state)) {
     return (
       <Popover>
-        <PopoverTrigger render={<InlineButton tone="muted">Release notes</InlineButton>} />
+        <PopoverTrigger
+          render={
+            <InlineButton tone="muted">
+              <T>Release notes</T>
+            </InlineButton>
+          }
+        />
         <PopoverPopup
           side="top"
           align="start"
           tooltipStyle
-          aria-label="Nightly update release notes"
+          aria-label={gt("Nightly update release notes")}
         >
           <SidebarUpdateReleaseNotes shell={shell} state={state} tooltip={title} />
         </PopoverPopup>
@@ -506,7 +764,7 @@ function ReleaseNotesLink({
       tone="muted"
       onClick={() => void openDesktopUpdateReleaseNotes(shell, releaseUrl)}
     >
-      Release notes
+      <T>Release notes</T>
       <ExternalLinkIcon aria-hidden className="size-3" />
     </InlineButton>
   );

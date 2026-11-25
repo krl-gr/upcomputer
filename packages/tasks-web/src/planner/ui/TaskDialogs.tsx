@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { useState } from "react";
 
 import { Button } from "../../../../../apps/web/src/components/ui/button.tsx";
@@ -35,6 +36,7 @@ export function ConfirmDeleteDialog(props: {
   readonly onConfirm: () => void;
   readonly onOpenChange: (open: boolean) => void;
 }) {
+  const gt = useGT();
   return (
     <AlertDialog open={props.open} onOpenChange={props.onOpenChange}>
       <AlertDialogPopup>
@@ -43,7 +45,7 @@ export function ConfirmDeleteDialog(props: {
           <AlertDialogDescription>{props.description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+          <AlertDialogClose render={<Button variant="outline" />}>{gt("Cancel")}</AlertDialogClose>
           <Button
             variant="destructive"
             onClick={() => {
@@ -51,7 +53,7 @@ export function ConfirmDeleteDialog(props: {
               props.onOpenChange(false);
             }}
           >
-            Delete
+            {gt("Delete")}
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>
@@ -67,6 +69,7 @@ function HandOffBody(props: {
   readonly onConfirm: (agentId: string | null) => void;
   readonly onClose: () => void;
 }) {
+  const gt = useGT();
   // One agent is the obvious pick; with several the person chooses.
   const [choice, setChoice] = useState<string | null>(
     props.agents.length === 1 ? props.agents[0]!.id : props.agents.length === 0 ? ANY_AGENT : null,
@@ -75,19 +78,27 @@ function HandOffBody(props: {
   return (
     <>
       <AlertDialogHeader>
-        <AlertDialogTitle>Hand to a worker</AlertDialogTitle>
+        <AlertDialogTitle>{gt("Hand to a worker")}</AlertDialogTitle>
         <AlertDialogDescription>
           {agent
-            ? `"${props.title}" moves from your planner to Workers with ${agent.name}'s start tags, so ${agent.name} starts on it. You can take it back from its details there.`
-            : `"${props.title}" becomes a worker task and moves from your planner to Workers. An enabled worker whose status, tags and project match starts on it now. You can take it back from its details there.`}
+            ? gt(
+                '"{title}" moves from your planner to Workers with {worker}\'s start tags, so {worker} starts on it. You can take it back from its details there.',
+                { title: props.title, worker: agent.name },
+              )
+            : gt(
+                '"{title}" becomes a worker task and moves from your planner to Workers. An enabled worker whose status, tags and project match starts on it now. You can take it back from its details there.',
+                { title: props.title },
+              )}
         </AlertDialogDescription>
       </AlertDialogHeader>
       {props.agents.length > 0 ? (
         <div className="px-6 pb-6">
           <Select value={choice} onValueChange={setChoice}>
-            <SelectTrigger aria-label="Worker">
+            <SelectTrigger aria-label={gt("Worker")}>
               <SelectValue>
-                {choice === ANY_AGENT ? "No particular worker" : (agent?.name ?? "Choose a worker")}
+                {choice === ANY_AGENT
+                  ? gt("No particular worker")
+                  : (agent?.name ?? gt("Choose a worker"))}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>
@@ -96,13 +107,13 @@ function HandOffBody(props: {
                   {name}
                 </SelectItem>
               ))}
-              <SelectItem value={ANY_AGENT}>No particular worker</SelectItem>
+              <SelectItem value={ANY_AGENT}>{gt("No particular worker")}</SelectItem>
             </SelectPopup>
           </Select>
         </div>
       ) : null}
       <AlertDialogFooter>
-        <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+        <AlertDialogClose render={<Button variant="outline" />}>{gt("Cancel")}</AlertDialogClose>
         <Button
           disabled={choice === null}
           onClick={() => {
@@ -110,7 +121,7 @@ function HandOffBody(props: {
             props.onClose();
           }}
         >
-          {agent ? `Hand to ${agent.name}` : "Hand to workers"}
+          {agent ? gt("Hand to {worker}", { worker: agent.name }) : gt("Hand to workers")}
         </Button>
       </AlertDialogFooter>
     </>
@@ -155,21 +166,24 @@ export function MoveBelowDialog(props: {
   readonly onPick: (taskId: string) => void;
   readonly onOpenChange: (open: boolean) => void;
 }) {
+  const gt = useGT();
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogPopup>
         <DialogHeader>
           <DialogTitle>
             {props.movingCount === 1
-              ? "Move below another task"
-              : `Move ${props.movingCount} tasks under…`}
+              ? gt("Move below another task")
+              : gt("{count, plural, one {Move # task under…} other {Move # tasks under…}}", {
+                  count: props.movingCount,
+                })}
           </DialogTitle>
-          <DialogDescription>Pick the task they go under.</DialogDescription>
+          <DialogDescription>{gt("Pick the task they go under.")}</DialogDescription>
         </DialogHeader>
         <DialogPanel>
           {props.candidates.length === 0 ? (
             <p className="py-4 text-center text-sm text-muted-foreground">
-              No other tasks to move under.
+              {gt("No other tasks to move under.")}
             </p>
           ) : (
             <div className="flex flex-col">

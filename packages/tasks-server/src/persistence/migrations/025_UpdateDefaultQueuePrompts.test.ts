@@ -1,6 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import { DEFAULT_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
+import { LEGACY_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -38,7 +38,7 @@ it.layer(database)("UpdateDefaultQueuePrompts migration", (it) => {
         SELECT task_creation AS "taskCreation", agent_creation AS "agentCreation", revision
         FROM task_prompt_settings WHERE id = 1
       `;
-      assert.equal(row?.taskCreation, DEFAULT_TASK_PROMPT_SETTINGS.taskCreation);
+      assert.equal(row?.taskCreation, LEGACY_TASK_PROMPT_SETTINGS.taskCreation);
       assert.equal(row?.agentCreation, "My own agents.");
       assert.equal(row?.revision, before!.revision + 1);
       const changes = yield* sql<{ readonly field: string }>`

@@ -227,7 +227,8 @@ function expectV1Sidebar(painted: Painted, mode: "light" | "dark"): void {
   expect(painted.bodyAlpha).toBe(0);
   expect(painted.insetAlpha).toBe(1);
   expectColor(painted.sidebar, v1.sidebar);
-  expect(painted.sidebarFilter).toBe("blur(28px) saturate(1.25)");
+  // The native material does the blur; a backdrop filter there changed no pixel.
+  expect(painted.sidebarFilter).toBe("none");
   expectColor(painted.row, [r, g, b, mode === "light" ? 0.05 : 0.07]);
   expectColor(painted.edge, [r, g, b, mode === "light" ? 0.04 : 0.03]);
   expectColor(painted.border, [r, g, b, 0.1]);

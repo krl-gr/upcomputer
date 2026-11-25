@@ -3,6 +3,7 @@
  * (moved from the former Automations page), and the upsert they save as.
  */
 import type { ProjectId } from "@t3tools/contracts";
+import { msg } from "gt-react";
 import {
   DEFAULT_AUTOMATION_TASK_STATUS,
   type TaskAutomation,
@@ -22,26 +23,29 @@ export const CATCH_UP_POLICIES: ReadonlyArray<{
   readonly value: TaskAutomationCatchUpPolicy;
   readonly label: string;
 }> = [
-  { value: "fire-once", label: "Run once after a missed window" },
-  { value: "skip", label: "Skip missed windows entirely" },
+  { value: "fire-once", label: msg("Run once after a missed window") },
+  { value: "skip", label: msg("Skip missed windows entirely") },
 ];
 
 export const SCHEDULE_MODES: ReadonlyArray<{
   readonly value: CalendarScheduleMode;
   readonly label: string;
 }> = [
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "monthly", label: "Monthly" },
-  { value: "custom", label: "Custom" },
+  { value: "daily", label: msg("Daily") },
+  { value: "weekly", label: msg("Weekly") },
+  { value: "monthly", label: msg("Monthly") },
+  {
+    value: "custom",
+    label: msg("Custom", { $context: "schedule mode: a custom cron expression" }),
+  },
 ];
 
 export const MONTH_DAYS = Array.from({ length: 31 }, (_, index) => index + 1);
 
 export const AUTOMATION_STATUS_LABELS: Record<TaskAutomationStatus, string> = {
-  draft: "Draft",
-  enabled: "Enabled",
-  disabled: "Disabled",
+  draft: msg("Draft", { $context: "automation status" }),
+  enabled: msg("Enabled", { $context: "automation status" }),
+  disabled: msg("Disabled", { $context: "automation status" }),
 };
 
 export interface AutomationFormState {
@@ -100,21 +104,23 @@ export function automationFormOf(automation: TaskAutomation): AutomationFormStat
   };
 }
 
+/** English, from `msg()`; the component that shows it translates it with `useMessages()`. */
 export function automationScheduleError(form: AutomationFormState): string | null {
-  if (!form.timezone.trim()) return "Enter a time zone.";
+  if (!form.timezone.trim()) return msg("Enter a time zone.");
   if (form.schedule.mode === "weekly" && form.schedule.weekdays.length === 0) {
-    return "Choose at least one day.";
+    return msg("Choose at least one day.");
   }
   if (calendarScheduleToCron(form.schedule) !== null) return null;
   return form.schedule.mode === "custom"
-    ? "Enter a valid 5- or 6-field cron expression."
-    : "Enter a valid schedule.";
+    ? msg("Enter a valid 5- or 6-field cron expression.")
+    : msg("Enter a valid schedule.");
 }
 
 /**
  * The upsert a form saves as, or why it cannot be saved. Saving never changes
  * whether an automation runs: an existing one keeps its status, and a new one
- * starts disabled until the person enables it.
+ * starts disabled until the person enables it. The error is English, from
+ * `msg()`; the component that shows it translates it with `useMessages()`.
  */
 export function automationUpsertOf(
   form: AutomationFormState,
@@ -125,10 +131,10 @@ export function automationUpsertOf(
   const timezone = form.timezone.trim();
   const cron = calendarScheduleToCron(form.schedule);
   const scheduleError = automationScheduleError(form);
-  if (!form.projectId) return { error: "Select a project" };
-  if (!name) return { error: "Automation name is required" };
-  if (!title) return { error: "Task title is required" };
-  if (scheduleError || !cron) return { error: scheduleError ?? "Enter a valid schedule" };
+  if (!form.projectId) return { error: msg("Select a project") };
+  if (!name) return { error: msg("Automation name is required") };
+  if (!title) return { error: msg("Task title is required") };
+  if (scheduleError || !cron) return { error: scheduleError ?? msg("Enter a valid schedule") };
   return {
     input: {
       ...(existing ? { id: existing.id } : {}),
@@ -149,17 +155,17 @@ export function automationUpsertOf(
   };
 }
 
-/** A time today, else a short date (and the year when it is not this year). */
-export function shortDateTime(value: string, now = new Date()): string {
+/** A time today, else a short date (and the year when it is not this year), in `locale`. */
+export function shortDateTime(value: string, locale?: string, now = new Date()): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "";
   const sameDay =
     parsed.getFullYear() === now.getFullYear() &&
     parsed.getMonth() === now.getMonth() &&
     parsed.getDate() === now.getDate();
-  const time = parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const time = parsed.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
   if (sameDay) return time;
-  const date = parsed.toLocaleDateString([], {
+  const date = parsed.toLocaleDateString(locale, {
     day: "numeric",
     month: "short",
     ...(parsed.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),

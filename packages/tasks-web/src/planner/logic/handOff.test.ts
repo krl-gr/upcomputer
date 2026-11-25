@@ -19,6 +19,7 @@ describe("handing a person task to an agent", () => {
     const agents = [
       agent("reviewer", { name: "Reviewer" }),
       agent("off", { enabled: false }),
+      agent("archived", { archivedAt: "2026-10-19T09:00:00.000Z" }),
       agent("elsewhere", { projectId: "project-2" }),
       agent("everywhere", { name: "Developer", projectId: null }),
       agent("fixer", { startRunStatuses: ["failed"] }),
@@ -66,6 +67,11 @@ describe("handing a person task to an agent", () => {
     NodeAssert.equal(
       "status" in handOffPatch({ status: "Review", tags: [], metadata: null }, reviewer),
       false,
+    );
+    NodeAssert.equal(
+      "status" in handOffPatch({ status: "needs review", tags: [], metadata: null }, reviewer),
+      false,
+      "start statuses match without case",
     );
     const anyStatus = agent("any", { startStatuses: [] });
     NodeAssert.equal(

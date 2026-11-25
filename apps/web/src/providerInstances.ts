@@ -43,9 +43,44 @@ export interface ProviderInstanceEntry {
   readonly models: ReadonlyArray<ServerProviderModel>;
 }
 
-/** Disabled instances may retain ready status until reconciliation. */
+/** Status dots share one corner per user, so a badge on one row can't move only that row's dot. */
+export function hasInstanceBadge(entries: ReadonlyArray<ProviderInstanceEntry>): boolean {
+  return entries.some((entry) => shouldShowInstanceBadge(entry, entries));
+}
+
+/**
+ * Disabled instances may retain ready status until reconciliation. A warning still offers
+ * the models of sub-providers that report no problem of their own.
+ */
+export function isProviderInstanceHealthy(entry: ProviderInstanceEntry): boolean {
+  if (!entry.enabled || !entry.isAvailable) return false;
+  if (entry.snapshot.auth.status === "unauthenticated") return false;
+  if (!entry.installed) return false;
+  if (entry.status === "ready") return true;
+  if (entry.status !== "warning") return false;
+  const usable = new Set(
+    entry.snapshot.subProviders?.flatMap((subProvider) =>
+      subProvider.unavailableReason === undefined ? [subProvider.name] : [],
+    ),
+  );
+  return entry.models.some(
+    (model) => model.subProvider !== undefined && usable.has(model.subProvider),
+  );
+}
+
+/** Also true after a check that only failed or ran late: an earlier check's models stay offered. */
 export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boolean {
-  return entry.enabled && entry.isAvailable && entry.status === "ready";
+  if (isProviderInstanceHealthy(entry)) return true;
+  const { subProviders, auth, modelsRetained } = entry.snapshot;
+  if (!entry.enabled || !entry.isAvailable || subProviders !== undefined) return false;
+  if (modelsRetained === true) return true;
+  // The sign-in was confirmed, so the warning is about something else, such as a late catalog.
+  return (
+    entry.status === "warning" &&
+    entry.installed &&
+    auth.status === "authenticated" &&
+    entry.models.length > 0
+  );
 }
 
 export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): boolean {
@@ -211,20 +246,45 @@ export function getDefaultProviderInstanceModel(
 const isSelectableProviderInstanceEntry = (entry: ProviderInstanceEntry): boolean =>
   entry.enabled && entry.isAvailable;
 
+export function isProviderInstanceRunnable(entry: ProviderInstanceEntry): boolean {
+  return (
+    isSelectableProviderInstanceEntry(entry) &&
+    entry.status !== "error" &&
+    entry.snapshot.auth.status !== "unauthenticated" &&
+    (entry.installed || entry.snapshot.statusPending === true)
+  );
+}
+
+export function isProviderInstanceIdRunnableForProject(
+  providers: ReadonlyArray<ServerProvider>,
+  settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides"> | undefined,
+  projectId: ProjectId | null,
+  instanceId: ProviderInstanceId | null | undefined,
+): boolean {
+  if (instanceId == null) return false;
+  const entries = settings
+    ? providerInstanceEntriesFor(providers, settings, projectId)
+    : deriveProviderInstanceEntries(providers);
+  const entry = entries.find((candidate) => candidate.instanceId === instanceId);
+  return entry !== undefined && isProviderInstanceRunnable(entry);
+}
+
 export function resolveSelectableProviderInstanceEntry(
   entries: ReadonlyArray<ProviderInstanceEntry>,
   instanceId: ProviderInstanceId | undefined,
 ): ProviderInstanceEntry | undefined {
   if (instanceId !== undefined) {
     const requested = entries.find((entry) => entry.instanceId === instanceId);
-    if (requested && isSelectableProviderInstanceEntry(requested)) {
+    if (
+      requested &&
+      isSelectableProviderInstanceEntry(requested) &&
+      requested.snapshot.auth.status !== "unauthenticated" &&
+      (requested.installed || requested.snapshot.statusPending === true)
+    ) {
       return requested;
     }
   }
-  return (
-    entries.find(isProviderInstancePickerReady) ??
-    entries.find((entry) => isSelectableProviderInstanceEntry(entry) && entry.status !== "error")
-  );
+  return entries.find(isProviderInstanceHealthy) ?? entries.find(isProviderInstanceRunnable);
 }
 
 export function resolveSelectableProviderInstance(
@@ -252,12 +312,15 @@ export function resolveProjectDefaultProviderModelSelection(
   projectId: ProjectId | null,
 ): ModelSelection | null {
   const entries = providerInstanceEntriesFor(providers, settings, projectId);
-  // Matches resolveComposerProviderSelection: the first driver group wins before any other.
+  const firstDriverEntries = entries.filter(
+    (candidate) => candidate.driverKind === entries[0]?.driverKind,
+  );
+  // Matches resolveComposerProviderSelection: healthy providers win before degraded fallbacks.
   const entry =
-    resolveSelectableProviderInstanceEntry(
-      entries.filter((candidate) => candidate.driverKind === entries[0]?.driverKind),
-      undefined,
-    ) ?? resolveSelectableProviderInstanceEntry(entries, undefined);
+    firstDriverEntries.find(isProviderInstanceHealthy) ??
+    entries.find(isProviderInstanceHealthy) ??
+    resolveSelectableProviderInstanceEntry(firstDriverEntries, undefined) ??
+    resolveSelectableProviderInstanceEntry(entries, undefined);
   const model = entry ? getDefaultProviderInstanceModel(providers, entry.instanceId) : undefined;
   return entry && model ? { instanceId: entry.instanceId, model } : null;
 }

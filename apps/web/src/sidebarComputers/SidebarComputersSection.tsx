@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { isMacPlatform } from "@t3tools/shared/keybindings";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
+import { T, useGT, useMessages } from "gt-react";
 import { InfoIcon } from "lucide-react";
 import {
   useEffect,
@@ -135,9 +136,13 @@ function useComputers() {
 }
 
 /** A tooltip for icon-only forms, where the row's counts and info button are hidden. */
-function compactLabel(computer: SidebarComputer): string {
+function compactLabel(computer: SidebarComputer, translate: (label: string) => string): string {
   const groups = computerRunCountGroups(computer.counts);
-  return [computer.name, computer.description, groups.length > 0 ? runCountSummary(groups) : null]
+  return [
+    computer.name,
+    computer.description,
+    groups.length > 0 ? runCountSummary(groups, translate) : null,
+  ]
     .filter((part): part is string => part !== null)
     .join("\n");
 }
@@ -167,6 +172,7 @@ function ComputerCountPill(props: { readonly computer: SidebarComputer }) {
  * Tasks and Workers. Only shown once a second computer is saved or connected.
  */
 export function SidebarComputersSection() {
+  const gt = useGT();
   const { shown, choice, computers, selected } = useComputers();
   const [open, setOpen] = useLocalStorage(OPEN_STORAGE_KEY, true, Schema.Boolean);
   if (!shown) return null;
@@ -179,7 +185,11 @@ export function SidebarComputersSection() {
       <Collapsible open={open}>
         <div className={SIDEBAR_SECTION_GAP}>
           <SidebarSectionHeader
-            title={open || selected === null ? "Computers" : `Computers · ${selected.name}`}
+            title={
+              open || selected === null
+                ? gt("Computers")
+                : gt("Computers · {name}", { name: selected.name })
+            }
             open={open}
             onToggle={() => setOpen(!open)}
             testId="sidebar-computers-toggle"
@@ -190,7 +200,7 @@ export function SidebarComputersSection() {
           <div className={cn(SIDEBAR_SECTION_HEADER_GAP, SIDEBAR_MENU_SCOPE)}>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarCompactTooltip label="All computers">
+                <SidebarCompactTooltip label={gt("All computers")}>
                   <SidebarMenuButton
                     data-computer="all"
                     data-track="sidebar.computer"
@@ -198,7 +208,9 @@ export function SidebarComputersSection() {
                     onClick={() => selectSidebarComputer("all")}
                   >
                     <AllProjectsIcon />
-                    <span className="flex-1 truncate">All computers</span>
+                    <span className="flex-1 truncate">
+                      <T>All computers</T>
+                    </span>
                   </SidebarMenuButton>
                 </SidebarCompactTooltip>
               </SidebarMenuItem>
@@ -235,6 +247,8 @@ function ComputerRow(props: {
   readonly isActive: boolean;
 }) {
   const { computer, shortcut, isActive } = props;
+  const gt = useGT();
+  const m = useMessages();
   const [infoOpen, setInfoOpen] = useState(false);
   const groups = computerRunCountGroups(computer.counts);
   // The popover is portaled, but its React events still bubble through the
@@ -245,7 +259,7 @@ function ComputerRow(props: {
   };
   return (
     <Popover open={infoOpen} onOpenChange={setInfoOpen}>
-      <SidebarCompactTooltip label={compactLabel(computer)}>
+      <SidebarCompactTooltip label={compactLabel(computer, m)}>
         <SidebarMenuButton
           isActive={isActive}
           data-computer={computer.environmentId}
@@ -279,7 +293,7 @@ function ComputerRow(props: {
                 render={
                   <button
                     type="button"
-                    aria-label={`About ${computer.name}`}
+                    aria-label={gt("About {name}", { name: computer.name })}
                     data-computer-info={computer.environmentId}
                     className={sidebarListRowActionClassName(infoOpen)}
                   />
@@ -295,13 +309,13 @@ function ComputerRow(props: {
                   render={
                     <span
                       className="inline-flex items-center gap-1 opacity-80"
-                      aria-label={runCountSummary(groups)}
+                      aria-label={runCountSummary(groups, m)}
                     />
                   }
                 >
                   <RunCountNumbers groups={groups} />
                 </TooltipTrigger>
-                <TooltipPopup side="top">{runCountSummary(groups)}</TooltipPopup>
+                <TooltipPopup side="top">{runCountSummary(groups, m)}</TooltipPopup>
               </Tooltip>
             ) : null}
           </SidebarListRowEnd>
@@ -320,20 +334,36 @@ function ComputerInfo(props: {
   readonly shortcut: string | null;
 }) {
   const { computer, shortcut } = props;
+  const gt = useGT();
+  const m = useMessages();
   const navigate = useNavigate();
   const updateState = useAtomValue(serverEnvironment.updateStateAtom(computer.environmentId));
   const { presentation } = computer;
   const versionMismatch = resolveServerConfigVersionMismatch(presentation.serverConfig);
   const updating = updateState.status === "running";
-  const updateLabel = updateState.status === "failed" ? "Retry update" : "Update";
+  const updateLabel = updateState.status === "failed" ? gt("Retry update") : gt("Update");
   const groups = computerRunCountGroups(computer.counts);
   const note =
     computer.status === "offline"
-      ? "The sidebar shows what it had when it was last connected. New chats and bots wait until it is back."
+      ? gt(
+          "The sidebar shows what it had when it was last connected. New chats and bots wait until it is back.",
+        )
       : computer.unsupported
-        ? "It runs an older Up.computer that can't connect. The sidebar shows what it had before; update it to see the rest."
+        ? gt(
+            "It runs an older Up.computer that can't connect. The sidebar shows what it had before; update it to see the rest.",
+          )
         : computer.status === "outdated"
-          ? `It runs Up.computer ${computer.serverVersion ?? "an older version"}. Update it to ${APP_VERSION} so everything works.`
+          ? computer.serverVersion === null
+            ? gt(
+                "It runs an older version of Up.computer. Update it to {appVersion} so everything works.",
+                {
+                  appVersion: APP_VERSION,
+                },
+              )
+            : gt("It runs Up.computer {version}. Update it to {appVersion} so everything works.", {
+                version: computer.serverVersion,
+                appVersion: APP_VERSION,
+              })
           : null;
   return (
     <div className="flex flex-col gap-2 text-xs" data-computer-info-popup={computer.environmentId}>
@@ -342,17 +372,17 @@ function ComputerInfo(props: {
         <span className="min-w-0 flex-1 truncate font-medium text-sm">{computer.name}</span>
       </div>
       <div className="flex flex-col gap-1">
-        <InfoLine label="Status">
+        <InfoLine label={gt("Status")}>
           <span className={cn(computer.status === "outdated" && "text-warning-foreground")}>
             {computer.description}
           </span>
         </InfoLine>
         {groups.map((group) => (
-          <InfoLine key={group.label} label={group.label}>
+          <InfoLine key={group.label} label={m(group.label)}>
             <span className={cn("tabular-nums", group.className)}>{group.count}</span>
           </InfoLine>
         ))}
-        {shortcut !== null ? <InfoLine label="Shortcut">{shortcut}</InfoLine> : null}
+        {shortcut !== null ? <InfoLine label={gt("Shortcut")}>{shortcut}</InfoLine> : null}
       </div>
       {note !== null ? <p className="text-muted-foreground">{note}</p> : null}
       <div className="flex flex-wrap items-center justify-end gap-1">
@@ -381,7 +411,7 @@ function ComputerInfo(props: {
           variant="ghost"
           onClick={() => void navigate({ to: "/settings/connections" })}
         >
-          Connections
+          <T>Connections</T>
         </Button>
       </div>
     </div>

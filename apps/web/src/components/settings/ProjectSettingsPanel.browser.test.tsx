@@ -587,7 +587,7 @@ describe("project identity reset", () => {
     const createUrl = assetEnvironment.createUrl;
     using _createUrl = vi
       .spyOn(assetEnvironment, "createUrl")
-      .mockImplementation((target) =>
+      .mockImplementation((target: Parameters<typeof createUrl>[0]) =>
         target.environmentId === primaryId ? iconUrl : createUrl(target),
       );
     state.update

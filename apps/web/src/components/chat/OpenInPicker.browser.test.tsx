@@ -194,15 +194,13 @@ describe("remote editor links", () => {
     await using fixture = await setup();
     const { screen, pressOpenFavorite, FavoriteEditorFallback } = fixture;
     state.remote = { mode: "remote-links", host: { kind: "ssh-alias", host: "sol" } };
+    // A successful open would announce on a real timer that fires in the next test.
+    state.openUrl.mockResolvedValueOnce(false);
     await act(async () => screen.rerender(<FavoriteEditorFallback />));
-    using _timers = fakeTimers();
 
     expect((await pressOpenFavorite()).defaultPrevented).toBe(true);
     expect(state.openUrl).toHaveBeenCalledWith(expect.stringContaining("ssh-remote+sol"));
     expect(state.run).not.toHaveBeenCalled();
-    // On the real clock this flush would land 250 ms later, inside the next test.
-    await act(async () => vi.runAllTimers());
-    expect(document.body.textContent).toContain("Opened in VS Code");
   });
 
   it("explains why a phone or tablet browser has no editor to open", async () => {
@@ -233,12 +231,8 @@ describe("open in editor announcement", () => {
     await renderPicker();
     using _timers = fakeTimers();
     const regions = () => [...document.querySelectorAll('body > [aria-live="polite"]')];
-    // The announcer's regions outlive a test and may still hold an earlier test's message.
-    const silence = () => {
-      for (const region of regions()) region.textContent = "";
-    };
     const spoken = async () => {
-      await act(async () => vi.runAllTimers());
+      await act(async () => vi.advanceTimersByTime(250));
       return regions()
         .map((region) => region.textContent)
         .join("");
@@ -246,14 +240,13 @@ describe("open in editor announcement", () => {
     const refuse = () =>
       state.run.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("No editor"))));
 
-    silence();
     refuse();
     await pressOpenFavorite();
     expect(await spoken()).toBe("");
     await pressOpenFavorite();
     expect(await spoken()).toBe("Opened in VS Code");
 
-    silence();
+    for (const region of regions()) region.textContent = "";
     await act(async () => screen.rerender(<FavoriteEditorFallback />));
     refuse();
     await pressOpenFavorite();

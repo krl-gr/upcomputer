@@ -33,7 +33,7 @@ change a lot at once (a test purge, a comment rewrite), one merge commit per sta
 | Our product hooks inside upstream files                                            | Upstream's code with our hook re-placed, also when upstream moves the code to a new file.                                           |
 | `release.yml`, `ci.yml`, `deploy-relay.yml`, marketing site, telemetry key         | Ours; port only the upstream fixes we want.                                                                                         |
 | Other upstream workflows                                                           | Upstream's, verbatim. One that would run here gets a `github.repository == 'pingdotgg/t3code'` guard rather than a deletion.        |
-| Mobile (`apps/mobile`, outside our workspace)                                      | Upstream's.                                                                                                                         |
+| Mobile (`apps/mobile`)                                                             | Upstream's, plus our iOS identity layer (`docs/branding.md`).                                                                       |
 | Upstream deletes a test file we changed                                            | The deletion; our cases move to a `*.upcomputer.test.ts` file of ours.                                                              |
 | Upstream's new lint or Effect diagnostics fail our code                            | Fix it, or put the file on the UpComputer burn-down list in `vite.config.ts` and our effect counts in `scripts/effect-budget.json`. |
 

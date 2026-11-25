@@ -1,0 +1,336 @@
+import type { DesktopUpdateState, UserSurvey } from "@t3tools/contracts";
+import { it, vi } from "vite-plus/test";
+import { userEvent } from "vite-plus/test/browser";
+
+import { Dialog } from "../components/ui/dialog";
+import { SidebarMenu, SidebarProvider } from "../components/ui/sidebar";
+import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
+import { SidebarNotifications } from "../sidebarNotifications/SidebarNotifications";
+import { UserSurveyDialogPopup, type UserSurveyStatus } from "../userSurvey/UserSurveyDialog";
+import { EMPTY_DRAFT_ANSWER, type SurveyDraft } from "../userSurvey/userSurvey.logic";
+import { captureUiStateSheet, type UiState } from "./uiStateSheet";
+
+/*
+ * The survey's card in the notifications popover, and each step of its form.
+ * Popups portal to the body, so each state copies the open popup into its cell.
+ */
+
+// The survey as the server hands it over: its built-in definition.
+const SURVEY: UserSurvey = {
+  id: "feedback-2026-11",
+  name: "Feedback, November 2026",
+  questions: [
+    {
+      id: "working",
+      type: "single_choice",
+      question: "Hi 👋 Is Up.computer working well for you?",
+      optional: false,
+      choices: [{ label: "All good" }, { label: "Something's off" }],
+    },
+    {
+      id: "problem",
+      type: "open",
+      question: "What went wrong? We'll fix it as soon as we can.",
+      placeholder: "What happened, and where in the app?",
+      optional: true,
+      showWhen: { questionId: "working", choices: [1] },
+    },
+    {
+      id: "next",
+      type: "multiple_choice",
+      question: "What should we build next?",
+      optional: true,
+      choices: [
+        { label: "iOS app" },
+        { label: "Android app" },
+        { label: "Cloud agents" },
+        { label: "Voice dictation" },
+        { label: "Bots in Slack" },
+        { label: "Bots in video calls" },
+        { label: "Collaborative work" },
+        { label: "Write my own", kind: "own-answer" },
+      ],
+    },
+    {
+      id: "contact",
+      type: "open",
+      kind: "contact",
+      question: "Can we follow up with you? Leave your email or X handle.",
+      optional: true,
+    },
+  ],
+};
+
+const source = vi.hoisted(() => ({
+  update: null as DesktopUpdateState | null,
+  survey: true,
+}));
+
+// Data sources, not UI: the update feed, server configs, environments, Update
+// everything's plan and the survey the server offers.
+vi.mock("../state/desktopUpdate", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useDesktopUpdateState: () => source.update,
+}));
+vi.mock("../state/entities", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useServerConfigs: () => new Map(),
+}));
+vi.mock("../state/environments", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useEnvironments: () => ({ environments: [] }),
+  useEnvironmentProviders: () => new Map(),
+}));
+vi.mock("../components/sidebar/useUpdateEverything", async (importOriginal) => {
+  const { describeUpdateEverything } = await import("../components/sidebar/updateEverything.logic");
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    useUpdateEverything: (localUpdateVersion: string | null) => ({
+      hasUpdates: false,
+      ...describeUpdateEverything({
+        localVersion: localUpdateVersion,
+        localMachines: [],
+        servers: [],
+        providerMachines: [],
+        skipped: [],
+      }),
+      restarts: [],
+      run: async () => undefined,
+    }),
+  };
+});
+vi.mock("../userSurvey/useUserSurvey", () => ({
+  useUserSurvey: () =>
+    source.survey
+      ? {
+          survey: SURVEY,
+          shown: () => undefined,
+          partial: () => undefined,
+          dismiss: () => undefined,
+          submit: async () => null,
+          finish: () => undefined,
+        }
+      : null,
+}));
+
+const AVAILABLE: DesktopUpdateState = {
+  enabled: true,
+  status: "available",
+  channel: "latest",
+  currentVersion: "0.9.2",
+  hostArch: "arm64",
+  appArch: "arm64",
+  runningUnderArm64Translation: false,
+  availableVersion: "0.9.3",
+  downloadedVersion: null,
+  releaseNotes: [],
+  omittedReleaseCount: 0,
+  downloadPercent: null,
+  checkedAt: new Date().toISOString(),
+  message: null,
+  errorContext: null,
+  canRetry: false,
+};
+
+/** Waits for the popup's opening transition, then copies it into `cell`. */
+async function copyPopup(popup: HTMLElement, cell: HTMLElement) {
+  await Promise.all(
+    popup
+      .getAnimations({ subtree: true })
+      .filter(
+        (animation) =>
+          animation.effect?.getComputedTiming().endTime !== Infinity &&
+          // The feedback hint's loop runs about 12s; the capture does not wait for it.
+          !(
+            animation.effect instanceof KeyframeEffect &&
+            animation.effect.target?.closest("[data-sfh]")
+          ),
+      )
+      // A transition its element cancels rejects; the popup is settled either way.
+      .map((animation) => animation.finished.catch(() => undefined)),
+  );
+  const copy = popup.cloneNode(true) as HTMLElement;
+  copy.removeAttribute("data-starting-style");
+  copy.removeAttribute("id");
+  for (const property of ["position", "top", "bottom", "left", "right"]) {
+    copy.style.removeProperty(property);
+  }
+  cell.querySelector("[data-popup-copy]")!.append(copy);
+}
+
+// A chip of the survey card in the popup's copy; the sheet marks it as hovered.
+const FIRST_CHIP = "[data-popup-copy] [role=radio]:first-child";
+const DISMISS = '[data-popup-copy] li:last-child [aria-label="Dismiss"]';
+
+function Bell() {
+  return (
+    <AppAtomRegistryProvider>
+      <SidebarProvider className="min-h-0" data-sidebar-compact="false">
+        <div data-app-sidebar="" className="flex flex-col py-2">
+          <div data-popup-copy="" className="mb-1 empty:hidden" />
+          <SidebarMenu className="flex-row items-center">
+            <SidebarNotifications />
+          </SidebarMenu>
+        </div>
+      </SidebarProvider>
+    </AppAtomRegistryProvider>
+  );
+}
+
+function bell(name: string, update: DesktopUpdateState | null, hover?: string): UiState {
+  return {
+    name,
+    render: () => <Bell />,
+    ...(hover ? { hover } : {}),
+    setup: () => {
+      source.update = update;
+      return () => {
+        source.update = null;
+      };
+    },
+    settle: async (cell) => {
+      const trigger = cell.querySelector<HTMLElement>('[data-track="sidebar.notifications"]')!;
+      await userEvent.click(trigger);
+      const popup = await vi.waitFor(() => {
+        const id = trigger.getAttribute("aria-controls");
+        const found = id ? document.getElementById(id) : null;
+        if (!found?.hasAttribute("data-open")) throw new Error("The popover is not open");
+        return found;
+      });
+      await copyPopup(popup, cell);
+      await userEvent.unhover(trigger);
+    },
+  };
+}
+
+const YES: SurveyDraft = { working: { ...EMPTY_DRAFT_ANSWER, picked: [0] } };
+const issues = (details: string): SurveyDraft => ({
+  working: { ...EMPTY_DRAFT_ANSWER, picked: [1] },
+  problem: { ...EMPTY_DRAFT_ANSWER, text: details },
+});
+const FILLED: SurveyDraft = {
+  ...issues("The sidebar flickers when a thread finishes."),
+  next: { ...EMPTY_DRAFT_ANSWER, picked: [0, 3, 7], otherText: "Calendar sync" },
+  contact: { ...EMPTY_DRAFT_ANSWER, text: "demo@example.com" },
+};
+
+function form(name: string, draft: SurveyDraft, step: number, status: UserSurveyStatus): UiState {
+  return {
+    name,
+    render: () => (
+      <AppAtomRegistryProvider>
+        <div data-popup-copy="" />
+        <Dialog open>
+          <UserSurveyDialogPopup
+            survey={SURVEY}
+            draft={draft}
+            status={status}
+            step={step}
+            back={false}
+            onDraftChange={() => undefined}
+            onStepChange={() => undefined}
+            onSubmit={() => undefined}
+            onClose={() => undefined}
+            onBackToCard={() => undefined}
+          />
+        </Dialog>
+      </AppAtomRegistryProvider>
+    ),
+    // Freezes the copy, so the open dialog's backdrop leaves with the state.
+    setup: () => () => undefined,
+    settle: async (cell) => {
+      const popup = await vi.waitFor(() => {
+        // Earlier states' copies sit in the sheet with the same slot.
+        const found = [
+          ...document.querySelectorAll<HTMLElement>('[data-slot="dialog-popup"]'),
+        ].find((popup) => !popup.closest("[data-ui-states-sheet]"));
+        if (!found) throw new Error("The dialog is not open");
+        return found;
+      });
+      await copyPopup(popup, cell);
+    },
+  };
+}
+
+const EDITING: UserSurveyStatus = { kind: "editing" };
+
+it("user-survey", async () => {
+  // Several sheets: a taller capture comes out blank past about 4000px.
+  await captureUiStateSheet(
+    "user-survey-card",
+    [
+      {
+        title: "Notifications popover: the card asks the first question",
+        states: [
+          bell("after an app update", AVAILABLE),
+          bell("alone", null),
+          bell("pointer over a chip", AVAILABLE, FIRST_CHIP),
+          bell("pointer over the X", AVAILABLE, DISMISS),
+        ],
+      },
+    ],
+    { cellWidth: 360 },
+  );
+  await captureUiStateSheet(
+    "user-survey-form",
+    [
+      {
+        title: "Survey form: the steps follow the card's answer",
+        states: [
+          form("Something's off, step 1 of 3: the details", issues(""), 0, EDITING),
+          form(
+            "Something's off, step 1 of 3: Continue once the details are typed",
+            issues("The sidebar flickers when a thread finishes."),
+            0,
+            EDITING,
+          ),
+          form("Something's off, step 2 of 3: Skip until a chip is picked", issues(""), 1, EDITING),
+          form(
+            "Something's off, step 2 of 3: Write my own opens an empty text area",
+            { ...issues(""), next: { ...EMPTY_DRAFT_ANSWER, picked: [7] } },
+            1,
+            EDITING,
+          ),
+          form(
+            "Something's off, step 2 of 3: chips and Write my own with its text area",
+            {
+              ...issues("The sidebar flickers when a thread finishes."),
+              next: { ...EMPTY_DRAFT_ANSWER, picked: [3, 7], otherText: "Calendar sync" },
+            },
+            1,
+            EDITING,
+          ),
+          form(
+            "Something's off, step 3 of 3: the contact, Skip while empty",
+            issues(""),
+            2,
+            EDITING,
+          ),
+          form("Something's off, step 3 of 3: Send once something is typed", FILLED, 2, EDITING),
+          form("All good, step 1 of 2: what is missing", YES, 0, EDITING),
+          form("All good, step 2 of 2: the contact", YES, 1, EDITING),
+        ],
+      },
+    ],
+    { cellWidth: 560 },
+  );
+  await captureUiStateSheet(
+    "user-survey-send",
+    [
+      {
+        title: "Sending",
+        states: [
+          form("submitting", FILLED, 2, { kind: "submitting" }),
+          form("submitting from Skip, with no contact", issues(""), 2, { kind: "submitting" }),
+          form("send failed: the error under the field", FILLED, 2, {
+            kind: "failed",
+            message: "Couldn't send. Check your connection and try again.",
+          }),
+          form("sent after Something's off: we will look into it", FILLED, 2, { kind: "sent" }),
+          form("sent after All good: thank you", YES, 1, { kind: "sent" }),
+        ],
+      },
+    ],
+    { cellWidth: 560 },
+  );
+});

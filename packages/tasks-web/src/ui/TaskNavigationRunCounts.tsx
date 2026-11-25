@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { TaskRunCount } from "@t3tools/tasks-contracts/v1";
+import { useGT } from "gt-react";
 
 import { useServerConfigs } from "../../../../apps/web/src/state/entities.ts";
 import { useEnvironments } from "../../../../apps/web/src/state/environments.ts";
@@ -36,12 +37,13 @@ function EnvironmentCounts({
 
 /** One number in the Working color, or nothing when no run is working. */
 export function WorkingRunCount({ counts }: { counts: readonly TaskRunCount[] }) {
+  const gt = useGT();
   const working = counts.reduce(
     (sum, count) => (count.status === "running" ? sum + count.count : sum),
     0,
   );
   if (working <= 0) return null;
-  const summary = `Running workers · ${working}`;
+  const summary = gt("Running workers · {count}", { count: working });
   return (
     <span
       className={`tabular-nums opacity-80 ${WORKING_CLASS_NAME}`}

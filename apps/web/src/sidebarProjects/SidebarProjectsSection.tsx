@@ -1,4 +1,9 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import {
+  scopedThreadKey,
+  scopeProjectRef,
+  scopeThreadRef,
+} from "@t3tools/client-runtime/environment";
+import { sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
   closestCenter,
   DndContext,
@@ -11,8 +16,10 @@ import {
 import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useRouter } from "@tanstack/react-router";
+import { type AnyRouter, useRouter } from "@tanstack/react-router";
+import { isListedThreadLineage } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+import { T, useGT } from "gt-react";
 import { CopyIcon, EllipsisIcon, PlusIcon, SettingsIcon } from "lucide-react";
 import { useReducer, useRef, type ReactNode } from "react";
 
@@ -40,10 +47,16 @@ import {
   useSidebar,
 } from "../components/ui/sidebar";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import { useComposerDraftStore } from "../composerDraftStore";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useClientSettings } from "../hooks/useSettings";
+import { projectLinksByKey, type LinkedProjectScopeThread } from "../linkedProjects/projectScope";
+import { claimedSidebarThreadKeys, isSidebarThreadClaimed } from "../product/sidebarThreadClaims";
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
+import { readNavigationThreadShells, readProjects, readThreadShell } from "../state/entities";
+import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
 import { cn } from "../lib/utils";
 import {
   SIDEBAR_MENU_SCOPE,
@@ -60,14 +73,44 @@ import {
   ProjectRowIcon,
   useIsScratchProjectGroup,
 } from "./sidebarProjectIcons";
+import { resolveSidebarProjectPick } from "./sidebarProjects.logic";
 import { useSidebarProjectsList, type SidebarProjectsListRow } from "./useSidebarProjectsList";
 import { errorToastDescription } from "~/components/errors/ErrorDetails";
 
 export const SIDEBAR_PROJECTS_OPEN_STORAGE_KEY = "upcomputer:sidebar-projects-open";
 
-function sidebarProjectsRowLabel(row: SidebarProjectsListRow): string {
-  if (row.kind === "all") return "All projects";
-  return row.kind === "scratch" ? "No project" : row.project.displayName;
+function sidebarProjectsRowLabel(
+  row: SidebarProjectsListRow,
+  gt: ReturnType<typeof useGT>,
+): string {
+  if (row.kind === "all") return gt("All projects");
+  return row.kind === "scratch" ? gt("No project") : row.project.displayName;
+}
+
+/** The open thread, or the open draft's project, from the route. */
+function readOpenChat(router: AnyRouter): LinkedProjectScopeThread | null {
+  const target = resolveThreadRouteTarget(router.state.matches.at(-1)?.params ?? {});
+  if (target === null) return null;
+  const drafts = useComposerDraftStore.getState();
+  if (target.kind === "server") {
+    return readThreadShell(target.threadRef) ?? drafts.getDraftThread(target.threadRef);
+  }
+  const draft = drafts.getDraftSession(target.draftId);
+  return (draft?.promotedTo ? readThreadShell(draft.promotedTo) : null) ?? draft;
+}
+
+/** The threads the Threads list can show: no side chats, subagents or bot chats. */
+function readListedThreads() {
+  const claimed = claimedSidebarThreadKeys();
+  return readNavigationThreadShells().filter(
+    (thread) =>
+      isListedThreadLineage(thread.lineage) &&
+      !isSidebarThreadClaimed(
+        claimed,
+        thread.environmentId,
+        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+      ),
+  );
 }
 
 interface ProjectItem {
@@ -89,17 +132,25 @@ export function SidebarProjectsSection(props: {
   readonly loaded: boolean;
 }) {
   const { projectGroups, onAddProject, loaded } = props;
+  const gt = useGT();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const handleNewThread = useNewThreadHandler();
   const isScratchGroup = useIsScratchProjectGroup();
+  const threadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
   const [open, setOpen] = useLocalStorage(SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, true, Schema.Boolean);
-  const { rows, selectedKey, select, holdSurface, sortable, moveRow } =
-    useSidebarProjectsList(projectGroups);
+  const {
+    projectGroups: listedGroups,
+    rows,
+    selectedKey,
+    select,
+    holdSurface,
+    sortable,
+    moveRow,
+  } = useSidebarProjectsList(projectGroups);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   const openProjectSettings = (project: SidebarProjectSnapshot) => {
-    if (isMobile) setOpenMobile(false);
     void router.navigate({
       to: "/projects/$projectKey",
       params: { projectKey: project.projectKey },
@@ -111,18 +162,42 @@ export function SidebarProjectsSection(props: {
   };
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: ({ path }) => {
-      toastManager.add({ type: "success", title: "Path copied", description: path });
+      toastManager.add({ type: "success", title: gt("Path copied"), description: path });
     },
     onError: (error) => {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to copy path",
+          title: gt("Failed to copy path"),
           description: errorToastDescription(error),
         }),
       );
     },
   });
+  /** Filters to the row's project and moves an open chat of another project there. */
+  const pick = (key: string) => {
+    select(key);
+    const row = [...rows.preview, ...rows.overflow].find((candidate) => candidate.key === key);
+    if (row === undefined || row.kind === "all") return;
+    const { project } = row;
+    const destination = resolveSidebarProjectPick({
+      openChat: readOpenChat(router),
+      projectKeys: new Set(
+        project.memberProjectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`),
+      ),
+      projectLinks: projectLinksByKey(readProjects()),
+      threads: sortThreads(readListedThreads(), threadSortOrder),
+    });
+    if (destination.kind === "thread") {
+      const { thread } = destination;
+      void router.navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
+      });
+    } else if (destination.kind === "new-chat") {
+      void handleNewThread(scopeProjectRef(project.environmentId, project.id));
+    }
+  };
   const handleDragEnd = (event: DragEndEvent) => {
     if (event.over === null) return;
     moveRow(String(event.active.id), String(event.over.id));
@@ -132,10 +207,12 @@ export function SidebarProjectsSection(props: {
     const isActive = selectedKey === row.key;
     if (row.kind === "all") {
       return (
-        <SidebarCompactTooltip label="All projects">
-          <SidebarMenuButton isActive={isActive} onClick={() => select(row.key)}>
+        <SidebarCompactTooltip label={gt("All projects")}>
+          <SidebarMenuButton isActive={isActive} onClick={() => pick(row.key)}>
             <AllProjectsIcon />
-            <span className="flex-1 truncate">All projects</span>
+            <span className="flex-1 truncate">
+              <T>All projects</T>
+            </span>
           </SidebarMenuButton>
         </SidebarCompactTooltip>
       );
@@ -144,11 +221,11 @@ export function SidebarProjectsSection(props: {
     if (row.kind === "scratch") {
       return (
         <SidebarProjectRow
-          label="No project"
+          label={gt("No project")}
           icon={<NoProjectIcon />}
           isActive={isActive}
-          onSelect={() => select(row.key)}
-          newChatLabel="New chat without a project"
+          onSelect={() => pick(row.key)}
+          newChatLabel={gt("New chat without a project")}
           onNewChat={() => startNewThread(project)}
         />
       );
@@ -158,15 +235,15 @@ export function SidebarProjectsSection(props: {
         label={project.displayName}
         icon={<ProjectRowIcon project={project} />}
         isActive={isActive}
-        onSelect={() => select(row.key)}
-        newChatLabel={`New chat in ${project.displayName}`}
+        onSelect={() => pick(row.key)}
+        newChatLabel={gt("New chat in {project}", { project: project.displayName })}
         onNewChat={() => startNewThread(project)}
-        menuLabel={`Project actions for ${project.displayName}`}
+        menuLabel={gt("Project actions for {project}", { project: project.displayName })}
         menuItems={
           <>
             <MenuItem onClick={() => openProjectSettings(project)}>
               <SettingsIcon />
-              Project settings
+              <T>Project settings</T>
             </MenuItem>
             <MenuItem
               onClick={() =>
@@ -176,7 +253,7 @@ export function SidebarProjectsSection(props: {
               }
             >
               <CopyIcon />
-              Copy path
+              <T>Copy path</T>
             </MenuItem>
           </>
         }
@@ -184,17 +261,25 @@ export function SidebarProjectsSection(props: {
     );
   };
 
+  const selected = [...rows.preview, ...rows.overflow].find(
+    (row) => row.key === selectedKey && row.kind !== "all",
+  );
+
   return (
     <Collapsible open={open}>
       <div className={SIDEBAR_SECTION_GAP} ref={holdSurface}>
         <SidebarSectionHeader
-          title="Projects"
+          title={
+            open || selected === undefined
+              ? gt("Projects")
+              : gt("Projects · {name}", { name: sidebarProjectsRowLabel(selected, gt) })
+          }
           open={open}
           onToggle={() => setOpen(!open)}
           testId="sidebar-projects-toggle"
           action={
             <SidebarSectionHeaderAction
-              label="Add project"
+              label={gt("Add project")}
               track="sidebar.add_project"
               onClick={onAddProject}
             >
@@ -229,14 +314,14 @@ export function SidebarProjectsSection(props: {
                 <SidebarMenuItem>
                   <SidebarProjectsMore
                     rows={rows.overflow}
-                    onSelect={select}
+                    onSelect={pick}
                     onOpenProjectSettings={openProjectSettings}
                   />
                 </SidebarMenuItem>
               ) : null}
               {/* "No project" alone is still an empty list of projects. */}
-              {projectGroups.every(isScratchGroup) ? (
-                <SidebarEmptyRow label="New project" onClick={onAddProject} />
+              {listedGroups.every(isScratchGroup) ? (
+                <SidebarEmptyRow label={gt("New project")} onClick={onAddProject} />
               ) : null}
             </SidebarMenu>
           </div>
@@ -288,12 +373,13 @@ function SidebarProjectsMore(props: {
   readonly onOpenProjectSettings: (project: SidebarProjectSnapshot) => void;
 }) {
   const { rows, onSelect, onOpenProjectSettings } = props;
+  const gt = useGT();
   const [menuState, dispatchMenu] = useReducer(reduceSidebarProjectScopeMenuState, {
     open: false,
     query: "",
   });
   const filter = useComboboxFilter();
-  const items = rows.map((row) => ({ value: row.key, label: sidebarProjectsRowLabel(row) }));
+  const items = rows.map((row) => ({ value: row.key, label: sidebarProjectsRowLabel(row, gt) }));
   const rowByKey = new Map(rows.map((row) => [row.key, row] as const));
   const filteredItems = filterSidebarProjectScopeItems({
     items,
@@ -314,10 +400,12 @@ function SidebarProjectsMore(props: {
         if (item) onSelect(item.value);
       }}
     >
-      <SidebarCompactTooltip label="More projects">
+      <SidebarCompactTooltip label={gt("More projects")}>
         <ComboboxTrigger render={<SidebarMenuButton />}>
           <EllipsisIcon />
-          <span className="flex-1 truncate">More</span>
+          <span className="flex-1 truncate">
+            <T>More</T>
+          </span>
         </ComboboxTrigger>
       </SidebarCompactTooltip>
       <ComboboxPopup
@@ -325,12 +413,14 @@ function SidebarProjectsMore(props: {
         className="max-w-[min(18rem,var(--available-width))] overflow-hidden"
       >
         <ComboboxSearchInput
-          aria-label="Search projects"
-          placeholder="Search projects..."
+          aria-label={gt("Search projects")}
+          placeholder={gt("Search projects...")}
           value={menuState.query}
           onChange={(event) => dispatchMenu({ type: "query-changed", query: event.target.value })}
         />
-        <ComboboxEmpty>No matching projects.</ComboboxEmpty>
+        <ComboboxEmpty>
+          <T>No matching projects.</T>
+        </ComboboxEmpty>
         <ComboboxList>
           {(item: ProjectItem) => {
             const row = rowByKey.get(item.value);

@@ -1,4 +1,5 @@
 import { FolderIcon } from "lucide-react";
+import { useGT } from "gt-react";
 
 import type { ProjectFaviconProject } from "../../../../apps/web/src/components/ProjectFavicon.tsx";
 import {
@@ -17,9 +18,10 @@ import {
  * the header's project select is set to one project.
  */
 export function ProjectIconHeader() {
+  const gt = useGT();
   return (
     <th className="w-9 py-3 pr-3 font-medium">
-      <span className="sr-only">Project</span>
+      <span className="sr-only">{gt("Project")}</span>
     </th>
   );
 }
@@ -35,7 +37,8 @@ export function ProjectIconCell(props: {
   /** The item has no project and applies to all of them. */
   readonly allProjects?: boolean;
 }) {
-  const label = props.allProjects ? "All projects" : (props.name ?? "Unknown project");
+  const gt = useGT();
+  const label = props.allProjects ? gt("All projects") : (props.name ?? gt("Unknown project"));
   return (
     <td className="py-4 pr-3 align-middle">
       <Tooltip>

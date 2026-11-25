@@ -1,5 +1,4 @@
 import {
-  ANTIGRAVITY_DEFAULT_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
@@ -26,6 +25,8 @@ import * as Result from "effect/Result";
 import {
   getDefaultServerModel,
   getProviderModels,
+  hasRuntimeModelCatalog,
+  isRuntimeModelDefaultAlias,
   resolveSelectableProvider,
 } from "./providerModels";
 import { ModelEsque } from "./components/chat/providerIconUtils";
@@ -37,6 +38,7 @@ import {
   resolveProjectDefaultProviderModelSelection,
 } from "./providerInstances";
 import { sortModelsForProviderInstance } from "./modelOrdering";
+import { isDroppedFreeZenModel } from "./product/openCodeZenModels";
 import { resolveModelShortName } from "@t3tools/client-runtime/provider-clients";
 
 export const MAX_CUSTOM_MODEL_LENGTH = 256;
@@ -80,12 +82,10 @@ function appendUnavailableDynamicModelSelection(
   selectedModel: string | null | undefined,
   hiddenModels: ReadonlyArray<string>,
 ): AppModelOption[] {
-  if (provider !== "opencode" && provider !== "antigravity" && provider !== "cursor") {
-    return options;
-  }
+  if (!hasRuntimeModelCatalog(provider)) return options;
   const slug = normalizeCustomModelSlug(selectedModel);
   if (!slug) return options;
-  if (provider === "antigravity" && slug === ANTIGRAVITY_DEFAULT_MODEL) return options;
+  if (isRuntimeModelDefaultAlias(provider, slug)) return options;
 
   if (resolveSelectableModel(provider, slug, rawModels) !== null) return options;
   if (hiddenModels.includes(slug)) return options;
@@ -273,6 +273,7 @@ export function resolveAppModelSelectionForInstance(
     (candidate) => candidate.instanceId === instanceId,
   );
   if (!entry) return null;
+  if (isDroppedFreeZenModel(entry.driverKind, selectedModel, entry.models)) selectedModel = null;
   const options = getAppModelOptionsForInstance(
     settings,
     entry,
@@ -282,19 +283,14 @@ export function resolveAppModelSelectionForInstance(
   if (resolvedSelection) {
     return resolvedSelection;
   }
-  if (
-    resolutionOptions?.preserveUnavailableSelection &&
-    (entry.driverKind === "opencode" ||
-      entry.driverKind === "antigravity" ||
-      entry.driverKind === "cursor")
-  ) {
+  if (resolutionOptions?.preserveUnavailableSelection && hasRuntimeModelCatalog(entry.driverKind)) {
     const unavailableSelection = normalizeCustomModelSlug(selectedModel);
     const hiddenModels = readInstanceModelPreferences(settings, entry.instanceId).hiddenModels;
     if (
       unavailableSelection &&
       !hiddenModels.includes(unavailableSelection) &&
       resolveSelectableModel(entry.driverKind, selectedModel, entry.models) === null &&
-      (entry.driverKind !== "antigravity" || unavailableSelection !== ANTIGRAVITY_DEFAULT_MODEL)
+      !isRuntimeModelDefaultAlias(entry.driverKind, unavailableSelection)
     ) {
       return unavailableSelection;
     }

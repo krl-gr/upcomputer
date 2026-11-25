@@ -17,22 +17,22 @@ export function useAtomCommand<A, E, W>(
   command: AtomCommand<W, A, E>,
   options?:
     | string
-    | (AtomCommandOptions & {
+    | (Omit<AtomCommandOptions, "signal"> & {
         /**
          * Shows the failure to the person under this title. Without it a
          * failure only reaches the console, which reads as nothing happening.
          */
         readonly failureToast?: string;
       }),
-): (value: W) => Promise<AtomCommandResult<A, E>> {
+): (value: W, call?: Pick<AtomCommandOptions, "signal">) => Promise<AtomCommandResult<A, E>> {
   const registry = useContext(RegistryContext);
   const label = typeof options === "string" ? options : (options?.label ?? command.label);
   const reportFailure = typeof options === "string" ? true : (options?.reportFailure ?? true);
   const reportDefect = typeof options === "string" ? true : (options?.reportDefect ?? true);
   const failureToast = typeof options === "string" ? undefined : options?.failureToast;
 
-  return (value: W) =>
-    runAtomCommand(registry, command, value, { label, reportFailure, reportDefect }).then(
+  return (value, call) =>
+    runAtomCommand(registry, command, value, { label, reportFailure, reportDefect, ...call }).then(
       (result) => {
         if (
           failureToast !== undefined &&

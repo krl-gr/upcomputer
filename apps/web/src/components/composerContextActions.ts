@@ -1,8 +1,9 @@
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { createContext, type MouseEvent } from "react";
 
 export interface ComposerContextActions {
   environmentId: EnvironmentId | null;
+  threadId?: ThreadId | null | undefined;
   cwd?: string | undefined;
   projectId?: ProjectId | undefined;
   expandImage: (imageId: string) => void;

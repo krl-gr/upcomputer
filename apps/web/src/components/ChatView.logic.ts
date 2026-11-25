@@ -1,5 +1,11 @@
 import { toServerClock } from "@t3tools/client-runtime/clock";
-import { type OrchestrationV2ProviderTurn, type RunAttemptId } from "@t3tools/contracts";
+import { msg } from "gt-react";
+import { m, type MessageResolver } from "../i18n/messages";
+import {
+  type OrchestrationV2ProviderFailureClass,
+  type OrchestrationV2ProviderTurn,
+  type RunAttemptId,
+} from "@t3tools/contracts";
 import {
   deriveLatestThreadRun,
   deriveThreadRuntime,
@@ -12,11 +18,14 @@ import {
   usageLimitRunPresentedAsLatest,
 } from "@t3tools/shared/orchestrationV2ThreadError";
 import * as Option from "effect/Option";
-import { describeError, plainErrorSentence } from "@t3tools/client-runtime/errors";
+import {
+  describeError,
+  plainErrorSentence,
+  sanitizeThreadErrorMessage,
+} from "@t3tools/client-runtime/errors";
 import type { SetStateAction } from "react";
 import { applyClaudePromptEffortPrefix, resolvePromptInjectedEffort } from "@t3tools/shared/model";
 import { getProviderModelCapabilities } from "../providerModels";
-import { sanitizeThreadErrorMessage } from "@t3tools/client-runtime/errors";
 import type { EnvironmentThread, ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
@@ -53,6 +62,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import { readComposerImageBytes } from "./chat/composerAttachmentFiles";
 import { videoMimeType } from "@t3tools/shared/video";
 import {
   appendCodexArtifactTemplateUsePrompt,
@@ -102,6 +112,8 @@ import type { PreviewMiniPlayerSource } from "../previewMiniPlayerStore";
 import type { DesktopPreviewOverlay } from "../previewStateStore";
 import type { RightPanelSurface } from "../rightPanelStore";
 import {
+  isProviderInstanceHealthy,
+  isProviderInstanceRunnable,
   NO_PROVIDER_MODEL_SELECTION,
   resolveSelectableProviderInstanceEntry,
   type ProviderInstanceEntry,
@@ -118,6 +130,7 @@ export const ENVIRONMENT_RECONNECT_WARNING_GRACE_MS = 2_000;
 export function agentControlledBrowserCloseConfirmation(
   surfaces: readonly RightPanelSurface[],
   desktopByTabId: Readonly<Record<string, Pick<DesktopPreviewOverlay, "controller"> | undefined>>,
+  resolve: MessageResolver = m,
 ): string | null {
   const activeBrowserCount = surfaces.filter(
     (surface) =>
@@ -128,13 +141,26 @@ export function agentControlledBrowserCloseConfirmation(
   if (activeBrowserCount === 0) return null;
   if (activeBrowserCount === 1) {
     return [
-      "Close browser while the agent is using it?",
-      "The agent is actively controlling this browser. Closing it may interrupt the current browser action.",
+      resolve(msg("Close browser while the agent is using it?")),
+      resolve(
+        msg(
+          "The agent is actively controlling this browser. Closing it may interrupt the current browser action.",
+        ),
+      ),
     ].join("\n");
   }
   return [
-    `Close ${activeBrowserCount} browsers while the agent is using them?`,
-    "The agent is actively controlling these browsers. Closing them may interrupt the current browser actions.",
+    resolve(
+      msg(
+        "{count, plural, one {Close {count} browsers while the agent is using them?} other {Close {count} browsers while the agent is using them?}}",
+        { count: activeBrowserCount },
+      ),
+    ),
+    resolve(
+      msg(
+        "The agent is actively controlling these browsers. Closing them may interrupt the current browser actions.",
+      ),
+    ),
   ].join("\n");
 }
 
@@ -439,12 +465,13 @@ export function buildLocalDraftThread(
   threadId: ThreadId,
   draftThread: DraftThreadState,
   fallbackModelSelection: ModelSelection,
+  resolve: MessageResolver = m,
 ): Thread {
   const timestamp = DateTime.makeUnsafe(draftThread.createdAt);
   return presentThreadShell(draftThread.environmentId, {
     id: threadId,
     projectId: draftThread.projectId,
-    title: "New thread",
+    title: resolve(msg("New thread")),
     providerInstanceId: fallbackModelSelection.instanceId,
     modelSelection: fallbackModelSelection,
     runtimeMode: draftThread.runtimeMode,
@@ -479,6 +506,8 @@ export function resolveComposerProviderSelection(input: {
   candidateInstanceIds: ReadonlyArray<ProviderInstanceId | null | undefined>;
   lockedProvider: ProviderDriverKind | null;
   lockedInstanceId: ProviderInstanceId | null | undefined;
+  /** True for unstarted drafts with no explicit user pick, so sticky/default candidates cannot pick an unrunnable provider over a ready one. */
+  preferRunnableCandidate?: boolean;
 }) {
   const requestedInstanceId = input.candidateInstanceIds.find(
     (candidate) => candidate != null && candidate !== NO_PROVIDER_MODEL_SELECTION.instanceId,
@@ -503,19 +532,29 @@ export function resolveComposerProviderSelection(input: {
       (!lockedContinuationGroupKey || entry.continuationGroupKey === lockedContinuationGroupKey) &&
       (!requiresExactInstance || entry.instanceId === input.lockedInstanceId),
   );
-  const selectedProviderEntry =
+  const findCandidate = (requireRunnable: boolean) =>
     input.candidateInstanceIds
       .map((candidate) =>
         compatibleEntries.find(
-          (entry) => entry.instanceId === candidate && entry.enabled && entry.isAvailable,
+          (entry) =>
+            entry.instanceId === candidate &&
+            entry.enabled &&
+            entry.isAvailable &&
+            (!requireRunnable || isProviderInstanceRunnable(entry)),
         ),
       )
-      .find((entry) => entry !== undefined) ??
-    resolveSelectableProviderInstanceEntry(
-      compatibleEntries.filter((entry) => entry.driverKind === requestedDriverKind),
-      undefined,
-    ) ??
+      .find((entry) => entry !== undefined);
+  const driverEntries = compatibleEntries.filter(
+    (entry) => entry.driverKind === requestedDriverKind,
+  );
+  const runnableFallback =
+    driverEntries.find(isProviderInstanceHealthy) ??
+    compatibleEntries.find(isProviderInstanceHealthy) ??
+    resolveSelectableProviderInstanceEntry(driverEntries, undefined) ??
     resolveSelectableProviderInstanceEntry(compatibleEntries, undefined);
+  const selectedProviderEntry = input.preferRunnableCandidate
+    ? (findCandidate(true) ?? runnableFallback ?? findCandidate(false))
+    : (findCandidate(false) ?? runnableFallback);
   const unavailableProviderInstanceId = selectedProviderEntry
     ? undefined
     : input.lockedProvider
@@ -536,26 +575,27 @@ export function getAntigravitySendBlockReason(
     | null
     | undefined,
   model: string,
+  resolve: MessageResolver = m,
 ): string | null {
   if (provider?.driver !== "antigravity") return null;
   if (!provider.installed) {
-    return "Install Antigravity in provider settings before sending.";
+    return resolve(msg("Install Antigravity in provider settings before sending."));
   }
   if (provider.auth.status === "unauthenticated") {
-    return "Sign in to Antigravity in provider settings before sending.";
+    return resolve(msg("Sign in to Antigravity in provider settings before sending."));
   }
   const slug = model.trim();
-  if (slug.length === 0) return "Choose an Antigravity model before sending.";
+  if (slug.length === 0) return resolve(msg("Choose an Antigravity model before sending."));
   if (provider.auth.status === "unknown") return null;
   if (provider.models.length === 0) {
-    return "Refresh Antigravity models in provider settings before sending.";
+    return resolve(msg("Refresh Antigravity models in provider settings before sending."));
   }
   if (
     provider.status === "ready" &&
     slug !== ANTIGRAVITY_DEFAULT_MODEL &&
     !provider.models.some((entry) => entry.slug === slug || entry.aliases?.includes(slug))
   ) {
-    return "That Antigravity model is no longer available. Choose another model.";
+    return resolve(msg("That Antigravity model is no longer available. Choose another model."));
   }
   return null;
 }
@@ -625,7 +665,7 @@ export async function resolveFileAttachmentUrl(input: {
   });
   if (result._tag === "Failure") throw squashAtomCommandFailure(result);
   const url = resolveAssetUrl(input.httpBaseUrl, result.value.relativeUrl);
-  if (url === null) throw new Error("The environment returned an invalid attachment URL.");
+  if (url === null) throw new Error(m(msg("The environment returned an invalid attachment URL.")));
   return url;
 }
 
@@ -638,7 +678,7 @@ export async function prepareRevertedMessageAttachments(input: {
   return Promise.all(
     (input.message.attachments ?? []).map(async (attachment) => {
       if (attachment.type !== "image" && attachment.type !== "file") {
-        throw new Error("This message has an attachment that cannot be restored.");
+        throw new Error(m(msg("This message has an attachment that cannot be restored.")));
       }
       const result = await input.createAssetUrl({
         environmentId: input.environmentId,
@@ -653,10 +693,16 @@ export async function prepareRevertedMessageAttachments(input: {
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       const url = resolveAssetUrl(input.httpBaseUrl, result.value.relativeUrl);
-      if (url === null) throw new Error("The environment returned an invalid attachment URL.");
+      if (url === null)
+        throw new Error(m(msg("The environment returned an invalid attachment URL.")));
       const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-      if (!response.ok) throw new Error(`Could not restore attachment: ${attachment.name}`);
-      return new File([await response.blob()], attachment.name, { type: attachment.mimeType });
+      if (!response.ok)
+        throw new Error(m(msg("Could not restore attachment: {name}", { name: attachment.name })));
+      const file = new File([await response.blob()], attachment.name, {
+        type: attachment.mimeType,
+      });
+      if (attachment.type === "image") await readComposerImageBytes(file);
+      return file;
     }),
   );
 }
@@ -756,19 +802,38 @@ export function deriveComposerSendState(options: {
 export function buildExpiredTerminalContextToastCopy(
   expiredTerminalContextCount: number,
   variant: "omitted" | "empty",
+  resolve: MessageResolver = m,
 ): { title: string; description: string } {
   const count = Math.max(1, Math.floor(expiredTerminalContextCount));
-  const noun = count === 1 ? "Expired terminal context" : "Expired terminal contexts";
-  const pronoun = count === 1 ? "it" : "them";
   if (variant === "empty") {
     return {
-      title: `${noun} won't be sent`,
-      description: `Remove ${pronoun} or re-add ${pronoun} to include terminal output.`,
+      title: resolve(
+        msg(
+          "{count, plural, =1 {Expired terminal context won't be sent} other {Expired terminal contexts won't be sent}}",
+          { count },
+        ),
+      ),
+      description: resolve(
+        msg(
+          "{count, plural, =1 {Remove it or re-add it to include terminal output.} other {Remove them or re-add them to include terminal output.}}",
+          { count },
+        ),
+      ),
     };
   }
   return {
-    title: `${noun} omitted from message`,
-    description: `Re-add ${pronoun} if you want that terminal output included.`,
+    title: resolve(
+      msg(
+        "{count, plural, =1 {Expired terminal context omitted from message} other {Expired terminal contexts omitted from message}}",
+        { count },
+      ),
+    ),
+    description: resolve(
+      msg(
+        "{count, plural, =1 {Re-add it if you want that terminal output included.} other {Re-add them if you want that terminal output included.}}",
+        { count },
+      ),
+    ),
   };
 }
 
@@ -898,13 +963,16 @@ export function deriveLockedProvider(input: {
   return narrowedThreadProvider ?? narrowedSelectedProvider ?? null;
 }
 
-export function getStartedThreadModelChangeBlockReason(input: {
-  hasStartedSession: boolean;
-  supportsProviderSwitchingViaHandoff?: boolean;
-  currentModelSelection: ModelSelection;
-  currentProviderInstanceId?: ModelSelection["instanceId"] | null | undefined;
-  nextModelSelection: ModelSelection;
-}): { title: string; description: string } | null {
+export function getStartedThreadModelChangeBlockReason(
+  input: {
+    hasStartedSession: boolean;
+    supportsProviderSwitchingViaHandoff?: boolean;
+    currentModelSelection: ModelSelection;
+    currentProviderInstanceId?: ModelSelection["instanceId"] | null | undefined;
+    nextModelSelection: ModelSelection;
+  },
+  resolve: MessageResolver = m,
+): { title: string; description: string } | null {
   if (!input.hasStartedSession) {
     return null;
   }
@@ -919,8 +987,10 @@ export function getStartedThreadModelChangeBlockReason(input: {
     return null;
   }
   return {
-    title: "Start a new chat to switch providers",
-    description: "This thread does not support switching providers after it has started.",
+    title: resolve(msg("Start a new chat to switch providers")),
+    description: resolve(
+      msg("This thread does not support switching providers after it has started."),
+    ),
   };
 }
 
@@ -952,7 +1022,7 @@ export async function waitForRevertedMessage(
     return latest === undefined || run.ordinal > latest.ordinal ? run : latest;
   }, undefined);
   if (witness === undefined) {
-    throw new Error("The thread has changed. Select a message to rewind again.");
+    throw new Error(m(msg("The thread has changed. Select a message to rewind again.")));
   }
   return new Promise<void>((resolve, reject) => {
     let settled = false;
@@ -994,7 +1064,7 @@ export async function waitForRevertedMessage(
     };
     unsubscribe = appAtomRegistry.subscribe(threadAtom, inspect);
     timeout = globalThis.setTimeout(() => {
-      finish(new Error("Timed out waiting for the thread to rewind."));
+      finish(new Error(m(msg("Timed out waiting for the thread to rewind."))));
     }, timeoutMs);
     Promise.resolve()
       .then(revert)
@@ -1135,15 +1205,17 @@ export function hasServerAcknowledgedLocalDispatch(input: {
   );
 }
 
-// Window return puts the caret in the composer unless focus is deliberate: another text field,
-// a terminal, an open dialog, menu, or popup, a region, timeline, or sidebar row reached from the
-// keyboard, or a region with its own keys (aria-keyshortcuts). A plain focused button or a clicked
-// row yields to the composer.
+// Window return puts the caret in the composer unless focus or a selection is deliberate: another
+// text field, a terminal, an open dialog, menu, or popup, a region, timeline, or sidebar row reached
+// from the keyboard, a region with its own keys (aria-keyshortcuts), or selected text the composer
+// would clear. A plain focused button or a clicked row yields to the composer.
 export function shouldRefocusComposerOnWindowFocus(
   activeElement:
     | (Pick<Element, "tagName" | "closest" | "getAttribute"> & { isContentEditable?: boolean })
     | null,
+  selection: Pick<Selection, "isCollapsed"> | null,
 ): boolean {
+  if (selection !== null && !selection.isCollapsed) return false;
   if (activeElement === null || activeElement.tagName === "BODY") return true;
   if (
     activeElement.tagName === "INPUT" ||
@@ -1231,8 +1303,9 @@ export type LocalThreadErrorEntry = {
   readonly at: number;
 };
 
-export function chatActionErrorMessage(error: unknown): string {
-  return plainErrorSentence(error);
+/** UpComputer: a plain sentence in the active language. */
+export function chatActionErrorMessage(error: unknown, resolve: MessageResolver = m): string {
+  return plainErrorSentence(error, undefined, resolve);
 }
 
 export const SEND_FAILURE_TAIL = "Your text is still in the composer, so try again.";
@@ -1241,7 +1314,32 @@ export const SEND_FAILURE_TAIL = "Your text is still in the composer, so try aga
 export function threadActionErrorText(error: unknown, action: string, tail: string): string {
   const { reason, detail } = describeError(error);
   if (detail !== undefined) console.warn(`Couldn't ${action}:`, detail);
-  return `Up.computer couldn't ${action}${reason === undefined ? "" : `: ${reason}`}. ${tail}`;
+  return reason === undefined
+    ? m(msg("Up.computer couldn't {action}. {tail}", { action, tail }))
+    : m(msg("Up.computer couldn't {action}: {reason}. {tail}", { action, reason, tail }));
+}
+
+/** A local copy of the runtime's error shares the runtime's key, so one dismissal covers both. */
+export function threadErrorIsServerRuntime(input: {
+  readonly isServerThread: boolean;
+  readonly localServerError: string | null;
+  readonly runtimeError: string | null;
+}): boolean {
+  return (
+    input.isServerThread &&
+    (input.localServerError === null || input.localServerError === input.runtimeError)
+  );
+}
+
+/** UpComputer: a run's failure has its own card in the timeline, so a banner would only repeat it. */
+export function threadErrorBannerRepeatsFailureCard(input: {
+  readonly error: string | null;
+  readonly runtimeError: string | null;
+  readonly runtimeErrorClass: OrchestrationV2ProviderFailureClass | null;
+}): boolean {
+  return (
+    input.error !== null && input.error === input.runtimeError && input.runtimeErrorClass !== null
+  );
 }
 
 export function releaseChatTimelineAnchor<T extends { readonly messageId: MessageId | null }>(
@@ -1303,14 +1401,19 @@ export function makeModelDisabledReason(
     Parameters<typeof getStartedThreadModelChangeBlockReason>[0],
     "nextModelSelection"
   > | null,
+  resolve: MessageResolver = m,
 ) {
   return (instanceId: ProviderInstanceId, model: string): string | null => {
     if (!context) return null;
-    const reason = getStartedThreadModelChangeBlockReason({
-      ...context,
-      nextModelSelection: { instanceId, model },
-    });
-    return reason ? `${reason.description} Start a new thread to use this model.` : null;
+    const reason = getStartedThreadModelChangeBlockReason(
+      { ...context, nextModelSelection: { instanceId, model } },
+      resolve,
+    );
+    return reason
+      ? resolve(
+          msg("{reason} Start a new thread to use this model.", { reason: reason.description }),
+        )
+      : null;
   };
 }
 
@@ -1391,6 +1494,8 @@ export function planComposerTurn(input: {
   readonly sendEnvMode: DraftThreadEnvMode;
   readonly worktreePath: string | null;
   readonly activeThreadBranch: string | null;
+  /** The server launches a No project worktree request at its root, so it needs no base. */
+  readonly isScratchProject: boolean;
   readonly resumeCompactionTokens: number | null;
   readonly keepFullHistory: boolean;
   readonly phase: SessionPhase;
@@ -1417,7 +1522,8 @@ export function planComposerTurn(input: {
   return {
     // In worktree mode, require an explicit base branch so we don't silently
     // fall back to local execution when branch selection is missing.
-    missingWorktreeBaseBranch: shouldCreateWorktree && !input.activeThreadBranch,
+    missingWorktreeBaseBranch:
+      shouldCreateWorktree && !input.activeThreadBranch && !input.isScratchProject,
     baseBranchForWorktree: shouldCreateWorktree ? input.activeThreadBranch : null,
     compactBeforeSend,
     turnDispatchMode:
@@ -1481,14 +1587,24 @@ export function optimisticMessageAttachments(
 }
 
 /** Fallback title sources for a message with no text of its own. */
-export function sendTitleFallbackLabels(snapshot: ComposerSendSnapshot) {
+export function sendTitleFallbackLabels(
+  snapshot: ComposerSendSnapshot,
+  resolve: MessageResolver = m,
+) {
   const terminalContext = snapshot.terminalContexts[0];
   const reviewComment = snapshot.reviewComments[0];
   const previewAnnotation = snapshot.previewAnnotations[0];
   return [
     terminalContext ? formatTerminalContextLabel(terminalContext) : undefined,
-    reviewComment ? `Review: ${reviewCommentContextLabel(reviewComment)}` : undefined,
-    previewAnnotation ? previewAnnotationContextLabel(previewAnnotation) : undefined,
+    reviewComment
+      ? resolve(
+          msg("Review: {label}", {
+            label: reviewCommentContextLabel(reviewComment, resolve),
+            $context: "title seed for a new thread started from a review comment",
+          }),
+        )
+      : undefined,
+    previewAnnotation ? previewAnnotationContextLabel(previewAnnotation, resolve) : undefined,
   ];
 }
 

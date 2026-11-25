@@ -1,6 +1,6 @@
 # UpComputer Connect troubleshooting
 
-A UpComputer Connect connection goes through four parts, in this order:
+An UpComputer Connect connection goes through four parts, in this order:
 
 1. **This device** reaches UpComputer Connect over the internet.
 2. **UpComputer Connect** checks your sign-in and the host's link.
@@ -80,6 +80,10 @@ Fix:
 3. If the check fails only on the host, check the host's DNS, VPN, or proxy.
    If it says the host's network has an old cached answer, wait: it usually
    clears within about 30 minutes.
+4. If it says the address no longer points to this machine's tunnel, the
+   environment was likely removed from UpComputer Connect. Link it again: on a desktop
+   host, turn **UpComputer Connect** off and on in **Settings > Sharing & access**. On a
+   command-line host, run `up connect link`, then restart Up.computer.
 
 ## This device can't reach T3 Connect
 
@@ -161,7 +165,7 @@ If Up.computer on the host disappears when SSH closes, see
 ## Report a problem
 
 If none of this helps, open an issue on
-[GitHub](https://github.com/pingdotgg/t3code/issues). Include:
+[GitHub](https://github.com/krl-gr/upcomputer/issues). Include:
 
 - The text from **Copy diagnostics** in the environment's **Details**.
 - The output of `up connect status` on the host.

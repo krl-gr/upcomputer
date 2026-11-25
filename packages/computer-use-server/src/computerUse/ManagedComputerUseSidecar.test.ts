@@ -107,3 +107,31 @@ test("the public desktop build resolves the installed package from app.asar.unpa
     expected,
   );
 });
+
+test("the Windows server resolves the installed package from server.asar.unpacked", () => {
+  const resources = NodePath.join("/Programs", "upcomputer", "resources");
+  const expected = NodePath.join(
+    resources,
+    "server.asar.unpacked",
+    "node_modules",
+    "open-computer-use",
+    "dist",
+    "windows",
+    "amd64",
+    "open-computer-use.exe",
+  );
+  NodeAssert.equal(
+    resolveManagedComputerUseBinaryPath({
+      platform: "win32",
+      arch: "x64",
+      moduleDirectory: NodePath.join(resources, "server.asar", "apps", "server", "dist"),
+      packageRoot: NodePath.join(resources, "server.asar", "node_modules", "open-computer-use"),
+      env: {},
+      // Electron's asar-aware fs also reports the archived copy as present.
+      exists: (candidate) =>
+        candidate === expected ||
+        candidate === expected.replace("server.asar.unpacked", "server.asar"),
+    }),
+    expected,
+  );
+});

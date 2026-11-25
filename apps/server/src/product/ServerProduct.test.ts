@@ -226,13 +226,13 @@ describe("server product composition", () => {
           return yield* (yield* FeatureNotes).read;
         }).pipe(
           Effect.provide(
-            whenProductFeatureOr("devices", notes("devices"), notes("hidden")).pipe(
+            whenProductFeatureOr("triage", notes("triage"), notes("hidden")).pipe(
               product ? Layer.provide(Layer.succeed(ServerProduct, product)) : (layer) => layer,
             ),
           ),
         );
 
-      expect(yield* read()).toBe("devices");
+      expect(yield* read()).toBe("triage");
       expect(
         yield* read(composeExperimentalServerFeatures([], { flags: UPCOMPUTER_PRODUCT_FLAGS })),
       ).toBe("hidden");

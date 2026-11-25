@@ -147,10 +147,13 @@ export function composeExperimentalWebFeatures(
 /**
  * The features' entries for a thread's action menu, with ids no core entry or other feature
  * uses. A feature that fails to answer adds nothing rather than breaking the menu.
+ * `translate` shows a label or reason, which features give as `msg()` text, in the UI's
+ * language; choices name user data and stay as they are.
  */
 export function collectExperimentalWebThreadActions(
   composition: ExperimentalWebProductComposition,
   thread: ExperimentalWebThreadAccessoryProps,
+  translate: (message: string) => string = (message) => message,
 ) {
   return composition.features.flatMap((feature) => {
     if (!feature.threadActions) return [];
@@ -164,14 +167,14 @@ export function collectExperimentalWebThreadActions(
       const id = `feature:${feature.id}:${action.id}` as const;
       const children =
         action.unavailableReason !== undefined
-          ? [{ id: `${id}/` as const, label: action.unavailableReason, disabled: true }]
+          ? [{ id: `${id}/` as const, label: translate(action.unavailableReason), disabled: true }]
           : action.choices?.map((choice) => ({
               id: `${id}/${choice.id}` as const,
-              label: choice.label,
+              label: choice.message === true ? translate(choice.label) : choice.label,
             }));
       return {
         id,
-        label: action.label,
+        label: translate(action.label),
         ...(action.icon === undefined ? {} : { icon: action.icon }),
         ...(children === undefined ? {} : { children }),
         run: action.run,

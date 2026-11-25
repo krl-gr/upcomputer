@@ -30,6 +30,21 @@ export function claimSidebarThreads(owner: string, threadKeys: Iterable<string>)
   };
 }
 
+/** Claims every thread of a computer, as while it is not yet known which are its bot chats. */
+export const allSidebarThreadsClaimKey = (environmentId: string) => `${environmentId}\u0000*`;
+
+/** Whether a computer's threads are all held back, so an empty Threads list says nothing yet. */
+export const holdsAllSidebarThreads = (claimed: ReadonlySet<string>) =>
+  [...claimed].some((key) => key.endsWith("\u0000*"));
+
+export function isSidebarThreadClaimed(
+  claimed: ReadonlySet<string>,
+  environmentId: string,
+  threadKey: string,
+): boolean {
+  return claimed.has(threadKey) || claimed.has(allSidebarThreadsClaimKey(environmentId));
+}
+
 export function claimedSidebarThreadKeys(): ReadonlySet<string> {
   return claimed;
 }

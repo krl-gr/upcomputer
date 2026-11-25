@@ -1,9 +1,11 @@
 import { resolveProviderProbeTimeoutMs } from "@t3tools/provider-core/server/snapshotProbe";
 import {
+  ProviderDriverKind,
   type ModelCapabilities,
   type ServerProviderModel,
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
+  type ServerProviderStatusReason,
   settingsSecretLiteral,
 } from "@t3tools/contracts";
 import type { OpenCodeSettings } from "../settings.ts";
@@ -15,7 +17,11 @@ import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 
 import { createModelCapabilities } from "@t3tools/shared/model";
-import { compareSemverVersions } from "@t3tools/shared/semver";
+import {
+  brokenVersionDetail,
+  noCompatibilityPolicy,
+  type ProviderCompatibilityLookup,
+} from "@t3tools/provider-core/server/compatibility";
 import {
   buildServerProvider,
   COMPACT_SLASH_COMMAND,
@@ -24,6 +30,14 @@ import {
   type ServerProviderDraft,
 } from "@t3tools/provider-core/server/snapshotProbe";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
+import {
+  automaticZenModel,
+  isFreeZenModel,
+  ZEN_NEVER_AUTOMATIC,
+  ZEN_PROVIDER_ID,
+  zenDefaultOf,
+  zenModelsOf,
+} from "./automaticModels.ts";
 import type { ProbedOpenCode } from "./versionProbe.ts";
 import type { Agent, ProviderListResponse } from "@opencode-ai/sdk/v2";
 import { ServiceUnavailableError } from "@opencode/protocol/errors";
@@ -152,6 +166,35 @@ function formatOpenCodeProbeError(input: {
         ? "OpenCode is installed but didn't report its models. Refresh to try again."
         : "OpenCode is installed but couldn't be started. Reinstall or update it, then refresh.",
   };
+}
+
+/**
+ * UpComputer: with the 20 s version probe, 15 s catalog refresh and 30 s serve
+ * start, a first check ends in about 80 s, inside the first-run composer's 90 s.
+ */
+const OPENCODE_INVENTORY_TIMEOUT_MS = 15_000;
+
+/**
+ * UpComputer: the category a failed check reports, read from error tags and
+ * structured reasons only. A failure after the server started is about models.
+ */
+function openCodeStatusReason(
+  cause: unknown,
+  phase: "version" | "inventory" | "models",
+): ServerProviderStatusReason {
+  let current = cause;
+  for (let depth = 0; depth < 8 && typeof current === "object" && current !== null; depth++) {
+    if (Cause.isTimeoutError(current)) return "startup_timeout";
+    if (OpenCodeRuntime.isOpenCodeRuntimeError(current)) {
+      if (current.reason === "databaseLocked") return "migration";
+      if (current.reason === "timeout") return "startup_timeout";
+      if (current.reason === "version_unsupported") return "unknown";
+      // A serve that exited, found no port or could not spawn never got to list models.
+      if (current.operation === "startOpenCodeServerProcess") return "unknown";
+    }
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return phase === "version" ? "unknown" : "models_missing";
 }
 
 // The status check owns the span; keep handled failures visible without adding another span.
@@ -362,36 +405,33 @@ function flattenOpenCodeModels(
     }
   }
 
+  const zen = new Set(
+    zenModelsOf(input.providerList)
+      .filter((model) => model.free)
+      .map((model) => model.slug),
+  );
   return markOpenCodeDefaultModel(
     markOpenCodeLegacy(entries).toSorted((left, right) => left.name.localeCompare(right.name)),
     input.providerList.connected,
     input.providerList.default,
+    (slug) => zen.has(slug),
   );
 }
-
-const ZEN_PROVIDER_ID = "opencode";
-// UpComputer: Zen's free models that keep no data, in the first-run order.
-const ZEN_AUTOMATIC_MODELS = [
-  "opencode/glm-5.3-flash-free",
-  "opencode/deepseek-v4.1-flash-free",
-  "opencode/minimax-m3.1-flash-free",
-];
-// Free while its team collects feedback on it, so only a user's own choice.
-const ZEN_NEVER_AUTOMATIC = "opencode/big-pickle";
 
 /**
  * UpComputer: "Automatic" takes the model marked default, else the first one
  * by name, which moves as OpenCode's catalog grows. A provider the user signed
  * in to wins, with OpenCode's own default for it where OpenCode names one. Zen,
- * connected for everyone, names Big Pickle, so it gets a zero-retention free
- * model instead.
+ * connected for everyone, gets a free model instead (`automaticZenModel`). A
+ * deprecated or superseded model is never automatic.
  */
 function markOpenCodeDefaultModel(
   models: ReadonlyArray<ServerProviderModel>,
   connected: ReadonlyArray<string>,
   defaults: Readonly<Record<string, string>>,
+  isFree: (slug: string) => boolean,
 ): ReadonlyArray<ServerProviderModel> {
-  const listed = new Set(models.map((model) => model.slug));
+  const listed = new Set(models.filter((model) => !model.isLegacy).map((model) => model.slug));
   const automatic = (slug: string | undefined) =>
     slug !== undefined && listed.has(slug) && slug !== ZEN_NEVER_AUTOMATIC ? slug : undefined;
   const openCodeDefault = (providerId: string) =>
@@ -402,11 +442,24 @@ function markOpenCodeDefaultModel(
   const defaultSlug =
     signedIn.map(openCodeDefault).find((slug) => slug !== undefined) ??
     signedIn
-      .map((providerId) => models.find((model) => model.slug.startsWith(`${providerId}/`))?.slug)
+      .map(
+        (providerId) =>
+          models.find(
+            (model) =>
+              model.slug.startsWith(`${providerId}/`) && automatic(model.slug) !== undefined,
+          )?.slug,
+      )
       .find((slug) => slug !== undefined) ??
-    ZEN_AUTOMATIC_MODELS.find((slug) => listed.has(slug)) ??
-    openCodeDefault(ZEN_PROVIDER_ID) ??
-    models.find((model) => model.slug !== ZEN_NEVER_AUTOMATIC)?.slug;
+    automaticZenModel(
+      models
+        .filter((model) => model.slug.startsWith(`${ZEN_PROVIDER_ID}/`))
+        .map((model) => ({
+          slug: model.slug,
+          free: isFree(model.slug),
+          live: listed.has(model.slug),
+        })),
+      zenDefaultOf(defaults),
+    );
   return models.map((model) =>
     model.slug === defaultSlug ? { ...model, isDefault: true } : model,
   );
@@ -765,6 +818,7 @@ export function openCode2ProviderModels(
       // OpenCode 2 lists only connected providers' models and names no defaults.
       [...new Set(catalog.map((model) => model.providerID))],
       {},
+      (slug) => isFreeZenModel(slug),
     ),
     settings.customModels,
     DEFAULT_OPENCODE_MODEL_CAPABILITIES,
@@ -803,6 +857,7 @@ const checkOpenCode2 = Effect.fn("checkOpenCode2")(function* (
       ),
       slashCommands: [COMPACT_SLASH_COMMAND],
       probe: probe("error", "OpenCode could not load its model list."),
+      statusReason: openCodeStatusReason(Cause.squash(result.cause), "models"),
     });
   }
   if (result.value.length === 0) {
@@ -825,6 +880,7 @@ const checkOpenCode2 = Effect.fn("checkOpenCode2")(function* (
             `OpenCode ${version} lists ${result.value.length} model${result.value.length === 1 ? "" : "s"}.`,
           )
         : probe("warning", "OpenCode 2 is running, but it did not list any models yet."),
+    ...(result.value.length > 0 ? {} : { statusReason: "models_missing" }),
   });
 });
 
@@ -843,6 +899,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     OpenCodeRuntime.OpenCodeRuntimeError
   >,
   environment?: NodeJS.ProcessEnv,
+  compatibility: ProviderCompatibilityLookup = noCompatibilityPolicy,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -877,6 +934,8 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
         auth: { status: failure.authStatus ?? "unknown" },
         message: failure.message,
       },
+      statusReason:
+        failure.authStatus === "unauthenticated" ? "auth" : openCodeStatusReason(cause, phase),
     });
   };
 
@@ -917,24 +976,39 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
   if (probed.generation === "v2") {
     return yield* checkOpenCode2(openCodeSettings, probed.version, checkedAt, loadOpenCode2Models);
   }
-  if (compareSemverVersions(probed.version, OpenCodeRuntime.MINIMUM_OPENCODE_VERSION) < 0) {
-    return buildServerProvider({
-      presentation: OPENCODE_PRESENTATION,
-      enabled: openCodeSettings.enabled,
-      checkedAt,
-      models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
-      probe: {
-        installed: true,
-        version: probed.version,
-        status: "error",
-        auth: { status: "unknown" },
-        message: `OpenCode v${probed.version} is too old. Upgrade to v${OpenCodeRuntime.MINIMUM_OPENCODE_VERSION} or newer.`,
-      },
+  const refuseBroken = Effect.fnUntraced(function* (detected: string) {
+    const broken = brokenVersionDetail({
+      name: "OpenCode",
+      version: detected,
+      advisory: yield* compatibility(ProviderDriverKind.make("opencode"), detected),
     });
-  }
+    return broken === undefined
+      ? undefined
+      : buildServerProvider({
+          presentation: OPENCODE_PRESENTATION,
+          enabled: openCodeSettings.enabled,
+          checkedAt,
+          models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
+          probe: {
+            installed: true,
+            version: detected,
+            status: "error",
+            auth: { status: "unknown" },
+            message: broken,
+          },
+          statusReason: "unknown",
+        });
+  });
+  const refused = yield* refuseBroken(probed.version);
+  if (refused !== undefined) return refused;
 
   const installedVersion = isExternalServer ? {} : { installedVersion: probed.version };
   let version = probed.version;
+  const inventoryTimeoutMs = resolveProviderProbeTimeoutMs(
+    "opencode",
+    OPENCODE_INVENTORY_TIMEOUT_MS,
+    environment,
+  );
   const loadInventory = Effect.fnUntraced(function* (server: {
     readonly url: string;
     readonly serverPassword?: string;
@@ -942,13 +1016,24 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
   }) {
     // Preserve the helper's version even when its inventory request fails.
     version = server.version;
-    return yield* openCodeRuntime.loadOpenCodeInventory(
-      openCodeRuntime.createOpenCodeSdkClient({
-        baseUrl: server.url,
-        directory: cwd,
-        ...(server.serverPassword !== undefined ? { serverPassword: server.serverPassword } : {}),
-      }),
-    );
+    const inventory = yield* openCodeRuntime
+      .loadOpenCodeInventory(
+        openCodeRuntime.createOpenCodeSdkClient({
+          baseUrl: server.url,
+          directory: cwd,
+          ...(server.serverPassword !== undefined ? { serverPassword: server.serverPassword } : {}),
+        }),
+      )
+      .pipe(Effect.timeoutOption(inventoryTimeoutMs));
+    // UpComputer: a hung request would hold the provider's refresh lock, so no Refresh could run.
+    if (Option.isNone(inventory)) {
+      return yield* new OpenCodeRuntime.OpenCodeRuntimeError({
+        operation: "loadOpenCodeInventory",
+        detail: `OpenCode did not list its models within ${inventoryTimeoutMs / 1_000} seconds.`,
+        reason: "timeout",
+      });
+    }
+    return inventory.value;
   });
   // UpComputer: `opencode serve` keeps the models.dev catalog it loaded for its first request:
   // the copy bundled in the binary on a cold cache, else the cached copy, however old. The fresh
@@ -989,6 +1074,9 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
       ),
     ),
   );
+  // The server that answered can differ from the CLI the probe ran.
+  const refusedServer = version === probed.version ? undefined : yield* refuseBroken(version);
+  if (refusedServer !== undefined) return { ...refusedServer, ...installedVersion };
   if (inventoryExit._tag === "Failure") {
     yield* logDiscoveryFailure({
       phase: "inventory",
@@ -1037,6 +1125,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
                 ? "Connected to the configured OpenCode server, but it did not report any connected upstream providers."
                 : "OpenCode is available, but it did not report any connected upstream providers.",
       },
+      ...(catalogReady ? {} : { statusReason: "models_missing" }),
     }),
     ...installedVersion,
   };

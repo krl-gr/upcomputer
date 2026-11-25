@@ -56,6 +56,7 @@ import type { TaskToolInvocationContext } from "./tools/TaskToolTypes.ts";
 import { InboxProject } from "./inbox/InboxProject.ts";
 import { TaskScheduleService } from "./schedule/TaskScheduleService.ts";
 import { BotService } from "./bots/BotService.ts";
+import { InstructionUpdatesService } from "./instructionUpdates/InstructionUpdatesService.ts";
 
 const timestamp = "2026-10-07T10:00:00.000Z";
 const project = ProjectId.make("project-1");
@@ -131,6 +132,7 @@ function harness() {
         Layer.succeed(ThreadManagementService, {} as never),
         Layer.succeed(InboxProject, {} as never),
         Layer.succeed(TaskScheduleService, {} as never),
+        Layer.succeed(InstructionUpdatesService, {} as never),
         Layer.succeed(BotService, {} as never),
         Layer.succeed(ProjectStoreV2, {} as never),
       ),
@@ -573,6 +575,7 @@ const agent = (id: string, startTag: string, runtimeMode: "approval-required" | 
   config: { role: id, modelSelection, instructions: "Work.", runtimeMode },
   createdAt: timestamp,
   updatedAt: timestamp,
+  archivedAt: null,
 });
 
 it.effect("an agent cannot unarchive a task to start an agent broader than itself", () => {

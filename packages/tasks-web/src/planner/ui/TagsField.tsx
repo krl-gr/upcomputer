@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { useMemo, useState } from "react";
 
 import { DetailAutocompleteInput } from "../../ui/DetailAutocompleteInput.tsx";
@@ -16,6 +17,7 @@ export function TagsField(props: {
   readonly tags: readonly string[];
   readonly onSave: (tags: string[]) => void;
 }) {
+  const gt = useGT();
   const { triggerTags } = usePlanner();
   const [value, setValue] = useState(props.tags.join(", "));
   const options = useMemo(
@@ -41,13 +43,13 @@ export function TagsField(props: {
         }
       }}
     >
-      <span className="shrink-0 text-muted-foreground">Tags</span>
+      <span className="shrink-0 text-muted-foreground">{gt("Tags")}</span>
       <div className="min-w-0 flex-1">
         <DetailAutocompleteInput
           value={value}
           options={options}
-          placeholder="Add tags… a worker's tag hands it the task"
-          ariaLabel="Task tags"
+          placeholder={gt("Add tags… a worker's tag hands it the task")}
+          ariaLabel={gt("Task tags")}
           className={INPUT_CLASS}
           onChange={setValue}
         />

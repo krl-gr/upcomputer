@@ -1,6 +1,10 @@
+import { gtFallback } from "gt-react";
 import { describe, expect, it } from "vite-plus/test";
 
-import { runInterruptResultPresentation } from "./RunInterruptResultDivider.logic";
+import { runInterruptResultPresentation as presentWith } from "./RunInterruptResultDivider.logic";
+
+const runInterruptResultPresentation = (input: Parameters<typeof presentWith>[0]) =>
+  presentWith(input, gtFallback);
 
 const byUser = "Run interrupted by user";
 

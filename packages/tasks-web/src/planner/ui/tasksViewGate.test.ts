@@ -4,6 +4,7 @@ import { test } from "vite-plus/test";
 
 import { resolveTasksWebAccess, type TasksWebAvailability } from "../../rpc/capabilityGate.ts";
 import type { TasksWebRpcClient } from "../../rpc/index.ts";
+import { TaskChangeStreamEnded } from "../../rpc/taskChanges.ts";
 import { loadAgentsState } from "../../state/agentsState.ts";
 import type { TasksStateTarget } from "../../state/tasksState.ts";
 import {
@@ -103,7 +104,22 @@ test("Agents loads while Tasks access is probed instead of showing the probe as 
       states: Object.values(unavailable.byEnvironment),
       initialWaitOver: false,
     }),
-    { status: "error", message: "The connected server does not serve Tasks." },
+    { status: "ready" },
+    "a server without Tasks has nothing to list, which is not a failure",
+  );
+
+  // A load cut off by a computer going away waits like a probe; its reconnect loads it again.
+  const cutOff = () => Promise.reject(new TaskChangeStreamEnded());
+  const dropped = await loadAgentsState([
+    {
+      environmentId: LOCAL,
+      client: { agents: { search: cutOff, searchRuns: cutOff } } as unknown as TasksWebRpcClient,
+      access: resolveTasksWebAccess({ availability: "enabled" }),
+    },
+  ]);
+  NodeAssert.deepEqual(
+    Object.values(dropped.byEnvironment).map((state) => state.status),
+    ["loading"],
   );
 });
 
@@ -130,9 +146,11 @@ test("a disconnected computer does not turn the Tasks list into an error", () =>
     environmentId: EnvironmentId,
     state: { initialLoading?: boolean; error?: string; disconnected?: boolean } | undefined,
     accessPending = false,
+    accessUnavailable = false,
   ) => ({
     environmentId,
     accessPending,
+    accessUnavailable,
     state: state && {
       initialLoading: state.initialLoading ?? false,
       error: state.error,
@@ -145,18 +163,30 @@ test("a disconnected computer does not turn the Tasks list into an error", () =>
 
   NodeAssert.deepEqual(resolve([lane(LOCAL, {}), lane(PC, notConnected)]), {
     status: "ready",
-    errorMessage: "",
+    failures: new Map(),
     offlineEnvironmentIds: [PC],
   });
   NodeAssert.deepEqual(resolve([lane(LOCAL, notConnected), lane(PC, notConnected)]), {
     status: "offline",
-    errorMessage: "",
+    failures: new Map(),
     offlineEnvironmentIds: [LOCAL, PC],
   });
   NodeAssert.deepEqual(
     resolve([lane(LOCAL, { error: "Database is locked." }), lane(PC, notConnected)]),
-    { status: "error", errorMessage: "Database is locked.", offlineEnvironmentIds: [PC] },
+    {
+      status: "error",
+      failures: new Map([[LOCAL, "Database is locked."]]),
+      offlineEnvironmentIds: [PC],
+    },
   );
+  // A computer that doesn't serve Tasks fails its lanes with the reason; nothing to list, no card.
+  const noTasks = lane(PC, { error: "The connected server does not serve Tasks." }, false, true);
+  NodeAssert.deepEqual(resolve([lane(LOCAL, {}), noTasks]), {
+    status: "ready",
+    failures: new Map(),
+    offlineEnvironmentIds: [],
+  });
+  NodeAssert.equal(resolve([noTasks]).status, "ready");
   // The other computer's first page still decides; then its tasks show beside the note.
   NodeAssert.equal(
     resolve([lane(LOCAL, { initialLoading: true }), lane(PC, notConnected)]).status,
@@ -167,7 +197,7 @@ test("a disconnected computer does not turn the Tasks list into an error", () =>
   NodeAssert.equal(resolve([lane(LOCAL, {}), probing]).status, "loading");
   NodeAssert.deepEqual(resolve([lane(LOCAL, {}), probing], true), {
     status: "ready",
-    errorMessage: "",
+    failures: new Map(),
     offlineEnvironmentIds: [PC],
   });
   NodeAssert.equal(resolve([probing], true).status, "offline");

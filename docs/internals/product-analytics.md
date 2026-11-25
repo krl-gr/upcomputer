@@ -7,35 +7,54 @@ carry the same identity and opt-out as server events. Client-use events require 
 authenticated connection, so visiting the hosted app without connecting does not
 count as product use.
 
+Survey answers and feedback are the exceptions to opt-out: a person who presses Send chose to
+send them. [UserSurveys](../../apps/server/src/userSurveys/UserSurveys.ts) sends them with
+`AnalyticsService.sendNow`, which with analytics off sends only the answers under a one-off
+random `distinct_id` and creates no install identity. Feedback sent without "Include app
+version and system info" goes that way with analytics on too (`anonymous`), so it carries none
+of the app details identified events add; dev and local test builds do not send feedback at
+all. That entry also carries
+`$ip: "127.0.0.1"` and `$geoip_disable: true`: PostHog's ingestion replaces a missing or empty
+`$ip` with the request's address, so `null` would not keep it out. Shown, dismissed and the
+partial responses follow opt-out: the card's answer, and the answers so far each time a step
+is left with Continue or Skip. The survey is defined in the app, not in PostHog, so its events
+carry an id PostHog's survey list does not know: read them as events. Who is asked is decided
+from the local thread history (see
+[UserSurveyEligibility](../../apps/server/src/userSurveys/UserSurveyEligibility.ts)), so
+installs that predate the survey qualify without new tracking.
+
 ## Installs and owners
 
-`distinct_id` keeps the rule every build has used: the hashed Codex workspace,
-else the Claude machine id, else the install's anonymous id. It can change when
-someone logs in, and a Codex Team shares one, but keeping it means PostHog charts
-and history never break. Do not change it; add a field instead. Up.computer pins the
-first `distinct_id` an install resolves in its state directory: a provider login
-creates the account file mid-onboarding, and without the pin the next launch
-reported as a new user.
+`distinct_id` is the install id: the hash of a random id in the state directory, which never
+changes for the install. Events also carry it as `installId`, which reports count installs by,
+because builds up to 0.0.40 derived `distinct_id` from the Codex or Claude sign-in files (and
+pinned it in a `telemetry-id` file the server now deletes). Who an install belongs to is a
+separate fact, sent as `install.owner_observed`. Owners are resolved at query time in our own
+store, so a rule can change and apply to all history.
 
-Every event also carries `installId` when the server can save its state: the hash
-of a random id in the state directory, which never changes for the install. If
-that file cannot be written, events still go out under `distinct_id`, as before. Count installs
-with it. Who an install belongs to is a separate fact, sent as
-`install.owner_observed`. Owners are resolved at query time in our own store, so
-a rule can change and apply to all history.
+Identity never comes from a provider. Do not read a provider's sign-in files or derive an id or
+owner from a user's OpenAI, Claude, or other provider account, even hashed: users did not sign in
+to those to be identified by Up.computer.
 
-[Owner sources](../../apps/server/src/telemetry/Identify.ts), strongest first:
-T3 Connect, then the OpenAI and Claude person ids, then the client device. The
-server reports what it can read itself: the linked Connect account and provider
-logins. A connecting client reports its signed-in Connect account and its device,
-which links every environment opened from one phone, browser, or desktop. Use the
-OpenAI `user_id` claim, not the Codex `account_id` (the ChatGPT workspace, which a
-whole Team shares) or the token `sub` (one per login method). Two Connect accounts are never the same person, whatever
-weaker ids they share.
+[Owner sources](../../apps/server/src/telemetry/Identify.ts), strongest first: UpComputer
+Connect, then the client device. The server reports the linked Connect account itself. A
+connecting client reports its signed-in Connect account and its device, which links every
+environment opened from one phone, browser, or desktop. Two Connect accounts are never the same
+person.
 
 Every id is SHA-256 hashed with [one helper](../../packages/shared/src/telemetryId.ts)
 on both sides, so a Connect account hashes the same on the client and the server.
 The server accepts only hashes from clients.
+
+## Opt-out
+
+Three things turn analytics off: `T3CODE_TELEMETRY_ENABLED=false`, a managed policy with
+`telemetry: false`, and the user's **Share anonymous usage data** switch, saved as a
+`telemetry-opt-out` marker in the state directory. The variable and the policy win; the switch
+then shows locked. Switching off drops the buffer and the failed batch and sends no event about
+it. Relay tracing reads the same marker through
+[TelemetryOptOut](../../apps/server/src/telemetry/TelemetryOptOut.ts), and the server reports
+the result to browsers as `observability.relayTracingAllowed`.
 
 ## Test traffic
 
@@ -146,7 +165,8 @@ Measure a new install with ordered steps for one identity, not period-wide count
 
 Read the latest `provider.status.observed` per provider to tell "no CLI", "CLI but
 signed out" and "ready" apart; it is sent when the state changes, so an install or
-login landing shows up as a change. First-run setup sends `onboarding.*` events per
+login landing shows up as a change. OpenCode adds `statusReason`, the same categories, when its
+check does not reach `ready`. First-run setup sends `onboarding.*` events per
 step and per agent action, and `flow` says which screens sent them. Without it they
 come from upstream's wizard (builds before the agent table): `step` is `connection`,
 `agents`, then `import`, always in that order. `flow: "upcomputer"` was our agent table
@@ -158,11 +178,25 @@ with what it imported. Funnels comparing the flows should stop at `agents`.
 `flow: "first_run"` is no screen at all: the desktop app opens a new user's
 workspace directly and installs OpenCode, sending `onboarding.first_run_agent` with
 `outcome` `started`, then `ready` (followed by `onboarding.completed`) or `failed`, and
-`retried` or `connect_other` from the composer's buttons. `started` and `failed` are sent
-once per install operation, so a Retry that downloads again sends both again. `started`
+`retried` or `connect_other` from the composer's buttons. `failed` carries a `reason`
+(older builds send none, and `failed` only for install failures): `install` for a
+download or install that failed, otherwise the installed OpenCode's start failed. It is
+OpenCode's own status category (`migration`, `startup_timeout` for its own start
+deadlines, `models_missing`, `auth`, `unknown`), or `startup_timeout` when OpenCode
+answered nothing within the composer's 90 s start timeout.
+`started` is sent once per install operation and an install `failed` once per operation, so
+a Retry that downloads again sends both again; a start `failed` is sent once per attempt,
+and a Retry after a good install is a new attempt. After the first `failed` other than
+`auth` or `models_missing`, the app tries once more by itself and sends `retried` with
+`automatic: true`; a `ready` after it is that second try working. A `failed` is not final:
+a slow start or a later recheck can still turn the same attempt `ready`, so count an
+attempt as failed only when no `ready` follows. `started`
 means the app began installing its own OpenCode; `ready` without `started` is a new user
 whose own agent, or own OpenCode, already worked, so nothing was downloaded. The download itself is
-`provider.install.*` with `provider: "opencode"`. `onboarding.step.completed` with
+`provider.install.*` with `provider: "opencode"`. The free agent's first message after that sends
+`onboarding.agent_setup_offer` once with `action: "shown"`, then `choice_clicked` with the `choice`
+per quick reply clicked. Each `provider_sign_in` call an agent makes sends
+`onboarding.provider_sign_in` with its `outcome` (the tool's status, or `failed` with a `reason`). `onboarding.step.completed` with
 `step: "agents"` and
 `readyProviders: 0` is a user who left setup without a working agent, and
 `onboarding.agent.terminal_closed` with `installed: false` after an install is an
@@ -279,6 +313,26 @@ stop. A desktop backend restart keeps the app's session, so `previousSessionId` 
 `sessionId` is a backend that died inside a running app; a different one is an app or
 server that did not stop. A start after ten unclean starts within an hour records
 nothing until it has stayed up for ten minutes, so a crash loop cannot flood PostHog.
+
+The event's time is when the session that left the marker started, and its uuid was
+written into that marker, so a marker the server could not replace or remove is sent
+again as the same event and PostHog keeps one copy (count distinct uuids to be exact
+before its merge). A marker write or remove that still fails after retries puts its
+errno code in `sessionMarkerError` on `server.started` or `server.stopped`.
+
+A dead backend cannot say why it died, so the desktop app keeps its session's last
+lifecycle change in `telemetry-desktop-state` beside the marker, written synchronously
+because Windows may end the process as soon as a session-end listener returns. The
+next desktop backend turns it into `reason`: `os_shutdown`, `suspended`,
+`renderer_gone` (with `rendererReason` and `exitCode`), `backend_exited` (with
+`exitCode` or `exitSignal`), or `unknown` when nothing was recorded after that backend
+started, which includes a force-quit app and every non-desktop server. A main window
+that reloads after its renderer crash records `running` again, so a later force-quit
+is not blamed on that crash. Nothing replaces `os_shutdown` in its session, since the
+OS then also kills the renderer and the backend. Crash rates should leave out
+`os_shutdown`, which also does not count toward `uncleanStarts` or the crash-loop
+quiet period. The file is not written when telemetry is off by environment or managed
+policy.
 
 ## Views and clicks
 

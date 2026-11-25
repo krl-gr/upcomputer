@@ -98,7 +98,7 @@ const importWandeCommand = Command.make("import-wande", {
   ),
   projectsDir: Flag.String("projects-dir").pipe(
     Flag.withDescription(
-      "Folder that holds a project per wande project, named by its title. Default: ~/Projects.",
+      "Folder that holds a project per wande project, named by its title. Default: the projects folder of --base-dir.",
     ),
     Flag.optional,
   ),
@@ -143,7 +143,10 @@ const importWandeCommand = Command.make("import-wande", {
       }
 
       const projectsDir = path.resolve(
-        yield* expandHomePath(Option.getOrElse(flags.projectsDir, () => "~/Projects")),
+        yield* Option.match(flags.projectsDir, {
+          onNone: () => Effect.succeed(path.join(baseDir, "projects")),
+          onSome: expandHomePath,
+        }),
       );
       const folders = new Map<string, string>();
       for (const mapping of flags.project) {

@@ -60,6 +60,8 @@ test("agent row isolates switch activation while preserving row and name navigat
     saving: false,
     triggerLabel: "To Do · review",
     modelLabel: "Codex · Model One",
+    openLabel: "Open worker Reviewer",
+    toggleLabel: "Pause Reviewer",
     onOpen: () => {
       opens += 1;
     },

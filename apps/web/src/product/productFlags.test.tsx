@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   DEFAULT_RESOLVED_KEYBINDINGS,
   mergeWithDefaultKeybindings,
@@ -13,6 +13,7 @@ import {
   filterAvailableSettingsSearchItems,
   searchSettings,
 } from "../components/settings/settingsSearch";
+import { areIssuesShown } from "../issuesSetting/issuesShown";
 import {
   isProductFeatureShown,
   isProductKeybindingShown,
@@ -97,8 +98,8 @@ function renderLauncher() {
   );
 }
 
-const HIDDEN_SURFACES = [">Pull request<", ">Linked pull requests<", ">Device<"];
-const KEPT_SURFACES = [">Browser<", ">Terminal<", ">Files<", ">Diff<"];
+const HIDDEN_SURFACES = [">Pull request<", ">Linked items<"];
+const KEPT_SURFACES = [">Browser<", ">Terminal<", ">Files<", ">Diff<", ">Device<"];
 
 describe("hidden upstream features in the web app", () => {
   it("keeps every upstream entry point with upstream's flags", () => {
@@ -110,7 +111,7 @@ describe("hidden upstream features in the web app", () => {
     );
   });
 
-  it("leaves the pull request and device surfaces out of the right-panel launcher", () => {
+  it("leaves the pull request surfaces out of the right-panel launcher", () => {
     product.hidden = true;
     const html = renderLauncher();
     for (const label of HIDDEN_SURFACES) expect(html).not.toContain(label);
@@ -151,10 +152,6 @@ describe("hidden upstream features in the web app", () => {
         "auto-settle-inactive-threads",
         "auto-settle-merged-threads",
         "days-before-auto-settle",
-        "device-sources",
-        "agent-device-access",
-        "device-hub",
-        "device-platform-support",
         "keybinding-terminal.toggle",
         "keybinding-pullRequest.copyNumber",
         "keybinding-thread.settle",
@@ -167,7 +164,7 @@ describe("hidden upstream features in the web app", () => {
         "mobile-app",
       ]),
     );
-    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(16);
+    expect(hidden.filter((id) => !id.startsWith("keybinding-"))).toHaveLength(12);
     expect(all.find((item) => item.id === "code-font")).toBeDefined();
     expect(isProductSettingsSearchItemVisible({ id: "code-font" })).toBe(true);
   });
@@ -237,6 +234,16 @@ describe("hidden upstream features in the web app", () => {
     expect(isProductSettingsSearchItemVisible({ id: "thread-list" })).toBe(false);
     product.hidden = true;
     expect(isProductSettingsSearchItemVisible({ id: "thread-list" })).toBe(true);
+  });
+
+  it("shows Issues upstream, and in Up.computer only once the user turns them on", () => {
+    expect(areIssuesShown(DEFAULT_CLIENT_SETTINGS)).toBe(true);
+    expect(isProductSettingsSearchItemVisible({ id: "issues-page" })).toBe(false);
+    product.hidden = true;
+    expect(DEFAULT_CLIENT_SETTINGS.issuesEnabled).toBe(false);
+    expect(areIssuesShown(DEFAULT_CLIENT_SETTINGS)).toBe(false);
+    expect(areIssuesShown({ ...DEFAULT_CLIENT_SETTINGS, issuesEnabled: true })).toBe(true);
+    expect(isProductSettingsSearchItemVisible({ id: "issues-page" })).toBe(true);
   });
 
   it("offers Compact composer only with the UpComputer composer", () => {

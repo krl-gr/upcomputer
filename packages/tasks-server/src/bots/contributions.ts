@@ -14,17 +14,28 @@ import {
   registerTurnContextResolver,
 } from "../../../../apps/server/src/extensionApi.ts";
 import { retryOperational } from "../retryOperational.ts";
+import { BotMentions, withMentionNote } from "./BotMentions.ts";
 import { BotService } from "./BotService.ts";
 
 export const BotContextLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const bots = yield* BotService;
-    yield* registerTurnContextResolver(bots.context);
+    const mentions = yield* BotMentions;
+    yield* registerTurnContextResolver((input) =>
+      Effect.zipWith(bots.context(input), mentions.note(input), withMentionNote),
+    );
     yield* registerThreadProjectMoveGate(bots.projectMoveRefusal);
     yield* forkParked(
       bots.recover.pipe(
         Effect.catch((cause) => Effect.logError("Bot chat recovery failed", { cause })),
         Effect.andThen(retryOperational(bots.followChatRenames, { operation: "bot-chat-renames" })),
+      ),
+    );
+    // A reply's command id names the mention and run, so both posting one records it once.
+    yield* forkParked(retryOperational(mentions.relay, { operation: "bot-mention-replies" }));
+    yield* forkParked(
+      mentions.recover.pipe(
+        Effect.catch((cause) => Effect.logError("Bot mention recovery failed", { cause })),
       ),
     );
   }),
@@ -48,6 +59,7 @@ export const BOTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [M.rejectProposal]: AuthOrchestrationOperateScope,
     [M.assign]: AuthOrchestrationOperateScope,
     [M.extract]: AuthOrchestrationOperateScope,
+    [M.mention]: AuthOrchestrationOperateScope,
   },
   handlers: () =>
     BotsRpcGroup.toLayer(
@@ -76,6 +88,7 @@ export const BOTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
         [M.assign]: (input) => Effect.flatMap(BotService, (bots) => bots.assign(input)),
         [M.extract]: (input) =>
           Effect.flatMap(BotService, (bots) => bots.extract(input.agentId, input.requestId)),
+        [M.mention]: (input) => Effect.flatMap(BotMentions, (mentions) => mentions.mention(input)),
       }),
     ),
 });

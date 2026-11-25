@@ -1,4 +1,11 @@
-import { TASK_CREATE_BATCH_LIMIT } from "@t3tools/tasks-contracts/v1";
+import {
+  BotAppearance,
+  BotAppearanceStyle,
+  BotMemoryMode,
+  BotPortraitId,
+  TASK_CREATE_BATCH_LIMIT,
+  TASK_STATUS_RENAME_IDS_LIMIT,
+} from "@t3tools/tasks-contracts/v1";
 
 import type { TaskToolSpec } from "./TaskToolTypes.ts";
 
@@ -25,6 +32,55 @@ const modelSelection = object(
   },
   ["instanceId", "model"],
 );
+
+const botRuntimeMode = {
+  type: "string",
+  enum: ["approval-required", "auto-accept-edits", "auto", "full-access"],
+} as const;
+const interactionMode = {
+  type: "string",
+  enum: ["default", "plan"],
+} as const;
+const literals = (values: ReadonlyArray<string>) => ({ type: "string", enum: [...values] });
+const botAppearance = {
+  ...object(
+    {
+      style: literals(BotAppearanceStyle.literals),
+      portrait: literals(BotPortraitId.literals),
+      shape: literals(BotAppearance.fields.shape.literals),
+      color: literals(BotAppearance.fields.color.literals),
+      accessory: literals(BotAppearance.fields.accessory.literals),
+    },
+    ["shape", "color", "accessory"],
+  ),
+  type: ["object", "null"],
+  description:
+    "The bot's face: a portrait (style portrait) or a shape character (style character). Leave it out for the default look; null resets it.",
+};
+/** bot_create's and bot_update's settings besides id, name and instructions. */
+const botFields = {
+  projectId: {
+    ...id,
+    description:
+      "The bot's working project, where its chat lives. Without it and workspaceRoot, the calling chat's project.",
+  },
+  workspaceRoot: id,
+  modelSelection,
+  modelAlias: id,
+  role: id,
+  runtimeMode: {
+    ...botRuntimeMode,
+    description:
+      "The permissions of the bot's chat and background tasks. Leave it out for full-access, the default for a new bot.",
+  },
+  interactionMode,
+  appearance: botAppearance,
+  memoryMode: {
+    ...literals(BotMemoryMode.literals),
+    description:
+      "Who keeps the bot's memory: upcomputer (default) or agent (for agents with a memory of their own).",
+  },
+} as const;
 
 const runStatuses = {
   type: "array",
@@ -71,6 +127,18 @@ const dateTime = {
   description: "ISO 8601 date-time with offset, e.g. 2026-10-02T09:00:00Z. null clears it.",
 } as const;
 
+const verboseTask = {
+  type: "boolean",
+  description: "true: reply with the whole task, as task_get returns it.",
+} as const;
+const verboseAgent = {
+  type: "boolean",
+  description: "true: reply with the whole agent, instructions included, as agent_get returns it.",
+} as const;
+/** What the short reply of task_update and task_create holds, for their descriptions. */
+const SHORT_TASK_REPLY =
+  "the task's id, title, status, audience, kind, tags, notBefore and updatedAt, and for description and output only their length (and output's first line)";
+
 /** One task of task_create; required unless the call passes a tasks list. */
 const taskCreateFields = {
   id,
@@ -81,7 +149,11 @@ const taskCreateFields = {
   priority: { type: ["string", "null"] },
   createdBy: id,
   assigneeAgentRunId: { type: ["string", "null"] },
-  sourceThreadId: { type: ["string", "null"] },
+  sourceThreadId: {
+    type: ["string", "null"],
+    description:
+      "Called from a thread, that thread is the source and a thread id here is ignored. null: no report back.",
+  },
   sourceRunId: { type: ["string", "null"] },
   metadata: {},
   tags,
@@ -94,7 +166,7 @@ const taskCreateFields = {
 export const TASK_TRIGGER_RULES = [
   "An enabled agent (a task agent; users see it as a worker) starts on a task that is not archived when the task's status is in its startStatuses (empty means any), the task has all of its startTags, and the task's notBefore, if set, has passed.",
   "Setting a matching status or adding a matching tag starts the agent immediately. Park work in a status no agent starts on (for example Backlog), or set notBefore to delay it.",
-  "An agent runs again on the same task only after the task's title, description, status, tags, notBefore, project, audience or archive state really changed after its previous run there ended, or after the agent itself was edited. Output, assignment, metadata and priority changes never restart agents. To retry, change the status or set notBefore (now or later).",
+  "An agent runs again on the same task only after the task's title, description, status, tags, notBefore, project, audience or archive state really changed after its previous run there ended, or after the agent itself was edited. Output, assignment, metadata and priority changes never restart agents. To retry, move the task to a status the agent starts on, or, when it is already in one, set notBefore (now or later).",
   "Several agents may run on one task at once. Such an agent should finish by removing its own trigger tag or moving the status; otherwise a later change starts it again.",
   "A started run keeps running while the task's status and tags change. It ends when it reports its task_agent_result, sets assigneeAgentRunId away from itself, is stopped with agent_run_stop, when the task is archived or deleted, or when the agent is disabled or deleted.",
   "An agent with startRunStatuses (failed, interrupted, blocked) does not start on task state alone. It starts once for each run of another agent on a matching task that ended with one of those statuses and is still that agent's latest run there. Runs started this way never trigger such agents. Use it for an agent that decides what happens after a failure.",
@@ -211,11 +283,12 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     type: "function",
     mutation: "write",
     name: "task_create",
-    description: `Create one task, or several in one call, in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay. Every task needs an audience: person when the user asks for a task for themselves (it goes to their planner; without a resolved project, to the Inbox project), agent when an agent should do it (the agents' table). To create more than one task, pass them all as tasks (up to ${TASK_CREATE_BATCH_LIMIT}) in one call, in the order they should run, each with its own fields; projectId and workspaceRoot stay at the top level. A list is created all or nothing, and an invalid item is named by its index. New tasks go to the top of the global order and agents' queues run from the bottom, so a list runs in the order given: its first task ends up lowest. One task returns the task; a list returns each task's id, rank, title, status, audience, tags and notBefore. Both say where the tasks show (shownIn): check it matches what the user asked for.`,
+    description: `Create one task, or several in one call, in the resolved project. Call task_context first and follow its taskCreation guidance and triggerRules: a status or tag an agent starts on runs it immediately; set notBefore to delay. Every task needs an audience: person when the user asks for a task for themselves (it goes to their planner; without a resolved project, to the Inbox project), agent when an agent should do it (the agents' table). To create more than one task, pass them all as tasks (up to ${TASK_CREATE_BATCH_LIMIT}) in one call, in the order they should run, each with its own fields; projectId and workspaceRoot stay at the top level. A list is created all or nothing, and an invalid item is named by its index. New tasks go to the top of the global order and agents' queues run from the bottom, so a list runs in the order given: its first task ends up lowest. One task returns ${SHORT_TASK_REPLY}, or the whole task with verbose: true; a list returns each task's id, rank, title, status, audience, tags and notBefore. Both say where the tasks show (shownIn): check it matches what the user asked for.`,
     inputSchema: object({
       projectId: id,
       workspaceRoot: id,
       ...taskCreateFields,
+      verbose: verboseTask,
       tasks: {
         type: "array",
         minItems: 1,
@@ -228,8 +301,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     type: "function",
     mutation: "write",
     name: "task_update",
-    description:
-      "Update task fields, status, output, and tags without changing its global rank. Status, tag, notBefore and audience changes can start agents (see task_context triggerRules); setting audience to agent hands a person task to agents. Status changes are recorded in the task's history. This tool does not archive: no status archives a task, and archiving goes through task_archive and task_unarchive.",
+    description: `Update task fields, status, output, and tags without changing its global rank. Status, tag, notBefore and audience changes can start agents (see task_context triggerRules); setting audience to agent hands a person task to agents. Status changes are recorded in the task's history. This tool does not archive: no status archives a task, and archiving goes through task_archive and task_unarchive. Replies with a short confirmation, not the task: ${SHORT_TASK_REPLY}, changed (the fields this call changed, including ones the server set) and the new values of the short ones among them. For the whole task, pass verbose: true or call task_get.`,
     inputSchema: object(
       {
         id,
@@ -243,6 +315,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         tags,
         notBefore: dateTime,
         audience: updateAudience,
+        verbose: verboseTask,
       },
       ["id"],
     ),
@@ -252,8 +325,8 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "task_reorder",
     description:
-      "Move one task in this environment's global order using semantic neighbors. Agents' queues run from the bottom, so a task moved lower runs sooner. The task and neighbors must belong to the same environment; omit afterTaskId at the top or beforeTaskId at the bottom.",
-    inputSchema: object({ id, beforeTaskId: id, afterTaskId: id }, ["id"]),
+      "Move one task in this environment's global order using semantic neighbors. Agents' queues run from the bottom, so a task moved lower runs sooner. The task and neighbors must belong to the same environment; omit afterTaskId at the top or beforeTaskId at the bottom. Replies with the task's id, title, status and new rank, or the whole task with verbose: true.",
+    inputSchema: object({ id, beforeTaskId: id, afterTaskId: id, verbose: verboseTask }, ["id"]),
   },
   {
     type: "function",
@@ -369,17 +442,20 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     type: "function",
     mutation: "read",
     name: "agent_get",
-    description: "Load one task-agent definition.",
-    inputSchema: object({ id }, ["id"]),
+    description:
+      "Load one task-agent definition. An archived agent loads only with includeArchived: true; read one only when the user asks about it.",
+    inputSchema: object({ id, includeArchived: { type: "boolean" } }, ["id"]),
   },
   {
     type: "function",
     mutation: "read",
     name: "agent_search",
-    description: "Search task-agent definitions.",
+    description:
+      "Search task-agent definitions. Archived agents, which the user keeps only to look back at past work, are left out unless includeArchived is true; pass it only when the user asks about them.",
     inputSchema: object({
       projectId: { type: ["string", "null"] },
       enabled: { type: "boolean" },
+      includeArchived: { type: "boolean" },
       limit: { type: "number" },
     }),
   },
@@ -388,7 +464,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "agent_create",
     description:
-      'Create a task-agent definition (users see task agents as workers). Call task_context with include ["agentCreation", "providers"] first and follow its agentCreation guidance and triggerRules.',
+      'Create a task-agent definition (users see task agents as workers). A worker has no chat of its own: it starts on tasks by its start statuses and tags, and is listed under Workers. When the user asks for a bot, use bot_create instead. Call task_context with include ["agentCreation", "providers"] first and follow its agentCreation guidance and triggerRules. Replies with the agent without its instructions text, only their length; verbose: true returns the whole agent.',
     inputSchema: object(
       {
         id,
@@ -412,6 +488,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         tools: tags,
         skills: tags,
         instructions: id,
+        verbose: verboseAgent,
       },
       ["name"],
     ),
@@ -421,7 +498,7 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     mutation: "write",
     name: "agent_update",
     description:
-      'Update a task-agent definition. To change its model or instructions, call task_context with include ["agentCreation", "providers"] first.',
+      'Update a task-agent definition. To change its model or instructions, call task_context with include ["agentCreation", "providers"] first. Replies with the agent without its instructions text (only their length when they changed) and changed, the fields this call changed; verbose: true returns the whole agent.',
     inputSchema: object(
       {
         id,
@@ -443,6 +520,12 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
         tools: tags,
         skills: tags,
         instructions: id,
+        archived: {
+          type: "boolean",
+          description:
+            "true archives the agent: it never starts runs and leaves agent lists, and keeps its enabled state, runs and tasks. false unarchives it in that state; an enabled agent then starts on its matching tasks. Only when the user asks.",
+        },
+        verbose: verboseAgent,
       },
       ["id"],
     ),
@@ -453,6 +536,20 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     name: "agent_delete",
     description: "Delete one task-agent definition.",
     inputSchema: object({ id }, ["id"]),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "bot_create",
+    description: `Create a bot, as the user does with + next to Bots: a personal assistant with one permanent chat, its own memory, and a place under Bots in the sidebar. It also takes background tasks tagged bot:<id>. Use it when the user asks for a bot; for an agent that only picks up tasks by tag and status, use agent_create. Call task_context with include ["providers"] first and pass a model the bot suits. The instructions say what the bot does and how. Returns the bot with its id and chat (threadId). ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object({ id, name: id, instructions: id, ...botFields }, ["name", "instructions"]),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "bot_update",
+    description: `Change a bot's settings, as its settings page does. Fields left out stay as they are. A change of working project or provider waits until the bot is idle. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object({ id, name: id, instructions: id, ...botFields }, ["id"]),
   },
   {
     type: "function",
@@ -607,5 +704,58 @@ export const TASK_TOOL_SPECS: ReadonlyArray<TaskToolSpec> = [
     inputSchema: object({ projectId: instructionsProjectId, changeId: id, reason: id }, [
       "changeId",
     ]),
+  },
+  {
+    type: "function",
+    mutation: "read",
+    name: "instruction_updates_get",
+    description:
+      "Read the instruction updates: changes a new version of Up.computer made to its default instructions, task statuses and workflow, which this install applies or keeps (Settings → Instructions). Returns the mode (ask, or auto: applies an update by itself only when it changes no text the user edited), the install's workflowVersion, the saved statusGroupOrder and statusGroupOpen of the Tasks list, and each update's id, title, state (pending, dismissed: still pending with its notification hidden, applied, kept), editedFields (global instructions the user edited that it would change), mentions (the user's own texts that name a status it renames) and waitsFor (a pending earlier update whose text it builds on: apply that one first). With id: also that update's brief, with both versions of every text and the steps to apply it.",
+    inputSchema: object({ id }),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "instruction_update_decide",
+    description: `Close an instruction update once the user decided: applied (they took it, as shipped or adapted to them, after you made the agreed changes) or kept (they keep their setup and nothing more changes). pending reopens it. Call only after the user agreed in this conversation; this records the decision, it changes no instructions, statuses or tasks itself. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object({ id, state: { type: "string", enum: ["applied", "kept", "pending"] } }, [
+      "id",
+      "state",
+    ]),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "task_status_rename",
+    description: `Rename one task status on many tasks in one call: every task in this environment whose status is from (any letter case), or only those in projectId, with all of tags, or among ids (up to ${TASK_STATUS_RENAME_IDS_LIMIT}). Archived tasks count too. A rename relabels what a status means: it keeps each task's place and trigger time and starts no agent. Person tasks only take To Do and Done and are skipped. automationTemplates: true also renames it in automations' task templates (in projectId when given). Call only when the user agreed to the rename in this conversation. Returns the renamed task ids: task_status_rename back with those ids undoes it. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object(
+      {
+        from: id,
+        to: id,
+        ids: { type: "array", items: id, maxItems: TASK_STATUS_RENAME_IDS_LIMIT },
+        projectId: id,
+        tags,
+        automationTemplates: { type: "boolean" },
+      },
+      ["from", "to"],
+    ),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "task_list_settings_update",
+    description: `Change how the Tasks list shows for this install, on every device: groupByStatus, statusGroupOrder (status group keys, lower case, in order; an empty list follows the workflow's default order) and statusGroupOpen (status key to open or collapsed, merged into the saved keys). instruction_updates_get shows the saved values. Call only when the user asked or agreed. Returns the previous and new values, so a change can be put back. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object({
+      groupByStatus: { type: "boolean" },
+      statusGroupOrder: { type: "array", items: id, maxItems: 200 },
+      statusGroupOpen: { type: "object", additionalProperties: { type: "boolean" } },
+    }),
+  },
+  {
+    type: "function",
+    mutation: "write",
+    name: "task_workflow_version_set",
+    description: `Switch this install's built-in task workflow. 1: Idea, Backlog, To Do, In Progress, In Review, Needs Input, Needs Review, Blocked, Done, Cancelled. 2: Idea, Queued, To Do, In Progress, In Review, Needs You, Blocked, Failed, To Verify, Done, Cancelled, and a task whose worker run crashes moves to Failed. It changes no task, status or instruction text by itself: it picks the statuses the app offers, the default group order, the texts Restore default uses and the Failed behavior. Call it last when applying an instruction update, and only after the user agreed. Returns the previous version, so it can be switched back. ${INSTRUCTIONS_WRITE_ACCESS}`,
+    inputSchema: object({ version: { type: "integer", minimum: 1, maximum: 2 } }, ["version"]),
   },
 ];

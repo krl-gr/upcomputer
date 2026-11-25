@@ -2,6 +2,7 @@ import {
   DEFAULT_TASK_PROMPT_SETTINGS,
   EMPTY_TASK_PROMPT_SETTINGS,
   INSTRUCTIONS_FIELDS,
+  LEGACY_TASK_PROMPT_SETTINGS,
   TASK_PROMPT_FIELDS,
   type InstructionsField,
   type TaskPromptSettings,
@@ -28,6 +29,7 @@ const setup = vi.hoisted(() => ({
   confirm: vi.fn(),
   getPromptSettings: vi.fn(),
   updatePromptSettings: vi.fn(),
+  workflowVersion: 2 as 1 | 2,
 }));
 
 /** The settings scope sentence's project groups; each has a checkout on two environments. */
@@ -55,6 +57,7 @@ const clientFor = vi.hoisted(() => {
       clients.set(environmentId, {
         tasks: {
           getPromptSettings: setup.getPromptSettings,
+          getListSettings: async () => ({ workflowVersion: setup.workflowVersion }),
           updatePromptSettings: (input: TaskPromptSettingsUpdateInput) => {
             setup.writes.push({ environmentId, input });
             return setup.updatePromptSettings(input);
@@ -66,6 +69,10 @@ const clientFor = vi.hoisted(() => {
   };
 });
 
+// The instruction updates group has its own browser tests.
+vi.mock("../workflowUpdates/InstructionUpdatesSection.tsx", () => ({
+  InstructionUpdatesSection: () => null,
+}));
 // The Milkdown editor has its own tests; here it is a field with its props.
 vi.mock("../markdown/LazyMarkdownEditor.tsx", () => ({
   LazyMarkdownEditor: (props: {
@@ -249,6 +256,7 @@ describe("InstructionsSettingsPage reloads", () => {
     setup.allChats = "Original all chats";
     setup.configs = new Map([["environment-1", {}]]);
     setup.selectedProject = undefined;
+    setup.workflowVersion = 2;
     setup.getPromptSettings.mockImplementation(async (input: { projectId?: string }) =>
       input.projectId === undefined
         ? { ...setup.server }
@@ -422,6 +430,14 @@ describe("InstructionsSettingsPage reloads", () => {
       base: { taskCreation: "Original creation" },
     });
     expect(setup.server.taskCreation).toBe(DEFAULT_TASK_PROMPT_SETTINGS.taskCreation);
+  });
+
+  it("restores workflow 1's default on an install that has not moved to the current workflow", async () => {
+    setup.workflowVersion = 1;
+    await render();
+    await openTab("Task creation");
+    await act(async () => button("Restore default").props.onClick());
+    expect(editorText()).toBe(LEGACY_TASK_PROMPT_SETTINGS.taskCreation);
   });
 
   it("keeps an unsaved project edit bound to its checkout when the scope's environment changes", async () => {

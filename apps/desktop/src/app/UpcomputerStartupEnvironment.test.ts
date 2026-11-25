@@ -48,6 +48,7 @@ describe("Up.computer desktop identity", () => {
       assert.equal(environment.stateDir, "/Users/alice/.upcomputer/userdata");
       assert.equal(environment.appUserModelId, "computer.up.upcomputer");
       assert.equal(environment.displayName, "Up.computer (Alpha)");
+      assert.equal(environment.menuBarName, "Up.computer (Alpha)");
     }),
   );
 
@@ -92,6 +93,7 @@ describe("Up.computer desktop identity", () => {
       assert.equal(environment.stateDir, "/Users/alice/.upcomputer-local-test/userdata");
       assert.equal(environment.appUserModelId, "computer.up.upcomputer.localtest");
       assert.equal(environment.displayName, "UpComputer Local Test");
+      assert.equal(environment.menuBarName, "UpComputer Local Test");
     }),
   );
 
@@ -116,6 +118,7 @@ describe("Up.computer desktop identity", () => {
       assert.equal(environment.stateDir, "/Users/alice/.upcomputer-demo/userdata");
       assert.equal(environment.appUserModelId, "computer.up.upcomputer.demo");
       assert.equal(environment.displayName, "Up.computer Demo");
+      assert.equal(environment.menuBarName, "Up.computer");
     }),
   );
 });

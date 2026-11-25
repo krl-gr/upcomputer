@@ -96,7 +96,7 @@ export const make = Effect.gen(function* () {
       `${environment.branding.baseName} ${environment.branding.stageLabel}`,
     );
     yield* electronApp.setAboutPanelOptions({
-      applicationName: environment.displayName,
+      applicationName: environment.menuBarName,
       applicationVersion: environment.appVersion,
       version: Option.getOrElse(commitHash, () => "unknown"),
     });

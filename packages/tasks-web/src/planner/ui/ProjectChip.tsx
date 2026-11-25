@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { FolderIcon, InboxIcon } from "lucide-react";
 
 import type { ProjectFaviconProject } from "../../../../../apps/web/src/components/ProjectFavicon.tsx";
@@ -9,6 +10,7 @@ import {
   SelectValue,
 } from "../../../../../apps/web/src/components/ui/select.tsx";
 import { ProjectRowIcon } from "../../../../../apps/web/src/sidebarProjects/sidebarProjectIcons.tsx";
+import { pickerProjectFor, pickerProjects } from "../../ui/taskProjects.ts";
 
 /** A project the planner can put a task in. The Inbox replaces wande's "Unassigned". */
 export interface PlannerProject {
@@ -16,6 +18,9 @@ export interface PlannerProject {
   readonly name: string;
   readonly favicon: ProjectFaviconProject | null;
   readonly inbox: boolean;
+  /** The sidebar project group; the chip offers one entry per group. */
+  readonly groupKey: string;
+  readonly pickId: string;
 }
 
 /** The Inbox project lives on `<T3 home>/tasks-inbox` (phase 1); its id is not sent to clients. */
@@ -50,20 +55,26 @@ export function ProjectChip(props: {
   readonly allowNewInbox?: boolean;
   readonly onChange: (projectId: string | null) => void;
 }) {
+  const gt = useGT();
   const inbox = props.projects.find((project) => project.inbox) ?? null;
-  const others = props.projects.filter((project) => !project.inbox);
+  const others = pickerProjects(props.projects.filter((project) => !project.inbox));
   const selected = props.mixed
     ? null
     : (props.projects.find((project) => project.id === props.value) ?? null);
-  const value = props.mixed ? MIXED : (props.value ?? NEW_INBOX);
+  // A task in any member of a group shows the group's entry as chosen; choosing it changes nothing.
+  const value = props.mixed
+    ? MIXED
+    : selected && !selected.inbox
+      ? (pickerProjectFor(others, selected)?.id ?? selected.id)
+      : (props.value ?? NEW_INBOX);
   const unknown = !props.mixed && selected === null && props.value !== null;
   const label = props.mixed
-    ? "Mixed"
+    ? gt("Mixed", { $context: "a selection of tasks from several projects" })
     : selected
       ? selected.name
       : unknown
-        ? "Unknown project"
-        : "Inbox";
+        ? gt("Unknown project")
+        : gt("Inbox");
   return (
     <Select
       value={value}
@@ -76,7 +87,7 @@ export function ProjectChip(props: {
       <SelectTrigger
         size="xs"
         className="w-auto min-w-0 max-w-48"
-        aria-label="Project"
+        aria-label={gt("Project")}
         data-prevent-drag
       >
         <SelectValue>
@@ -93,14 +104,14 @@ export function ProjectChip(props: {
       <SelectPopup>
         {props.mixed ? (
           <SelectItem value={MIXED} disabled>
-            Mixed
+            {gt("Mixed", { $context: "a selection of tasks from several projects" })}
           </SelectItem>
         ) : null}
         {inbox || props.allowNewInbox ? (
           <SelectItem value={inbox?.id ?? NEW_INBOX}>
             <span className="flex min-w-0 items-center gap-2">
               <InboxIcon className="size-4" />
-              <span className="truncate">Inbox</span>
+              <span className="truncate">{gt("Inbox")}</span>
             </span>
           </SelectItem>
         ) : null}

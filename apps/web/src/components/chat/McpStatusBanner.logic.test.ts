@@ -1,3 +1,4 @@
+import { gtFallback } from "gt-react";
 import { describe, expect, it } from "vite-plus/test";
 
 import { mcpStatusNotices } from "./McpStatusBanner.logic";
@@ -8,9 +9,13 @@ describe("mcpStatusNotices", () => {
       mcpStatusNotices(
         { t3: { outcome: "attached" }, userServerCount: 2, failedUserServers: [] },
         "Up.computer",
+        gtFallback,
       ),
     ).toEqual({ t3: null, userServers: null });
-    expect(mcpStatusNotices(null, "Up.computer")).toEqual({ t3: null, userServers: null });
+    expect(mcpStatusNotices(null, "Up.computer", gtFallback)).toEqual({
+      t3: null,
+      userServers: null,
+    });
   });
 
   it("explains a dropped connection and names failed user servers", () => {
@@ -21,6 +26,7 @@ describe("mcpStatusNotices", () => {
         failedUserServers: ["notes", "crm"],
       },
       "Up.computer",
+      gtFallback,
     );
     expect(notices.t3?.title).toBe(
       "This agent can't use Up.computer tools right now (tasks, delegation)",

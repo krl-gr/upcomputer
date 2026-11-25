@@ -2,14 +2,19 @@ import { assert, it } from "@effect/vitest";
 import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import {
+  DEFAULT_TASK_LIST_SETTINGS,
+  TASK_LAST_RUN_NONE,
   TaskAgentId,
   TaskAgentRunId,
   TaskAutomationId,
   TaskId,
   TaskRank,
+  type TaskChange,
 } from "@t3tools/tasks-contracts/v1";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 
 import { runExperimentalFeatureMigrations } from "../../../../apps/server/src/extensionApi.ts";
 import { TASK_MIGRATION_CONTRIBUTION } from "./migrations/index.ts";
@@ -79,7 +84,76 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
 
       const items = yield* repository.items({ ids: [TaskId.make("retried")] });
       assert.equal(items.tasks[0]?.latestRunStatus, "completed");
+      assert.isString(items.tasks[0]?.description);
+
+      // Lists whose details read the text leave it out of every row.
+      const slimPage = yield* repository.page({ limit: 10, omitText: true });
+      const slimItems = yield* repository.items({ ids: [TaskId.make("retried")], omitText: true });
+      for (const row of [...slimPage.tasks, ...slimItems.tasks]) {
+        assert.notProperty(row, "description");
+        assert.notProperty(row, "output");
+      }
+      assert.equal(slimItems.tasks[0]?.latestRunStatus, "completed");
     }),
+  );
+
+  it.effect(
+    "filter by the latest run on the server, and count per status for the same filters",
+    () =>
+      Effect.gen(function* () {
+        const repository = yield* TaskRepository;
+        const tagged = (id: string, status: string, tags = ["lr"]) =>
+          repository.upsert(task(id, tags, { status }));
+        yield* tagged("lr-failed-then-done", "Done");
+        yield* tagged("lr-failed", "To Do");
+        yield* tagged("lr-never", "To Do");
+        yield* tagged("lr-never-backlog", "Backlog");
+        yield* tagged("lr-untagged", "To Do", []);
+        yield* repository.upsert(
+          task("lr-archived", ["lr"], { status: "To Do", archivedAt: timestamp }),
+        );
+        yield* repository.createAgentRun(
+          run("lr-r1", "lr-failed-then-done", "failed", "2026-10-05T10:00:00.000Z"),
+        );
+        yield* repository.createAgentRun(
+          run("lr-r2", "lr-failed-then-done", "completed", "2026-10-05T11:00:00.000Z"),
+        );
+        yield* repository.createAgentRun(
+          run("lr-r3", "lr-failed", "failed", "2026-10-05T10:00:00.000Z"),
+        );
+
+        const ids = (lastRun: string, status?: string) =>
+          repository
+            .page({ tags: ["lr"], lastRun, limit: 50, ...(status ? { status } : {}) })
+            .pipe(Effect.map((page) => page.tasks.map((item) => item.id as string).toSorted()));
+        // Only the latest run counts: a retried task that then completed is not failed.
+        assert.deepStrictEqual(yield* ids("failed"), ["lr-failed"]);
+        assert.deepStrictEqual(yield* ids("completed"), ["lr-failed-then-done"]);
+        assert.deepStrictEqual(yield* ids(TASK_LAST_RUN_NONE), ["lr-never", "lr-never-backlog"]);
+        assert.deepStrictEqual(yield* ids(TASK_LAST_RUN_NONE, "Backlog"), ["lr-never-backlog"]);
+
+        const counts = (input: Parameters<typeof repository.statusCounts>[0]) =>
+          repository
+            .statusCounts({ tags: ["lr"], ...input })
+            .pipe(
+              Effect.map(({ counts }) =>
+                Object.fromEntries(counts.map(({ status, count }) => [status, count])),
+              ),
+            );
+        assert.deepStrictEqual(yield* counts({}), { Backlog: 1, Done: 1, "To Do": 2 });
+        assert.deepStrictEqual(yield* counts({ lastRun: TASK_LAST_RUN_NONE }), {
+          Backlog: 1,
+          "To Do": 1,
+        });
+        assert.deepStrictEqual(yield* counts({ lastRun: "completed" }), { Done: 1 });
+        assert.deepStrictEqual(yield* counts({ archive: "archived" }), { "To Do": 1 });
+        assert.deepStrictEqual(yield* counts({ archive: "all" }), {
+          Backlog: 1,
+          Done: 1,
+          "To Do": 3,
+        });
+        assert.deepStrictEqual(yield* counts({ audience: "person" }), {});
+      }),
   );
 
   it.effect("filter by tags with AND: a task needs every requested tag", () =>
@@ -126,11 +200,22 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
       assert.deepStrictEqual(yield* ids({ audience: "person", excludeStatuses: ["Done"] }), [
         "f-mine",
       ]);
+      assert.deepStrictEqual(
+        yield* ids({ audience: "person", excludeStatuses: ["done"] }),
+        ["f-mine"],
+        "excluded statuses ignore case",
+      );
       assert.deepStrictEqual(yield* ids({ kind: "routine" }), ["f-routine"]);
       const searched = yield* repository.search({ audience: "person", status: "Done" });
       assert.deepStrictEqual(
         searched.map(({ id }) => id),
         ["f-done"],
+      );
+      const searchedLowercase = yield* repository.search({ audience: "person", status: "done" });
+      assert.deepStrictEqual(
+        searchedLowercase.map(({ id }) => id),
+        ["f-done"],
+        "the status filter ignores case",
       );
 
       const personPage = yield* repository.page({ audience: "person", status: "Done" });
@@ -284,6 +369,48 @@ it.layer(TestLayer)("TaskRepository list items", (it) => {
       assert.equal(ownNeighbor._tag, "TaskPersistenceSqlError");
       yield* Effect.flip(repository.reorderMany({ ids: [TaskId.make("missing")] }));
       assert.deepStrictEqual(yield* order(), ["rm4", "rm1", "rm3", "rm6", "rm2", "rm5"]);
+    }),
+  );
+});
+
+it.layer(TestLayer)("TaskRepository list settings", (it) => {
+  it.effect("start as the defaults, save a change, merge open groups and announce each save", () =>
+    Effect.gen(function* () {
+      const repository = yield* TaskRepository;
+      const changes = yield* Queue.unbounded<TaskChange>();
+      yield* repository.changes.pipe(
+        Stream.runForEach((change) => Queue.offer(changes, change)),
+        Effect.forkScoped,
+      );
+      assert.equal((yield* Queue.take(changes)).kind, "sync");
+      // A new install follows the current workflow.
+      assert.deepStrictEqual(yield* repository.listSettings(), {
+        ...DEFAULT_TASK_LIST_SETTINGS,
+        workflowVersion: 2,
+      });
+      yield* repository.setWorkflowVersion({ version: 1 });
+      assert.isTrue((yield* Queue.take(changes)).listSettingsChanged);
+      assert.equal(yield* repository.workflowVersion(), 1);
+
+      yield* repository.updateListSettings({
+        statusGroupOrder: ["done", "to do"],
+        statusGroupOpen: { done: true },
+      });
+      assert.isTrue((yield* Queue.take(changes)).listSettingsChanged);
+      // Another device opens another group: both stay open, the rest is kept.
+      const saved = yield* repository.updateListSettings({
+        groupByStatus: false,
+        statusGroupOpen: { backlog: false },
+      });
+      assert.isTrue((yield* Queue.take(changes)).listSettingsChanged);
+      const expected = {
+        groupByStatus: false,
+        statusGroupOrder: ["done", "to do"],
+        statusGroupOpen: { done: true, backlog: false },
+        workflowVersion: 1 as const,
+      };
+      assert.deepStrictEqual(saved, expected);
+      assert.deepStrictEqual(yield* repository.listSettings(), expected);
     }),
   );
 });

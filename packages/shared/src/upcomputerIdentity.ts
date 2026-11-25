@@ -71,6 +71,8 @@ function isUpcomputerDemoVersion(version: string): boolean {
  */
 export interface UpcomputerLocalBuildIdentity {
   readonly appName: string;
+  /** macOS menu bar and app menu name; only the demo drops its suffix, for recordings. */
+  readonly menuBarName: string;
   readonly appId: string;
   readonly homeDirectoryName: string;
 }
@@ -81,6 +83,7 @@ export function resolveUpcomputerLocalBuildIdentity(
   if (isUpcomputerLocalTestVersion(version)) {
     return {
       appName: UPCOMPUTER_LOCAL_TEST_APP_NAME,
+      menuBarName: UPCOMPUTER_LOCAL_TEST_APP_NAME,
       appId: UPCOMPUTER_LOCAL_TEST_APP_ID,
       homeDirectoryName: UPCOMPUTER_LOCAL_TEST_HOME_DIRECTORY_NAME,
     };
@@ -88,6 +91,7 @@ export function resolveUpcomputerLocalBuildIdentity(
   if (isUpcomputerDemoVersion(version)) {
     return {
       appName: UPCOMPUTER_DEMO_APP_NAME,
+      menuBarName: UPCOMPUTER_PRODUCT_NAME,
       appId: UPCOMPUTER_DEMO_APP_ID,
       homeDirectoryName: UPCOMPUTER_DEMO_HOME_DIRECTORY_NAME,
     };

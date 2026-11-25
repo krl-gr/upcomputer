@@ -27,7 +27,11 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 
 import { defineNamespacedRpcContribution } from "../../../../apps/server/src/extensionApi.ts";
-import { releasedRunId, TaskAgentService } from "../agents/TaskAgentService.ts";
+import {
+  nextAgentArchivedAt,
+  releasedRunId,
+  TaskAgentService,
+} from "../agents/TaskAgentService.ts";
 import { makeFirstUseRecorder } from "../telemetry/firstUse.ts";
 import {
   armAutomationSchedule,
@@ -35,6 +39,7 @@ import {
 } from "../automations/automationWrites.ts";
 import { BotService } from "../bots/BotService.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
+import { InstructionUpdatesService } from "../instructionUpdates/InstructionUpdatesService.ts";
 import { TaskRepository } from "../persistence/TaskRepository.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { TaskPromptSettingsStore } from "../persistence/TaskPromptSettingsStore.ts";
@@ -70,6 +75,7 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [TASKS_RPC_METHODS.create]: operate,
     [TASKS_RPC_METHODS.search]: read,
     [TASKS_RPC_METHODS.page]: read,
+    [TASKS_RPC_METHODS.statusCounts]: read,
     [TASKS_RPC_METHODS.items]: read,
     [TASKS_RPC_METHODS.runCounts]: read,
     [TASKS_RPC_METHODS.threadRunCounts]: read,
@@ -101,6 +107,10 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [TASKS_RPC_METHODS.scheduleMoveOpen]: operate,
     [TASKS_RPC_METHODS.getScheduleSettings]: read,
     [TASKS_RPC_METHODS.updateScheduleSettings]: operate,
+    [TASKS_RPC_METHODS.getListSettings]: read,
+    [TASKS_RPC_METHODS.updateListSettings]: operate,
+    [TASKS_RPC_METHODS.getInstructionUpdates]: read,
+    [TASKS_RPC_METHODS.updateInstructionUpdates]: operate,
   },
   handlers: () =>
     TasksRpcGroup.toLayer(
@@ -178,6 +188,8 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
               return yield* (yield* TaskRepository).page(input);
             }),
           ),
+        [TASKS_RPC_METHODS.statusCounts]: (input) =>
+          asTaskRpc(Effect.flatMap(TaskRepository, (repository) => repository.statusCounts(input))),
         [TASKS_RPC_METHODS.runCounts]: () =>
           asTaskRpc(
             Effect.gen(function* () {
@@ -305,6 +317,8 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
             Effect.gen(function* () {
               const repository = yield* TaskRepository;
               const crypto = yield* SecureRandom.SecureRandom;
+              if (Option.isNone(yield* repository.getById({ id: input.taskId })))
+                return yield* taskError(`Task '${input.taskId}' was not found.`);
               return yield* repository.appendEvent({
                 id: input.id ?? TaskEventId.make(`task-event-${yield* crypto.uuidV4()}`),
                 taskId: input.taskId,
@@ -381,6 +395,16 @@ export const TASKS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
           asTaskRpc(
             Effect.flatMap(TaskScheduleService, (schedule) => schedule.updateSettings(input)),
           ),
+        [TASKS_RPC_METHODS.getListSettings]: () =>
+          asTaskRpc(Effect.flatMap(TaskRepository, (repository) => repository.listSettings())),
+        [TASKS_RPC_METHODS.updateListSettings]: (input) =>
+          asTaskRpc(
+            Effect.flatMap(TaskRepository, (repository) => repository.updateListSettings(input)),
+          ),
+        [TASKS_RPC_METHODS.getInstructionUpdates]: () =>
+          asTaskRpc(Effect.flatMap(InstructionUpdatesService, (updates) => updates.get)),
+        [TASKS_RPC_METHODS.updateInstructionUpdates]: (input) =>
+          asTaskRpc(Effect.flatMap(InstructionUpdatesService, (updates) => updates.update(input))),
       }),
     ),
 });
@@ -420,6 +444,11 @@ const TASK_AGENTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
                 config: input.config,
                 createdAt: Option.isSome(existing) ? existing.value.createdAt : timestamp,
                 updatedAt: timestamp,
+                archivedAt: nextAgentArchivedAt(
+                  Option.isSome(existing) ? existing.value.archivedAt : null,
+                  input.archived,
+                  timestamp,
+                ),
               });
               yield* taskAgents.scheduleAgentChanged({ agent, reason: "upserted" });
               if (Option.isSome(existing) && existing.value.name !== agent.name)

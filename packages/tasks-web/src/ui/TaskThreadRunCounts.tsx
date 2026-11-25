@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ListTodoIcon } from "lucide-react";
+import { useGT, useMessages } from "gt-react";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { TaskThreadTasksResult } from "@t3tools/tasks-contracts/v1";
 import type {
@@ -68,6 +69,7 @@ function ThreadTasksMenuItems({
   environmentId: EnvironmentId;
   threadId: ThreadId;
 }) {
+  const gt = useGT();
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<TaskThreadTasksResult["tasks"] | "loading" | "error">(
     "loading",
@@ -82,9 +84,9 @@ function ThreadTasksMenuItems({
       active = false;
     };
   }, [client, threadId]);
-  if (tasks === "loading") return <p className={MENU_NOTE_CLASS}>Loading tasks…</p>;
-  if (tasks === "error") return <p className={MENU_NOTE_CLASS}>Could not load tasks.</p>;
-  if (tasks.length === 0) return <p className={MENU_NOTE_CLASS}>No tasks.</p>;
+  if (tasks === "loading") return <p className={MENU_NOTE_CLASS}>{gt("Loading tasks…")}</p>;
+  if (tasks === "error") return <p className={MENU_NOTE_CLASS}>{gt("Could not load tasks.")}</p>;
+  if (tasks.length === 0) return <p className={MENU_NOTE_CLASS}>{gt("No tasks.")}</p>;
   return tasks.map((task) => (
     <MenuItem
       key={task.id}
@@ -155,9 +157,13 @@ function Counts({
   client: TasksWebRpcClient;
   store: ThreadRunCountsStore;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const groups = useThreadRunCountGroups(store, threadId);
   if (groups.length === 0) return fallback;
-  const summary = `Task runs · ${groups.map((group) => `${group.label}: ${group.count}`).join(" · ")}`;
+  const summary = gt("Task runs · {counts}", {
+    counts: groups.map((group) => `${m(group.label)}: ${group.count}`).join(" · "),
+  });
   return (
     <ThreadTasksMenu
       client={client}
@@ -171,9 +177,10 @@ function Counts({
           className="pointer-events-auto inline-flex cursor-pointer items-center gap-1 rounded-sm tabular-nums opacity-80 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring data-popup-open:opacity-100"
           data-task-run-counts={threadId}
           aria-label={summary}
-          title={[summary, "Active runs, and finished runs since the thread was last opened"].join(
-            "\n",
-          )}
+          title={[
+            summary,
+            gt("Active runs, and finished runs since the thread was last opened"),
+          ].join("\n")}
           onPointerDown={stopRowEvent}
           onClick={stopRowEvent}
           onKeyDown={stopRowKeyActivation}
@@ -253,6 +260,7 @@ export function TaskThreadTasksButton(props: {
   readonly className: string;
   readonly onOpenChange?: (open: boolean) => void;
 }) {
+  const gt = useGT();
   useTasksWebAccessRevision();
   if (!readTasksWebAccess(props.environmentId).canReadTasks) return null;
   return (
@@ -281,7 +289,7 @@ export function TaskThreadTasksButton(props: {
           >
             <ListTodoIcon />
           </TooltipTrigger>
-          <TooltipPopup side="top">Tasks</TooltipPopup>
+          <TooltipPopup side="top">{gt("Tasks")}</TooltipPopup>
         </Tooltip>
       }
     />
@@ -305,9 +313,11 @@ function RunPill({
   threadId: ThreadId;
   name: string;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const groups = attentionRunCountGroups(useThreadRunCountGroups(store, threadId));
   if (groups.length === 0) return null;
-  const summary = runCountSummary(groups);
+  const summary = runCountSummary(groups, m);
   return (
     <span className="hidden [[data-sidebar-compact=true]_&]:contents">
       <span
@@ -329,7 +339,7 @@ function RunPill({
                       <button
                         type="button"
                         data-bot-run-pill={threadId}
-                        aria-label={`Tasks for ${name}: ${summary}`}
+                        aria-label={gt("Tasks for {name}: {summary}", { name, summary })}
                         className={`pointer-events-auto cursor-pointer outline-none hover:bg-neutral-300 focus-visible:ring-1 focus-visible:ring-ring dark:hover:bg-white ${RUN_COUNT_PILL}`}
                         onPointerDown={stopRowEvent}
                         onClick={stopRowEvent}
@@ -370,11 +380,12 @@ export function TaskThreadTasksSubmenu(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
 }) {
+  const gt = useGT();
   return (
     <MenuSub>
       <MenuSubTrigger>
         <ListTodoIcon />
-        Tasks
+        {gt("Tasks")}
       </MenuSubTrigger>
       <MenuSubPopup className="w-72">
         <ThreadTasksMenuItems

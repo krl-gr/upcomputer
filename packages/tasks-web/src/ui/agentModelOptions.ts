@@ -4,6 +4,7 @@ import type {
   ProviderOptionSelection,
 } from "@t3tools/contracts";
 import { getProviderOptionCurrentLabel, getProviderOptionDescriptors } from "@t3tools/shared/model";
+import { gtFallback, type useGT } from "gt-react";
 
 import { getProviderModelCapabilities } from "../../../../apps/web/src/providerModels.ts";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
@@ -38,12 +39,13 @@ export function getTaskRunAgentPresentation(
   run: ScopedTaskAgentRun,
   agents: ReadonlyArray<ScopedTaskAgent>,
   entries: ReadonlyArray<ProviderInstanceEntry> | undefined,
+  gt: ReturnType<typeof useGT> = gtFallback,
 ): { readonly agentName: string; readonly modelLabel: string } {
   const agent = agents.find(
     (candidate) => candidate.environmentId === run.environmentId && candidate.id === run.agentId,
   );
   return {
-    agentName: agent?.name ?? "Worker run",
+    agentName: agent?.name ?? gt("Worker run"),
     modelLabel: getAgentModelLabel(entries, run.modelSelection),
   };
 }

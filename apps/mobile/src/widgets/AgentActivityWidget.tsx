@@ -28,6 +28,7 @@ export function AgentActivityWidget(
   // The extension evaluates this function without the app's module scope.
   // Before the app's first publish, the embedded layout renders with no props.
   const props = publishedProps ?? {};
+  const text = props.text;
   const family = environment.widgetFamily;
   const accessory = family === "accessoryRectangular";
   const small = family === "systemSmall";
@@ -77,22 +78,24 @@ export function AgentActivityWidget(
   const workingCount = rows.filter(
     (row) => row.phase === "running" || row.phase === "starting",
   ).length;
+  const activeCount = props.activeCount ?? workingCount;
   const summary =
     attentionCount > 0
-      ? `${attentionCount} need${attentionCount === 1 ? "s" : ""} ${small ? "you" : "attention"}`
+      ? ((small ? text?.needYou : text?.needAttention)?.[String(attentionCount)] ??
+        `${attentionCount} need${attentionCount === 1 ? "s" : ""} ${small ? "you" : "attention"}`)
       : workingCount > 0
-        ? `${props.activeCount ?? workingCount} active`
+        ? (text?.active[String(activeCount)] ?? `${activeCount} active`)
         : rows.some((row) => row.phase === "stale")
-          ? "Out of date"
+          ? (text?.outOfDate ?? "Out of date")
           : rows.some((row) => row.phase === "failed")
-            ? "Failed"
+            ? (text?.failed ?? "Failed")
             : rows.length > 0
-              ? "Done"
+              ? (text?.done ?? "Done")
               : "";
   const summaryTint = rows[0] ? phaseTint(rows[0].phase) : secondaryForeground;
   const emptyMessage = loaded
-    ? (props.subtitle ?? "No active agents")
-    : "Open T3 Code to load agent activity";
+    ? (props.subtitle ?? text?.noActiveAgents ?? "No active agents")
+    : "Open Up.computer to load agent activity";
 
   // Widget taps open the containing app, and every build accepts the prod
   // scheme as a link prefix, so dev and preview builds route this too.
@@ -178,7 +181,7 @@ export function AgentActivityWidget(
             lineLimit(1),
           ]}
         >
-          {summary || (accessory ? "T3 Code" : "")}
+          {summary || (accessory ? "Up.computer" : "")}
         </Text>
         <Spacer minLength={0} />
       </HStack>

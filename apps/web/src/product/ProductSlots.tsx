@@ -1,13 +1,9 @@
 import { createElement, lazy, Suspense, type ComponentType, type ReactNode } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useMessages } from "gt-react";
 
 import { BlankWorkspacePage } from "../components/BlankWorkspacePage";
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from "../components/ui/sidebar";
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
 import { SIDEBAR_AFTER_SEARCH_GAP, SIDEBAR_MENU_SCOPE } from "../sidebarMetrics/sidebarMetrics";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import {
@@ -16,6 +12,7 @@ import {
 } from "../adaptiveSidebar/adaptiveSidebar";
 import { cn } from "../lib/utils";
 import { WEB_PRODUCT } from "./productEntry";
+import { useHiddenRightPanelSurfaces } from "./rightPanelSurfaceVisibility";
 import type {
   ExperimentalWebRightPanelSurfaceContribution,
   ExperimentalWebRightPanelSurfaceProps,
@@ -58,15 +55,14 @@ const footerNavigation = WEB_PRODUCT.navigation.filter((item) => item.placement 
 
 function useNavigateTo() {
   const navigate = useNavigate();
-  const { isMobile, setOpenMobile } = useSidebar();
   return (path: string) => {
-    if (isMobile) setOpenMobile(false);
     void navigate({ to: "/$", params: { _splat: path.slice(1) } });
   };
 }
 
 /** Feature entries in the sidebar's primary navigation. */
 export function ProductSidebarNavigation() {
+  const m = useMessages();
   const navigateTo = useNavigateTo();
   const pathname = useLocation({ select: (location) => location.pathname });
   if (rowNavigation.length === 0) return null;
@@ -78,14 +74,14 @@ export function ProductSidebarNavigation() {
           const Accessory = item.accessory;
           return (
             <SidebarMenuItem key={item.id}>
-              <SidebarCompactTooltip label={item.label}>
+              <SidebarCompactTooltip label={m(item.label)}>
                 <SidebarMenuButton
                   data-track={`nav.${item.id}`}
                   isActive={isExperimentalWebNavigationActive(item, pathname)}
                   onClick={() => navigateTo(item.path)}
                 >
                   {Icon ? <Icon /> : null}
-                  <span className="flex-1 truncate">{item.label}</span>
+                  <span className="flex-1 truncate">{m(item.label)}</span>
                   {Accessory ? (
                     <span className="ml-auto shrink-0 tabular-nums">
                       <Accessory />
@@ -103,6 +99,7 @@ export function ProductSidebarNavigation() {
 
 /** Feature entries placed in the sidebar footer, as its utility buttons are. */
 export function ProductSidebarFooterNavigation() {
+  const m = useMessages();
   const navigateTo = useNavigateTo();
   const pathname = useLocation({ select: (location) => location.pathname });
   const tooltipSide = useSidebarFooterTooltipSide();
@@ -114,7 +111,7 @@ export function ProductSidebarFooterNavigation() {
           <TooltipTrigger
             render={
               <SidebarMenuButton
-                aria-label={item.label}
+                aria-label={m(item.label)}
                 data-track={`nav.${item.id}`}
                 isActive={isExperimentalWebNavigationActive(item, pathname)}
                 onClick={() => navigateTo(item.path)}
@@ -124,7 +121,7 @@ export function ProductSidebarFooterNavigation() {
               </SidebarMenuButton>
             }
           />
-          <TooltipPopup side={tooltipSide}>{item.label}</TooltipPopup>
+          <TooltipPopup side={tooltipSide}>{m(item.label)}</TooltipPopup>
         </Tooltip>
       </SidebarMenuItem>
     );
@@ -133,8 +130,8 @@ export function ProductSidebarFooterNavigation() {
 
 /** Feature settings sections, after core's in the settings navigation. */
 export function ProductSettingsNavItems(props: { readonly pathname: string }) {
+  const m = useMessages();
   const navigate = useNavigate();
-  const { isMobile, setOpenMobile } = useSidebar();
   return WEB_PRODUCT.settings.map((page) => {
     const Icon = page.icon;
     return (
@@ -145,7 +142,6 @@ export function ProductSettingsNavItems(props: { readonly pathname: string }) {
           aria-current={props.pathname === page.path ? "page" : undefined}
           isActive={props.pathname === page.path}
           onClick={() => {
-            if (isMobile) setOpenMobile(false);
             void navigate({
               to: "/settings/$section",
               params: { section: page.path.slice("/settings/".length) },
@@ -156,7 +152,7 @@ export function ProductSettingsNavItems(props: { readonly pathname: string }) {
           }}
         >
           {Icon ? <Icon /> : null}
-          <span className="truncate">{page.label}</span>
+          <span className="truncate">{m(page.label)}</span>
         </SidebarMenuButton>
       </SidebarMenuItem>
     );
@@ -233,6 +229,12 @@ export function ProductSettingsPage(props: { readonly pathname: string }) {
 /** Feature surfaces the right panel beside a thread offers after core's. */
 export function productRightPanelSurfaces(): ReadonlyArray<ExperimentalWebRightPanelSurfaceContribution> {
   return WEB_PRODUCT.rightPanelSurfaces;
+}
+
+/** The same, without the ones the person turned off in Settings. */
+export function useShownProductRightPanelSurfaces(): ReadonlyArray<ExperimentalWebRightPanelSurfaceContribution> {
+  const { hidden } = useHiddenRightPanelSurfaces();
+  return WEB_PRODUCT.rightPanelSurfaces.filter((surface) => !hidden.includes(surface.id));
 }
 
 export function productRightPanelSurface(

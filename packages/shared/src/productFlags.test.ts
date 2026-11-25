@@ -77,9 +77,10 @@ describe("product flags", () => {
 
   it("filters settings search items and right-panel launchers by flag", () => {
     expect(isProductSettingsSearchItemShown(UPCOMPUTER_PRODUCT_FLAGS, "terminal-font")).toBe(true);
-    for (const id of ["device-hub", "keep-threads-with-pull-requests"]) {
+    for (const id of ["mobile-app", "keep-threads-with-pull-requests"]) {
       expect(isProductSettingsSearchItemShown(UPCOMPUTER_PRODUCT_FLAGS, id)).toBe(false);
     }
+    expect(isProductSettingsSearchItemShown(UPCOMPUTER_PRODUCT_FLAGS, "device-hub")).toBe(true);
     expect(
       isProductSettingsSearchItemShown(UPCOMPUTER_PRODUCT_FLAGS, "keybinding-terminal.toggle"),
     ).toBe(false);
@@ -87,10 +88,10 @@ describe("product flags", () => {
     expect(
       isProductSettingsSearchItemShown(UPCOMPUTER_PRODUCT_FLAGS, "keybinding-rightPanel.toggle"),
     ).toBe(true);
-    for (const label of ["Pull request", "Linked pull requests", "Device"]) {
+    for (const label of ["Pull request", "Linked items"]) {
       expect(isProductRightPanelSurfaceShown(UPCOMPUTER_PRODUCT_FLAGS, label)).toBe(false);
     }
-    for (const label of ["Browser", "Terminal", "Files", "Diff"]) {
+    for (const label of ["Browser", "Terminal", "Files", "Diff", "Device"]) {
       expect(isProductRightPanelSurfaceShown(UPCOMPUTER_PRODUCT_FLAGS, label)).toBe(true);
     }
   });

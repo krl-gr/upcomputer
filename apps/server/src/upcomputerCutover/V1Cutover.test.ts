@@ -114,7 +114,11 @@ const seedV1 = (sessionFile: string, otherHomeSessionFile: string) =>
       yield* migration;
       yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (${id}, ${name})`;
     }
-    yield* runExperimentalFeatureMigrations([CORE_FEATURE_MIGRATIONS, TASK_MIGRATION_CONTRIBUTION]);
+    // V1 builds shipped only the first two upcomputer.core migrations; later ones index v2 tables.
+    yield* runExperimentalFeatureMigrations([
+      { ...CORE_FEATURE_MIGRATIONS, migrations: CORE_FEATURE_MIGRATIONS.migrations.slice(0, 2) },
+      TASK_MIGRATION_CONTRIBUTION,
+    ]);
     // V1's own upcomputer.core migrations also gave threads these columns; v2 keeps links in JSON.
     yield* sql`ALTER TABLE projection_threads ADD COLUMN linked_project_ids_json TEXT NOT NULL DEFAULT '[]'`;
     yield* sql`ALTER TABLE projection_threads ADD COLUMN project_links_pinned INTEGER NOT NULL DEFAULT 0`;

@@ -1,4 +1,5 @@
 import type * as DateTime from "effect/DateTime";
+import { msg } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import type {
   EnvironmentProject,
@@ -47,6 +48,7 @@ import {
   workspaceKnownAtom,
   workspaceSettledAtom,
 } from "./workspace";
+import { m } from "../i18n/messages";
 
 const EMPTY_THREAD_REFS: ReadonlyArray<ScopedThreadRef> = Object.freeze([]);
 const EMPTY_VISIBLE_TURN_ITEMS: ReadonlyArray<OrchestrationV2ProjectedTurnItem> = Object.freeze([]);
@@ -328,7 +330,7 @@ export function waitForProject(
     let unsubscribe: (() => void) | null = null;
     const timeout = setTimeout(() => {
       unsubscribe?.();
-      reject(new Error("The project did not appear in the desktop app."));
+      reject(new Error(m(msg("The project did not appear in the desktop app."))));
     }, timeoutMs);
     const finish = (project: EnvironmentProject | null) => {
       if (project === null) return;
@@ -406,6 +408,15 @@ export function readEnvironmentThreadRefs(
 
 export function readThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
   return appAtomRegistry.get(environmentThreadShells.threadShellsAtom);
+}
+
+/** Unarchived threads a thread list may show (no tagged, delegated or sidebar-hidden ones). */
+export function readNavigationThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
+  return appAtomRegistry.get(environmentThreadShells.navigationThreadShellsAtom);
+}
+
+export function readDelegatedUnderParent(): ReadonlySet<string> {
+  return appAtomRegistry.get(environmentThreadShells.delegatedUnderParentAtom);
 }
 
 function shellParentThreadId(
@@ -562,6 +573,7 @@ export function readResponseSubagents(
           }),
         )
         ?.title.trim() ||
+      // oxlint-disable-next-line t3code/no-untranslated-copy -- subagent title stored in the reply record sent to the agent
       "Agent",
   }));
 }

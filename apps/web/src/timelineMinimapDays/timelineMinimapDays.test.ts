@@ -1,3 +1,4 @@
+import { gtFallback } from "gt-react";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { MessagesTimelineRow } from "../components/chat/MessagesTimeline.logic";
@@ -29,8 +30,8 @@ const turn = (id: string, text: string, at: Date): MessagesTimelineRow[] =>
       }) as MessagesTimelineRow,
   );
 
-const ticks = (rows: MessagesTimelineRow[]) =>
-  groupTimelineMinimapItemsByDay(deriveTimelineMinimapItems(rows), rows, NOW);
+const ticks = (rows: MessagesTimelineRow[], locale = "en") =>
+  groupTimelineMinimapItemsByDay(deriveTimelineMinimapItems(rows), rows, gtFallback, locale, NOW);
 
 describe("timeline minimap by day", () => {
   it("gives each local day one tick at its first message, with its count and first text", () => {
@@ -67,7 +68,7 @@ describe("timeline minimap by day", () => {
     ]);
   });
 
-  it("keeps a single day as one tick and names another year's day with its year", () => {
+  it("keeps a single day as one tick and names the day in the UI locale, with another year's year", () => {
     expect(
       ticks([
         ...turn("a", "First", new Date(2026, 9, 29, 8, 0)),
@@ -76,6 +77,9 @@ describe("timeline minimap by day", () => {
     ).toEqual(["Oct 29 · 2 messages"]);
     expect(ticks(turn("a", "Old", new Date(2025, 11, 31, 22, 0)))[0]?.userText).toBe(
       "Dec 31, 2025 · 1 message",
+    );
+    expect(ticks(turn("a", "Today", new Date(2026, 9, 29, 8, 0)), "ru")[0]?.userText).toBe(
+      "29 окт. · 1 message",
     );
   });
 

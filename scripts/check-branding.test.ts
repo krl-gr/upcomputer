@@ -6,7 +6,7 @@ import * as NodeURL from "node:url";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import { findBrandingProblems } from "./check-branding.ts";
-import { rebrandText } from "./lib/branding.ts";
+import { isCopyFile, rebrandText } from "./lib/branding.ts";
 
 const repoRoot = NodePath.dirname(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)));
 const temporaryDirectories: string[] = [];
@@ -128,13 +128,23 @@ describe("apply-branding rules", () => {
     );
   });
 
+  it("names the app where the iPhone app says T3 alone, but not monograms or Android-only files", () => {
+    const source =
+      'const a = gt("T3 Account"); const b = "Open T3 to refresh"; const c = `${n} more in T3`; const d = ["t3code", "T3", "teal"]; const e = "Link T3 Chat"; const f = msg("Open {app}", { app: "T3" });';
+    expect(rebrandText(source, "apps/mobile/src/widgets/SubscriptionUsage.tsx")).toBe(
+      'const a = gt("Up.computer Account"); const b = "Open Up.computer to refresh"; const c = `${n} more in Up.computer`; const d = ["t3code", "T3", "teal"]; const e = "Link T3 Chat"; const f = msg("Open {app}", { app: "Up.computer" });',
+    );
+    expect(isCopyFile("apps/mobile/src/widgets/SubscriptionUsage.tsx")).toBe(true);
+    expect(isCopyFile("apps/mobile/src/widgets/SubscriptionUsage.android.tsx")).toBe(false);
+  });
+
   it("rewrites the HTML render tool copy", () => {
     expect(
       rebrandText(
-        'const text = "T3 fits the frame. T3 is still installing its browser in T3\'s home directory.";',
+        'const text = "T3 fits the frame. T3 is still installing its browser in T3\'s home directory. The gateway sent an answer T3 could not read.";',
       ),
     ).toBe(
-      'const text = "Up.computer fits the frame. Up.computer is still installing its browser in Up.computer\'s home directory.";',
+      'const text = "Up.computer fits the frame. Up.computer is still installing its browser in Up.computer\'s home directory. The gateway sent an answer Up.computer could not read.";',
     );
   });
 

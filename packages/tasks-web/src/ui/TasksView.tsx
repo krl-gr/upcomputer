@@ -8,20 +8,32 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ArrowLeftIcon, GripVerticalIcon } from "lucide-react";
+import { ArrowLeftIcon, GripVerticalIcon, MoreHorizontalIcon } from "lucide-react";
+import { msg, useGT, useMessages } from "gt-react";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
+  AGENT_RESTORED_STATUS,
+  DEFAULT_TASK_STATUS,
+  sameTaskStatus,
   TASK_HISTORY_EVENT_KINDS,
+  taskStatusesFor,
+  taskWorkflowVersionOf,
   TaskId,
   type TaskArchiveFilter,
-  type TaskAudience,
   type TaskEvent,
 } from "@t3tools/tasks-contracts/v1";
 import { taskRunPresentation, groupTaskRunCounts, runSearchStatus } from "./taskRunPresentation.ts";
 import type { ScopedTaskListItem } from "../state/taskPages.ts";
-import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 
 import type { TasksWebRpcClient } from "../rpc/index.ts";
-import type { ScopedTask, ScopedTaskAgent, ScopedTaskAgentRun } from "../state/index.ts";
+import {
+  scopedTaskWithText,
+  type ScopedTask,
+  type ScopedTaskAgent,
+  type ScopedTaskAgentRun,
+  type ScopedTaskRow,
+} from "../state/index.ts";
 import { stackedThreadToast, toastManager } from "../../../../apps/web/src/components/ui/toast.tsx";
 import {
   Select,
@@ -30,10 +42,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../../apps/web/src/components/ui/select.tsx";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuTrigger,
+} from "../../../../apps/web/src/components/ui/menu.tsx";
 import { ProjectFavicon } from "../../../../apps/web/src/components/ProjectFavicon.tsx";
-import ChatMarkdown from "../../../../apps/web/src/components/ChatMarkdown.tsx";
+import { TaskOutput } from "./TaskOutput.tsx";
+import { openFileInWorkerThread } from "./TaskFileWindow.tsx";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
 import { TaskThreadLink } from "./TaskThreadLink.tsx";
+import { useOmittedThreadShell } from "./useOmittedThreadShell.ts";
 import { getTaskRunAgentPresentation } from "./agentModelOptions.ts";
 import { persistPlannedTaskMove, planVisibleTaskMove } from "./taskReorder.ts";
 import {
@@ -45,6 +65,7 @@ import {
 } from "./DetailSidebar.tsx";
 import { toastAudienceMoved } from "../planner/ui/audienceMoved.ts";
 import { WorkspaceViewLayout } from "./WorkspaceViewLayout.tsx";
+import { FLOATING_ACTIONS_CLEARANCE_CLASS } from "./FloatingActions.tsx";
 import { SHOW_MANUAL_CREATE_ACTIONS } from "./manualCreation.ts";
 import {
   orderedProjectFilterKeys,
@@ -58,36 +79,68 @@ import {
   type TasksPageFilters,
 } from "./pageFilters.ts";
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
-import { TaskCard } from "./TaskCard.tsx";
+import { AgentTaskCard } from "./AgentTaskCard.tsx";
 import { TaskFilterRow, TaskFiltersButton } from "./TaskFilters.tsx";
-import { taskListLayout } from "./taskListLayout.ts";
-import { isInboxRoot, type PlannerProject } from "../planner/ui/ProjectChip.tsx";
+import {
+  TaskGroupShowMore,
+  TaskStatusCardGroup,
+  TaskStatusGroupsProvider,
+  TaskStatusTableGroup,
+} from "./TaskStatusGroups.tsx";
+import {
+  mergedGroupOrder,
+  sameStatusGroup,
+  statusGroupKey,
+  taskStatusGroups,
+  tasksOfGroup,
+  type TaskStatusGroup,
+} from "./taskStatusGroups.ts";
+import type { TasksViewGrouping } from "./useTaskList.ts";
+import { taskListLayout, type TaskListLayout } from "./taskListLayout.ts";
 import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
+import { writeTextToClipboard } from "../../../../apps/web/src/hooks/useCopyToClipboard.ts";
 import { observeResize } from "../../../../apps/web/src/lib/observeResize.ts";
+import { useMediaQuery } from "../../../../apps/web/src/hooks/useMediaQuery.ts";
 import { TableRunCounts } from "./RunCountNumbers.tsx";
 import { TaskHistory, taskHistoryEntries } from "./TaskHistory.tsx";
 import { TaskTagChips } from "./TaskTagChips.tsx";
 import { TagChipsField } from "./TagChipsField.tsx";
 import { tagSuggestions } from "./tagSuggestions.ts";
-import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
-import { splitListInput, taskKey, taskMetadataLabel, type TasksWebProject } from "./shared.ts";
+import { LazyMarkdownEditor, preloadMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
+import {
+  splitListInput,
+  taskKey,
+  taskMetadataLabel,
+  taskStatusOptions,
+  type TasksWebProject,
+} from "./shared.ts";
+import { DetailAutocompleteInput } from "./DetailAutocompleteInput.tsx";
+import { pickerProjectFor, pickerProjects, sameProjectGroup } from "./taskProjects.ts";
 import { ListEmptyState } from "./ListEmptyState.tsx";
 import { useTaskArrivals } from "./taskArrivals.ts";
 import "./taskArrival.css";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
-import { useComputerName } from "../../../../apps/web/src/sidebarComputers/useSidebarComputers.ts";
 
-const STATUS_ORDER = [
-  "new",
-  "to do",
-  "backlog",
-  "restored",
-  "in progress",
-  "ready for review",
-  "done",
-  "closed",
-];
+/** Rows a status group shows at first, and how many more each "Show more" adds. */
+const GROUP_FIRST_ROWS = 20;
+const GROUP_MORE_ROWS = 50;
+const LIST_ONLY: ReadonlySet<string> = new Set([""]);
+
+/** Orders statuses as the workflow's standard ones go, with Restore's status next to To Do. */
+function statusComparator(standard: readonly string[]) {
+  const order = standard.flatMap((status) =>
+    status === DEFAULT_TASK_STATUS ? [status, AGENT_RESTORED_STATUS] : [status],
+  );
+  return (left: string, right: string): number => {
+    const leftIndex = order.findIndex((status) => sameTaskStatus(status, left));
+    const rightIndex = order.findIndex((status) => sameTaskStatus(status, right));
+    if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
+    if (leftIndex === -1) return 1;
+    if (rightIndex === -1) return -1;
+    return leftIndex - rightIndex;
+  };
+}
 
 type InlineTaskUpdate = Partial<
   Pick<ScopedTask, "title" | "description" | "status" | "tags" | "audience" | "projectId">
@@ -102,30 +155,10 @@ interface TaskFormState {
   readonly description: string;
 }
 
-/** Who does a task, in its details: changing it moves the task between Agents and Me. */
-const AUDIENCE_LABELS: Record<TaskAudience, string> = { agent: "Workers", person: "Me" };
-const TASKS_OFFLINE_TEXT =
-  "The environment with Tasks is not reachable right now. Tasks show when it connects.";
-const OFFLINE_NOTE_CLASS =
-  "rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground";
-
-function OfflineComputerNote(props: {
-  readonly environmentId: EnvironmentId;
-  readonly showsRows: boolean;
-}) {
-  const name = useComputerName(props.environmentId);
-  const computer = name ?? "A computer";
-  return (
-    <div className={OFFLINE_NOTE_CLASS}>
-      {props.showsRows
-        ? `${computer} is not connected. Its tasks may be out of date.`
-        : name
-          ? `Tasks from ${name} will show when it reconnects.`
-          : "Tasks from a computer that is not connected will show when it reconnects."}
-    </div>
-  );
-}
-
+const TASKS_OFFLINE_TEXT = msg(
+  "The computer with your tasks isn't reachable right now. Tasks show when it connects.",
+);
+const TABLE_CLASS = "w-full min-w-[920px] border-collapse text-left text-sm";
 export interface TasksViewProps {
   readonly projects: readonly TasksWebProject[];
   readonly tasks: readonly ScopedTaskListItem[];
@@ -138,12 +171,14 @@ export interface TasksViewProps {
   readonly onProjectFilterReset?: () => void;
   /** The Me / Workers switch and the Tasks / Automations switch, at the left of the header. */
   readonly viewSwitch?: ReactNode;
-  /** Task status (server), last run (client), tags (server, all required) and archive (server). */
+  /** Task status, last run, tags (all required) and archive, all applied by the server. */
   readonly filters: TasksPageFilters;
   readonly onFiltersChange: (filters: TasksPageFilters) => void;
   readonly hasMore: boolean;
   readonly loadingMore: boolean;
   readonly onLoadMore: () => void;
+  /** Grouping by status; without it the list is never grouped. */
+  readonly grouping?: TasksViewGrouping;
   readonly agents: readonly ScopedTaskAgent[];
   readonly runs: readonly ScopedTaskAgentRun[];
   /** Resolves run harness and model display names. */
@@ -152,8 +187,7 @@ export interface TasksViewProps {
     readonly ProviderInstanceEntry[]
   >;
   readonly status: "loading" | "ready" | "error" | "offline";
-  readonly errorMessage?: string;
-  /** Environments that are not connected while others answered: each gets a quiet note. */
+  /** Environments that are not connected while others answered. */
   readonly offlineEnvironmentIds?: readonly EnvironmentId[];
   readonly initialSelectedTaskKey?: string;
   readonly canMutateEnvironment: (environmentId: EnvironmentId) => boolean;
@@ -166,6 +200,10 @@ export interface TasksViewProps {
   readonly onOpenInPlanner?: (environmentId: EnvironmentId, taskId: string) => void;
   /** `panel` fits a right-panel surface: cards, filters behind a button, stacked details. */
   readonly layout?: "page" | "panel";
+  /** The panel's Worker tasks entry: no list header, the filter and + float over the list. */
+  readonly floatingControls?: boolean;
+  /** The thread beside a right-panel surface, whose panel opens the output's file links. */
+  readonly filePanelRef?: ScopedThreadRef;
 }
 
 function emptyForm(project?: TasksWebProject): TaskFormState {
@@ -173,7 +211,7 @@ function emptyForm(project?: TasksWebProject): TaskFormState {
     title: "",
     environmentId: project?.environmentId ?? null,
     projectId: project?.id ?? "",
-    status: "new",
+    status: DEFAULT_TASK_STATUS,
     tags: "",
     description: "",
   };
@@ -196,7 +234,142 @@ function errorDescription(error: unknown): string {
 }
 
 const DESCRIPTION_EDITOR_CLASS =
-  "min-h-36 w-full flex-1 px-3 py-2 text-lg leading-8 text-foreground";
+  "min-h-36 w-full flex-1 px-3 py-2 text-sm leading-relaxed text-foreground";
+const DETAIL_DESCRIPTION_EDITOR_CLASS =
+  "min-h-10 w-full px-3 py-1.5 text-sm leading-relaxed text-foreground";
+
+type TitleDraftState =
+  | { readonly kind: "editing"; readonly text: string; readonly dirty: boolean }
+  | { readonly kind: "saving"; readonly base: string; readonly text: string };
+
+/**
+ * Full wrapping task title at the top of the detail main column, editable in
+ * place. Holds the draft while focused so remote refreshes cannot clobber
+ * active typing, and drops a failed save cleanly.
+ */
+function DetailTitleHeading(props: {
+  readonly value: string;
+  readonly canEdit: boolean;
+  readonly disabled: boolean;
+  readonly onSave: (title: string) => Promise<boolean>;
+}) {
+  const gt = useGT();
+  const [draft, setDraft] = useState<TitleDraftState | null>(null);
+  const cancelledRef = useRef(false);
+  const value =
+    draft === null
+      ? props.value
+      : draft.kind === "editing"
+        ? draft.text
+        : draft.base === props.value
+          ? draft.text
+          : props.value;
+
+  if (!props.canEdit) {
+    return (
+      <h2 className="mb-2 break-words px-2 py-0.5 text-lg font-semibold leading-snug text-foreground">
+        {props.value}
+      </h2>
+    );
+  }
+
+  const commit = (raw: string) => {
+    if (draft?.kind === "editing" && !draft.dirty) {
+      setDraft(null);
+      return;
+    }
+    const title = raw.trim();
+    if (!title || title === props.value) {
+      setDraft(null);
+      return;
+    }
+    const base = props.value;
+    setDraft({ kind: "saving", base, text: title });
+    void props.onSave(title).then((saved) => {
+      if (!saved) {
+        setDraft((current) =>
+          current?.kind === "saving" && current.base === base && current.text === title
+            ? null
+            : current,
+        );
+      }
+    });
+  };
+
+  return (
+    <textarea
+      rows={1}
+      value={value}
+      disabled={props.disabled}
+      aria-label={gt("Task title")}
+      placeholder={gt("Task title…")}
+      className="field-sizing-content mb-2 block w-full resize-none overflow-hidden rounded-md bg-transparent px-2 py-0.5 text-lg font-semibold leading-snug text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:bg-accent/50 focus:bg-accent/50 focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
+      onFocus={() => {
+        cancelledRef.current = false;
+        setDraft({ kind: "editing", text: value, dirty: false });
+      }}
+      onChange={(event) => {
+        const text = event.currentTarget.value.replace(/[\r\n]+/g, " ");
+        setDraft({ kind: "editing", text, dirty: true });
+      }}
+      onBlur={(event) => {
+        if (cancelledRef.current) {
+          cancelledRef.current = false;
+          return;
+        }
+        commit(event.currentTarget.value);
+      }}
+      onKeyDown={(event) => {
+        if (event.nativeEvent?.isComposing || event.keyCode === 229) return;
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          cancelledRef.current = true;
+          setDraft(null);
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+/** Source thread row inside the Details list, linking directly to the originating thread. */
+function DetailSourceThreadRow(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly onOpen: (environmentId: EnvironmentId, threadId: ThreadId) => void;
+}) {
+  const gt = useGT();
+  const threadRef = useMemo(
+    () => scopeThreadRef(props.environmentId, props.threadId),
+    [props.environmentId, props.threadId],
+  );
+  const thread = useOmittedThreadShell(threadRef, true);
+  const unavailable = thread?.deletedAt != null;
+  const title = thread?.title || gt("Source thread");
+
+  return (
+    <DetailSidebarRow
+      label={gt("Source thread")}
+      controlSelector={unavailable ? undefined : "button"}
+    >
+      {unavailable ? (
+        <span className="truncate text-muted-foreground">{gt("Unavailable")}</span>
+      ) : (
+        <button
+          type="button"
+          className="min-w-0 max-w-full cursor-pointer truncate text-right text-sm font-normal leading-relaxed tracking-normal text-foreground hover:underline"
+          title={title}
+          onClick={() => props.onOpen(props.environmentId, props.threadId)}
+        >
+          {title}
+        </button>
+      )}
+    </DetailSidebarRow>
+  );
+}
 
 /**
  * A task's description in the table detail, saved when the field loses focus.
@@ -205,8 +378,10 @@ const DESCRIPTION_EDITOR_CLASS =
 function DetailDescriptionEditor(props: {
   readonly value: string;
   readonly disabled: boolean;
+  readonly onReady?: (() => void) | undefined;
   readonly onSave: (description: string) => void;
 }) {
+  const gt = useGT();
   const [draft, setDraft] = useState<{ readonly base: string; readonly text: string }>();
   const text = draft?.base === props.value ? draft.text : undefined;
   const textRef = useRef(text);
@@ -217,9 +392,10 @@ function DetailDescriptionEditor(props: {
     <LazyMarkdownEditor
       value={text ?? props.value}
       disabled={props.disabled}
-      placeholder="Description…"
-      ariaLabel="Task description"
-      className={DESCRIPTION_EDITOR_CLASS}
+      placeholder={gt("Description…")}
+      ariaLabel={gt("Task description")}
+      className={DETAIL_DESCRIPTION_EDITOR_CLASS}
+      onReady={props.onReady}
       onChange={(next) => {
         textRef.current = next;
         setDraft({ base: props.value, text: next });
@@ -232,22 +408,63 @@ function DetailDescriptionEditor(props: {
   );
 }
 
-function shortTaskId(id: string): string {
-  const displayId = id.startsWith("task-") ? id.slice("task-".length) : id;
-  return displayId.length > 8 ? `${displayId.slice(0, 8)}…` : displayId;
-}
+function TaskDescriptionSection(props: {
+  readonly title: string;
+  readonly defaultOpen: boolean;
+  readonly text: string | null;
+  readonly canEdit: boolean;
+  readonly disabled: boolean;
+  readonly onSave: (description: string) => void;
+}) {
+  const gt = useGT();
+  const [startedCollapsed] = useState(!props.defaultOpen);
+  const usesEditor = props.text !== null && props.canEdit;
+  const [editorReady, setEditorReady] = useState(false);
+  const [prevUsesEditor, setPrevUsesEditor] = useState(usesEditor);
+  if (prevUsesEditor !== usesEditor) {
+    setPrevUsesEditor(usesEditor);
+    if (editorReady) setEditorReady(false);
+  }
 
-function compareStatuses(left: string, right: string): number {
-  const leftIndex = STATUS_ORDER.indexOf(left.toLowerCase());
-  const rightIndex = STATUS_ORDER.indexOf(right.toLowerCase());
-  if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
-  if (leftIndex === -1) return 1;
-  if (rightIndex === -1) return -1;
-  return leftIndex - rightIndex;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- schedules post-paint chunk preload for a collapsed description editor
+  useEffect(() => {
+    if (!startedCollapsed || !usesEditor) return;
+    const timer = setTimeout(() => preloadMarkdownEditor(), 0);
+    return () => clearTimeout(timer);
+  }, [startedCollapsed, usesEditor]);
+
+  return (
+    <DetailSidebarSection
+      title={props.title}
+      defaultOpen={props.defaultOpen}
+      contentReady={!startedCollapsed || !usesEditor || editorReady}
+      onWarm={startedCollapsed && usesEditor ? preloadMarkdownEditor : undefined}
+    >
+      {props.text === null ? (
+        <p className="px-3 py-1.5 text-sm text-muted-foreground">{gt("Loading task…")}</p>
+      ) : props.canEdit ? (
+        <DetailDescriptionEditor
+          value={props.text}
+          disabled={props.disabled}
+          onReady={startedCollapsed ? () => setEditorReady(true) : undefined}
+          onSave={props.onSave}
+        />
+      ) : props.text.trim() ? (
+        <p className="whitespace-pre-wrap px-3 py-1.5 text-sm leading-relaxed text-foreground">
+          {props.text}
+        </p>
+      ) : (
+        <p className="px-3 py-1.5 text-sm text-muted-foreground">{gt("No description.")}</p>
+      )}
+    </DetailSidebarSection>
+  );
 }
 
 export function TaskReorderHandle(props: {
-  readonly task: ScopedTask;
+  readonly task: ScopedTaskRow;
+  /** Translated by the caller, which has `useGT()`. */
+  readonly ariaLabel: string;
+  readonly title: string;
   readonly enabled: boolean;
   readonly onDragStart: () => void;
   readonly onDragEnd: () => void;
@@ -259,8 +476,8 @@ export function TaskReorderHandle(props: {
       draggable={props.enabled}
       disabled={!props.enabled}
       className="cursor-grab rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"
-      aria-label={`Reorder ${props.task.title}`}
-      title="Drag to reorder globally. Worker queues run from the bottom, so lower runs sooner. With filters, the task is placed between the visible neighbors; hidden tasks keep their order."
+      aria-label={props.ariaLabel}
+      title={props.title}
       onClick={(event) => event.stopPropagation()}
       onDragStart={(event) => {
         event.stopPropagation();
@@ -281,6 +498,8 @@ export function TaskReorderHandle(props: {
 }
 
 export function TasksView(props: TasksViewProps) {
+  const gt = useGT();
+  const m = useMessages();
   const [createModeOpen, setCreateModeOpen] = useState(false);
   const [detailRuns, setDetailRuns] = useState<readonly ScopedTaskAgentRun[]>([]);
   const [detailRunsStatus, setDetailRunsStatus] = useState<"idle" | "loading" | "ready" | "error">(
@@ -291,9 +510,9 @@ export function TasksView(props: TasksViewProps) {
   const pendingDetailRefresh = useRef<(() => void) | null>(null);
   const detailPagesRef = useRef(1);
   const [runFilter, setRunFilter] = useState(ALL_FILTER);
-  const [activeRuns, setActiveRuns] = useState<readonly ScopedTaskAgentRun[]>([]);
   const [moreRuns, setMoreRuns] = useState(false);
   const [fetchedTask, setFetchedTask] = useState<ScopedTask | null>(null);
+  /** English from `msg()`, shown through `useMessages()`. */
   const [detailError, setDetailError] = useState<string | null>(null);
   const [form, setForm] = useState<TaskFormState>(() => emptyForm(props.projects[0]));
   const [saving, setSaving] = useState(false);
@@ -301,19 +520,23 @@ export function TasksView(props: TasksViewProps) {
   const [updatingField, setUpdatingField] = useState<string | null>(null);
   const { projectFilter, filters, onFiltersChange } = props;
   const panel = props.layout === "panel";
+  // A window too narrow for two columns stacks the details under the output, as the panel does.
+  const stackedDetail = useMediaQuery({ max: 900 }) || panel;
   // The list's own width picks table or cards; the first measurement lands before paint.
   const [listElement, setListElement] = useState<HTMLDivElement | null>(null);
-  const [listWidth, setListWidth] = useState<number | null>(null);
+  // Before the list is measured the page shows the table; the right panel always shows cards.
+  const [listLayout, setListLayout] = useState<TaskListLayout>("table");
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- follows the list element's DOM width
   useLayoutEffect(() => {
     if (!listElement) return;
-    setListWidth(listElement.getBoundingClientRect().width);
+    const measure = (width: number) => setListLayout((shown) => taskListLayout(width, shown));
+    measure(listElement.getBoundingClientRect().width);
     return observeResize(listElement, (entries) => {
       const entry = entries.at(-1);
-      if (entry) setListWidth(entry.contentRect.width);
+      if (entry) measure(entry.contentRect.width);
     });
   }, [listElement]);
-  const cards = taskListLayout({ panel, width: listWidth }) === "cards";
+  const cards = panel || listLayout === "cards";
   const statusFilter = filters.status;
   const archiveFilter: TaskArchiveFilter = filters.archive ?? "active";
   const [history, setHistory] = useState<{
@@ -351,57 +574,102 @@ export function TasksView(props: TasksViewProps) {
       props.tasks.find((task) => taskKey(task) === selectedTaskKey) ??
       null)
     : null;
-  const hasSelectedTaskOutput = Boolean(selectedTask?.output?.trim());
+  // List rows can leave out the text; details show it once their own read has it.
+  const selectedTaskText = selectedTask === null ? null : scopedTaskWithText(selectedTask);
+  const hasSelectedTaskOutput = Boolean(selectedTaskText?.output?.trim());
   const projectsByKey = useMemo(
     () => new Map(props.projects.map((project) => [projectKey(project), project] as const)),
     [props.projects],
   );
-  // A card's project chip offers the projects of its task's environment.
-  const plannerProjectsByEnvironment = useMemo(() => {
-    const byEnvironment = new Map<EnvironmentId, PlannerProject[]>();
-    for (const project of props.projects) {
-      const list = byEnvironment.get(project.environmentId) ?? [];
-      list.push({
-        id: project.id,
-        name: project.name,
-        favicon: project.favicon,
-        inbox: isInboxRoot(project.workspaceRoot),
-      });
-      byEnvironment.set(project.environmentId, list);
-    }
-    return byEnvironment;
-  }, [props.projects]);
   const selectedTaskProject = selectedTask
     ? (projectsByKey.get(taskProjectKey(selectedTask)) ?? null)
     : null;
+  // The details' project picker lists the task's environment, one entry per sidebar group.
+  const selectedTaskEnvironmentProjects = useMemo(
+    () =>
+      pickerProjects(
+        props.projects.filter((project) => project.environmentId === selectedTask?.environmentId),
+      ),
+    [props.projects, selectedTask?.environmentId],
+  );
   const taskThreads = detailRuns;
+  const latestRun = detailRuns.reduce<ScopedTaskAgentRun | undefined>(
+    (latest, run) => (latest === undefined || run.startedAt > latest.startedAt ? run : latest),
+    undefined,
+  );
   const mutableProjects = props.projects.filter((project) =>
     props.canMutateEnvironment(project.environmentId),
   );
-  const hasReadOnlyProjects = mutableProjects.length < props.projects.length;
+  const projectOptions = useMemo(() => pickerProjects(mutableProjects), [mutableProjects]);
+  const selectedProjectOption = useMemo(
+    () => (selectedProject ? pickerProjectFor(projectOptions, selectedProject) : undefined),
+    [projectOptions, selectedProject],
+  );
+  const workflowVersion = taskWorkflowVersionOf(props.grouping?.settings ?? {});
+  const compareStatuses = useMemo(
+    () => statusComparator(taskStatusesFor(workflowVersion)),
+    [workflowVersion],
+  );
   const statusOptions = useMemo(
     () =>
-      [
-        ...new Set([
+      taskStatusOptions(
+        [
           ...props.statuses,
           ...(statusFilter === ALL_FILTER ? [] : [statusFilter]),
           ...(selectedTask ? [selectedTask.status] : []),
-        ]),
-      ].sort(compareStatuses),
-    [props.statuses, selectedTask, statusFilter],
+        ],
+        workflowVersion,
+      ).sort(compareStatuses),
+    [compareStatuses, props.statuses, selectedTask, statusFilter, workflowVersion],
   );
-  // The last-run filter is applied here, to the rows the server returned.
+  // The server applies the last-run filter; an older one does not, so the loaded rows are checked too.
   const filteredTasks = useMemo(
     () => optimisticTasks.filter((task) => matchesLastRunFilter(task, filters.lastRun)),
     [filters.lastRun, optimisticTasks],
   );
+  const grouping = props.grouping;
+  const grouped = grouping?.settings.groupByStatus ?? false;
+  const { groups, order: groupOrder } = useMemo(
+    () =>
+      taskStatusGroups({
+        tasks: grouped ? filteredTasks : [],
+        counts: grouping?.counts ?? new Map(),
+        statuses: props.statuses,
+        statusFilter: statusFilter === ALL_FILTER ? null : statusFilter,
+        order: grouping?.settings.statusGroupOrder ?? [],
+        open: grouping?.settings.statusGroupOpen ?? {},
+        workflowVersion,
+      }),
+    [filteredTasks, grouped, grouping, props.statuses, statusFilter, workflowVersion],
+  );
+  // Open groups whose rows are loaded: only a task that shows up in one of these is new.
+  const readyGroups = useMemo(
+    () =>
+      grouped
+        ? new Set(
+            groups
+              .filter((group) => group.open && grouping?.paging.get(group.key)?.loading !== true)
+              .map((group) => group.key),
+          )
+        : LIST_ONLY,
+    [grouped, grouping?.paging, groups],
+  );
   // The loaded rows, not the optimistic copy, which trails a page by a render.
-  const { arrivals, settle: settleArrival } = useTaskArrivals(
-    props.tasks.map(taskKey),
+  const { arrivals, settle: settleArrivals } = useTaskArrivals(
+    props.tasks.map((task) => ({
+      key: taskKey(task),
+      group: grouped ? statusGroupKey(task.status) : "",
+    })),
     // A computer going offline or coming back resets the baseline, so its rows don't replay as new.
-    JSON.stringify([projectFilter?.key ?? null, filters, props.offlineEnvironmentIds ?? []]),
+    JSON.stringify([
+      projectFilter?.key ?? null,
+      filters,
+      props.offlineEnvironmentIds ?? [],
+      grouped,
+    ]),
     props.status === "ready",
     props.loadingMore,
+    readyGroups,
   );
   const triggerTags = useMemo(() => agentTriggerTags(props.agents), [props.agents]);
   const tagOptions = useMemo(
@@ -411,15 +679,26 @@ export function TasksView(props: TasksViewProps) {
       ].sort((left, right) => left.localeCompare(right)),
     [filters.tags, props.tasks, triggerTags],
   );
+  // Hide what the filter already says: the project with one project chosen, and the
+  // status in a list grouped by status (a card keeps its status select, which changes it).
   const showProjectColumn = projectFilter === null;
+  const showStatusColumn = !grouped;
   const environmentCount = new Set(props.tasks.map(({ environmentId }) => environmentId)).size;
+
+  const [groupRowLimits, setGroupRowLimits] = useState<Readonly<Record<string, number>>>({});
 
   const persistVisibleMove = useCallback(
     async (task: ScopedTaskListItem, directionOrTarget: "up" | "down" | ScopedTaskListItem) => {
       if (reorderInFlightRef.current || !props.canMutateEnvironment(task.environmentId)) return;
       const result = planVisibleTaskMove({
         tasks: optimisticTasks,
-        visibleTasks: filteredTasks,
+        // In a grouped list a task moves among its own group's shown tasks only.
+        visibleTasks: grouped
+          ? tasksOfGroup(filteredTasks, task.status).slice(
+              0,
+              groupRowLimits[statusGroupKey(task.status)] ?? GROUP_FIRST_ROWS,
+            )
+          : filteredTasks,
         task,
         directionOrTarget,
       });
@@ -427,7 +706,7 @@ export function TasksView(props: TasksViewProps) {
         if (result.reason === "cross-environment") {
           toastManager.add({
             type: "error",
-            title: "Tasks can only be reordered within one environment",
+            title: gt("Tasks can only be reordered within one environment"),
           });
         }
         return;
@@ -437,7 +716,7 @@ export function TasksView(props: TasksViewProps) {
       reorderInFlightRef.current = true;
       try {
         const client = props.getClient(task.environmentId);
-        if (!client) throw new Error("The computer with your tasks isn't connected.");
+        if (!client) throw new Error(gt("The computer with your tasks isn't connected."));
         await persistPlannedTaskMove({
           previousTasks: previous,
           plan: result.plan,
@@ -449,7 +728,7 @@ export function TasksView(props: TasksViewProps) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Couldn't move the task",
+            title: gt("Couldn't move the task"),
             description: errorDescription(error),
           }),
         );
@@ -457,17 +736,24 @@ export function TasksView(props: TasksViewProps) {
         reorderInFlightRef.current = false;
       }
     },
-    [filteredTasks, optimisticTasks, props],
+    [filteredTasks, gt, grouped, groupRowLimits, optimisticTasks, props],
   );
 
   const dropOn = (task: ScopedTaskListItem) => {
     const dragged = optimisticTasks.find((candidate) => taskKey(candidate) === draggedTaskKey);
     setDraggedTaskKey(null);
-    if (dragged && taskKey(dragged) !== taskKey(task)) void persistVisibleMove(dragged, task);
+    if (!dragged || taskKey(dragged) === taskKey(task)) return;
+    // A task's status changes only through its status picker, never by a drop on another group.
+    if (grouped && !sameStatusGroup(dragged.status, task.status)) return;
+    void persistVisibleMove(dragged, task);
   };
   const reorderHandle = (task: ScopedTaskListItem) => (
     <TaskReorderHandle
       task={task}
+      ariaLabel={gt("Reorder {title}", { title: task.title })}
+      title={gt(
+        "Drag to reorder globally. Worker queues run from the bottom, so lower runs sooner. With filters, the task is placed between the visible neighbors; hidden tasks keep their order.",
+      )}
       enabled={props.canMutateEnvironment(task.environmentId)}
       onDragStart={() => setDraggedTaskKey(taskKey(task))}
       onDragEnd={() => setDraggedTaskKey(null)}
@@ -483,9 +769,9 @@ export function TasksView(props: TasksViewProps) {
     setDetailRunsStatus("idle");
     selectTaskKey(null);
     // Preselect the filtered project (its members, in the sidebar's order).
-    setForm(emptyForm(preferredProject(mutableProjects, orderedProjectFilterKeys(projectFilter))));
+    setForm(emptyForm(preferredProject(projectOptions, orderedProjectFilterKeys(projectFilter))));
     setCreateModeOpen(true);
-  }, [mutableProjects, projectFilter, selectTaskKey]);
+  }, [projectOptions, projectFilter, selectTaskKey]);
 
   // Details subscribe to their own task, including deep links outside loaded pages.
   useEffect(() => {
@@ -498,7 +784,7 @@ export function TasksView(props: TasksViewProps) {
     const id = selectedTaskKey.slice(separator + 1);
     const client = props.getClient(environmentId);
     if (!client || separator < 1 || !id.trim()) {
-      setDetailError("Couldn't open this task: the computer with your tasks isn't connected.");
+      setDetailError(msg("Couldn't open this task: the computer with your tasks isn't connected."));
       return;
     }
     const refresh = () => {
@@ -508,7 +794,7 @@ export function TasksView(props: TasksViewProps) {
           if (cancelled || request !== current) return;
           if (!task) {
             setFetchedTask(null);
-            setDetailError("Task not found.");
+            setDetailError(msg("Task not found."));
             return;
           }
           setDetailError(null);
@@ -522,21 +808,15 @@ export function TasksView(props: TasksViewProps) {
               )?.name ?? null,
           });
         },
-        () => {
-          if (!cancelled && request === current) setDetailError("Could not refresh task.");
-        },
+        // A failed refresh keeps what the details show, or "Loading task…"; the next change retries.
+        () => undefined,
       );
     };
-    const unsubscribe = client.tasks.subscribe(
-      (event) => {
-        if (event.kind !== "sync" && !event.taskIds.includes(TaskId.make(id))) return;
-        clearTimeout(timer);
-        timer = setTimeout(refresh, 150);
-      },
-      () => {
-        if (!cancelled) setDetailError("Task updates are temporarily unavailable.");
-      },
-    );
+    const unsubscribe = client.tasks.subscribe((event) => {
+      if (event.kind !== "sync" && !event.taskIds.includes(TaskId.make(id))) return;
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 150);
+    });
     const foreground = () => {
       if (document.visibilityState === "visible") refresh();
     };
@@ -550,7 +830,7 @@ export function TasksView(props: TasksViewProps) {
   }, [selectedTaskKey, props.getClient, props.projects]);
 
   const loadTaskRuns = useCallback(
-    (task: ScopedTask, append = false, background = false) => {
+    (task: ScopedTaskRow, append = false, background = false) => {
       const requestId = ++detailRequestRef.current;
       if (!background) setDetailRunsStatus("loading");
       const client = props.getClient(task.environmentId);
@@ -587,25 +867,8 @@ export function TasksView(props: TasksViewProps) {
         }
         return { runs, hasMore };
       };
-      const fetchActive = async () => {
-        const runs: ScopedTaskAgentRun[] = [];
-        let cursor: { startedAt: string; id: ScopedTaskAgentRun["id"] } | undefined;
-        while (detailRequestRef.current === requestId) {
-          const result = await client.agents.searchRuns({
-            taskId: task.id,
-            activeOnly: true,
-            limit: 500,
-            ...(cursor ? { cursor } : {}),
-          });
-          runs.push(...result.runs.map((run) => ({ ...run, environmentId: task.environmentId })));
-          const tail = result.runs.at(-1);
-          if (result.runs.length < 500 || !tail) break;
-          cursor = { startedAt: tail.startedAt, id: tail.id };
-        }
-        return { runs };
-      };
-      void Promise.all([fetchHistory(), fetchActive()]).then(
-        ([result, active]) => {
+      void fetchHistory().then(
+        (result) => {
           if (detailRequestRef.current !== requestId) return;
           const scoped = result.runs.map((run) => ({ ...run, environmentId: task.environmentId }));
           setDetailRuns((previous) => [
@@ -613,7 +876,6 @@ export function TasksView(props: TasksViewProps) {
               (append ? [...previous, ...scoped] : scoped).map((run) => [run.id, run]),
             ).values(),
           ]);
-          setActiveRuns(active.runs.map((run) => ({ ...run, environmentId: task.environmentId })));
           setMoreRuns(result.hasMore);
           if (append) detailPagesRef.current += 1;
           finished();
@@ -633,8 +895,8 @@ export function TasksView(props: TasksViewProps) {
   loadTaskRunsRef.current = loadTaskRuns;
 
   const openTask = useCallback(
-    (task: ScopedTask, status = ALL_FILTER) => {
-      setFetchedTask(task);
+    (task: ScopedTaskRow, status = ALL_FILTER) => {
+      setFetchedTask(scopedTaskWithText(task));
       setRunFilter(status);
       selectTaskKey(taskKey(task));
     },
@@ -643,7 +905,6 @@ export function TasksView(props: TasksViewProps) {
 
   useEffect(() => {
     setDetailRuns([]);
-    setActiveRuns([]);
     setMoreRuns(false);
     detailPagesRef.current = 1;
     if (selectedTask) loadTaskRunsRef.current(selectedTask);
@@ -693,7 +954,7 @@ export function TasksView(props: TasksViewProps) {
   }, [selectedTask?.id, selectedTask?.environmentId, props.getClient]);
 
   const updateTaskInline = useCallback(
-    async (task: ScopedTask, field: string, update: InlineTaskUpdate): Promise<boolean> => {
+    async (task: ScopedTaskRow, field: string, update: InlineTaskUpdate): Promise<boolean> => {
       const client = props.getClient(task.environmentId);
       if (!client) return false;
       setUpdatingField(field);
@@ -705,7 +966,7 @@ export function TasksView(props: TasksViewProps) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Couldn't save the task",
+            title: gt("Couldn't save the task"),
             description: errorDescription(error),
           }),
         );
@@ -714,7 +975,7 @@ export function TasksView(props: TasksViewProps) {
         setUpdatingField(null);
       }
     },
-    [props],
+    [gt, props],
   );
 
   // Status and archive changes always touch updatedAt, so it keys the reload.
@@ -748,14 +1009,18 @@ export function TasksView(props: TasksViewProps) {
     if (!selectedTask || history.taskKey !== taskKey(selectedTask)) return [];
     const agentIdByRun = new Map(detailRuns.map((run) => [run.id as string, run.agentId]));
     const agentNames = new Map(props.agents.map((agent) => [agent.id as string, agent.name]));
-    return taskHistoryEntries(history.events, (runId) => {
-      const agentId = agentIdByRun.get(runId);
-      return agentId === undefined ? null : (agentNames.get(agentId) ?? null);
-    });
-  }, [detailRuns, history, props.agents, selectedTask]);
+    return taskHistoryEntries(
+      history.events,
+      (runId) => {
+        const agentId = agentIdByRun.get(runId);
+        return agentId === undefined ? null : (agentNames.get(agentId) ?? null);
+      },
+      gt,
+    );
+  }, [detailRuns, gt, history, props.agents, selectedTask]);
 
   const setTaskArchived = useCallback(
-    async (task: ScopedTask, archived: boolean) => {
+    async (task: ScopedTaskRow, archived: boolean) => {
       const client = props.getClient(task.environmentId);
       if (!client) return;
       setUpdatingField("archive");
@@ -765,14 +1030,14 @@ export function TasksView(props: TasksViewProps) {
         if (fresh) setFetchedTask({ ...task, ...fresh });
         toastManager.add({
           type: "success",
-          title: archived ? "Task archived" : "Task unarchived",
+          title: archived ? gt("Task archived") : gt("Task unarchived"),
           description: task.title,
         });
       } catch (error) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: archived ? "Failed to archive task" : "Failed to unarchive task",
+            title: archived ? gt("Failed to archive task") : gt("Failed to unarchive task"),
             description: errorDescription(error),
           }),
         );
@@ -780,7 +1045,7 @@ export function TasksView(props: TasksViewProps) {
         setUpdatingField(null);
       }
     },
-    [props],
+    [gt, props],
   );
 
   const save = useCallback(async () => {
@@ -792,10 +1057,10 @@ export function TasksView(props: TasksViewProps) {
       toastManager.add({
         type: "error",
         title: !target
-          ? "Select a project"
+          ? gt("Select a project")
           : !title
-            ? "Task title is required"
-            : "Task status is required",
+            ? gt("Task title is required")
+            : gt("Task status is required"),
       });
       return;
     }
@@ -803,8 +1068,8 @@ export function TasksView(props: TasksViewProps) {
     if (!client) {
       toastManager.add({
         type: "error",
-        title: "Couldn't create the task",
-        description: "The computer with your tasks isn't connected. Reconnect, then try again.",
+        title: gt("Couldn't create the task"),
+        description: gt("The computer with your tasks isn't connected. Reconnect, then try again."),
       });
       return;
     }
@@ -820,14 +1085,14 @@ export function TasksView(props: TasksViewProps) {
         // The table is the agents' side; the person's own tasks are made in the planner.
         audience: "agent",
       });
-      toastManager.add({ type: "success", title: "Task created", description: title });
+      toastManager.add({ type: "success", title: gt("Task created"), description: title });
       setCreateModeOpen(false);
       props.onReload();
     } catch (error) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Couldn't create the task",
+          title: gt("Couldn't create the task"),
           description: errorDescription(error),
         }),
       );
@@ -835,30 +1100,204 @@ export function TasksView(props: TasksViewProps) {
       createInFlightRef.current = false;
       setSaving(false);
     }
-  }, [form, props, selectedProject]);
+  }, [form, gt, props, selectedProject]);
 
-  const detailOuterClass = panel ? "flex w-full min-w-0 py-3" : "flex min-h-0 w-full flex-1 py-5";
-  const detailInnerClass = panel
-    ? "flex min-w-0 flex-1 flex-col gap-3"
+  // Grouped, a group shows by its server count, even closed with no rows loaded.
+  const listEmpty = grouped
+    ? groups.length === 0
+    : props.tasks.length === 0 || filteredTasks.length === 0;
+  const filtersNarrow =
+    props.tasks.length > 0 ||
+    projectFilter !== null ||
+    statusFilter !== ALL_FILTER ||
+    filters.lastRun !== ALL_FILTER ||
+    filters.tags.length > 0 ||
+    archiveFilter !== "active";
+  const renderCard = (task: ScopedTaskListItem) => (
+    <div
+      key={taskKey(task)}
+      className="grid"
+      data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
+      onAnimationEnd={(event) => {
+        if (event.animationName === "task-arrival-tint") settleArrivals([taskKey(task)]);
+      }}
+    >
+      <div className="min-h-0 overflow-hidden">
+        <AgentTaskCard
+          task={task}
+          project={projectsByKey.get(taskProjectKey(task)) ?? null}
+          showProject={showProjectColumn}
+          statuses={
+            statusOptions.some((status) => sameTaskStatus(status, task.status))
+              ? statusOptions
+              : [...statusOptions, task.status].sort(compareStatuses)
+          }
+          canMutate={props.canMutateEnvironment(task.environmentId)}
+          dragged={draggedTaskKey === taskKey(task)}
+          reorderable={props.canMutateEnvironment(task.environmentId)}
+          quoteDraggable={panel}
+          onDragStart={() => setDraggedTaskKey(taskKey(task))}
+          onDragEnd={() => setDraggedTaskKey(null)}
+          onMove={(direction) => void persistVisibleMove(task, direction)}
+          onOpen={() => openTask(task)}
+          onStatusChange={(status) => void updateTaskInline(task, "status", { status })}
+          onDrop={() => dropOn(task)}
+        />
+      </div>
+    </div>
+  );
+  // Auto layout: Runs (w-px) is as narrow as its numbers, and Title (max-w-0) truncates
+  // and takes the width the other columns leave.
+  const tableHead = (
+    <thead className="border-b border-border text-muted-foreground">
+      <tr>
+        <th className="w-12 py-3 pr-2 font-medium">
+          <span className="sr-only">
+            {gt("Order", { $context: "column of task order handles" })}
+          </span>
+        </th>
+        {showProjectColumn ? <ProjectIconHeader /> : null}
+        <th className="max-w-0 py-3 pr-4 font-medium">{gt("Title")}</th>
+        {showStatusColumn ? <th className="w-40 px-4 py-3 font-medium">{gt("Status")}</th> : null}
+        <th className="w-56 px-4 py-3 font-medium">{gt("Tags")}</th>
+        <th className="w-px py-3 pl-4 text-right font-medium whitespace-nowrap">
+          {gt("Runs", { $context: "noun: a task's worker runs" })}
+        </th>
+      </tr>
+    </thead>
+  );
+  const renderRow = (task: ScopedTaskListItem) => {
+    const taskProject = projectsByKey.get(taskProjectKey(task)) ?? null;
+    return (
+      <tr
+        key={taskKey(task)}
+        data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
+        onAnimationEnd={(event) => {
+          if (event.animationName === "task-arrival-tint") settleArrivals([taskKey(task)]);
+        }}
+        className={`cursor-pointer border-b border-border transition-colors hover:bg-muted/20 ${
+          draggedTaskKey === taskKey(task) ? "opacity-50" : ""
+        }`}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          dropOn(task);
+        }}
+        onClick={() => openTask(task)}
+      >
+        <td className="py-3 pr-2 align-middle">{reorderHandle(task)}</td>
+        {showProjectColumn ? (
+          <ProjectIconCell project={taskProject?.favicon ?? null} name={task.projectName} />
+        ) : null}
+        <td className="max-w-0 py-4 pr-4 align-middle">
+          <button
+            type="button"
+            className="block max-w-full truncate text-left font-medium text-foreground hover:underline"
+            onClick={(event) => {
+              event.stopPropagation();
+              openTask(task);
+            }}
+          >
+            {task.title}
+          </button>
+          {taskMetadataLabel(task) || (!showStatusColumn && task.archivedAt) ? (
+            <div className="truncate text-muted-foreground">
+              {/* Without the Status column, "Archived" moves under the title, as on a card. */}
+              {[
+                !showStatusColumn && task.archivedAt
+                  ? gt("Archived", { $context: "status of an archived task" })
+                  : null,
+                taskMetadataLabel(task),
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </div>
+          ) : null}
+        </td>
+        {showStatusColumn ? (
+          <td className="px-4 py-4 align-middle whitespace-nowrap">
+            {task.status}
+            {task.archivedAt ? (
+              <span className="ml-2 text-muted-foreground">
+                {gt("Archived", { $context: "status of an archived task" })}
+              </span>
+            ) : null}
+          </td>
+        ) : null}
+        <td className="max-w-56 px-4 py-4 align-middle">
+          <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
+        </td>
+        <td className="py-4 pl-4 text-right align-middle whitespace-nowrap">
+          <TableRunCounts
+            groups={groupTaskRunCounts(task.runCounts)}
+            onSelect={(group) => openTask(task, group.status)}
+          />
+        </td>
+      </tr>
+    );
+  };
+
+  const groupBySelect = grouping
+    ? {
+        groupByStatus: grouped,
+        onGroupByStatusChange: (groupByStatus: boolean) =>
+          grouping.onSettingsChange({ groupByStatus }),
+      }
+    : {};
+  // A highlight cut short by closing its group does not play again when the group opens.
+  const setGroupOpen = (group: TaskStatusGroup<ScopedTaskListItem>, open: boolean) => {
+    settleArrivals(group.tasks.map(taskKey));
+    grouping?.onSettingsChange({ statusGroupOpen: { [group.key]: open } });
+  };
+  const groupRows = (group: TaskStatusGroup<ScopedTaskListItem>) =>
+    group.tasks.slice(0, groupRowLimits[group.key] ?? GROUP_FIRST_ROWS);
+  // The group's next rows, loading the server's next page when the loaded rows run out.
+  const groupShowMore = (group: TaskStatusGroup<ScopedTaskListItem>, row: boolean) => {
+    const limit = groupRowLimits[group.key] ?? GROUP_FIRST_ROWS;
+    const paging = grouping?.paging.get(group.key);
+    const hidden = Math.max(group.count, group.tasks.length) - limit;
+    if (!grouping || hidden <= 0 || (group.tasks.length <= limit && !paging?.hasMore)) return null;
+    return (
+      <TaskGroupShowMore
+        row={row}
+        columnCount={showProjectColumn ? 5 : 4}
+        hidden={hidden}
+        onShowMore={() => {
+          const next = limit + GROUP_MORE_ROWS;
+          setGroupRowLimits((limits) => ({ ...limits, [group.key]: next }));
+          if (group.tasks.length < next && paging?.hasMore) grouping.onLoadGroup(group.key);
+        }}
+      />
+    );
+  };
+
+  const detailOuterClass = stackedDetail
+    ? "flex w-full min-w-0 py-3"
+    : "flex min-h-0 w-full flex-1 py-5";
+  const detailInnerClass = stackedDetail
+    ? "flex min-w-0 flex-1 flex-col"
     : "flex min-h-0 min-w-0 flex-1 gap-5";
 
   return (
     <WorkspaceViewLayout
       variant={props.layout}
+      floatingControls={props.floatingControls === true}
       {...(selectedTask
         ? {}
         : createModeOpen
-          ? { title: "New task" }
+          ? { title: gt("New task") }
           : { switches: props.viewSwitch })}
       action={
         selectedTask
           ? props.canMutateEnvironment(selectedTask.environmentId)
             ? {
-                ariaLabel: selectedTask.archivedAt ? "Unarchive task" : "Archive task",
+                ariaLabel: selectedTask.archivedAt ? gt("Unarchive task") : gt("Archive task"),
                 track: selectedTask.archivedAt ? "tasks.unarchive" : "tasks.archive",
                 disabled: updatingField === "archive",
                 hideIcon: true,
-                label: selectedTask.archivedAt ? "Unarchive" : "Archive",
+                label: selectedTask.archivedAt
+                  ? gt("Unarchive", { $context: "button that unarchives a task" })
+                  : gt("Archive", { $context: "button that archives a task" }),
                 onClick: () => {
                   void setTaskArchived(selectedTask, selectedTask.archivedAt === null);
                 },
@@ -866,18 +1305,18 @@ export function TasksView(props: TasksViewProps) {
             : undefined
           : createModeOpen
             ? {
-                ariaLabel: "Create task",
+                ariaLabel: gt("Create task"),
                 track: "tasks.create_save",
                 disabled: mutableProjects.length === 0 || saving,
                 hideIcon: true,
-                label: "Create",
+                label: gt("Create", { $context: "button that creates a task" }),
                 onClick: () => {
                   void save();
                 },
               }
             : SHOW_MANUAL_CREATE_ACTIONS.tasks
               ? {
-                  ariaLabel: "Create task",
+                  ariaLabel: gt("Create task"),
                   track: "tasks.create",
                   disabled: mutableProjects.length === 0 || saving,
                   onClick: openCreate,
@@ -887,7 +1326,7 @@ export function TasksView(props: TasksViewProps) {
       leadingAction={
         selectedTask || createModeOpen
           ? {
-              ariaLabel: selectedTask ? "Back to tasks" : "Cancel task creation",
+              ariaLabel: selectedTask ? gt("Back to tasks") : gt("Cancel task creation"),
               track: selectedTask ? "tasks.back" : "tasks.create_cancel",
               disabled: createModeOpen && saving,
               icon: <ArrowLeftIcon className="size-4" />,
@@ -902,37 +1341,93 @@ export function TasksView(props: TasksViewProps) {
       toolbar={
         selectedTask ? (
           <>
-            <span className="shrink-0 text-sm font-medium text-blue-400" title={selectedTask.id}>
-              {shortTaskId(selectedTask.id)}
-            </span>
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
               {selectedTask.title}
             </span>
             {selectedTask.archivedAt ? (
-              <span className="shrink-0 text-sm text-muted-foreground">Archived</span>
+              <span className="shrink-0 text-sm text-muted-foreground">
+                {gt("Archived", { $context: "status of an archived task" })}
+              </span>
             ) : null}
+            <Menu>
+              <MenuTrigger
+                render={<Button size="icon-sm" variant="outline" aria-label={gt("More actions")} />}
+              >
+                <MoreHorizontalIcon />
+              </MenuTrigger>
+              <MenuPopup align="end">
+                <MenuItem
+                  onClick={() => {
+                    void writeTextToClipboard(selectedTask.id).then(
+                      (copied) => {
+                        if (copied)
+                          toastManager.add({ type: "success", title: gt("Task ID copied") });
+                      },
+                      () =>
+                        toastManager.add({
+                          type: "error",
+                          title: gt("Could not copy task ID"),
+                        }),
+                    );
+                  }}
+                >
+                  {gt("Copy task ID")}
+                </MenuItem>
+                {selectedTask.kind !== "routine" &&
+                props.canMutateEnvironment(selectedTask.environmentId) ? (
+                  <MenuItem
+                    disabled={updatingField === "audience"}
+                    onClick={() => {
+                      const task = selectedTask;
+                      const audience = task.audience === "agent" ? "person" : "agent";
+                      void updateTaskInline(task, "audience", { audience }).then((moved) => {
+                        if (!moved) return;
+                        toastAudienceMoved(
+                          audience,
+                          task.title,
+                          () =>
+                            audience === "person"
+                              ? props.onOpenInPlanner?.(task.environmentId, task.id)
+                              : selectTaskKey(taskKey(task)),
+                          gt,
+                        );
+                      });
+                    }}
+                  >
+                    {selectedTask.audience === "agent"
+                      ? gt("Move to my planner")
+                      : gt("Move to workers")}
+                  </MenuItem>
+                ) : null}
+              </MenuPopup>
+            </Menu>
           </>
         ) : createModeOpen ? undefined : (
           <>
-            <span className="min-w-0 flex-1" />
             {cards ? (
-              <TaskFiltersButton
-                filters={filters}
-                onFiltersChange={onFiltersChange}
-                statusOptions={statusOptions}
-                tagOptions={tagOptions}
-                projectSelect={props.projectSelect}
-                projectChosen={projectFilter !== null}
-                onProjectReset={() => props.onProjectFilterReset?.()}
-              />
+              // A margin, not a spacer, pushes it right: a spacer adds a gap the phone header lacks.
+              <div className="ms-auto flex shrink-0">
+                <TaskFiltersButton
+                  filters={filters}
+                  onFiltersChange={onFiltersChange}
+                  statusOptions={statusOptions}
+                  tagOptions={tagOptions}
+                  {...groupBySelect}
+                  projectSelect={props.projectSelect}
+                  projectChosen={projectFilter !== null}
+                  onProjectReset={() => props.onProjectFilterReset?.()}
+                />
+              </div>
             ) : (
               <>
+                <span className="min-w-0 flex-1" />
                 {props.projectSelect}
                 <TaskFilterRow
                   filters={filters}
                   onFiltersChange={onFiltersChange}
                   statusOptions={statusOptions}
                   tagOptions={tagOptions}
+                  {...groupBySelect}
                 />
               </>
             )}
@@ -952,80 +1447,67 @@ export function TasksView(props: TasksViewProps) {
       {selectedTask ? (
         <div className={detailOuterClass}>
           <div className={detailInnerClass}>
-            <main className={panel ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto"}>
-              <DetailSidebarSection
-                key={`${taskKey(selectedTask)}:description`}
-                title="Description"
-                defaultOpen={!hasSelectedTaskOutput}
-              >
-                {props.canMutateEnvironment(selectedTask.environmentId) ? (
-                  <DetailDescriptionEditor
-                    key={`${taskKey(selectedTask)}:description-editor`}
-                    value={selectedTask.description}
-                    disabled={updatingField === "description"}
-                    onSave={(description) =>
-                      void updateTaskInline(selectedTask, "description", { description })
-                    }
-                  />
-                ) : selectedTask.description.trim() ? (
-                  <p className="whitespace-pre-wrap px-3 py-2 text-lg leading-8 text-foreground">
-                    {selectedTask.description}
-                  </p>
-                ) : (
-                  <p className="px-3 py-2 text-sm text-muted-foreground">No description.</p>
-                )}
-              </DetailSidebarSection>
+            <main className={stackedDetail ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto"}>
+              <DetailTitleHeading
+                key={`${taskKey(selectedTask)}:title`}
+                value={selectedTask.title}
+                canEdit={props.canMutateEnvironment(selectedTask.environmentId)}
+                disabled={updatingField === "title"}
+                onSave={(title) => updateTaskInline(selectedTask, "title", { title })}
+              />
+              {/* Opens once the text arrives, collapsed when the task has output, as before. */}
+              <TaskDescriptionSection
+                key={`${taskKey(selectedTask)}:description:${selectedTaskText === null ? "loading" : "loaded"}`}
+                title={gt("Description")}
+                defaultOpen={selectedTaskText !== null && !hasSelectedTaskOutput}
+                text={selectedTaskText === null ? null : selectedTaskText.description}
+                canEdit={props.canMutateEnvironment(selectedTask.environmentId)}
+                disabled={updatingField === "description"}
+                onSave={(description) =>
+                  void updateTaskInline(selectedTask, "description", { description })
+                }
+              />
               {hasSelectedTaskOutput ? (
                 <DetailSidebarSection
                   key={`${taskKey(selectedTask)}:output`}
-                  title="Output"
+                  title={gt("Output")}
                   defaultOpen
                 >
-                  <ChatMarkdown
-                    text={selectedTask.output ?? ""}
+                  <TaskOutput
+                    text={selectedTaskText?.output ?? ""}
+                    environmentId={selectedTask.environmentId}
                     cwd={selectedTaskProject?.workspaceRoot}
-                    className="px-3 py-2 text-lg leading-8 text-foreground"
-                    lineBreaks
+                    filePanelRef={props.filePanelRef}
+                    fileWindow={{
+                      projectName: selectedTask.projectName ?? "Project",
+                      projectId: selectedTask.projectId as ProjectId,
+                      onOpenInThread: latestRun
+                        ? (absolutePath, line) => {
+                            const threadRef = {
+                              environmentId: latestRun.environmentId,
+                              threadId: latestRun.threadId,
+                            };
+                            openFileInWorkerThread(threadRef, absolutePath, line);
+                            props.onOpenThread(latestRun.environmentId, latestRun.threadId);
+                          }
+                        : undefined,
+                    }}
+                    quoteSource={{
+                      id: selectedTask.id,
+                      title: selectedTask.title,
+                      projectId: selectedTask.projectId,
+                      rootThreadId: selectedTask.rootThreadId,
+                    }}
+                    onOpenThread={props.onOpenThread}
                   />
                 </DetailSidebarSection>
               ) : null}
             </main>
-            <DetailColumn stacked={panel}>
-              <DetailSidebarSection title="Details">
+            <DetailColumn stacked={stackedDetail}>
+              <DetailSidebarSection title={gt("Details")}>
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow
-                    label="Title"
-                    controlSelector={
-                      props.canMutateEnvironment(selectedTask.environmentId) ? "input" : undefined
-                    }
-                  >
-                    {props.canMutateEnvironment(selectedTask.environmentId) ? (
-                      <input
-                        key={`${selectedTask.updatedAt}:title`}
-                        className={DETAIL_INPUT_CLASS}
-                        defaultValue={selectedTask.title}
-                        disabled={updatingField === "title"}
-                        aria-label="Task title"
-                        onBlur={(event) => {
-                          const title = event.currentTarget.value.trim();
-                          if (title && title !== selectedTask.title)
-                            void updateTaskInline(selectedTask, "title", { title });
-                          else event.currentTarget.value = selectedTask.title;
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") event.currentTarget.blur();
-                          if (event.key === "Escape") {
-                            event.currentTarget.value = selectedTask.title;
-                            event.currentTarget.blur();
-                          }
-                        }}
-                      />
-                    ) : (
-                      selectedTask.title
-                    )}
-                  </DetailSidebarRow>
-                  <DetailSidebarRow
-                    label="Status"
+                    label={gt("Status")}
                     controlSelector={
                       props.canMutateEnvironment(selectedTask.environmentId) ? "button" : undefined
                     }
@@ -1042,7 +1524,7 @@ export function TasksView(props: TasksViewProps) {
                           className={DETAIL_SELECT_TRIGGER_CLASS}
                           style={{ color: "var(--foreground)" }}
                           variant="ghost"
-                          aria-label="Task status"
+                          aria-label={gt("Task status")}
                         >
                           <SelectValue>{selectedTask.status}</SelectValue>
                         </SelectTrigger>
@@ -1058,78 +1540,80 @@ export function TasksView(props: TasksViewProps) {
                       selectedTask.status
                     )}
                   </DetailSidebarRow>
-                  {selectedTask.kind === "routine" ? null : (
-                    <DetailSidebarRow
-                      label="For"
-                      controlSelector={
-                        props.canMutateEnvironment(selectedTask.environmentId)
-                          ? "button"
-                          : undefined
-                      }
-                    >
-                      {props.canMutateEnvironment(selectedTask.environmentId) ? (
-                        <Select
-                          value={selectedTask.audience}
-                          onValueChange={(audience) => {
-                            if (audience !== "agent" && audience !== "person") return;
-                            if (audience === selectedTask.audience) return;
-                            const task = selectedTask;
-                            void updateTaskInline(task, "audience", { audience }).then((moved) => {
-                              if (!moved) return;
-                              toastAudienceMoved(audience, task.title, () =>
-                                audience === "person"
-                                  ? props.onOpenInPlanner?.(task.environmentId, task.id)
-                                  : selectTaskKey(taskKey(task)),
-                              );
-                            });
-                          }}
+                  <DetailSidebarRow
+                    label={gt("Project")}
+                    controlSelector={
+                      props.canMutateEnvironment(selectedTask.environmentId) ? "button" : undefined
+                    }
+                  >
+                    {props.canMutateEnvironment(selectedTask.environmentId) ? (
+                      <Select
+                        value={
+                          (selectedTaskProject
+                            ? pickerProjectFor(selectedTaskEnvironmentProjects, selectedTaskProject)
+                                ?.id
+                            : undefined) ??
+                          selectedTask.projectId ??
+                          ""
+                        }
+                        onValueChange={(projectId) => {
+                          if (
+                            !projectId ||
+                            sameProjectGroup(props.projects, projectId, selectedTask.projectId)
+                          ) {
+                            return;
+                          }
+                          void updateTaskInline(selectedTask, "project", {
+                            projectId: projectId as ProjectId,
+                          });
+                        }}
+                      >
+                        <SelectTrigger
+                          className={DETAIL_SELECT_TRIGGER_CLASS}
+                          variant="ghost"
+                          aria-label={gt("Task project")}
                         >
-                          <SelectTrigger
-                            className={DETAIL_SELECT_TRIGGER_CLASS}
-                            style={{ color: "var(--foreground)" }}
-                            variant="ghost"
-                            aria-label="For"
-                            disabled={updatingField === "audience"}
-                          >
-                            <SelectValue>{AUDIENCE_LABELS[selectedTask.audience]}</SelectValue>
-                          </SelectTrigger>
-                          <SelectPopup>
-                            <SelectItem value="agent">{AUDIENCE_LABELS.agent}</SelectItem>
-                            <SelectItem value="person">{AUDIENCE_LABELS.person}</SelectItem>
-                          </SelectPopup>
-                        </Select>
-                      ) : (
-                        AUDIENCE_LABELS[selectedTask.audience]
-                      )}
-                    </DetailSidebarRow>
-                  )}
-                  <DetailSidebarRow label="ID">
-                    <button
-                      type="button"
-                      className="max-w-full truncate font-mono text-xs hover:underline"
-                      title="Copy task ID"
-                      onClick={() => {
-                        void navigator.clipboard.writeText(selectedTask.id).then(
-                          () => toastManager.add({ type: "success", title: "Task ID copied" }),
-                          () =>
-                            toastManager.add({ type: "error", title: "Could not copy task ID" }),
-                        );
-                      }}
-                    >
-                      {selectedTask.id}
-                    </button>
-                  </DetailSidebarRow>
-                  <DetailSidebarRow label="Project">
-                    <span className="flex min-w-0 items-center justify-end gap-2 text-foreground">
-                      {selectedTaskProject ? (
-                        <ProjectFavicon project={selectedTaskProject.favicon} className="size-4" />
-                      ) : null}
-                      <span className="truncate">{selectedTask.projectName ?? "No project"}</span>
-                    </span>
+                          <SelectValue>
+                            <span className="flex min-w-0 items-center justify-end gap-2 text-foreground">
+                              {selectedTaskProject ? (
+                                <ProjectFavicon
+                                  project={selectedTaskProject.favicon}
+                                  className="size-4 shrink-0"
+                                />
+                              ) : null}
+                              <span className="truncate">
+                                {selectedTaskProject?.name ??
+                                  selectedTask.projectName ??
+                                  gt("No project")}
+                              </span>
+                            </span>
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectPopup>
+                          {selectedTaskEnvironmentProjects.map((project) => (
+                            <SelectItem key={project.id} value={project.id}>
+                              {project.name}
+                            </SelectItem>
+                          ))}
+                        </SelectPopup>
+                      </Select>
+                    ) : (
+                      <span className="flex min-w-0 items-center justify-end gap-2 text-foreground">
+                        {selectedTaskProject ? (
+                          <ProjectFavicon
+                            project={selectedTaskProject.favicon}
+                            className="size-4"
+                          />
+                        ) : null}
+                        <span className="truncate">
+                          {selectedTask.projectName ?? gt("No project")}
+                        </span>
+                      </span>
+                    )}
                   </DetailSidebarRow>
                   {/* A person task's tags stay hidden; the planner hands it to an agent. */}
                   {selectedTask.audience === "person" ? null : (
-                    <DetailSidebarRow label="Tags">
+                    <DetailSidebarRow label={gt("Tags")}>
                       {props.canMutateEnvironment(selectedTask.environmentId) ? (
                         <TagChipsField
                           tags={selectedTask.tags}
@@ -1150,122 +1634,100 @@ export function TasksView(props: TasksViewProps) {
                       ) : selectedTask.tags.length > 0 ? (
                         selectedTask.tags.join(", ")
                       ) : (
-                        "None"
+                        gt("None", { $context: "a task has no tags" })
                       )}
                     </DetailSidebarRow>
                   )}
-                  <DetailSidebarRow label="Created">
+                  {selectedTask.sourceThreadId ? (
+                    <DetailSourceThreadRow
+                      environmentId={selectedTask.environmentId}
+                      threadId={selectedTask.sourceThreadId as ThreadId}
+                      onOpen={props.onOpenThread}
+                    />
+                  ) : null}
+                  <DetailSidebarRow label={gt("Created", { $context: "date a task was created" })}>
                     {new Date(selectedTask.createdAt).toLocaleDateString()}
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Updated">
+                  <DetailSidebarRow
+                    label={gt("Updated", { $context: "date a task was last updated" })}
+                  >
                     {new Date(selectedTask.updatedAt).toLocaleDateString()}
                   </DetailSidebarRow>
                   {selectedTask.archivedAt ? (
-                    <DetailSidebarRow label="Archived">
+                    <DetailSidebarRow
+                      label={gt("Archived", { $context: "date a task was archived" })}
+                    >
                       {new Date(selectedTask.archivedAt).toLocaleString()}
                     </DetailSidebarRow>
                   ) : null}
                   {selectedTask.notBefore ? (
-                    <DetailSidebarRow label="Not before">
+                    <DetailSidebarRow label={gt("Not before")}>
                       {new Date(selectedTask.notBefore).toLocaleString()}
                     </DetailSidebarRow>
                   ) : null}
                 </dl>
               </DetailSidebarSection>
-              {selectedTask.sourceThreadId ? (
-                <DetailSidebarSection title="Source thread">
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    <TaskThreadLink
-                      environmentId={selectedTask.environmentId}
-                      threadId={selectedTask.sourceThreadId as ThreadId}
-                      title="Source thread"
-                      onOpen={props.onOpenThread}
-                    />
-                  </div>
-                </DetailSidebarSection>
-              ) : null}
-              <DetailSidebarSection title="Active runs" count={activeRuns.length}>
-                {activeRuns.length === 0 ? (
-                  <p className="px-2 py-3 text-sm text-muted-foreground">
-                    {detailRunsStatus === "loading"
-                      ? "Loading active runs…"
-                      : detailRunsStatus === "error"
-                        ? "Could not refresh active runs."
-                        : "No active runs."}
-                  </p>
-                ) : (
-                  activeRuns.map((run) => {
-                    const { agentName, modelLabel } = getTaskRunAgentPresentation(
-                      run,
-                      props.agents,
-                      props.providerEntriesByEnvironment.get(run.environmentId),
-                    );
-                    return (
-                      <TaskThreadLink
-                        key={run.id}
-                        environmentId={run.environmentId}
-                        threadId={run.threadId}
-                        title={agentName}
-                        label={agentName}
-                        detail={modelLabel}
-                        runStatus={run.status}
-                        onOpen={props.onOpenThread}
-                      />
-                    );
-                  })
-                )}
-              </DetailSidebarSection>
-              <DetailSidebarSection title="Runs" count={detailRuns.length}>
+              <DetailSidebarSection
+                title={gt("Runs", { $context: "noun: a task's worker runs" })}
+                count={detailRuns.length}
+              >
                 {runFilter !== ALL_FILTER ? (
                   <div className="flex items-center justify-between px-2 py-2 text-sm">
-                    <span>{taskRunPresentation(runFilter, false)?.label}</span>
+                    <span>{m(taskRunPresentation(runFilter, false)?.label)}</span>
                     <button
                       type="button"
                       className="hover:underline"
                       onClick={() => setRunFilter(ALL_FILTER)}
                     >
-                      Show all runs
+                      {gt("Show all runs")}
                     </button>
                   </div>
                 ) : null}
-                {detailRunsStatus === "error" ? (
-                  <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-                    Could not refresh this task&apos;s worker runs. Showing cached results.
-                  </div>
-                ) : null}
                 {detailRunsStatus === "loading" && taskThreads.length === 0 ? (
-                  <div className="px-2 py-5 text-sm text-muted-foreground">
-                    Loading worker runs...
-                  </div>
+                  <p className="px-2 py-2 text-sm text-muted-foreground">
+                    {gt("Loading worker runs...")}
+                  </p>
+                ) : detailRunsStatus === "error" && taskThreads.length === 0 ? (
+                  <p className="px-2 py-2 text-sm text-muted-foreground">
+                    {gt("Could not refresh runs.")}
+                  </p>
                 ) : taskThreads.length === 0 ? (
-                  <div className="px-2 py-5 text-sm text-muted-foreground">
+                  <p className="px-2 py-2 text-sm text-muted-foreground">
                     {runFilter === ALL_FILTER
-                      ? "No worker has worked on this task yet."
-                      : "No runs match this status."}
-                  </div>
+                      ? gt("No worker has worked on this task yet.")
+                      : gt("No runs match this status.")}
+                  </p>
                 ) : (
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    {taskThreads.map((run) => {
-                      const { agentName, modelLabel } = getTaskRunAgentPresentation(
-                        run,
-                        props.agents,
-                        props.providerEntriesByEnvironment.get(run.environmentId),
-                      );
-                      return (
-                        <TaskThreadLink
-                          key={`${run.environmentId}:${run.id}`}
-                          environmentId={run.environmentId}
-                          threadId={run.threadId}
-                          title={agentName}
-                          label={agentName}
-                          detail={modelLabel}
-                          runStatus={run.status}
-                          timestamp={run.startedAt}
-                          onOpen={props.onOpenThread}
-                        />
-                      );
-                    })}
-                  </div>
+                  <>
+                    {detailRunsStatus === "error" ? (
+                      <p className="px-2 py-1.5 text-sm text-muted-foreground">
+                        {gt("Could not refresh runs.")}
+                      </p>
+                    ) : null}
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      {taskThreads.map((run) => {
+                        const { agentName, modelLabel } = getTaskRunAgentPresentation(
+                          run,
+                          props.agents,
+                          props.providerEntriesByEnvironment.get(run.environmentId),
+                          gt,
+                        );
+                        return (
+                          <TaskThreadLink
+                            key={`${run.environmentId}:${run.id}`}
+                            environmentId={run.environmentId}
+                            threadId={run.threadId}
+                            title={agentName}
+                            label={agentName}
+                            detail={modelLabel}
+                            runStatus={run.status}
+                            timestamp={run.startedAt}
+                            onOpen={props.onOpenThread}
+                          />
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
                 {moreRuns ? (
                   <button
@@ -1274,11 +1736,11 @@ export function TasksView(props: TasksViewProps) {
                     className="px-2 py-3 text-sm hover:underline"
                     onClick={() => loadTaskRuns(selectedTask, true)}
                   >
-                    Load more runs
+                    {gt("Load more runs")}
                   </button>
                 ) : null}
               </DetailSidebarSection>
-              <DetailSidebarSection title="History" count={historyEntries.length}>
+              <DetailSidebarSection title={gt("History")} count={historyEntries.length}>
                 <TaskHistory
                   entries={historyEntries}
                   status={history.taskKey === taskKey(selectedTask) ? history.status : "loading"}
@@ -1290,38 +1752,48 @@ export function TasksView(props: TasksViewProps) {
       ) : createModeOpen ? (
         <div className={detailOuterClass}>
           <div className={detailInnerClass}>
-            <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <main
+              className={
+                stackedDetail
+                  ? "flex min-w-0 flex-col pb-3"
+                  : "flex min-h-0 min-w-0 flex-1 flex-col"
+              }
+            >
               <LazyMarkdownEditor
                 value={form.description}
-                placeholder="Description…"
-                ariaLabel="Task description"
+                placeholder={gt("Description…")}
+                ariaLabel={gt("Task description")}
                 className={DESCRIPTION_EDITOR_CLASS}
                 onChange={(description) => setForm((current) => ({ ...current, description }))}
               />
             </main>
-            <DetailColumn stacked={panel}>
-              <DetailSidebarSection title="Details">
+            <DetailColumn stacked={stackedDetail}>
+              <DetailSidebarSection title={gt("Details")}>
                 <dl className="flex min-w-0 flex-col gap-0.5">
-                  <DetailSidebarRow label="Title" controlSelector="input">
+                  <DetailSidebarRow label={gt("Title")} controlSelector="input">
                     <input
                       autoFocus
                       className={DETAIL_INPUT_CLASS}
                       value={form.title}
-                      placeholder="Task title…"
-                      aria-label="Task title"
+                      placeholder={gt("Task title…")}
+                      aria-label={gt("Task title")}
                       onChange={(event) =>
                         setForm((current) => ({ ...current, title: event.target.value }))
                       }
                     />
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Project" controlSelector="button">
+                  <DetailSidebarRow label={gt("Project")} controlSelector="button">
                     <Select
-                      value={selectedProjectKey(form)}
+                      value={
+                        selectedProjectOption
+                          ? projectKey(selectedProjectOption)
+                          : selectedProjectKey(form)
+                      }
                       onValueChange={(value) => {
-                        const project = mutableProjects.find(
+                        const project = projectOptions.find(
                           (candidate) => projectKey(candidate) === value,
                         );
-                        if (project)
+                        if (project && project !== selectedProjectOption)
                           setForm((current) => ({
                             ...current,
                             environmentId: project.environmentId,
@@ -1332,7 +1804,7 @@ export function TasksView(props: TasksViewProps) {
                       <SelectTrigger
                         className={DETAIL_SELECT_TRIGGER_CLASS}
                         variant="ghost"
-                        aria-label="Task project"
+                        aria-label={gt("Task project")}
                       >
                         <SelectValue>
                           {selectedProject ? (
@@ -1346,12 +1818,12 @@ export function TasksView(props: TasksViewProps) {
                               </span>
                             </span>
                           ) : (
-                            "Select project"
+                            gt("Select project")
                           )}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectPopup>
-                        {mutableProjects.map((project) => (
+                        {projectOptions.map((project) => (
                           <SelectItem key={projectKey(project)} value={projectKey(project)}>
                             {project.name}
                           </SelectItem>
@@ -1359,18 +1831,18 @@ export function TasksView(props: TasksViewProps) {
                       </SelectPopup>
                     </Select>
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Status" controlSelector="input">
-                    <input
+                  <DetailSidebarRow label={gt("Status")} controlSelector="input">
+                    <DetailAutocompleteInput
+                      ariaLabel={gt("Task status")}
                       className={DETAIL_INPUT_CLASS}
+                      maxSuggestions={statusOptions.length}
+                      onChange={(status) => setForm((current) => ({ ...current, status }))}
+                      options={statusOptions}
+                      placeholder={DEFAULT_TASK_STATUS}
                       value={form.status}
-                      placeholder="new"
-                      aria-label="Task status"
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, status: event.target.value }))
-                      }
                     />
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Tags">
+                  <DetailSidebarRow label={gt("Tags")}>
                     <TagChipsField
                       tags={splitListInput(form.tags)}
                       suggest={(query) =>
@@ -1408,7 +1880,13 @@ export function TasksView(props: TasksViewProps) {
                 : `flex w-full min-w-0 flex-col ${panel ? "gap-3 py-3" : "gap-5 py-6"}`
             }
           >
-            <div className={cards ? `flex min-h-full flex-col ${LIST_CLASS}` : "contents"}>
+            <div
+              className={
+                cards
+                  ? `flex min-h-full flex-col ${LIST_CLASS} ${props.floatingControls ? FLOATING_ACTIONS_CLEARANCE_CLASS : ""}`
+                  : "contents"
+              }
+            >
               <div
                 className={
                   cards
@@ -1418,185 +1896,90 @@ export function TasksView(props: TasksViewProps) {
               >
                 {environmentCount > 1 ? (
                   <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-                    Task order is global within each connected environment. Environments are grouped
-                    deterministically, and tasks cannot be dragged across that storage boundary.
-                  </div>
-                ) : null}
-                {hasReadOnlyProjects ? (
-                  <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-                    Existing tasks from unavailable or expired extensions remain readable. Mutation
-                    controls are hidden for those environments.
+                    {gt(
+                      "Task order is global within each connected environment. Environments are grouped deterministically, and tasks cannot be dragged across that storage boundary.",
+                    )}
                   </div>
                 ) : null}
                 {selectedTaskKey ? (
-                  <p className="text-sm text-muted-foreground">{detailError ?? "Loading task…"}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {m(detailError) ?? gt("Loading task…")}
+                  </p>
                 ) : null}
-                {props.status === "error" ? (
-                  <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-                    Up.computer couldn't load your tasks. {props.errorMessage ?? "Try again."}
-                    <button type="button" className="ml-3 underline" onClick={props.onReload}>
-                      Retry
-                    </button>
-                  </div>
-                ) : props.status === "offline" && props.tasks.length > 0 ? (
-                  <div className={OFFLINE_NOTE_CLASS}>{TASKS_OFFLINE_TEXT}</div>
-                ) : null}
-                {props.status === "offline"
-                  ? null
-                  : props.offlineEnvironmentIds?.map((environmentId) => (
-                      <OfflineComputerNote
-                        key={environmentId}
-                        environmentId={environmentId}
-                        showsRows={props.tasks.some((task) => task.environmentId === environmentId)}
-                      />
-                    ))}
               </div>
 
-              {props.tasks.length === 0 || filteredTasks.length === 0 ? (
+              {listEmpty ? (
                 // Blank while the list loads: it arrives within a moment.
                 props.status === "loading" ? null : props.status === "offline" ? (
-                  <ListEmptyState title="Tasks unavailable" hint={TASKS_OFFLINE_TEXT} />
-                ) : props.tasks.length > 0 ||
-                  projectFilter !== null ||
-                  statusFilter !== ALL_FILTER ||
-                  filters.tags.length > 0 ||
-                  archiveFilter !== "active" ? (
-                  <ListEmptyState title="No tasks match the current filters" />
+                  <ListEmptyState title={gt("Tasks unavailable")} hint={m(TASKS_OFFLINE_TEXT)} />
+                ) : props.status === "error" ? (
+                  <ListEmptyState
+                    title={gt("Tasks didn't load")}
+                    hint={gt("Notifications has the details.")}
+                  />
+                ) : filtersNarrow ? (
+                  <ListEmptyState title={gt("No tasks match the current filters")} />
                 ) : (
                   <ListEmptyState
-                    title="No tasks yet"
-                    hint="Click + to add one, or ask any thread to plan the work for you."
+                    title={gt("No tasks yet")}
+                    hint={gt("Click + to add one, or ask any thread to plan the work for you.")}
                   />
                 )
-              ) : cards ? (
-                <div className="flex min-w-0 flex-col">
-                  {filteredTasks.map((task) => (
-                    <div
-                      key={taskKey(task)}
-                      className="grid"
-                      data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
-                      onAnimationEnd={(event) => {
-                        if (event.animationName === "task-arrival-tint")
-                          settleArrival(taskKey(task));
-                      }}
-                    >
-                      <div className="min-h-0 overflow-hidden">
-                        <TaskCard
-                          task={task}
-                          projects={plannerProjectsByEnvironment.get(task.environmentId) ?? []}
-                          statuses={
-                            statusOptions.includes(task.status)
-                              ? statusOptions
-                              : [...statusOptions, task.status].sort(compareStatuses)
-                          }
-                          canMutate={props.canMutateEnvironment(task.environmentId)}
-                          dragged={draggedTaskKey === taskKey(task)}
-                          reorderable={props.canMutateEnvironment(task.environmentId)}
-                          onDragStart={() => setDraggedTaskKey(taskKey(task))}
-                          onDragEnd={() => setDraggedTaskKey(null)}
-                          onMove={(direction) => void persistVisibleMove(task, direction)}
-                          onOpen={() => openTask(task)}
-                          onProjectChange={(projectId) =>
-                            void updateTaskInline(task, "project", {
-                              projectId: projectId as ProjectId,
-                            })
-                          }
-                          onStatusChange={(status) =>
-                            void updateTaskInline(task, "status", { status })
-                          }
-                          onArchivedChange={(archived) => void setTaskArchived(task, archived)}
-                          onDrop={() => dropOn(task)}
-                        />
-                      </div>
+              ) : grouped && grouping ? (
+                <TaskStatusGroupsProvider
+                  groups={groups}
+                  onReorder={(shown, moved) =>
+                    grouping.onSettingsChange({
+                      statusGroupOrder: mergedGroupOrder(groupOrder, shown, moved),
+                    })
+                  }
+                  overlayClassName={cards ? "mx-2 px-1" : "ms-0.5 me-2"}
+                  lineInset={cards ? 8 : 0}
+                >
+                  {cards ? (
+                    <div className="flex min-w-0 flex-col">
+                      {groups.map((group) => (
+                        <TaskStatusCardGroup
+                          key={group.key}
+                          group={group}
+                          onOpenChange={(open) => setGroupOpen(group, open)}
+                        >
+                          {groupRows(group).map(renderCard)}
+                          {groupShowMore(group, false)}
+                        </TaskStatusCardGroup>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  ) : (
+                    // No scroller of its own here: a group's header sticks to the page's.
+                    <div className="min-w-0">
+                      <table className={TABLE_CLASS}>
+                        {tableHead}
+                        {groups.map((group) => (
+                          <TaskStatusTableGroup
+                            key={group.key}
+                            group={group}
+                            columnCount={showProjectColumn ? 5 : 4}
+                            onOpenChange={(open) => setGroupOpen(group, open)}
+                          >
+                            {groupRows(group).map(renderRow)}
+                            {groupShowMore(group, true)}
+                          </TaskStatusTableGroup>
+                        ))}
+                      </table>
+                    </div>
+                  )}
+                </TaskStatusGroupsProvider>
+              ) : cards ? (
+                <div className="flex min-w-0 flex-col">{filteredTasks.map(renderCard)}</div>
               ) : (
                 <div className="min-w-0 overflow-x-auto">
-                  {/* Auto layout: Runs (w-px) is as narrow as its numbers, and Title (max-w-0) truncates
-                  and takes the width the other columns leave. */}
-                  <table className="w-full min-w-[920px] border-collapse text-left text-sm">
-                    <thead className="border-b border-border text-muted-foreground">
-                      <tr>
-                        <th className="w-12 py-3 pr-2 font-medium">
-                          <span className="sr-only">Order</span>
-                        </th>
-                        {showProjectColumn ? <ProjectIconHeader /> : null}
-                        <th className="max-w-0 py-3 pr-4 font-medium">Title</th>
-                        <th className="w-40 px-4 py-3 font-medium">Status</th>
-                        <th className="w-56 px-4 py-3 font-medium">Tags</th>
-                        <th className="w-px py-3 pl-4 text-right font-medium whitespace-nowrap">
-                          Runs
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredTasks.map((task) => {
-                        const taskProject = projectsByKey.get(taskProjectKey(task)) ?? null;
-                        return (
-                          <tr
-                            key={taskKey(task)}
-                            data-task-arrival={arrivals.has(taskKey(task)) ? "" : undefined}
-                            onAnimationEnd={(event) => {
-                              if (event.animationName === "task-arrival-tint")
-                                settleArrival(taskKey(task));
-                            }}
-                            className={`cursor-pointer border-b border-border transition-colors hover:bg-muted/20 ${
-                              draggedTaskKey === taskKey(task) ? "opacity-50" : ""
-                            }`}
-                            onDragOver={(event) => event.preventDefault()}
-                            onDrop={(event) => {
-                              event.preventDefault();
-                              dropOn(task);
-                            }}
-                            onClick={() => openTask(task)}
-                          >
-                            <td className="py-3 pr-2 align-middle">{reorderHandle(task)}</td>
-                            {showProjectColumn ? (
-                              <ProjectIconCell
-                                project={taskProject?.favicon ?? null}
-                                name={task.projectName}
-                              />
-                            ) : null}
-                            <td className="max-w-0 py-4 pr-4 align-middle">
-                              <button
-                                type="button"
-                                className="block max-w-full truncate text-left font-medium text-foreground hover:underline"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  openTask(task);
-                                }}
-                              >
-                                {task.title}
-                              </button>
-                              {taskMetadataLabel(task) ? (
-                                <div className="truncate text-muted-foreground">
-                                  {taskMetadataLabel(task)}
-                                </div>
-                              ) : null}
-                            </td>
-                            <td className="px-4 py-4 align-middle whitespace-nowrap">
-                              {task.status}
-                              {task.archivedAt ? (
-                                <span className="ml-2 text-muted-foreground">Archived</span>
-                              ) : null}
-                            </td>
-                            <td className="max-w-56 px-4 py-4 align-middle">
-                              <TaskTagChips tags={task.tags} triggerTags={triggerTags} />
-                            </td>
-                            <td className="py-4 pl-4 text-right align-middle whitespace-nowrap">
-                              <TableRunCounts
-                                groups={groupTaskRunCounts(task.runCounts)}
-                                onSelect={(group) => openTask(task, group.status)}
-                              />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
+                  <table className={TABLE_CLASS}>
+                    {tableHead}
+                    <tbody>{filteredTasks.map(renderRow)}</tbody>
                   </table>
                 </div>
               )}
+              {/* Grouped, a group loads as it scrolls; Load more stays for a server without counts. */}
               {props.hasMore ? (
                 cards ? (
                   <div className="flex justify-center py-4">
@@ -1606,7 +1989,7 @@ export function TasksView(props: TasksViewProps) {
                       disabled={props.loadingMore}
                       onClick={props.onLoadMore}
                     >
-                      {props.loadingMore ? "Loading…" : "Load more tasks"}
+                      {props.loadingMore ? gt("Loading…") : gt("Load more tasks")}
                     </Button>
                   </div>
                 ) : (
@@ -1616,7 +1999,7 @@ export function TasksView(props: TasksViewProps) {
                     className="self-center rounded-md border border-border px-4 py-2 text-sm hover:bg-muted disabled:opacity-50"
                     onClick={props.onLoadMore}
                   >
-                    {props.loadingMore ? "Loading…" : "Load more tasks"}
+                    {props.loadingMore ? gt("Loading…") : gt("Load more tasks")}
                   </button>
                 )
               ) : null}

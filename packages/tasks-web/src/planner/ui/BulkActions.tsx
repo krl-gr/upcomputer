@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
@@ -15,6 +16,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../../../../../apps/web/src/components/ui/menu.tsx";
+import { sameProjectGroup } from "../../ui/taskProjects.ts";
 import type { PlannerTask } from "../data/pendingOps.ts";
 import { IconAction } from "./IconAction.tsx";
 import { ProjectChip } from "./ProjectChip.tsx";
@@ -33,10 +35,13 @@ export function BulkActions(props: {
   readonly onMoveUnder: () => void;
   readonly onDelete: () => void;
 }) {
+  const gt = useGT();
   const { store, projects, preferences } = usePlanner();
   const ids = props.selected.map((task) => task.id);
   const firstProject = props.selected[0]?.projectId ?? null;
-  const mixedProject = props.selected.some((task) => task.projectId !== firstProject);
+  const mixedProject = props.selected.some(
+    (task) => !sameProjectGroup(projects, task.projectId, firstProject),
+  );
   const finished = props.selected.filter(isFinished).length;
   const state =
     finished === 0 ? "active" : finished === props.selected.length ? "finished" : "mixed";
@@ -56,14 +61,20 @@ export function BulkActions(props: {
           disabled={none}
           onChange={(projectId) => {
             if (!projectId) return;
+            // A task already in the chosen group keeps its own member's folder.
+            const moving = props.selected.filter(
+              (task) => !sameProjectGroup(projects, task.projectId, projectId),
+            );
             run(() =>
-              Promise.all(ids.map((id) => store.updateTask(id, { projectId: projectId as never }))),
+              Promise.all(
+                moving.map((task) => store.updateTask(task.id, { projectId: projectId as never })),
+              ),
             );
           }}
         />
         {state !== "active" ? (
           <IconAction
-            label="Restore"
+            label={gt("Restore", { $context: "button that unarchives the selected tasks" })}
             variant="outline"
             disabled={none}
             onClick={() => run(() => store.restore(ids))}
@@ -74,7 +85,7 @@ export function BulkActions(props: {
         {state !== "finished" ? (
           <>
             <IconAction
-              label="Mark as done"
+              label={gt("Mark as done")}
               variant="outline"
               disabled={none}
               onClick={() => run(() => store.markDone(ids))}
@@ -82,7 +93,7 @@ export function BulkActions(props: {
               <CircleCheckIcon />
             </IconAction>
             <IconAction
-              label="Archive"
+              label={gt("Archive", { $context: "button that archives the selected tasks" })}
               variant="outline"
               disabled={none}
               onClick={() => run(() => store.archive(ids))}
@@ -93,7 +104,7 @@ export function BulkActions(props: {
         ) : null}
         {props.queueDate && preferences.weekViewMode === "queue" ? (
           <IconAction
-            label={`Add to queue for ${props.queueDate}`}
+            label={gt("Add to queue for {date}", { date: props.queueDate })}
             variant="outline"
             disabled={none}
             onClick={() =>
@@ -105,24 +116,26 @@ export function BulkActions(props: {
         ) : null}
         <Menu>
           <MenuTrigger
-            render={<Button size="icon-xs" variant="outline" aria-label="More bulk actions" />}
+            render={
+              <Button size="icon-xs" variant="outline" aria-label={gt("More bulk actions")} />
+            }
           >
             <MoreHorizontalIcon />
           </MenuTrigger>
           <MenuPopup align="end">
             <MenuItem disabled={none} onClick={() => run(() => store.reorder(ids, {}))}>
-              Move tasks to top
+              {gt("Move tasks to top")}
             </MenuItem>
             <MenuItem disabled={none} onClick={props.onMoveUnder}>
-              Move tasks under…
+              {gt("Move tasks under…")}
             </MenuItem>
             <MenuSeparator />
             <MenuItem variant="destructive" disabled={none} onClick={props.onDelete}>
-              Delete tasks
+              {gt("Delete tasks")}
             </MenuItem>
           </MenuPopup>
         </Menu>
-        <IconAction label="Exit select mode" variant="outline" onClick={props.onExit}>
+        <IconAction label={gt("Exit select mode")} variant="outline" onClick={props.onExit}>
           <XIcon />
         </IconAction>
       </div>

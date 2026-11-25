@@ -17,17 +17,27 @@ afterAll(() => {
   NodeFS.rmSync(clerkStateDir, { recursive: true, force: true });
 });
 
-const { createClerkBridgeMock, requestSingleInstanceLockMock, storageAdapter, storageMock } =
-  vi.hoisted(() => ({
-    createClerkBridgeMock: vi.fn(),
-    requestSingleInstanceLockMock: vi.fn(() => true),
-    storageAdapter: {
-      getItem: vi.fn(),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-    },
-    storageMock: vi.fn(),
-  }));
+const {
+  createClerkBridgeMock,
+  requestSingleInstanceLockMock,
+  setAsDefaultProtocolClientMock,
+  storageAdapter,
+  storageMock,
+} = vi.hoisted(() => ({
+  createClerkBridgeMock: vi.fn(),
+  requestSingleInstanceLockMock: vi.fn(() => true),
+  setAsDefaultProtocolClientMock: vi.fn((_scheme: string) => true),
+  storageAdapter: {
+    getItem: vi.fn(),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+  },
+  storageMock: vi.fn(),
+}));
+
+vi.mock("electron", () => ({
+  app: { setAsDefaultProtocolClient: setAsDefaultProtocolClientMock },
+}));
 
 vi.mock("@clerk/electron", () => ({
   createClerkBridge: createClerkBridgeMock,
@@ -36,6 +46,7 @@ vi.mock("@clerk/electron", () => ({
 vi.mock("@clerk/electron/storage", () => ({
   storage: storageMock,
 }));
+import * as Electron from "electron";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as ElectronApp from "../electron/ElectronApp.ts";
@@ -64,10 +75,12 @@ const layerDesktopClerk = (
     copyText: () => Effect.void,
   },
   listeners = new Map<string, (...args: unknown[]) => void>(),
+  appVersion = "0.0.40",
 ) => {
   const environment = DesktopEnvironment.DesktopEnvironment.of({
     stateDir: clerkStateDir,
     isDevelopment,
+    appVersion,
     appDataDirectory: "/tmp/app-data",
     platform,
   } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
@@ -95,6 +108,7 @@ const layerDesktopClerk = (
             listeners.delete(name);
           }),
       ).pipe(Effect.asVoid),
+    withoutDefaultProtocolClientClaims: ElectronApp.make.withoutDefaultProtocolClientClaims,
   } as unknown as ElectronApp.ElectronApp["Service"];
 
   return DesktopClerk.layer.pipe(
@@ -114,8 +128,47 @@ describe("DesktopClerk", () => {
   beforeEach(() => {
     createClerkBridgeMock.mockReset();
     requestSingleInstanceLockMock.mockReset().mockReturnValue(true);
+    setAsDefaultProtocolClientMock.mockClear();
     storageMock.mockReset();
   });
+
+  it.effect.each([
+    { version: "0.0.40", isDevelopment: false, claims: ["upcomputer"] },
+    { version: "0.0.40-nightly.20261118.763", isDevelopment: false, claims: ["upcomputer"] },
+    { version: "0.0.40", isDevelopment: true, claims: ["upcomputer-dev"] },
+    { version: "0.0.38-demo.2", isDevelopment: false, claims: [] },
+    { version: "0.0.40-localtest.1", isDevelopment: false, claims: [] },
+  ])(
+    "only the installed app claims its URL scheme from the OS ($version, dev: $isDevelopment)",
+    ({ version, isDevelopment, claims }) =>
+      Effect.gen(function* () {
+        storageMock.mockReturnValue(storageAdapter);
+        // @clerk/electron claims the renderer scheme while it creates the bridge.
+        createClerkBridgeMock.mockImplementation((options: { renderer: { scheme: string } }) => {
+          Electron.app.setAsDefaultProtocolClient(options.renderer.scheme);
+          return { cleanup: vi.fn() };
+        });
+        yield* Effect.scoped(
+          Layer.build(
+            layerDesktopClerk(
+              isDevelopment,
+              [],
+              "darwin",
+              undefined,
+              undefined,
+              undefined,
+              version,
+            ),
+          ),
+        );
+
+        assert.deepEqual(
+          setAsDefaultProtocolClientMock.mock.calls.map(([scheme]) => scheme),
+          claims,
+        );
+        assert.strictEqual(Electron.app.setAsDefaultProtocolClient, setAsDefaultProtocolClientMock);
+      }),
+  );
 
   it.each([
     {
