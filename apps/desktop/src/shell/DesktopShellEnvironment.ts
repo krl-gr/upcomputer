@@ -677,7 +677,8 @@ const CACHED_ENV_NAMES = [
   "SSL_CERT_FILE",
   "SSL_CERT_DIR",
   "NODE_EXTRA_CA_CERTS",
-  "T3CODE_TELEMETRY_ENABLED",
+  // UpComputer: no telemetry opt-out. A cached one locked the switch a launch after it was
+  // removed; the server records nothing until discovery and then reads the live value.
 ] as const;
 
 /** @public */
