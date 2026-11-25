@@ -2,11 +2,14 @@ import * as NodeAssert from "node:assert/strict";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { test } from "vite-plus/test";
 
-import { resolveTasksWebAccess, type TasksWebAvailability } from "../../rpc/capabilityGate.ts";
-import type { TasksWebRpcClient } from "../../rpc/index.ts";
-import { TaskChangeStreamEnded } from "../../rpc/taskChanges.ts";
+import {
+  resolveTasksWebAccess,
+  TaskChangeStreamEnded,
+  type TasksWebAvailability,
+  type TasksWebRpcClient,
+} from "@t3tools/tasks-client/rpc";
 import { loadAgentsState } from "../../state/agentsState.ts";
-import type { TasksStateTarget } from "../../state/tasksState.ts";
+import type { TasksStateTarget } from "@t3tools/tasks-client/state/tasksState";
 import {
   resolveEnvironmentsViewStatus,
   resolveTaskPagesStatus,

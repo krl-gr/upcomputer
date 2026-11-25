@@ -10,8 +10,8 @@ import type {
   TaskPageResult,
   TaskId,
 } from "@t3tools/tasks-contracts/v1";
-import { TaskPageLoader, type TaskPageLoadState } from "../state/taskPageLoader.ts";
-import type { TasksStateTarget } from "../state/tasksState.ts";
+import { TaskPageLoader, type TaskPageLoadState } from "./taskPageLoader.ts";
+import type { TasksStateTarget } from "./tasksState.ts";
 import { createTaskChangeSubscription, type TaskChangeListener } from "../rpc/taskChanges.ts";
 
 const changed = (ids: string[], listChanged = false): TaskChange => ({

@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": {
+          "globalDate": "off",
+          "globalTimers": "off",
+          // Tests use node:assert and node:timers.
+          "nodeBuiltinImport": "suggestion"
+        }
+      }
+    ]
+  },
+  "include": ["src"]
+}

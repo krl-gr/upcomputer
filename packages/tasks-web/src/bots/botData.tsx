@@ -25,7 +25,7 @@ import {
   subscribeTasksWebAccess,
   useTasksWebAccess,
 } from "../environmentApi.ts";
-import { isDisconnectError } from "../state/taskPageLoader.ts";
+import { isDisconnectError } from "@t3tools/tasks-client/state/taskPageLoader";
 import { useOmittedThreadShell } from "../ui/useOmittedThreadShell.ts";
 import {
   BOT_CHATS_STORAGE_KEY,

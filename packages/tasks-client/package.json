@@ -1,0 +1,60 @@
+{
+  "name": "@t3tools/tasks-client",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./rpc": {
+      "types": "./src/rpc/index.ts",
+      "import": "./src/rpc/index.ts"
+    },
+    "./state/recent": {
+      "types": "./src/state/recent.ts",
+      "import": "./src/state/recent.ts"
+    },
+    "./state/taskPages": {
+      "types": "./src/state/taskPages.ts",
+      "import": "./src/state/taskPages.ts"
+    },
+    "./state/taskPageLoader": {
+      "types": "./src/state/taskPageLoader.ts",
+      "import": "./src/state/taskPageLoader.ts"
+    },
+    "./state/tasksState": {
+      "types": "./src/state/tasksState.ts",
+      "import": "./src/state/tasksState.ts"
+    },
+    "./state/taskStatusCounts": {
+      "types": "./src/state/taskStatusCounts.ts",
+      "import": "./src/state/taskStatusCounts.ts"
+    },
+    "./taskStatusGroups": {
+      "types": "./src/taskStatusGroups.ts",
+      "import": "./src/taskStatusGroups.ts"
+    },
+    "./environmentAccess": {
+      "types": "./src/environmentAccess.ts",
+      "import": "./src/environmentAccess.ts"
+    },
+    "./taskRunStatus": {
+      "types": "./src/taskRunStatus.ts",
+      "import": "./src/taskRunStatus.ts"
+    },
+    "./taskHistory": {
+      "types": "./src/taskHistory.ts",
+      "import": "./src/taskHistory.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "effect-tsgo tsrs --noEmit"
+  },
+  "dependencies": {
+    "@t3tools/client-runtime": "workspace:*",
+    "@t3tools/contracts": "workspace:*",
+    "@t3tools/tasks-contracts": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

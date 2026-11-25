@@ -9,7 +9,7 @@ import type {
   TaskScheduleEntry,
 } from "@t3tools/tasks-contracts/v1";
 
-import { TaskChangeStreamEnded } from "../../rpc/taskChanges.ts";
+import { TaskChangeStreamEnded } from "@t3tools/tasks-client/rpc";
 import { PlannerStore } from "./plannerStore.ts";
 import type { PlannerTask } from "./pendingOps.ts";
 

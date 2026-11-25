@@ -1,6 +1,6 @@
 import type { TaskAgent } from "@t3tools/tasks-contracts/v1";
 
-import type { TasksWebRpcClient } from "../rpc/index.ts";
+import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
 
 /** The worker as it is saved now; an upsert takes the whole definition. */
 export function agentUpsertInput(agent: TaskAgent) {

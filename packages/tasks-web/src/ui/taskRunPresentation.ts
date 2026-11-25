@@ -1,28 +1,7 @@
+import { taskRunState, type TaskRunKind } from "@t3tools/tasks-client/taskRunStatus";
 import { msg } from "gt-react";
 
-/** Run-count status for a blocked run that is no longer its task's latest run. */
-const SUPERSEDED_BLOCKED_RUN_STATUS = "blocked:superseded";
-
-/** Status to search runs by for a run-count status. */
-export function runSearchStatus(countStatus: string): string {
-  return countStatus === SUPERSEDED_BLOCKED_RUN_STATUS ? "blocked" : countStatus;
-}
-
-const FINISHED_RUN_STATUSES = new Set([
-  "completed",
-  "failed",
-  "interrupted",
-  "stopped",
-  SUPERSEDED_BLOCKED_RUN_STATUS,
-]);
-
-/**
- * A finished run is history: a thread row counts it only until the thread is seen. Running,
- * finalizing and awaiting-input runs are active and always count. Mirrors the server's rule.
- */
-export function isFinishedRunStatus(status: string): boolean {
-  return FINISHED_RUN_STATUSES.has(status);
-}
+export { isFinishedRunStatus, runSearchStatus } from "@t3tools/tasks-client/taskRunStatus";
 
 export interface TaskRunPresentation {
   /** English, from `msg()`; the component that shows it translates it with `useMessages()`. */
@@ -30,56 +9,31 @@ export interface TaskRunPresentation {
   readonly className: string;
 }
 
+const PRESENTATION: Record<TaskRunKind, TaskRunPresentation> = {
+  approval: { label: msg("Approval"), className: "text-amber-600 dark:text-amber-300" },
+  working: { label: msg("Working"), className: "text-sky-600 dark:text-sky-400" },
+  awaitingInput: {
+    label: msg("Awaiting Input"),
+    className: "text-indigo-600 dark:text-indigo-300",
+  },
+  finalizing: { label: msg("Finalizing"), className: "text-muted-foreground dark:text-white/64" },
+  failed: { label: msg("Failed"), className: "text-red-700 dark:text-red-300" },
+  interrupted: { label: msg("Interrupted"), className: "text-red-700 dark:text-red-300" },
+  stopped: { label: msg("Stopped"), className: "text-muted-foreground dark:text-white/64" },
+  blocked: { label: msg("Blocked"), className: "text-orange-600 dark:text-orange-300" },
+  completed: { label: msg("Completed"), className: "text-emerald-600 dark:text-emerald-300/90" },
+};
+
 export function taskRunPresentation(
   runStatus: string | undefined,
   hasPendingApproval: boolean,
 ): TaskRunPresentation | null {
-  if (hasPendingApproval) {
-    return { label: msg("Approval"), className: "text-amber-600 dark:text-amber-300" };
-  }
-  const normalized = runStatus?.trim().toLowerCase();
-  if (!normalized) return null;
-  if (normalized === "finalizing:interrupted" || normalized === "finalizing:failed") {
-    return {
-      label: normalized === "finalizing:failed" ? msg("Failed") : msg("Interrupted"),
-      className: "text-red-700 dark:text-red-300",
-    };
-  }
-  if (normalized === "finalizing:stopped" || normalized === "finalizing:result") {
-    return {
-      label: msg("Finalizing"),
-      className: "text-muted-foreground dark:text-white/64",
-    };
-  }
-  if (normalized === "completed") {
-    return { label: msg("Completed"), className: "text-emerald-600 dark:text-emerald-300/90" };
-  }
-  if (normalized === "running") {
-    return { label: msg("Working"), className: "text-sky-600 dark:text-sky-400" };
-  }
-  if (normalized === "blocked") {
-    return { label: msg("Awaiting Input"), className: "text-indigo-600 dark:text-indigo-300" };
-  }
-  // A blocked run a newer run replaced: history, not a call to action.
-  if (normalized === SUPERSEDED_BLOCKED_RUN_STATUS) {
-    return { label: msg("Blocked"), className: "text-orange-600 dark:text-orange-300" };
-  }
-  if (normalized === "failed" || normalized === "interrupted") {
-    return {
-      label: normalized === "failed" ? msg("Failed") : msg("Interrupted"),
-      className: "text-red-700 dark:text-red-300",
-    };
-  }
-  if (normalized === "stopped") {
-    return { label: msg("Stopped"), className: "text-muted-foreground dark:text-white/64" };
-  }
-  // A status this UI doesn't know yet shows as the server wrote it.
-  return {
-    label: normalized.charAt(0).toUpperCase() + normalized.slice(1),
-    className: "text-muted-foreground dark:text-white/64",
-  };
+  const state = taskRunState(runStatus, hasPendingApproval);
+  if (state === null) return null;
+  return state.kind === "other"
+    ? { label: state.label, className: "text-muted-foreground dark:text-white/64" }
+    : PRESENTATION[state.kind];
 }
-
 const RUN_LABEL_ORDER = [
   "Working",
   "Approval",

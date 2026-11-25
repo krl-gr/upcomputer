@@ -20,7 +20,7 @@ import {
   usePrimaryEnvironmentId,
 } from "../../../../../apps/web/src/state/environments.ts";
 import { usePlannerAvailability } from "../../environmentApi.ts";
-import type { TasksStateTarget } from "../../state/tasksState.ts";
+import type { TasksStateTarget } from "@t3tools/tasks-client/state/tasksState";
 import { FloatingActions } from "../../ui/FloatingActions.tsx";
 import { agentTriggerTags } from "../../ui/pageFilters.ts";
 import type { HandOffAgent } from "../logic/handOff.ts";

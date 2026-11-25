@@ -5,7 +5,7 @@ import * as NodeURL from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { ScopedTaskListItem } from "../state/taskPages.ts";
+import type { ScopedTaskListItem } from "@t3tools/tasks-client/state/taskPages";
 import { assertTableRowsOneSize } from "./tableRows.testing.ts";
 
 const source = NodeFS.readFileSync(new URL("./TasksView.tsx", import.meta.url), "utf8");

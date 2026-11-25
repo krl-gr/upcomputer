@@ -19,7 +19,7 @@ import {
   readTasksWebClient,
   useTasksWebAccessRevision,
 } from "../../environmentApi.ts";
-import type { TasksWebRpcClient } from "../../rpc/index.ts";
+import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
 import { useStoredPlannerEnvironment } from "../data/preferences.ts";
 import { dateOfKey, todayKey } from "../logic/dates.ts";
 import { formatTime } from "../logic/time.ts";

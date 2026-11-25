@@ -3,7 +3,7 @@ import { test } from "vite-plus/test";
 
 import type { TaskAgent } from "@t3tools/tasks-contracts/v1";
 
-import type { TasksWebRpcClient } from "../rpc/index.ts";
+import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
 import { setAgentArchived } from "./agentUpsert.ts";
 
 function fakeClient(stored: TaskAgent[]) {

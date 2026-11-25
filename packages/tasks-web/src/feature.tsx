@@ -18,7 +18,7 @@ import {
   type ExperimentalWebThreadAccessoryProps,
   type ExperimentalWebThreadRowAccessoryProps,
 } from "../../../apps/web/src/product/WebFeature.ts";
-import { TasksWebRpcGroup } from "./rpc/tasksRpcGroup.ts";
+import { TasksWebRpcGroup } from "@t3tools/tasks-client/rpc";
 import { RememberedBotChatsHold } from "./bots/rememberedBotChats.ts";
 
 const LazyNavigationRunCounts = lazy(() =>

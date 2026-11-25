@@ -23,10 +23,10 @@ import {
   type TaskEvent,
 } from "@t3tools/tasks-contracts/v1";
 import { taskRunPresentation, groupTaskRunCounts, runSearchStatus } from "./taskRunPresentation.ts";
-import type { ScopedTaskListItem } from "../state/taskPages.ts";
+import type { ScopedTaskListItem } from "@t3tools/tasks-client/state/taskPages";
 import type { EnvironmentId, ProjectId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 
-import type { TasksWebRpcClient } from "../rpc/index.ts";
+import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
 import {
   scopedTaskWithText,
   type ScopedTask,
@@ -94,7 +94,7 @@ import {
   taskStatusGroups,
   tasksOfGroup,
   type TaskStatusGroup,
-} from "./taskStatusGroups.ts";
+} from "@t3tools/tasks-client/taskStatusGroups";
 import type { TasksViewGrouping } from "./useTaskList.ts";
 import { taskListLayout, type TaskListLayout } from "./taskListLayout.ts";
 import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";

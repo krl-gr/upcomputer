@@ -52,13 +52,12 @@ Paths below are relative to the core repo unless they start with `wande:`.
 - Change stream: `TaskChange` (`kind`, `sequence`, `taskIds`, `listChanged`,
   `runsChanged`, `rootThreadIds`), published after commit through
   `withChanges` / `withChangeTransaction` on a sliding PubSub. Clients resync
-  on a sequence gap (`packages/tasks-web/src/rpc/taskChanges.ts`).
+  on a sequence gap (`packages/tasks-client/src/rpc/taskChanges.ts`).
 - RPC: `TasksRpcGroup`, `TASKS_RPC_CONTRACT_VERSION = 12`
   (`packages/tasks-contracts/src/v1/rpc.ts`). Old wire shapes are kept
   decodable (`rpcCompatibility.test.ts`, the `closedAt` alias).
-- Web feature availability is probed per environment by calling a method
-  (`packages/tasks-web/src/environmentApi.ts:47`), not by reading the version
-  number.
+- Client feature availability (web and the iPhone app) is probed per environment by calling a
+  method (`packages/tasks-client/src/environmentAccess.ts`), not by reading the version number.
 - Web: `/tasks` is `TasksRoute` -> `TasksView` (table + `DetailSidebar`),
   multi-environment (`ScopedTask` carries `environmentId`, reorder refuses
   cross-environment moves). Manual creation is hidden by
