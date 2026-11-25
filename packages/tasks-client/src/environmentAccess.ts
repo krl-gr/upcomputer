@@ -1,0 +1,150 @@
+import { TASKS_RPC_METHODS } from "@t3tools/tasks-contracts/v1";
+import type { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
+import * as Schema from "effect/Schema";
+
+import {
+  createTasksWebRpcClient,
+  resolveTasksWebAccess,
+  type TasksWebAccess,
+  type TasksWebAvailability,
+  type TasksWebRpcClient,
+  type TasksWebRpcRequest,
+} from "./rpc/index.ts";
+
+// The first check often runs while the connection is still coming up, and the sidebar holds
+// Threads for a computer's first bot list until it answers, so the first retries come soon.
+const FIRST_RETRY_WHILE_DISCONNECTED_MS = 250;
+const RETRY_WHILE_DISCONNECTED_MS = 2_000;
+const isEnvironmentRpcUnavailable = Schema.is(EnvironmentRpcUnavailableError);
+
+interface Probe {
+  readonly availability: TasksWebAvailability;
+  readonly reason?: string;
+}
+
+export interface TasksEnvironmentAccess {
+  /** What the Tasks UI may do in an environment; starts the check on first read. */
+  readonly readAccess: (environmentId: EnvironmentId) => TasksWebAccess;
+  /** The environment's Tasks client; every call checks the current access first. */
+  readonly readClient: (environmentId: EnvironmentId) => TasksWebRpcClient;
+  /**
+   * Whether the server has the planner's schedule methods (tasks RPC version
+   * 13), asked once like the group probe. Older servers get the table only.
+   */
+  readonly readPlannerAvailability: (environmentId: EnvironmentId) => TasksWebAvailability;
+  /** Calls the listener whenever an environment's Tasks access, or the planner's, is decided. */
+  readonly subscribe: (listener: () => void) => () => void;
+  /** Changes whenever an environment's Tasks access is decided. */
+  readonly revision: () => number;
+}
+
+/**
+ * Asks each environment's server once whether it serves the Tasks RPC group, the v2
+ * replacement for V1's product-manifest gate, and keeps one Tasks client per environment.
+ * `requestFor` is the app's transport: an environment's current session. A server without
+ * the tasks feature rejects the method; a disconnected one is asked again later.
+ */
+export function createTasksEnvironmentAccess(
+  requestFor: (environmentId: EnvironmentId) => TasksWebRpcRequest,
+): TasksEnvironmentAccess {
+  const probes = new Map<EnvironmentId, Probe>();
+  /** Checks in a row that found the computer disconnected. */
+  const disconnectedChecks = new Map<EnvironmentId, number>();
+  const plannerProbes = new Map<EnvironmentId, TasksWebAvailability>();
+  const clients = new Map<EnvironmentId, TasksWebRpcClient>();
+  const listeners = new Set<() => void>();
+  let revision = 0;
+
+  const notify = () => {
+    revision += 1;
+    for (const listener of listeners) listener();
+  };
+
+  const setProbe = (environmentId: EnvironmentId, probe: Probe | undefined) => {
+    if (probe === undefined) probes.delete(environmentId);
+    else probes.set(environmentId, probe);
+    notify();
+  };
+
+  const setPlannerProbe = (environmentId: EnvironmentId, availability?: TasksWebAvailability) => {
+    if (availability === undefined) plannerProbes.delete(environmentId);
+    else plannerProbes.set(environmentId, availability);
+    notify();
+  };
+
+  const startProbe = (environmentId: EnvironmentId) => {
+    probes.set(environmentId, { availability: "loading" });
+    requestFor(environmentId)((client) => client[TASKS_RPC_METHODS.runCounts]({})).then(
+      () => {
+        disconnectedChecks.delete(environmentId);
+        setProbe(environmentId, { availability: "enabled" });
+      },
+      (error: unknown) => {
+        if (isEnvironmentRpcUnavailable(error)) {
+          const checks = disconnectedChecks.get(environmentId) ?? 0;
+          disconnectedChecks.set(environmentId, checks + 1);
+          const delay = Math.min(
+            FIRST_RETRY_WHILE_DISCONNECTED_MS * 2 ** checks,
+            RETRY_WHILE_DISCONNECTED_MS,
+          );
+          setTimeout(() => setProbe(environmentId, undefined), delay);
+          return;
+        }
+        disconnectedChecks.delete(environmentId);
+        setProbe(environmentId, {
+          availability: "unavailable",
+          reason: "The connected server does not serve Tasks.",
+        });
+      },
+    );
+  };
+
+  const readAccess = (environmentId: EnvironmentId) => {
+    if (!probes.has(environmentId)) startProbe(environmentId);
+    return resolveTasksWebAccess(probes.get(environmentId) ?? { availability: "loading" });
+  };
+
+  return {
+    readAccess,
+    readClient: (environmentId) => {
+      let client = clients.get(environmentId);
+      if (client === undefined) {
+        client = createTasksWebRpcClient(requestFor(environmentId), {
+          getAccess: () => readAccess(environmentId),
+        });
+        clients.set(environmentId, client);
+      }
+      return client;
+    },
+    readPlannerAvailability: (environmentId) => {
+      const known = plannerProbes.get(environmentId);
+      if (known !== undefined) return known;
+      plannerProbes.set(environmentId, "loading");
+      const today = new Date().toLocaleDateString("en-CA");
+      requestFor(environmentId)((client) =>
+        client[TASKS_RPC_METHODS.scheduleRange]({ from: today, to: today }),
+      ).then(
+        () => setPlannerProbe(environmentId, "enabled"),
+        (error: unknown) => {
+          if (isEnvironmentRpcUnavailable(error)) {
+            setTimeout(
+              () => setPlannerProbe(environmentId, undefined),
+              RETRY_WHILE_DISCONNECTED_MS,
+            );
+            return;
+          }
+          setPlannerProbe(environmentId, "unavailable");
+        },
+      );
+      return "loading";
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    revision: () => revision,
+  };
+}

@@ -1,3 +1,1 @@
-export * from "./capabilityGate.ts";
-export * from "./tasksRpcGroup.ts";
-export * from "./tasksRpcClient.ts";
+export * from "@t3tools/tasks-client/rpc";

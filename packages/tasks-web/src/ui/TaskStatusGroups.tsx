@@ -28,7 +28,7 @@ import {
   SIDEBAR_SECTION_HEADER_GAP,
 } from "../../../../apps/web/src/sidebarMetrics/sidebarMetrics.ts";
 import { SidebarSectionHeader } from "../../../../apps/web/src/sidebarProjects/SidebarSectionHeader.tsx";
-import { movedGroupOrder, type TaskStatusGroup } from "./taskStatusGroups.ts";
+import { movedGroupOrder, type TaskStatusGroup } from "@t3tools/tasks-client/taskStatusGroups";
 
 interface GroupDragState {
   readonly keys: readonly string[];

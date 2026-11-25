@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { msg } from "gt-react";
-import { sameTaskTargets } from "../state/taskPages.ts";
+import { sameTaskTargets } from "@t3tools/tasks-client/state/taskPages";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import {
@@ -16,7 +16,7 @@ import {
   type TasksDataState,
   type TasksStateTarget,
 } from "../state/index.ts";
-import type { TasksWebAccess, TasksWebRpcClient } from "../rpc/index.ts";
+import type { TasksWebAccess, TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
 import {
   readTasksWebAccess,
   readTasksWebClient,

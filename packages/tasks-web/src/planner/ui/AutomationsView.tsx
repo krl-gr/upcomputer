@@ -17,7 +17,7 @@ import {
 } from "../../../../../apps/web/src/state/environments.ts";
 import { useHeldClientNotices } from "../../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
 import { usePlannerAvailability } from "../../environmentApi.ts";
-import type { TasksStateTarget } from "../../state/tasksState.ts";
+import type { TasksStateTarget } from "@t3tools/tasks-client/state/tasksState";
 import { FLOATING_ACTIONS_CLEARANCE_CLASS } from "../../ui/FloatingActions.tsx";
 import { agentTriggerTags } from "../../ui/pageFilters.ts";
 import type { HandOffAgent } from "../logic/handOff.ts";

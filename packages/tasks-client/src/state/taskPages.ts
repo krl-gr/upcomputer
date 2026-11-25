@@ -4,7 +4,7 @@ import type { TasksStateTarget, ScopedTask } from "./tasksState.ts";
 
 /** A list row; its text is absent when the list asked to omit it. */
 export type ScopedTaskListItem = Omit<ScopedTask, "description" | "output"> &
-  Pick<TaskPageResult["tasks"][number], "description" | "output" | "runCounts">;
+  Pick<TaskPageResult["tasks"][number], "description" | "output" | "runCounts" | "latestRunStatus">;
 export interface TaskPageState {
   readonly tasks: readonly ScopedTaskListItem[];
   readonly statuses: readonly string[];

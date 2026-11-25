@@ -24,7 +24,7 @@ import {
   type TaskWorkflowVersion,
 } from "@t3tools/tasks-contracts/v1";
 
-import type { TasksWebRpcClient } from "../rpc/index.ts";
+import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
 import type { ScopedTaskAgent, ScopedTaskAgentRun, ScopedTaskRow } from "../state/index.ts";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
 import type { AppModelOption } from "../../../../apps/web/src/modelSelection.ts";

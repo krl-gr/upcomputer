@@ -1,14 +1,5 @@
-import {
-  TASK_ARCHIVED_EVENT,
-  TASK_STATUS_CHANGED_EVENT,
-  TASK_UNARCHIVED_EVENT,
-  TaskArchiveChangedPayload,
-  TaskStatusChangedPayload,
-  type TaskActor,
-  type TaskEvent,
-} from "@t3tools/tasks-contracts/v1";
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
+import { taskHistoryRecords } from "@t3tools/tasks-client/taskHistory";
+import type { TaskActor, TaskEvent } from "@t3tools/tasks-contracts/v1";
 import { gtFallback, useGT } from "gt-react";
 
 export interface TaskHistoryEntry {
@@ -19,20 +10,7 @@ export interface TaskHistoryEntry {
   readonly at: string;
 }
 
-const decodeStatusChange = Schema.decodeUnknownOption(TaskStatusChangedPayload);
-const decodeAgentNotice = Schema.decodeUnknownOption(
-  Schema.Struct({ agentName: Schema.optional(Schema.String), reason: Schema.String }),
-);
-
 type GT = ReturnType<typeof useGT>;
-
-/** Events that explain why an agent did not act, so a waiting task is not silent. */
-function agentNoticeTitle(kind: string, gt: GT): string | undefined {
-  if (kind === "task.agent-not-started") return gt("Didn't start");
-  if (kind === "task.no-matching-agent") return gt("No worker will pick this up");
-  return undefined;
-}
-const decodeArchiveChange = Schema.decodeUnknownOption(TaskArchiveChangedPayload);
 
 function actorLabel(
   actor: TaskActor,
@@ -61,54 +39,39 @@ export function taskHistoryEntries(
   agentNameForRun: (runId: string) => string | null,
   gt: GT = gtFallback,
 ): TaskHistoryEntry[] {
-  return events.flatMap((event): TaskHistoryEntry[] => {
-    if (event.kind === TASK_STATUS_CHANGED_EVENT) {
-      return Option.match(decodeStatusChange(event.payload), {
-        onNone: () => [],
-        onSome: ({ from, to, actor }) => [
-          {
-            id: event.id,
-            title: `${from} → ${to}`,
-            actor: actorLabel(actor, agentNameForRun, gt),
-            reason: null,
-            at: event.createdAt,
-          },
-        ],
-      });
+  return taskHistoryRecords(events).map((record): TaskHistoryEntry => {
+    const base = { id: record.id, at: record.at };
+    switch (record.kind) {
+      case "status":
+        return {
+          ...base,
+          title: `${record.from} → ${record.to}`,
+          actor: actorLabel(record.actor, agentNameForRun, gt),
+          reason: null,
+        };
+      case "archived":
+      case "unarchived":
+        return {
+          ...base,
+          title:
+            record.kind === "archived"
+              ? gt("Archived", { $context: "history entry: the task was archived" })
+              : gt("Unarchived", { $context: "history entry: the task was unarchived" }),
+          actor: actorLabel(record.actor, agentNameForRun, gt),
+          reason: record.reason,
+        };
+      case "agentNotStarted":
+      case "noMatchingAgent":
+        return {
+          ...base,
+          title:
+            record.kind === "agentNotStarted"
+              ? gt("Didn't start")
+              : gt("No worker will pick this up"),
+          actor: record.agentName ?? gt("Server"),
+          reason: record.reason,
+        };
     }
-    if (event.kind === TASK_ARCHIVED_EVENT || event.kind === TASK_UNARCHIVED_EVENT) {
-      return Option.match(decodeArchiveChange(event.payload), {
-        onNone: () => [],
-        onSome: ({ actor, reason }) => [
-          {
-            id: event.id,
-            title:
-              event.kind === TASK_ARCHIVED_EVENT
-                ? gt("Archived", { $context: "history entry: the task was archived" })
-                : gt("Unarchived", { $context: "history entry: the task was unarchived" }),
-            actor: actorLabel(actor, agentNameForRun, gt),
-            reason: reason ?? null,
-            at: event.createdAt,
-          },
-        ],
-      });
-    }
-    const noticeTitle = agentNoticeTitle(event.kind, gt);
-    if (noticeTitle !== undefined) {
-      return Option.match(decodeAgentNotice(event.payload), {
-        onNone: () => [],
-        onSome: ({ agentName, reason }) => [
-          {
-            id: event.id,
-            title: noticeTitle,
-            actor: agentName ?? gt("Server"),
-            reason,
-            at: event.createdAt,
-          },
-        ],
-      });
-    }
-    return [];
   });
 }
 

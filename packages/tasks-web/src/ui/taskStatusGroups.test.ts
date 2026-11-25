@@ -9,7 +9,7 @@ import {
   mergedGroupOrder,
   taskStatusGroups,
   tasksOfGroup,
-} from "./taskStatusGroups.ts";
+} from "@t3tools/tasks-client/taskStatusGroups";
 
 const task = (id: string, status: string) => ({ id, environmentId: "local", status });
 

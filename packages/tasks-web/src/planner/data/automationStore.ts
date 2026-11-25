@@ -17,8 +17,8 @@ import type {
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import { msg } from "gt-react";
 
-import type { TasksWebRpcClient } from "../../rpc/index.ts";
-import { reuseRows } from "../../state/recent.ts";
+import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
+import { reuseRows } from "@t3tools/tasks-client/state/recent";
 
 export interface AutomationSnapshot {
   /** In the person's order. */

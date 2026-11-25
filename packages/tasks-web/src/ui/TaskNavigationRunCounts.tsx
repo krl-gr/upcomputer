@@ -12,7 +12,7 @@ import {
   readTasksWebClient,
   useTasksWebAccessRevision,
 } from "../environmentApi.ts";
-import type { TasksWebRpcClient } from "../rpc/index.ts";
+import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
 import { environmentRunCountsStore } from "../state/environmentRunCounts.ts";
 import { taskRunPresentation } from "./taskRunPresentation.ts";
 

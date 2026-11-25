@@ -32,7 +32,7 @@ import { Switch } from "../../../../../apps/web/src/components/ui/switch.tsx";
 import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
 import { Toggle } from "../../../../../apps/web/src/components/ui/toggle.tsx";
 import { formatRelativeTimeLabel } from "../../../../../apps/web/src/timestampFormat.ts";
-import { TaskPageLoader, type TaskPageLoadState } from "../../state/taskPageLoader.ts";
+import { TaskPageLoader, type TaskPageLoadState } from "@t3tools/tasks-client/state/taskPageLoader";
 import {
   WEEKDAYS,
   calendarScheduleToCron,

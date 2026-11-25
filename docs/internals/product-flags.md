@@ -44,7 +44,7 @@ The web composition carries the flags too. Upstream files call `apps/web/src/pro
 - `t3Chat`: no T3 Chat page in the UpComputer Connect account menu and no T3 Chat upgrade links under the tunnel meter. Our relay has no T3 Chat link secret, so the link is off there anyway.
 - `fleetTrackSwitch`: Settings, Update track switches only this app's desktop updater (`updateTrack/switchDesktopUpdateChannel.ts`), with no npm lookup of the `t3` package, no `UpdateTrackSwitchDialog` and no count of machines left on the other track. Up.computer publishes no npm package, so upstream's lookup would find T3 Code's releases.
 - `standaloneCli`: the hosted app's "Run on your computer" steps show the command with the desktop download link, not upstream's `t3.codes/install.sh` installer.
-- `mobileApp`: the Welcome page leaves out its phone section and Settings, About its Mobile app row and search entry. Upstream's phone app signs in to upstream's Connect, not our relay.
+- `mobileApp`: the Welcome page leaves out its phone section and Settings, About its Mobile app row and search entry. They stay hidden until the iPhone app ships.
 - `issues` is the one flag a user can override. Off, Issues is opt-in through the `issuesEnabled` client setting (Settings, General, Sidebar, "Issues"), read through `apps/web/src/issuesSetting/issuesShown.ts`: until it is on there is no sidebar button (`SidebarChrome.tsx`), no "Open issues" in the command palette, `/issues` redirects home, the reopen shortcut skips Issues views, linked issue rows and badges are left out without reading issue details, and issue links open as ordinary links (`openIssueLink.ts`, `ChatMarkdown.tsx`). An issue tab already open in the right panel stays until closed. The server, its `issues` capability, the agents' issue tools and the issue tracker settings stay, since agents use them.
 - `triage`: no "Triage an issue" in the command palette. Its playbook files issues against upstream's repository, so the server's `triage` capability is off.
 - Terminal metadata (`state/terminalSessions.ts`): `useKnownTerminalSessions` subscribes with `terminalSurface`, since the panel tab takes its labels and working directories from it and ChatView allocates terminal ids from it; `useThreadRunningTerminalIds`, the thread rows' running-terminal badge, needs `terminal` too.
@@ -70,7 +70,7 @@ Some upstream UI is replaced rather than hidden. `ProductSurfaces` in the same m
 
 ## Mobile app
 
-The mobile app is not a flag: `pnpm-workspace.yaml` excludes `apps/mobile` from install and build, and `allowUnusedPatches` keeps its patch entries valid. Upstream's mobile CI workflows filter on `@t3tools/mobile` and would fail; this fork does not run them.
+The mobile app is not a flag: `apps/mobile` is in the pnpm workspace, so CI typechecks, lints and tests it with everything else. Upstream's mobile workflows (EAS builds, dev clients, fingerprints, native lint) need T3's Expo account or a macOS runner and run only in `pingdotgg/t3code`.
 
 ## Sync rule
 

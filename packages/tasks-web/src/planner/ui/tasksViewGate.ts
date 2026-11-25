@@ -1,8 +1,8 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useEffect, useState } from "react";
 
-import type { TasksWebAvailability } from "../../rpc/capabilityGate.ts";
-import type { TasksStateTarget } from "../../state/tasksState.ts";
+import type { TasksWebAvailability } from "@t3tools/tasks-client/rpc";
+import type { TasksStateTarget } from "@t3tools/tasks-client/state/tasksState";
 
 /**
  * UpComputer: how long the planner and automations say they are loading

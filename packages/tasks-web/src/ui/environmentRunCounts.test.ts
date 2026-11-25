@@ -4,7 +4,7 @@ import * as NodeTimersPromises from "node:timers/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { TaskChange, TaskRunCount } from "@t3tools/tasks-contracts/v1";
-import type { TasksWebRpcClient } from "../rpc/tasksRpcClient.ts";
+import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
 import { EnvironmentRunCountsStore } from "../state/environmentRunCounts.ts";
 import { WorkingRunCount } from "./TaskNavigationRunCounts.tsx";
 

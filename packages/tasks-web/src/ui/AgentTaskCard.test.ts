@@ -2,7 +2,7 @@ import { act, createElement, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
-import type { ScopedTaskListItem } from "../state/taskPages.ts";
+import type { ScopedTaskListItem } from "@t3tools/tasks-client/state/taskPages";
 
 const passthrough = vi.hoisted(
   () =>

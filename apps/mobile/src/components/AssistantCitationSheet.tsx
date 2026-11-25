@@ -1,4 +1,8 @@
-import { ASSISTANT_CITATION_MAX_COMMENT_LENGTH, type AssistantCitation } from "@t3tools/contracts";
+import {
+  ASSISTANT_CITATION_MAX_COMMENT_LENGTH,
+  type AssistantCitation,
+  isTaskOutputCitation,
+} from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { useState } from "react";
 import { T, useGT } from "gt-react-native";
@@ -101,16 +105,18 @@ export function AssistantCitationSheet(props: {
           </ListSection>
         ) : null}
         <ListSection>
-          <ListActionRow
-            icon="arrow.up.right"
-            label={gt("Go to message")}
-            onPress={() => {
-              if (commentTooLong) return;
-              close();
-              requestThreadMessageJump(scopedThreadKey(citation), citation.messageId);
-              openLinkedThread(citation);
-            }}
-          />
+          {isTaskOutputCitation(citation) ? null : (
+            <ListActionRow
+              icon="arrow.up.right"
+              label={gt("Go to message")}
+              onPress={() => {
+                if (commentTooLong) return;
+                close();
+                requestThreadMessageJump(scopedThreadKey(citation), citation.messageId);
+                openLinkedThread(citation);
+              }}
+            />
+          )}
           <ListActionRow
             icon="doc.on.doc"
             label={gt("Copy quote")}

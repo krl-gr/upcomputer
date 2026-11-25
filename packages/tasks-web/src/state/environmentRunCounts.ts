@@ -1,5 +1,5 @@
 import type { TaskChange, TaskRunCount } from "@t3tools/tasks-contracts/v1";
-import type { TasksWebRpcClient } from "../rpc/tasksRpcClient.ts";
+import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
 
 const EMPTY: readonly TaskRunCount[] = [];
 

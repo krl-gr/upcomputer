@@ -1,7 +1,7 @@
 import type { ThreadId } from "@t3tools/contracts";
 import type { TaskChange, TaskRunCount } from "@t3tools/tasks-contracts/v1";
-import type { TasksWebRpcClient } from "../rpc/tasksRpcClient.ts";
-import { isFinishedRunStatus } from "../ui/taskRunPresentation.ts";
+import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
+import { isFinishedRunStatus } from "@t3tools/tasks-client/taskRunStatus";
 
 const EMPTY: readonly TaskRunCount[] = [];
 /** Shared per environment client, independent of the Tasks route. No polling or per-row requests. */

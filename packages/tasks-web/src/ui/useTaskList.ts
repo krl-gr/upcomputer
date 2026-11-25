@@ -1,10 +1,10 @@
 import type { TaskListSettings, TaskListSettingsUpdateInput } from "@t3tools/tasks-contracts/v1";
 import { useMemo, useState } from "react";
 
-import type { TasksStateTarget } from "../state/tasksState.ts";
+import type { TasksStateTarget } from "@t3tools/tasks-client/state/tasksState";
 import type { TasksPageFilters } from "./pageFilters.ts";
 import type { ViewProjectFilter } from "./projectFilter.ts";
-import { isStatusGroupOpen, keptStatusGroups } from "./taskStatusGroups.ts";
+import { isStatusGroupOpen, keptStatusGroups } from "@t3tools/tasks-client/taskStatusGroups";
 import { useTaskListSettings } from "./useTaskListSettings.ts";
 import { useTaskPages, type TaskStatusGroupPaging } from "./useTaskPages.ts";
 

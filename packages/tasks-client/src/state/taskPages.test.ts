@@ -1,8 +1,8 @@
 import * as NodeAssert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import type { TaskPageResult } from "@t3tools/tasks-contracts/v1";
-import type { TasksStateTarget } from "../state/tasksState.ts";
-import { mergeTaskPage, TaskPageRequests, sameTaskTargets } from "../state/taskPages.ts";
+import type { TasksStateTarget } from "./tasksState.ts";
+import { mergeTaskPage, TaskPageRequests, sameTaskTargets } from "./taskPages.ts";
 
 const target = { environmentId: "local" } as TasksStateTarget;
 const result = (ids: string[]) =>

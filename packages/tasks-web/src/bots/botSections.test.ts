@@ -43,7 +43,7 @@ vi.mock("../environmentApi.ts", () => {
 
 import { readClientNotices } from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
 import { allSidebarThreadsClaimKey } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
-import { TaskChangeStreamEnded } from "../rpc/taskChanges.ts";
+import { TaskChangeStreamEnded } from "@t3tools/tasks-client/rpc";
 import {
   readLocalStorageValue,
   removeLocalStorageItem,

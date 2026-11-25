@@ -4,18 +4,21 @@ import {
   type ClientNoticeInput,
   useHeldClientNotices,
 } from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
-import { compareScopedTaskOrder, type TasksStateTarget } from "../state/tasksState.ts";
-import { TaskPageLoader, type TaskPageLoadState } from "../state/taskPageLoader.ts";
+import {
+  compareScopedTaskOrder,
+  type TasksStateTarget,
+} from "@t3tools/tasks-client/state/tasksState";
+import { TaskPageLoader, type TaskPageLoadState } from "@t3tools/tasks-client/state/taskPageLoader";
 import {
   recentTaskPages,
   type TaskPageState,
   type ScopedTaskListItem,
-} from "../state/taskPages.ts";
+} from "@t3tools/tasks-client/state/taskPages";
 import {
   recentStatusCounts,
   TaskStatusCountsLoader,
   type TaskStatusCountsState,
-} from "../state/taskStatusCounts.ts";
+} from "@t3tools/tasks-client/state/taskStatusCounts";
 import type {
   TaskArchiveFilter,
   TaskChange,
@@ -29,7 +32,7 @@ import {
   type ViewProjectFilter,
 } from "./projectFilter.ts";
 import { ALL_FILTER } from "./pageFilters.ts";
-import { statusGroupKey } from "./taskStatusGroups.ts";
+import { statusGroupKey } from "@t3tools/tasks-client/taskStatusGroups";
 import { resolveTaskPagesStatus, useTasksInitialWaitOver } from "../planner/ui/tasksViewGate.ts";
 
 const PAGE_SIZE = 100;

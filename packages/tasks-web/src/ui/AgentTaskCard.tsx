@@ -30,7 +30,7 @@ import {
   ROW_HOVER_CLASS,
   ROW_TITLE_CLASS,
 } from "../planner/ui/rowShell.ts";
-import type { ScopedTaskListItem } from "../state/taskPages.ts";
+import type { ScopedTaskListItem } from "@t3tools/tasks-client/state/taskPages";
 import type { TasksWebProject } from "./shared.ts";
 import { groupTaskRunCounts } from "./taskRunPresentation.ts";
 import "./agentTaskCard.css";

@@ -197,11 +197,12 @@ function CrashReportsSetting() {
       <Text className="px-2 text-sm leading-normal text-foreground-muted">
         <T>
           When the app crashes or hits an error, it sends the error message, the stack trace, the
-          app version, and the device model and OS version to the T3 Code team. Each launch also
+          app version, and the device model and OS version to the Up.computer team. Each launch also
           sends startup timings. Reports carry a random ID for this install.
         </T>{" "}
         <T>
-          Turning this off also stops the connection traces the app sends to diagnose T3 Connect.
+          Turning this off also stops the connection traces the app sends to diagnose UpComputer
+          Connect.
         </T>
       </Text>
     </View>

@@ -43,6 +43,7 @@ import { IssueEditScreen } from "./features/issues/IssueEditScreen";
 import { IssueLabelsScreen } from "./features/issues/IssueLabelsScreen";
 import { IssueFilterSearchScreen } from "./features/issues/IssueFilterSearchScreen";
 import { IssueRouteScreen } from "./features/issues/IssueRouteScreen";
+import { TASK_SCREENS } from "./features/tasks/taskRoutes";
 import {
   RenderErrorBoundary,
   RenderFailureView,
@@ -208,7 +209,7 @@ const ROUTE_TITLES: Readonly<Record<string, string>> = {
   AddProject: msg("Add project"),
   ThreadFiles: msg("Files"),
   SettingsLegal: msg("Legal"),
-  ConnectOnboarding: msg("Set up {product}", { product: "T3 Connect" }),
+  ConnectOnboarding: msg("Set up {product}", { product: "UpComputer Connect" }),
   Connections: msg("Environments"),
   ConnectionsNew: msg("Add Environment"),
 };
@@ -648,6 +649,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: IssueFilterSearchScreen,
       options: SEARCH_SHEET_ROUTE,
     }),
+    ...TASK_SCREENS,
     Thread: createNativeStackScreen({
       screen: ThreadRouteScreen,
       linking: { path: "threads/:environmentId?/:threadId?", alias: ["new/draft"] },

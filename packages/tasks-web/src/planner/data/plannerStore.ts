@@ -31,14 +31,14 @@ import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import type { ProjectId } from "@t3tools/contracts";
 import { msg } from "gt-react";
 
-import type { TasksWebRpcClient } from "../../rpc/index.ts";
+import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
 import {
   isDisconnectError,
   TaskPageLoader,
   type TaskPageLoadState,
-} from "../../state/taskPageLoader.ts";
-import { reuseRows, sameRow } from "../../state/recent.ts";
-import type { TasksStateTarget } from "../../state/tasksState.ts";
+} from "@t3tools/tasks-client/state/taskPageLoader";
+import { reuseRows, sameRow } from "@t3tools/tasks-client/state/recent";
+import type { TasksStateTarget } from "@t3tools/tasks-client/state/tasksState";
 import type { ScheduleProgressCount } from "../logic/progress.ts";
 import type { PlannerKind } from "./preferences.ts";
 import {
