@@ -145,8 +145,8 @@ open.
 
 Threads that are working or waiting on work they will resume from move into a collapsed
 **Working** section below the active list.
-That includes subagents, watched pull requests with checks still running, and background commands or monitors the agent
-says it is waiting on. A dev server or other process an agent leaves running does not keep a thread
+That includes subagents, watched pull requests with checks still running, Claude monitors,
+and background commands or other monitors the agent says it is waiting on. A dev server or other process an agent leaves running does not keep a thread
 there. A thread returns to the top of the active list when it finishes, fails, or needs an approval or
 answer. The Working section lists the thread you last sent work to first. Pinned threads stay in
 the pinned section.
@@ -331,12 +331,17 @@ model, and reasoning level shown in the thread's composer, including for its fir
 reply. Change them for an individual side chat in its composer. Later changes to the
 parent do not change existing side chats.
 
-To use what you learned, choose **Bring back**. The thread gets the side chat with
-your next message there. Bring back is available while the thread is idle.
+To use what you learned, choose **Add to chat** at the top of the side chat, or type
+`@` and a word from its title in the thread's composer. The thread's message gets a
+link to the side chat, and the agent reads as much of it as it needs. This works
+while the thread is busy, once you have sent a message in the side chat. An agent on
+an external OpenCode server cannot read the link, so put the details in your message
+instead.
 
 Closing a side chat you never sent a message in deletes it. To delete one you used,
 choose **Delete** at the top of the side chat. Deleting a thread also deletes its
-side chats.
+side chats. Archiving a thread also archives its side chats and stops their work, and
+unarchiving the thread brings them back.
 
 On mobile, a thread lists its side chats above the composer. Tap one to open it and
 answer its questions.
@@ -361,48 +366,6 @@ question and answer when the thread wakes; the question stays unanswered.
 
 ## Bots
 
-Create a personal assistant with **+** next to **Bots** in the sidebar, or turn an
-idle chat into one: right-click it in the sidebar, or click its title in the chat
-header, and choose **Turn into bot**. Each bot has one permanent
-conversation: click its row to open it. The conversation is listed under **Bots**
-instead of **Threads**, and search still finds it. Returning from the sidebar,
-restarting the app, and changing its model keep that conversation and its history.
-A bot's chat has no header; its row shows the same statuses as a thread row, and
-counts its background task too: **Waiting** while the task runs, **Awaiting Input**
-when it is blocked, and **Failed** when it fails or is interrupted, until you open
-the bot's conversation. It also shows **Pending Approval** or **Awaiting Input**
-while any task started from the conversation, the bot's own or a worker's,
-waits for you. Hover the bot's name for the cause.
-
-Hover the row and click the settings button to open the bot's page. There you
-change its name, appearance, instructions, model, and project. Changes save
-automatically and apply from the bot's next turn. Changing the project or provider
-waits until the bot is idle. To tell a bot about other projects, write it in its
-instructions. Filesystem access still follows the selected provider's existing
-runtime permissions.
-
-Pick the bot's shape, color, and accessories from the pictures on its page. The
-appearance follows the bot across projects, models, and restarts.
-
-Memory belongs to the bot, independently of its model and project. The bot saves
-useful facts during its turns in its own conversation. To have it remember
-something, start a message with **Remember:** followed by the fact. The colon is
-required, and only your own messages save this way, not messages agents post into
-the conversation. Under **Memory** on the bot's page, click a fact to edit it
-(Enter saves, Escape cancels) or delete it. The bot cannot change or forget a fact
-you saved or edited.
-
-A new model conversation receives up to 12,000 characters of current memory, your
-facts first, then the newest, from at most 200 stored entries. The bot's page dims
-the facts that do not fit and says how many there are; the bot can still look them
-up. It receives memory again after a provider change, a handoff, a restart that
-cannot resume the earlier session, or a compaction the provider reports. Later
-turns receive only what changed, and nothing when memory is unchanged. The full
-conversation stays searchable, while the provider's context remains bounded.
-**Remove bot** at the bottom of its page deletes its memory and returns its
-conversation to **Threads** as an ordinary chat.
-
-To give the bot a background task, ask for it in the bot's chat. The task runs in
-Tasks and returns progress and results to the bot's conversation. Background tasks
-can read untrusted pages and files, so they cannot save memory: what a task found
-comes back in its result, and the bot decides in its conversation what to remember.
+A bot is one permanent chat with its own memory. Its chat is listed under **Bots** instead of
+**Threads**. To create one, click **+** next to **Bots**, or right-click an idle chat and choose
+**Turn into bot**. See [Bots](./bots.md).

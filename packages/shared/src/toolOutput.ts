@@ -15,6 +15,7 @@ import {
   readMcpAppReference,
   type McpAppReference,
 } from "./mcpApp.ts";
+import { PROVIDER_SIGN_IN_TOOL_NAME } from "./providerSignIn.ts";
 import { resolveT3McpToolId } from "./t3McpToolPresentation.ts";
 
 export const SEND_TO_USER_TOOL_NAME = "send_to_user";
@@ -29,6 +30,8 @@ const MAX_CONTENT_BLOCKS = 32;
 const MAX_ENVELOPE_DEPTH = 4;
 const MAX_ENVELOPE_NODES = 128;
 const encoder = new TextEncoder();
+// Antigravity's terminal tool prefixes an `acp-mcp-call` result's stdout with timestamps and exit status.
+const TERMINAL_OUTPUT_MARKER = "\nCommand output:\n";
 
 interface ResultReadBudget {
   remainingBytes: number;
@@ -55,6 +58,10 @@ interface CompactToolOutput {
   linkedCount?: number;
   unlinkedCount?: number;
   sentMessage?: string;
+  /** The terminal `provider_sign_in` opened in the caller's thread. */
+  signInTerminalId?: string;
+  /** The app-managed provider whose setup `provider_sign_in` shows in the caller's thread. */
+  appSetupInstanceId?: string;
 }
 
 function readResult(value: unknown, budget: ResultReadBudget, depth = 0): ResultEnvelope {
@@ -105,7 +112,12 @@ function readResult(value: unknown, budget: ResultReadBudget, depth = 0): Result
     value.is_error === true ||
     value._tag === "OrchestratorMcpFailure" ||
     value.error != null;
-  const content = value.structuredContent ?? value.content;
+  const terminal = typeof value.output === "string" ? value.output : "";
+  const marker = terminal.indexOf(TERMINAL_OUTPUT_MARKER);
+  const content =
+    value.structuredContent ??
+    value.content ??
+    (marker === -1 ? undefined : terminal.slice(marker + TERMINAL_OUTPUT_MARKER.length));
   if (content !== undefined) {
     const nested = readResult(content, budget, depth + 1);
     return { ...nested, failed: failed || nested.failed };
@@ -145,6 +157,10 @@ export function compactDynamicToolOutput(value: unknown): CompactToolOutput | un
       data.sentMessage.length <= SEND_TO_USER_MAX_LENGTH
     ) {
       output.sentMessage = data.sentMessage;
+    }
+    for (const key of ["signInTerminalId", "appSetupInstanceId"] as const) {
+      const id = boundedId(data[key]);
+      if (id !== undefined) output[key] = id;
     }
     const htmlRender = readHtmlRenderReference(data.htmlRender);
     if (htmlRender !== undefined) output.htmlRender = htmlRender;
@@ -231,6 +247,32 @@ export function sentMessageFromToolItem(item: {
   return output?.isError ? undefined : output?.sentMessage;
 }
 
+export type ProviderSignInSurface =
+  | { readonly kind: "terminal"; readonly terminalId: string }
+  | { readonly kind: "appSetup"; readonly instanceId: string };
+
+/** What a `provider_sign_in` call shows under itself: its terminal or the app's own setup. */
+export function providerSignInFromToolItem(item: {
+  readonly toolName: string | null | undefined;
+  readonly output?: unknown;
+}): ProviderSignInSurface | undefined {
+  if (
+    item.toolName !== OPENCODE_CODE_MODE_TOOL_NAME &&
+    resolveT3McpToolId(item.toolName) !== PROVIDER_SIGN_IN_TOOL_NAME
+  ) {
+    return undefined;
+  }
+  const output = compactDynamicToolOutput(item.output);
+  if (output === undefined || output.isError) return undefined;
+  if (output.signInTerminalId !== undefined) {
+    return { kind: "terminal", terminalId: output.signInTerminalId };
+  }
+  if (output.appSetupInstanceId !== undefined) {
+    return { kind: "appSetup", instanceId: output.appSetupInstanceId };
+  }
+  return undefined;
+}
+
 /** The thread-owned file `preview_recording_stop` stored for the agent. */
 export function previewRecordingIdFromToolItem(item: {
   readonly toolName: string | null | undefined;
@@ -274,6 +316,19 @@ export function toolOutputIndicatesFailure(text: string): boolean {
       (/is not recognized/i.test(text) && /the term '/i.test(text)) ||
       /exit(?:ed)? with exit code\s+[1-9]\d*/i.test(text) ||
       /exit code\s*[:\s]\s*[1-9]\d*\b/i.test(text))
+  );
+}
+
+/** Whether a command failed. A reported exit code outranks text in its output. */
+export function commandIndicatesFailure(command: {
+  readonly exitCode?: number | undefined;
+  readonly outputIndicatesFailure?: boolean | undefined;
+  readonly output?: string | undefined;
+}): boolean {
+  if (command.exitCode !== undefined) return command.exitCode !== 0;
+  return (
+    command.outputIndicatesFailure === true ||
+    (command.output !== undefined && toolOutputIndicatesFailure(command.output.slice(0, 32_768)))
   );
 }
 

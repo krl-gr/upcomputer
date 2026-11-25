@@ -1,4 +1,5 @@
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useGT } from "gt-react";
 
 import { Popover, PopoverPopup } from "../../../../apps/web/src/components/ui/popover.tsx";
 
@@ -21,6 +22,7 @@ export function DetailAutocompleteInput({
   placeholder,
   ariaLabel,
   className,
+  maxSuggestions = 8,
   onChange,
 }: {
   readonly value: string;
@@ -28,8 +30,10 @@ export function DetailAutocompleteInput({
   readonly placeholder: string;
   readonly ariaLabel: string;
   readonly className: string;
+  readonly maxSuggestions?: number;
   readonly onChange: (value: string) => void;
 }) {
+  const gt = useGT();
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
   const listboxId = useId();
@@ -48,8 +52,8 @@ export function DetailAutocompleteInput({
     return [...new Set(options)]
       .filter((option) => !selected.has(option.toLocaleLowerCase()))
       .filter((option) => option.toLocaleLowerCase().includes(query))
-      .slice(0, 8);
-  }, [filtering, options, value]);
+      .slice(0, maxSuggestions);
+  }, [filtering, maxSuggestions, options, value]);
   const popupOpen = open && suggestions.length > 0;
   const selectedIndex = Math.min(activeIndex, Math.max(0, suggestions.length - 1));
 
@@ -124,7 +128,11 @@ export function DetailAutocompleteInput({
         className="w-48 min-w-48 max-w-[calc(100vw-24px)]"
         padding="compact"
       >
-        <div id={listboxId} role="listbox" aria-label={`${ariaLabel} suggestions`}>
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label={gt("{label} suggestions", { label: ariaLabel })}
+        >
           {suggestions.map((option, index) => (
             <button
               key={option}

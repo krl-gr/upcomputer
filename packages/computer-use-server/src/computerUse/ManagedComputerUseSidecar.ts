@@ -53,11 +53,14 @@ function managedComputerUseSidecarCandidates(input?: {
   const relativeExecutable = computerUseSidecarExecutableRelativePath({ platform, arch });
   const environmentPath = (input?.env ?? process.env)[COMPUTER_USE_SIDECAR_ENV]?.trim();
   const moduleDirectory = input?.moduleDirectory ?? import.meta.dirname;
-  const asarSegment = `${NodePath.sep}app.asar${NodePath.sep}`;
-  const unpacked = (directory: string) =>
-    directory.includes(asarSegment)
-      ? directory.replace(asarSegment, `${NodePath.sep}app.asar.unpacked${NodePath.sep}`)
-      : undefined;
+  // The server runs from app.asar, or from server.asar on Windows; natives sit in its .unpacked sibling.
+  const unpacked = (directory: string) => {
+    const segments = directory.split(NodePath.sep);
+    const archive = segments.findIndex((segment) => segment.endsWith(".asar"));
+    if (archive <= 0 || archive === segments.length - 1) return undefined;
+    segments[archive] = `${segments[archive]}.unpacked`;
+    return segments.join(NodePath.sep);
+  };
   const unpackedModuleDirectory = unpacked(moduleDirectory);
   const packageRoot = input?.packageRoot ?? installedPackageRoot();
   // The public desktop build installs the package into node_modules and unpacks it.

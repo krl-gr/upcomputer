@@ -405,7 +405,8 @@ export function createEnvironmentThreadDetailAtoms<E>(
     const thread = key.slice(0, separator);
     const itemId = key.slice(separator + 1);
     return Atom.make((get) => {
-      const item = get(visibleTurnItemsAtomFamily(thread)).find(
+      // Streaming text lands on the newest rows.
+      const item = get(visibleTurnItemsAtomFamily(thread)).findLast(
         (visibleItem) => visibleItem.item.id === itemId,
       )?.item;
       return item?.type === "assistant_message" ? item.text : null;

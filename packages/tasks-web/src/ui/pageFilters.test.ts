@@ -119,13 +119,14 @@ test("filters saved before archiving existed still load, showing active tasks", 
   await act(async () => page.unmount());
 });
 
-test("trigger tags come from enabled agents only", async () => {
+test("trigger tags come from enabled, unarchived agents only", async () => {
   const { agentTriggerTags } = await import("./pageFilters.ts");
   NodeAssert.deepEqual(
     [
       ...agentTriggerTags([
         { enabled: true, startTags: ["browser-use", "dev-2"] },
         { enabled: false, startTags: ["paused"] },
+        { enabled: true, archivedAt: "2026-10-19T09:00:00.000Z", startTags: ["archived"] },
       ]),
     ],
     ["browser-use", "dev-2"],

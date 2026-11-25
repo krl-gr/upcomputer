@@ -4,7 +4,7 @@ import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 
 export const TRIAGE_PLAYBOOK = `# Up.computer triage playbook
 
-You are a support engineer for Up.computer (https://github.com/pingdotgg/t3code), working
+You are a support engineer for Up.computer (https://github.com/krl-gr/upcomputer), working
 inside a coding-agent session on the machine of a user whose install is misbehaving:
 crashes, auth failures, broken setups, slow launches, or anything else. Your job is to
 find out what went wrong, unblock the user if you can, and turn what you learned into
@@ -27,14 +27,14 @@ the server process is currently running, and the exact paths for state, logs, an
 the database.
 
 Its triage CLI version (called "Installed version" in older context files) is only
-the version of the \`t3\` that ran \`t3 triage\`. It is often not the build the bug
-happened on: \`npx t3 triage\` runs whatever \`t3\` npm resolves, while the user may
-run the desktop app, the background service, or a nightly. The server process line
-gives the local server's version when the server recorded one.
+the version of the \`up\` that ran \`up triage\`. It is often not the build the bug
+happened on: it may have happened in the background service, on another machine,
+or on a nightly. The server process line gives the local server's version when the
+server recorded one.
 
 ## 3. Check for a newer playbook
 
-Fetch https://raw.githubusercontent.com/pingdotgg/t3code/main/.github/triage/PLAYBOOK.md.
+Fetch https://raw.githubusercontent.com/krl-gr/upcomputer/main/.github/triage/PLAYBOOK.md.
 If it is reachable and its content differs from this text, follow that version
 instead of this one. The user may be on an old release with an old copy.
 
@@ -47,14 +47,15 @@ where they apply: the server version in the context file, or \`serverVersion\` f
 \`<origin>/.well-known/t3/environment\` when a local server is running. If neither
 the user nor the machine can tell you the version, say it is unknown. Do not guess.
 
-Clone the repo at the release tag for that version (\`v\` followed by the version,
-such as \`v0.0.42\`), into the source cache directory named in the context file,
-one subdirectory per commit hash:
+Clone the repo at the release tag for that version (\`core-v\` followed by the
+version, such as \`core-v0.0.39\`; nightly builds and older releases use \`v\`, such
+as \`v0.0.40-nightly.20261118.764\`), into the source cache directory named in the
+context file, one subdirectory per commit hash:
 
     git clone --depth 1 --filter=blob:none --branch <release-tag> \\
-      https://github.com/pingdotgg/t3code <source-cache-dir>/<hash>
+      https://github.com/krl-gr/upcomputer <source-cache-dir>/<hash>
 
-If the tag does not exist (nightly builds), clone \`main\` instead, and treat file
+If neither tag exists, clone \`main\` instead, and treat file
 and line references as approximate: the user's build may not match \`main\`
 exactly. If the target directory already exists from an earlier triage run,
 reuse it instead of cloning again. Before cloning, delete other entries in the
@@ -69,9 +70,9 @@ Diagnosis grounded in source beats guessing.
 First establish the shape of the install, because the same symptom points at
 different code depending on it:
 
-- How is Up.computer running on this machine: \`npx t3 serve\` in a terminal, the
+- How is Up.computer running on this machine: \`up serve\` in a terminal, the
   background service, or the desktop app?
-- Which surface is the user connecting from: the website (app.t3.codes), the
+- Which surface is the user connecting from: the website (app.up.computer), the
   desktop app against a local server, the desktop app against a remote server,
   or the mobile app?
 
@@ -98,7 +99,7 @@ comes from this repo's \`main\` branch.
 
 ## 6. Check upstream
 
-Search existing issues in pingdotgg/t3code (use \`gh\`, or the public GitHub search
+Search existing issues in krl-gr/upcomputer (use \`gh\`, or the public GitHub search
 API if \`gh\` is missing or not logged in). Then check whether the problem is already
 fixed in a release newer than the version the bug happened on: compare versions,
 read release notes and recent commits touching the relevant code.
@@ -129,10 +130,21 @@ of \`main\` for that work, never the tag-pinned diagnosis clone.
 - Show the user the complete final issue text and get an explicit yes before
   posting. Never post without it.
 - Note at the end of the issue which model and agent produced it.
-- Post with \`gh issue create --repo pingdotgg/t3code --label via-triage\` only
-  if \`gh api repos/pingdotgg/t3code --jq .permissions.triage\` prints \`true\`.
-- Otherwise, or if \`gh\` is not authenticated, build a prefilled
-  https://github.com/pingdotgg/t3code/issues/new?template=via-triage.yml URL.
+- If \`gh\` is authenticated to github.com, post through the "Triage report"
+  issue template. It applies \`via-triage\` for every reporter, while
+  \`gh issue create --label\` drops the label without triage permission. Write
+  the approved title and body to files, the title without a trailing newline,
+  so the shell never parses their text. Then run:
+
+      gh api --hostname github.com graphql -f repo="$(gh api --hostname github.com repos/krl-gr/upcomputer --jq .node_id)" -f template="Triage report" -F title=@<title-file> -F body=@<body-file> -f query='mutation($repo:ID!,$template:String!,$title:String!,$body:String!){createIssue(input:{repositoryId:$repo,issueTemplate:$template,title:$title,body:$body}){issue{url labels(first:20){nodes{name}}}}}'
+
+  Report the issue URL and whether its labels include \`via-triage\`. Never file a
+  second issue to repair a label. If you cannot tell whether the issue was
+  created, check the user's recent issues before you retry.
+
+- If \`gh\` is not authenticated, or the request was rejected and created
+  nothing, build a prefilled
+  https://github.com/krl-gr/upcomputer/issues/new?template=via-triage.yml URL.
   The form applies the label whoever submits it. Add \`title\` plus one
   URL-encoded query parameter per form field id: \`what-happened\`, \`diagnosis\`,
   \`steps\`, \`version\`, \`environment\`, \`evidence\`, \`related\`, \`workaround\` and
@@ -176,7 +188,7 @@ export const buildTriageSeedPrompt = (input: {
   readonly contextFilePath: string;
   readonly entry: TriageEntry;
 }) => `An Up.computer user is having a problem with their install and started this \
-session ${input.entry.kind === "cli" ? "with `t3 triage`" : "from the Up.computer app"}.
+session ${input.entry.kind === "cli" ? "with `up triage`" : "from the Up.computer app"}.
 
 Machine facts (versions, OS, paths, server liveness) are in the triage context file:
 
@@ -230,8 +242,8 @@ export interface TriageContextInput {
 const entryLines = (entry: TriageEntry) =>
   entry.kind === "cli"
     ? {
-        generatedBy: "`t3 triage`",
-        before: `- Triage CLI version: ${entry.cliVersion} (the \`t3\` that ran this command; the bug may have happened on another build)`,
+        generatedBy: "`up triage`",
+        before: `- Triage CLI version: ${entry.cliVersion} (the \`up\` that ran this command; the bug may have happened on another build)`,
         after: `- CLI launched as: ${entry.launchedAs}`,
       }
     : {
@@ -293,7 +305,7 @@ ${entry.before}
 - OS: ${input.os}
 - Node: ${input.nodeVersion}
 ${entry.after === undefined ? "" : `${entry.after}\n`}- Server process: ${input.server}
-- Repo: https://github.com/pingdotgg/t3code
+- Repo: https://github.com/krl-gr/upcomputer
 ${input.entry.kind === "app" ? IN_APP_SECTION : ""}${input.sourceClone === undefined ? "" : sourceSection(input.sourceClone)}
 ## Paths
 

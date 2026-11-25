@@ -6,11 +6,26 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import type { Dispatch, SetStateAction } from "react";
+
+import { observeResize } from "../../lib/observeResize";
 import {
   dismissProviderStatusBannerForSession,
   ProviderStatusBanner,
 } from "./ProviderStatusBanner";
 import { dismissThreadErrorBannerForSession, ThreadErrorBanner } from "./ThreadErrorBanner";
+
+// UpComputer: the conversation starts below the banners (ChatView), so they cover no message.
+function reserveLaneHeight(lane: HTMLDivElement | null) {
+  const host = lane?.parentElement;
+  if (!lane || !host) return;
+  const stop = observeResize(lane, () => {
+    host.style.setProperty("--chat-banner-lane-height", `${lane.offsetHeight}px`);
+  });
+  return () => {
+    stop();
+    host.style.removeProperty("--chat-banner-lane-height");
+  };
+}
 
 /**
  * The banners pinned above the timeline. The dismiss handlers are built here from plain
@@ -42,7 +57,10 @@ export function ChatBannerLane(props: {
     setThreadErrorBannerDismissTick,
   } = props;
   return (
-    <div className="chat-banner-lane pointer-events-none absolute top-0 z-30 flex flex-col">
+    <div
+      ref={reserveLaneHeight}
+      className="chat-banner-lane pointer-events-none absolute top-0 z-30 flex flex-col"
+    >
       <ProviderStatusBanner
         environmentId={props.environmentId}
         status={providerStatus}

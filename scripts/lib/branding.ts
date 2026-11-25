@@ -68,7 +68,9 @@ const MOBILE_PRODUCT_RULE: CopyRule = {
   replacement: "Up.computer",
 };
 
-const isMobileFile = (path: string): boolean => path.startsWith("apps/mobile/");
+// Catalogs also carry shared packages' copy, which the app rule does not rebrand at its source.
+const isMobileFile = (path: string): boolean =>
+  path.startsWith("apps/mobile/") && !TRANSLATION_FILE.test(path);
 
 export const COPY_RULES: ReadonlyArray<CopyRule> = [
   REMOTE_COMMAND_RULE,
@@ -85,10 +87,10 @@ export const COPY_RULES: ReadonlyArray<CopyRule> = [
   { pattern: /\bT3%20Code\b/g, replacement: "Up.computer" },
   // After the phrase rules, which can leave "a Up.computer home".
   { pattern: /\b(a|A) Up\.computer\b/g, replacement: "$1n Up.computer" },
-  // The HTML render tools and their errors, which agents read and repeat to the user.
+  // The HTML render tools and the device hosts' errors, which agents read and repeat to the user.
   {
     pattern:
-      /\bT3('s (?:headless browser|browser|home directory)| (?:is (?:still )?installing|could not install|fits the frame|injects its)\b)/g,
+      /\bT3('s (?:headless browser|browser|home directory)| (?:is (?:still )?installing|could not (?:install|read)|fits the frame|injects its)\b)/g,
     replacement: "Up.computer$1",
   },
   // Markdown links to the site. Other t3.codes URLs are upstream's schemas,
@@ -113,8 +115,8 @@ const COPY_ROOTS = [
 
 const COPY_EXTENSIONS = /\.(ts|tsx|mjs|cjs|js|html|md)$/;
 
-/** The web app's UI translations (gt-react catalogs), in every language. */
-const TRANSLATION_FILE = /^apps\/web\/src\/i18n\/translations\/[\w-]+\.json$/;
+/** The web and iPhone apps' UI translations (gt catalogs), in every language. */
+const TRANSLATION_FILE = /^apps\/(web|mobile)\/src\/i18n\/translations\/[\w-]+\.json$/;
 
 /**
  * User docs, on top of the copy rules: the home directory, the hosted app, the
@@ -142,13 +144,10 @@ const DOC_RULES: ReadonlyArray<CopyRule> = [
 const isDocFile = (path: string): boolean => path.endsWith(".md");
 
 /**
- * Files whose T3 text is not ours to rebrand: upstream's issue triage tool
- * files reports against upstream and its prompt describes upstream's npm `t3`, and the relay contract follows upstream's
- * relay, which Up.computer runs as is.
+ * Files whose T3 text is not ours to rebrand: the relay contract follows
+ * upstream's relay, which Up.computer runs as is.
  */
 const COPY_EXCLUDED = [
-  /^apps\/server\/src\/cli\/triage/,
-  /^apps\/server\/src\/triage\//,
   /^packages\/contracts\/src\/relay\.ts$/,
   /\/fixtures\//,
   /\/node_modules\//,
@@ -179,6 +178,11 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
     path: /^apps\/server\/src\/orchestration-v2\/Adapters\/CodexAdapterV2\.test\.ts$/,
     line: /clientInfo: \{ name: "T3 Code"|userAgent: "T3 Code\//,
   },
+  // `codex exec` sends the same name as its originator.
+  {
+    path: /^apps\/server\/src\/textGeneration\/CodexTextGeneration\.test\.ts$/,
+    line: /requireOriginator: "T3 Code"/,
+  },
   // Muse MSP `initialize` clientInfo, which the Muse replay fixtures pin, and
   // the replay helper that renames upstream's product in those fixtures.
   {
@@ -203,6 +207,13 @@ const KEEP_LINES: ReadonlyArray<{ readonly path: RegExp; readonly line: RegExp }
   { path: /^apps\/desktop\/src\/wsl\/DesktopWslBackend\.ts$/, line: /npx t3@latest/ },
   // Comments in the shell script the SSH tunnel runs on the remote host.
   { path: /^packages\/ssh\/src\/tunnel\.ts$/, line: /^#/ },
+  // The upstream recording's sender note, which the replay test rewrites to ours.
+  {
+    path: /^apps\/server\/src\/mcp\/OrchestratorMcpToolkit\.integration\.test\.ts$/,
+    line: /^\s*"\[T3 Code: the agent in T3 thread ",$/,
+  },
+  // What the remote host's own `t3` binary prints in the tunnel tests; it is upstream's command there.
+  { path: /^packages\/ssh\/src\/tunnel\.test\.ts$/, line: /"host t3 serve\\n"/ },
   // Its headings are the anchors clients link to (T3_CONNECT_TROUBLESHOOTING_SECTIONS in
   // packages/contracts/src/environmentHttp.ts), so they keep upstream's wording.
   { path: /^docs\/user\/t3-connect-troubleshooting\.md$/, line: /^#{2,3} / },
@@ -422,10 +433,68 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   },
   {
     path: "apps/server/src/cli/up.ts",
-    requires: ['Command.make("remote", {', 'resolveHostCliCommand("remote", '],
-    forbids: ['Command.make("up", {', 'resolveHostCliCommand("up", '],
+    requires: ['Command.make("remote", {', 'command("remote")'],
+    forbids: ['Command.make("up", {', 'command("up")'],
   },
   { path: "scripts/lib/public-config.ts", requires: ["applyUpcomputerEnvAliases("] },
+  // Links that send users to a repository: stars, issues and help must reach ours.
+  {
+    path: "apps/web/src/components/GitHubStarPrompt.tsx",
+    requires: ['REPOSITORY = "krl-gr/upcomputer"'],
+    forbids: ["pingdotgg/t3code"],
+  },
+  {
+    path: "apps/web/src/lib/bootError.ts",
+    requires: [
+      "https://github.com/krl-gr/upcomputer/issues/new",
+      'DOWNLOAD_URL = "https://up.computer/download/"',
+      'FALLBACK_TRIAGE_COMMAND = "up triage"',
+    ],
+    forbids: ["pingdotgg/t3code", "t3.codes", "npx t3"],
+  },
+  {
+    path: "apps/web/src/hooks/useStartTriage.ts",
+    requires: ['TRIAGE_CLI_COMMAND = "up triage"'],
+  },
+  {
+    path: "docs/user/t3-connect-troubleshooting.md",
+    requires: ["https://github.com/krl-gr/upcomputer/issues"],
+    forbids: ["pingdotgg/t3code"],
+  },
+  { path: "apps/server/src/policy/policyTemplates.ts", forbids: ["app.t3.codes"] },
+  // Triage clones, searches and files issues in our repository at our release tags.
+  {
+    path: "apps/server/src/triage/TriageService.ts",
+    requires: ['"https://github.com/krl-gr/upcomputer"', "`core-v${version}`"],
+    forbids: ["app.t3.codes", "pingdotgg/t3code"],
+  },
+  ...["apps/server/src/triage/triagePrompt.ts", ".github/triage/PLAYBOOK.md"].map((path) => ({
+    path,
+    requires: [
+      "https://raw.githubusercontent.com/krl-gr/upcomputer/main/.github/triage/PLAYBOOK.md",
+      "core-v",
+      "repos/krl-gr/upcomputer --jq .node_id",
+      "https://github.com/krl-gr/upcomputer/issues/new?template=via-triage.yml",
+    ],
+    forbids: ["pingdotgg/t3code", "app.t3.codes", "npx t3"],
+  })),
+  {
+    path: ".github/ISSUE_TEMPLATE/via-triage.yml",
+    requires: ["up triage"],
+    forbids: ["t3 triage"],
+  },
+  {
+    path: "apps/server/src/cloud/servicePreflight.ts",
+    requires: ["update the Up.computer desktop app", "up service install"],
+    forbids: ["t3.codes/install.sh", "~/.local/bin/t3"],
+  },
+  {
+    path: "packages/contracts/src/environmentHttp.ts",
+    requires: [
+      "https://github.com/krl-gr/upcomputer/blob/main/docs/user/t3-connect-troubleshooting.md",
+    ],
+    forbids: ["github.com/pingdotgg/t3code"],
+  },
   // Web shell.
   {
     path: "apps/web/src/branding.ts",

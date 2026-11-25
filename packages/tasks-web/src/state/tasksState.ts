@@ -36,7 +36,23 @@ export interface TasksStateTarget {
   readonly projectNameById?: ReadonlyMap<ProjectId, string>;
 }
 
-export function compareScopedTaskOrder(left: ScopedTask, right: ScopedTask): number {
+/** A task as a list holds it: list rows can leave out the text, which only details read. */
+export type ScopedTaskRow = Omit<ScopedTask, "description" | "output"> & {
+  readonly description?: string | undefined;
+  readonly output?: string | null | undefined;
+};
+
+/** The row as a full task once it carries its text. */
+export function scopedTaskWithText(task: ScopedTaskRow): ScopedTask | null {
+  const { description, output } = task;
+  return description === undefined || output === undefined
+    ? null
+    : { ...task, description, output };
+}
+
+type TaskOrderFields = Pick<ScopedTask, "environmentId" | "rank" | "id">;
+
+export function compareScopedTaskOrder(left: TaskOrderFields, right: TaskOrderFields): number {
   const environment = left.environmentId.localeCompare(right.environmentId);
   return environment || left.rank.localeCompare(right.rank) || left.id.localeCompare(right.id);
 }

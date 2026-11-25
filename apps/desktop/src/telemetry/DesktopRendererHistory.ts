@@ -11,6 +11,7 @@ import * as Queue from "effect/Queue";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { makeRotatingLogFileWriter } from "../app/DesktopObservability.ts";
 import * as DesktopProductEvents from "./DesktopProductEvents.ts";
+import * as DesktopSessionState from "./DesktopSessionState.ts";
 
 export interface RendererIdentity {
   readonly surface: "main" | "preview" | "splash" | "picture-in-picture" | "devtools";
@@ -78,6 +79,7 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
   const path = yield* Path.Path;
   const clock = yield* Clock.Clock;
   const productEvents = yield* DesktopProductEvents.optional;
+  const sessionState = yield* DesktopSessionState.optional;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
   const mainSessionStartedAtUnixMs = clock.currentTimeMillisUnsafe();
@@ -190,6 +192,8 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
           renderer.creationTimeMs = null;
           renderer.memory = null;
           renderer.gone = false;
+          // The main window is back, so its crash no longer explains how the session ends.
+          if (renderer.identity.surface === "main") sessionState.recoveredUnsafe("renderer_gone");
         }
         record(renderer, "dom-ready");
       };

@@ -52,6 +52,7 @@ function layerElectronApp(
       return metrics;
     }),
     setAsDefaultProtocolClient: () => Effect.succeed(true),
+    withoutDefaultProtocolClientClaims: (effect) => effect,
     setDesktopName: () => Effect.void,
     setDockIcon: () => Effect.void,
     appendCommandLineSwitch: () => Effect.void,
@@ -93,6 +94,7 @@ describe("DesktopTelemetryPublisher", () => {
                 installIntoProcess: Effect.succeed(true),
                 awaitDiscovery: Effect.succeed(true),
                 awaitUserShellDiscovery: Effect.succeed(true),
+                discoveryFinished: Effect.succeed(true),
                 updates: Stream.make({
                   version: 1,
                   type: "shellEnvironment",

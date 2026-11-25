@@ -3,6 +3,13 @@ import type {
   ServerProviderVersionAdvisory,
   ServerProviderCompatibilityAdvisory,
 } from "@t3tools/contracts";
+import { msg } from "gt-react";
+
+import { m, type MessageResolver } from "../../i18n/messages";
+import {
+  hasOneClickUpdateProviderCandidate,
+  isProviderUpdateCandidate,
+} from "../ProviderUpdateLaunchNotification.logic";
 
 export const PROVIDER_STATUS_STYLES = {
   // UpComputer: not reported yet, or its first check is still running.
@@ -27,6 +34,15 @@ export const PROVIDER_STATUS_STYLES = {
 } as const;
 
 export type ProviderStatusKey = keyof typeof PROVIDER_STATUS_STYLES;
+
+/** The server names a custom endpoint in English; other auth labels are product or plan names. */
+export function providerAuthLabel(
+  auth: Pick<ServerProvider["auth"], "label" | "type">,
+  resolve: MessageResolver = m,
+): string | undefined {
+  if (auth.type === "customEndpoint") return resolve(msg("Custom API endpoint"));
+  return auth.label ?? auth.type;
+}
 
 // Antigravity's local health check verifies installation, not Google sign-in.
 // API-key and Agent Platform warnings still need attention.
@@ -54,66 +70,76 @@ export function getProviderStatusKey(
   return provider.status;
 }
 
-export function getProviderSummary(provider: ServerProvider | undefined) {
+export function getProviderSummary(
+  provider: ServerProvider | undefined,
+  resolve: MessageResolver = m,
+) {
   if (!provider) {
     return {
-      headline: "Checking provider status",
-      detail: "Waiting for the server to report installation and authentication details.",
+      headline: resolve(msg("Checking provider status")),
+      detail: resolve(
+        msg("Waiting for the server to report installation and authentication details."),
+      ),
     };
   }
   if (!provider.enabled || provider.status === "disabled") {
     return {
-      headline: "Disabled",
+      headline: resolve(msg("Disabled", { $context: "provider status" })),
       detail:
         provider.message ??
-        "This provider is installed but disabled for new sessions in Up.computer.",
+        resolve(msg("This provider is installed but disabled for new sessions in Up.computer.")),
     };
   }
   // UpComputer: the placeholder before the first check says nothing about the provider yet.
   if (provider.statusPending === true) {
-    return { headline: "Checking…", detail: null };
+    return { headline: resolve(msg("Checking…")), detail: null };
   }
   if (!provider.installed) {
     return {
-      headline: "Not found",
-      detail: provider.message ?? "CLI not detected on PATH.",
+      headline: resolve(msg("Not found", { $context: "provider status, CLI is missing" })),
+      detail: provider.message ?? resolve(msg("CLI not detected on PATH.")),
     };
   }
   if (provider.auth.status === "unauthenticated") {
-    const authLabel = provider.auth.label ?? provider.auth.type;
+    const authLabel = providerAuthLabel(provider.auth, resolve);
     return {
-      headline: authLabel ? `Not authenticated · ${authLabel}` : "Not authenticated",
+      headline: authLabel
+        ? resolve(msg("Not authenticated · {method}", { method: authLabel }))
+        : resolve(msg("Not authenticated")),
       detail: provider.message ?? null,
     };
   }
   if (isAntigravitySignInUnchecked(provider)) {
     return {
-      headline: "Installed · Sign-in not checked",
+      headline: resolve(msg("Installed · Sign-in not checked")),
       detail: provider.message ?? null,
     };
   }
   if (provider.status === "warning") {
     return {
-      headline: "Needs attention",
+      headline: resolve(msg("Needs attention")),
       detail:
-        provider.message ?? "The provider is installed, but the server could not fully verify it.",
+        provider.message ??
+        resolve(msg("The provider is installed, but the server could not fully verify it.")),
     };
   }
   if (provider.status === "error") {
     return {
-      headline: "Unavailable",
-      detail: provider.message ?? "The provider failed its startup checks.",
+      headline: resolve(msg("Unavailable", { $context: "provider status" })),
+      detail: provider.message ?? resolve(msg("The provider failed its startup checks.")),
     };
   }
   if (provider.auth.status === "authenticated") {
-    const authLabel = provider.auth.label ?? provider.auth.type;
+    const authLabel = providerAuthLabel(provider.auth, resolve);
     return {
-      headline: authLabel ? `Authenticated · ${authLabel}` : "Authenticated",
+      headline: authLabel
+        ? resolve(msg("Authenticated · {method}", { method: authLabel }))
+        : resolve(msg("Authenticated")),
       detail: provider.message ?? null,
     };
   }
   return {
-    headline: "Available",
+    headline: resolve(msg("Available", { $context: "provider status" })),
     detail: provider.message ?? null,
   };
 }
@@ -129,15 +155,16 @@ export function getProviderVersionLabel(version: string | null | undefined) {
 }
 
 const COMPATIBILITY_TITLES = {
-  graceful: "Limited support",
-  unsupported: "Unsupported version",
-  broken: "Known broken version",
+  graceful: msg("Limited support"),
+  unsupported: msg("Unsupported version"),
+  broken: msg("Known broken version"),
 } as const;
 
 export function getProviderVersionAdvisoryPresentation(
   advisory: ServerProviderVersionAdvisory | undefined,
   compatibility?: ServerProviderCompatibilityAdvisory | undefined,
   showCompatibility = true,
+  resolve: MessageResolver = m,
 ): {
   readonly title: string;
   readonly detail: string;
@@ -160,10 +187,16 @@ export function getProviderVersionAdvisoryPresentation(
     // Latest package versions cannot be updated into recommendations requiring another package.
     const isAlreadyLatest = advisory?.status === "current";
     return {
-      title: COMPATIBILITY_TITLES[compatibility.status],
+      // UpComputer: an old version an update fixes is not alarming news, just a step.
+      title:
+        compatibility.status === "broken" && !latestIsIncompatible
+          ? resolve(msg("Update required"))
+          : resolve(COMPATIBILITY_TITLES[compatibility.status]),
       detail:
         compatibility.message ??
-        (recommendation ? `Use ${recommendation} for full support.` : "Update for full support."),
+        (recommendation
+          ? resolve(msg("Use {version} for full support.", { version: recommendation }))
+          : resolve(msg("Update for full support."))),
       updateCommand:
         targetVersion || latestIsIncompatible || isAlreadyLatest
           ? null
@@ -181,17 +214,16 @@ export function getProviderVersionAdvisoryPresentation(
     return null;
   }
 
-  const label = "Update available";
   const version = advisory.latestVersion;
   const versionLabel = getProviderVersionLabel(version);
 
   return {
-    title: label,
+    title: resolve(msg("Update available")),
     detail:
       advisory.message ??
       (versionLabel
-        ? `${label}: install ${versionLabel}.`
-        : `${label}: install the latest provider version.`),
+        ? resolve(msg("Update available: install {version}.", { version: versionLabel }))
+        : resolve(msg("Update available: install the latest provider version."))),
     updateCommand: advisory.updateCommand,
     emphasis: "normal" as const,
     targetVersion: null,
@@ -222,4 +254,56 @@ export function withoutManagedOpenCodeNote(
   }
   const { compatibilityAdvisory: _note, ...rest } = provider;
   return rest;
+}
+
+/** UpComputer: the oldest version with full support, from the recommendation or a `>=` range. */
+function providerCompatibilityFloor(
+  compatibility: Pick<
+    ServerProviderCompatibilityAdvisory,
+    "recommendedVersion" | "recommendedRange"
+  >,
+): string | null {
+  if (compatibility.recommendedVersion) return compatibility.recommendedVersion;
+  return /^>=\s*(\d[\w.+-]*)$/.exec(compatibility.recommendedRange?.trim() ?? "")?.[1] ?? null;
+}
+
+/** UpComputer: the row names Update all only when that button updates this install. */
+export function providerRowCanUpdateAll(
+  provider: ServerProvider | undefined,
+  providers: ReadonlyArray<ServerProvider>,
+): boolean {
+  return (
+    provider !== undefined &&
+    isProviderUpdateCandidate(provider) &&
+    hasOneClickUpdateProviderCandidate(provider, providers)
+  );
+}
+
+/**
+ * UpComputer: the provider row's note for an old version: the version to reach and how,
+ * rather than a bare "Incompatible". When updating cannot help, the plain status stays.
+ */
+export function providerCompatibilityRowHint(
+  compatibility: ServerProviderCompatibilityAdvisory,
+  canUpdateAll: boolean,
+  resolve: MessageResolver = m,
+): string {
+  const latestIsIncompatible =
+    compatibility.latestVersionStatus === "broken" ||
+    compatibility.latestVersionStatus === "unsupported";
+  const floor = providerCompatibilityFloor(compatibility);
+  const plain =
+    compatibility.status === "broken"
+      ? resolve(msg("Incompatible"))
+      : compatibility.status === "unsupported"
+        ? resolve(msg("Unsupported"))
+        : resolve(msg("Limited support"));
+  if (latestIsIncompatible || floor === null) return plain;
+  const version = getProviderVersionLabel(floor) ?? floor;
+  const update = canUpdateAll
+    ? resolve(msg("Update to {version} or newer with Update all", { version }))
+    : resolve(msg("Update to {version} or newer", { version }));
+  return compatibility.status === "graceful"
+    ? resolve(msg("Limited support. {update}", { update }))
+    : update;
 }

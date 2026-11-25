@@ -1,4 +1,15 @@
 import type { TaskChange } from "@t3tools/tasks-contracts/v1";
+import * as Schema from "effect/Schema";
+
+/** The stream ended without an error, as when its computer goes away; it reconnects. */
+export class TaskChangeStreamEnded extends Schema.TaggedError<TaskChangeStreamEnded>()(
+  "TaskChangeStreamEnded",
+  {},
+) {
+  override get message(): string {
+    return "Task change stream disconnected.";
+  }
+}
 
 export type TaskChangeListener = (change: TaskChange) => void;
 export type SubscribeTaskChanges = (
@@ -49,7 +60,7 @@ export function createTaskChangeSubscription(
         listener(delivered);
       }
     }).then(
-      () => retry(new Error("Task change stream disconnected.")),
+      () => retry(new TaskChangeStreamEnded()),
       (error) => retry(error),
     );
     function retry(error: unknown) {

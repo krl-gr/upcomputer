@@ -1,6 +1,7 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { Bot } from "@t3tools/tasks-contracts/v1";
+import { msg } from "gt-react";
 import { readThreadShell } from "../../../../apps/web/src/state/entities.ts";
 import type {
   ExperimentalWebThreadAccessoryProps,
@@ -47,7 +48,7 @@ export function botThreadActions({
   return [
     {
       id: "turn-into-bot",
-      label: "Turn into bot",
+      label: msg("Turn into bot"),
       icon: "bot",
       run: ({ navigate }) => void navigate(botPage(environmentId, { thread: threadId })),
     },

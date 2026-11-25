@@ -7,7 +7,8 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { ArrowLeftIcon } from "lucide-react";
+import { ArchiveRestoreIcon, ArrowLeftIcon } from "lucide-react";
+import { msg, useGT, useMessages } from "gt-react";
 import type {
   EnvironmentId,
   ProviderInteractionMode,
@@ -17,10 +18,14 @@ import type {
   RuntimeMode,
   ThreadId,
 } from "@t3tools/contracts";
-import type { TaskAgentRunTriggerStatus } from "@t3tools/tasks-contracts/v1";
+import {
+  DEFAULT_TASK_STATUS,
+  type TaskAgentRunTriggerStatus,
+  type TaskWorkflowVersion,
+} from "@t3tools/tasks-contracts/v1";
 
 import type { TasksWebRpcClient } from "../rpc/index.ts";
-import type { ScopedTask, ScopedTaskAgent, ScopedTaskAgentRun } from "../state/index.ts";
+import type { ScopedTaskAgent, ScopedTaskAgentRun, ScopedTaskRow } from "../state/index.ts";
 import type { ProviderInstanceEntry } from "../../../../apps/web/src/providerInstances.ts";
 import type { AppModelOption } from "../../../../apps/web/src/modelSelection.ts";
 import { ProviderModelPicker } from "../../../../apps/web/src/components/chat/ProviderModelPicker.tsx";
@@ -35,6 +40,8 @@ import {
   SelectValue,
 } from "../../../../apps/web/src/components/ui/select.tsx";
 import { Switch } from "../../../../apps/web/src/components/ui/switch.tsx";
+import { SidebarSectionHeader } from "../../../../apps/web/src/sidebarProjects/SidebarSectionHeader.tsx";
+import { SIDEBAR_SECTION_GAP } from "../../../../apps/web/src/sidebarMetrics/sidebarMetrics.ts";
 
 import { TaskThreadLink } from "./TaskThreadLink.tsx";
 import {
@@ -56,19 +63,22 @@ import { WorkspaceViewLayout } from "./WorkspaceViewLayout.tsx";
 import { SHOW_MANUAL_CREATE_ACTIONS } from "./manualCreation.ts";
 import { preferredProject } from "./projectFilter.ts";
 import { ProjectIconCell, ProjectIconHeader } from "./ProjectIconCell.tsx";
-import { splitListInput, type TasksWebProject } from "./shared.ts";
+import { splitListInput, taskStatusOptions, type TasksWebProject } from "./shared.ts";
+import { pickerProjectFor, pickerProjects } from "./taskProjects.ts";
 import { ListEmptyState } from "./ListEmptyState.tsx";
+import { GroupCount } from "./TaskStatusGroups.tsx";
+import { IconAction } from "../planner/ui/IconAction.tsx";
 import { LazyMarkdownEditor } from "../markdown/LazyMarkdownEditor.tsx";
 import { isBotAgent } from "../bots/botData.tsx";
+import { agentUpsertInput, setAgentArchived } from "./agentUpsert.ts";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 
-const TASK_STATUS_ACTIONS = ["new", "in progress", "ready for review", "done"] as const;
 const INSTRUCTIONS_EDITOR_CLASS =
   "min-h-36 w-full flex-1 px-3 py-2 text-lg leading-8 text-foreground";
 const RUNTIME_MODES: ReadonlyArray<{ value: RuntimeMode; label: string }> = [
-  { value: "approval-required", label: "Supervised" },
-  { value: "auto-accept-edits", label: "Auto-accept edits" },
-  { value: "full-access", label: "Full access" },
+  { value: "approval-required", label: msg("Supervised") },
+  { value: "auto-accept-edits", label: msg("Auto-accept edits") },
+  { value: "full-access", label: msg("Full access") },
 ];
 
 export interface AgentProject extends TasksWebProject {
@@ -80,12 +90,13 @@ export interface AgentsViewProps {
   /** Every project, for the project icon of agents whose project has no default model. */
   readonly allProjects?: readonly TasksWebProject[];
   readonly agents: readonly ScopedTaskAgent[];
-  readonly tasks: readonly ScopedTask[];
+  readonly tasks: readonly ScopedTaskRow[];
   readonly runs: readonly ScopedTaskAgentRun[];
   readonly status: "loading" | "ready" | "error" | "offline";
-  readonly errorMessage?: string;
   readonly initialSelectedAgentKey?: string;
   readonly canMutateEnvironment: (environmentId: EnvironmentId) => boolean;
+  /** Decides the standard statuses offered as start statuses. */
+  readonly workflowVersion: TaskWorkflowVersion;
   readonly providerCatalogByEnvironment: ReadonlyMap<
     EnvironmentId,
     {
@@ -122,8 +133,8 @@ interface AgentFormState {
 
 /** The interaction modes v2 providers support; Ask mode was dropped. */
 const INTERACTION_MODES: ReadonlyArray<{ id: ProviderInteractionMode; label: string }> = [
-  { id: "default", label: "Default" },
-  { id: "plan", label: "Plan" },
+  { id: "default", label: msg("Default", { $context: "interaction mode of a worker" }) },
+  { id: "plan", label: msg("Plan", { $context: "interaction mode of a worker" }) },
 ];
 
 const RUN_TRIGGER_STATUSES: ReadonlyArray<TaskAgentRunTriggerStatus> = [
@@ -151,7 +162,7 @@ function emptyForm(project?: AgentProject): AgentFormState {
     name: "",
     projectKey: project ? projectKey(project) : "",
     enabled: true,
-    startStatuses: "new",
+    startStatuses: DEFAULT_TASK_STATUS,
     startTags: "",
     startRunStatuses: "",
     instructions: "",
@@ -211,8 +222,13 @@ interface AgentTableRowProps {
   readonly triggerLabel: string;
   /** Harness and model display names, e.g. "Claude Code · Claude Opus 5.5". */
   readonly modelLabel: string;
+  /** The row's and its switch's accessible names, translated by the caller. */
+  readonly openLabel: string;
+  readonly toggleLabel: string;
   readonly onOpen: () => void;
   readonly onToggleEnabled: () => void;
+  /** An archived worker's row: Unarchive stands where the Pause switch is. */
+  readonly unarchive?: { readonly label: string; readonly onClick: () => void };
 }
 
 export function AgentTableRow(props: AgentTableRowProps) {
@@ -224,13 +240,16 @@ export function AgentTableRow(props: AgentTableRowProps) {
     saving,
     triggerLabel,
     modelLabel,
+    openLabel,
+    toggleLabel,
     onOpen,
     onToggleEnabled,
+    unarchive,
   } = props;
 
   return (
     <tr
-      aria-label={`Open worker ${agent.name}`}
+      aria-label={openLabel}
       className="cursor-pointer border-b border-border transition-colors hover:bg-muted/20"
       onClick={(event) => {
         if (!eventTargetsInteractiveRowDescendant(event)) onOpen();
@@ -270,20 +289,36 @@ export function AgentTableRow(props: AgentTableRowProps) {
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
       >
-        <Switch
-          checked={agent.enabled}
-          disabled={!editable || saving}
-          aria-label={`${agent.enabled ? "Pause" : "Resume"} ${agent.name}`}
-          onCheckedChange={(checked) => {
-            if (Boolean(checked) !== agent.enabled) onToggleEnabled();
-          }}
-        />
+        {unarchive ? (
+          editable ? (
+            <IconAction
+              label={unarchive.label}
+              track="agents.unarchive"
+              variant="outline"
+              disabled={saving}
+              onClick={unarchive.onClick}
+            >
+              <ArchiveRestoreIcon />
+            </IconAction>
+          ) : null
+        ) : (
+          <Switch
+            checked={agent.enabled}
+            disabled={!editable || saving}
+            aria-label={toggleLabel}
+            onCheckedChange={(checked) => {
+              if (Boolean(checked) !== agent.enabled) onToggleEnabled();
+            }}
+          />
+        )}
       </td>
     </tr>
   );
 }
 
 export function AgentsView(props: AgentsViewProps) {
+  const gt = useGT();
+  const m = useMessages();
   const [viewMode, setViewMode] = useState<AgentViewMode | null>(null);
   const [detailRuns, setDetailRuns] = useState<readonly ScopedTaskAgentRun[]>([]);
   const [detailRunsStatus, setDetailRunsStatus] = useState<"idle" | "loading" | "ready" | "error">(
@@ -317,9 +352,14 @@ export function AgentsView(props: AgentsViewProps) {
   // Bots have their own sidebar section and settings page. Deep links still
   // resolve against `props.agents`.
   const listedAgents = useMemo(
-    () => props.agents.filter((agent) => !isBotAgent(agent)),
+    () => props.agents.filter((agent) => !isBotAgent(agent) && agent.archivedAt === null),
     [props.agents],
   );
+  const archivedAgents = useMemo(
+    () => props.agents.filter((agent) => !isBotAgent(agent) && agent.archivedAt !== null),
+    [props.agents],
+  );
+  const [archivedOpen, setArchivedOpen] = useState(false);
   const projectsByKey = useMemo(
     () => new Map(props.projects.map((project) => [projectKey(project), project] as const)),
     [props.projects],
@@ -350,10 +390,14 @@ export function AgentsView(props: AgentsViewProps) {
         ?.some((option) => option.slug === project.defaultModelSelection.model),
     );
   });
+  const projectOptions = pickerProjects(mutableProjects);
   const selectedProject = editingAgent
     ? props.projects.find((project) => projectKey(project) === form.projectKey)
     : (mutableProjects.find((project) => projectKey(project) === form.projectKey) ??
-      mutableProjects[0]);
+      projectOptions[0]);
+  const selectedProjectOption = selectedProject
+    ? pickerProjectFor(projectOptions, selectedProject)
+    : undefined;
   const selectedEnvironmentId = editingAgent?.environmentId ?? selectedProject?.environmentId;
   const baseModelSelection =
     editingAgent?.config.modelSelection ?? selectedProject?.defaultModelSelection;
@@ -395,10 +439,13 @@ export function AgentsView(props: AgentsViewProps) {
     props.providerCatalogByEnvironment,
     selectedProject,
   ]);
-  const hasReadOnlyProjects = mutableProjects.length < props.projects.length;
   const statusOptions = useMemo(
-    () => unique([...TASK_STATUS_ACTIONS, ...props.agents.flatMap((agent) => agent.startStatuses)]),
-    [props.agents],
+    () =>
+      taskStatusOptions(
+        props.agents.flatMap((agent) => agent.startStatuses),
+        props.workflowVersion,
+      ),
+    [props.agents, props.workflowVersion],
   );
   const tagOptions = useMemo(
     () => unique(listedAgents.flatMap((agent) => agent.startTags)),
@@ -406,7 +453,7 @@ export function AgentsView(props: AgentsViewProps) {
   );
   const agentRuns = editingAgent ? detailRuns : [];
   const agentTasks = useMemo(() => {
-    const result = new Map<string, { task: ScopedTask | null; runs: ScopedTaskAgentRun[] }>();
+    const result = new Map<string, { task: ScopedTaskRow | null; runs: ScopedTaskAgentRun[] }>();
     for (const run of agentRuns) {
       const key = `${run.environmentId}:${run.taskId}`;
       const existing = result.get(key);
@@ -465,9 +512,9 @@ export function AgentsView(props: AgentsViewProps) {
     detailRequestRef.current += 1;
     setDetailRuns([]);
     setDetailRunsStatus("idle");
-    setForm(emptyForm(preferredProject(mutableProjects, null)));
+    setForm(emptyForm(preferredProject(projectOptions, null)));
     setViewMode({ kind: "create" });
-  }, [mutableProjects]);
+  }, [projectOptions]);
 
   const showAgent = useCallback(
     (agent: ScopedTaskAgent) => {
@@ -552,10 +599,10 @@ export function AgentsView(props: AgentsViewProps) {
           type: "error",
           title:
             !target || !baseModelSelection
-              ? "Select a project"
+              ? gt("Select a project")
               : !name
-                ? "Worker name is required"
-                : "Worker instructions are required",
+                ? gt("Worker name is required")
+                : gt("Worker instructions are required"),
         });
         return;
       }
@@ -580,8 +627,8 @@ export function AgentsView(props: AgentsViewProps) {
       if (!selectedModelIsValid && !selectionMatchesAgent) {
         toastManager.add({
           type: "error",
-          title: "Select an available model",
-          description: "The selected provider or model is unavailable in this environment.",
+          title: gt("Select an available model"),
+          description: gt("The selected provider or model is unavailable in this environment."),
         });
         return;
       }
@@ -589,8 +636,10 @@ export function AgentsView(props: AgentsViewProps) {
       if (!client) {
         toastManager.add({
           type: "error",
-          title: "Couldn't save the worker",
-          description: "The computer with your tasks isn't connected. Reconnect, then try again.",
+          title: gt("Couldn't save the worker"),
+          description: gt(
+            "The computer with your tasks isn't connected. Reconnect, then try again.",
+          ),
         });
         return;
       }
@@ -620,7 +669,7 @@ export function AgentsView(props: AgentsViewProps) {
           });
         });
         if (!editingAgent) {
-          toastManager.add({ type: "success", title: "Worker created", description: name });
+          toastManager.add({ type: "success", title: gt("Worker created"), description: name });
           setViewMode(null);
         }
         props.onReload();
@@ -628,7 +677,7 @@ export function AgentsView(props: AgentsViewProps) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: editingAgent ? "Failed to update worker" : "Failed to create worker",
+            title: editingAgent ? gt("Failed to update worker") : gt("Failed to create worker"),
             description: errorDescription(error),
           }),
         );
@@ -641,6 +690,7 @@ export function AgentsView(props: AgentsViewProps) {
       editingAgent,
       enqueueMutation,
       form,
+      gt,
       props,
       selectedProject,
       selectedProviderCatalog,
@@ -661,51 +711,139 @@ export function AgentsView(props: AgentsViewProps) {
       if (!client) return;
       try {
         await enqueueMutation(agent.id, async () => {
-          await client.agents.upsert({
-            id: agent.id,
-            projectId: agent.projectId,
-            name: agent.name,
-            enabled: !agent.enabled,
-            startStatuses: [...agent.startStatuses],
-            startTags: [...agent.startTags],
-            startRunStatuses: [...agent.startRunStatuses],
-            config: agent.config,
-          });
+          await client.agents.upsert({ ...agentUpsertInput(agent), enabled: !agent.enabled });
         });
         props.onReload();
       } catch (error) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Failed to update worker",
+            title: gt("Failed to update worker"),
             description: errorDescription(error),
           }),
         );
       }
     },
-    [enqueueMutation, props],
+    [enqueueMutation, gt, props],
   );
+
+  const setArchived = useCallback(
+    async (agent: ScopedTaskAgent, archived: boolean) => {
+      const client = props.getClient(agent.environmentId);
+      if (!client) return;
+      try {
+        let saved: Pick<ScopedTaskAgent, "enabled" | "name"> = agent;
+        await enqueueMutation(agent.id, async () => {
+          saved = await setAgentArchived(client, agent, archived);
+        });
+        toastManager.add({
+          type: "success",
+          title: archived ? gt("Worker archived") : gt("Worker unarchived"),
+          // An unarchived worker that is switched on starts on its matching tasks at once.
+          description:
+            !archived && saved.enabled
+              ? gt("{name} is switched on and may start on matching tasks right away.", {
+                  name: saved.name,
+                })
+              : saved.name,
+        });
+        props.onReload();
+      } catch (error) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: archived ? gt("Failed to archive worker") : gt("Failed to unarchive worker"),
+            description: errorDescription(error),
+          }),
+        );
+      }
+    },
+    [enqueueMutation, gt, props],
+  );
+  const editingAgentArchived = editingAgent !== null && editingAgent.archivedAt !== null;
+
+  const renderRow = (agent: ScopedTaskAgent) => {
+    const editable = props.canMutateEnvironment(agent.environmentId);
+    const agentProject = agent.projectId
+      ? (iconProjectsByKey.get(`${agent.environmentId}:${agent.projectId}`) ?? null)
+      : null;
+    const triggerLabel = [
+      agent.startStatuses.length > 0 ? agent.startStatuses.join(", ") : gt("Any status"),
+      agent.startTags.length > 0 ? agent.startTags.join(", ") : gt("Any tag"),
+      ...(agent.startRunStatuses.length > 0
+        ? [gt("after {statuses} runs", { statuses: agent.startRunStatuses.join(", ") })]
+        : []),
+    ].join(" · ");
+    return (
+      <AgentTableRow
+        key={`${agent.environmentId}:${agent.id}`}
+        agent={agent}
+        agentProject={agentProject}
+        showProject
+        editable={editable}
+        saving={savingKey !== null}
+        triggerLabel={triggerLabel}
+        openLabel={gt("Open worker {name}", { name: agent.name })}
+        toggleLabel={
+          agent.enabled
+            ? gt("Pause {name}", { name: agent.name })
+            : gt("Resume {name}", { name: agent.name })
+        }
+        modelLabel={getAgentModelLabel(
+          props.providerCatalogByEnvironment.get(agent.environmentId)?.entries,
+          agent.config.modelSelection,
+        )}
+        onOpen={() => openEdit(agent)}
+        onToggleEnabled={() => {
+          void toggleEnabled(agent);
+        }}
+        {...(agent.archivedAt !== null
+          ? {
+              unarchive: {
+                label: gt("Unarchive", { $context: "button that unarchives a worker" }),
+                onClick: () => {
+                  void setArchived(agent, false);
+                },
+              },
+            }
+          : {})}
+      />
+    );
+  };
 
   return (
     <WorkspaceViewLayout
-      title={editingAgent ? "" : isCreateMode ? "New worker" : "Workers"}
+      title={editingAgent ? "" : isCreateMode ? gt("New worker") : gt("Workers")}
       action={
         editingAgent
-          ? undefined
+          ? canEditAgent
+            ? {
+                ariaLabel: editingAgentArchived ? gt("Unarchive worker") : gt("Archive worker"),
+                track: editingAgentArchived ? "agents.unarchive" : "agents.archive",
+                disabled: savingKey !== null,
+                hideIcon: true,
+                label: editingAgentArchived
+                  ? gt("Unarchive", { $context: "button that unarchives a worker" })
+                  : gt("Archive", { $context: "button that archives a worker" }),
+                onClick: () => {
+                  void setArchived(editingAgent, !editingAgentArchived);
+                },
+              }
+            : undefined
           : isCreateMode
             ? {
-                ariaLabel: "Create worker",
+                ariaLabel: gt("Create worker"),
                 track: "agents.create_save",
                 disabled: mutableProjects.length === 0 || savingKey !== null,
                 hideIcon: true,
-                label: "Create",
+                label: gt("Create", { $context: "button that creates a worker" }),
                 onClick: () => {
                   void save();
                 },
               }
             : SHOW_MANUAL_CREATE_ACTIONS.agents
               ? {
-                  ariaLabel: "Create worker",
+                  ariaLabel: gt("Create worker"),
                   track: "agents.create",
                   disabled: mutableProjects.length === 0 || savingKey !== null,
                   onClick: openCreate,
@@ -715,7 +853,7 @@ export function AgentsView(props: AgentsViewProps) {
       leadingAction={
         editingAgent || isCreateMode
           ? {
-              ariaLabel: editingAgent ? "Back to workers" : "Cancel worker creation",
+              ariaLabel: editingAgent ? gt("Back to workers") : gt("Cancel worker creation"),
               track: editingAgent ? "agents.back" : "agents.create_cancel",
               disabled: isCreateMode && savingKey !== null,
               icon: <ArrowLeftIcon className="size-4" />,
@@ -733,19 +871,30 @@ export function AgentsView(props: AgentsViewProps) {
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
               {editingAgent.name}
             </span>
-            {/* Base UI's Switch is a span, which the header's drag region would
-                otherwise swallow in Electron. */}
-            <span className="flex shrink-0 [-webkit-app-region:no-drag]">
-              <Switch
-                checked={form.enabled}
-                disabled={!canEditAgent}
-                aria-label={`${form.enabled ? "Pause" : "Enable"} ${editingAgent.name}`}
-                onCheckedChange={(checked) => {
-                  const enabled = Boolean(checked);
-                  if (enabled !== form.enabled) commitForm({ ...form, enabled });
-                }}
-              />
-            </span>
+            {editingAgentArchived ? (
+              // An archived worker never starts, so the Pause switch gives way to the label.
+              <span className="shrink-0 text-sm text-muted-foreground">
+                {gt("Archived", { $context: "status of an archived worker" })}
+              </span>
+            ) : (
+              // Base UI's Switch is a span, which the header's drag region would
+              // otherwise swallow in Electron.
+              <span className="flex shrink-0 [-webkit-app-region:no-drag]">
+                <Switch
+                  checked={form.enabled}
+                  disabled={!canEditAgent}
+                  aria-label={
+                    form.enabled
+                      ? gt("Pause {name}", { name: editingAgent.name })
+                      : gt("Enable {name}", { name: editingAgent.name })
+                  }
+                  onCheckedChange={(checked) => {
+                    const enabled = Boolean(checked);
+                    if (enabled !== form.enabled) commitForm({ ...form, enabled });
+                  }}
+                />
+              </span>
+            )}
           </>
         ) : undefined
       }
@@ -766,8 +915,8 @@ export function AgentsView(props: AgentsViewProps) {
               {canEditAgent ? (
                 <LazyMarkdownEditor
                   value={form.instructions}
-                  placeholder="Instructions…"
-                  ariaLabel="Worker instructions"
+                  placeholder={gt("Instructions…")}
+                  ariaLabel={gt("Worker instructions")}
                   className={INSTRUCTIONS_EDITOR_CLASS}
                   onChange={(instructions) => setForm((current) => ({ ...current, instructions }))}
                   onBlur={() => {
@@ -784,17 +933,17 @@ export function AgentsView(props: AgentsViewProps) {
               )}
             </main>
             <DetailColumn>
-              <DetailSidebarSection title="Details">
+              <DetailSidebarSection title={gt("Details")}>
                 <dl className="flex min-w-0 flex-col gap-0.5">
                   <DetailSidebarRow
-                    label="Name"
+                    label={gt("Name")}
                     controlSelector={canEditAgent ? "input" : undefined}
                   >
                     {canEditAgent ? (
                       <input
                         className={DETAIL_INPUT_CLASS}
                         value={form.name}
-                        aria-label="Worker name"
+                        aria-label={gt("Worker name")}
                         onChange={(event) =>
                           setForm((current) => ({ ...current, name: event.target.value }))
                         }
@@ -816,7 +965,7 @@ export function AgentsView(props: AgentsViewProps) {
                       editingAgent.name
                     )}
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Project">
+                  <DetailSidebarRow label={gt("Project")}>
                     <span className="flex min-w-0 items-center justify-end gap-2">
                       {editingAgentProject ? (
                         <ProjectFavicon
@@ -824,10 +973,12 @@ export function AgentsView(props: AgentsViewProps) {
                           className="size-4 shrink-0"
                         />
                       ) : null}
-                      <span className="truncate">{editingAgent.projectName ?? "All projects"}</span>
+                      <span className="truncate">
+                        {editingAgent.projectName ?? gt("All projects")}
+                      </span>
                     </span>
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Model">
+                  <DetailSidebarRow label={gt("Model")}>
                     {canEditAgent && baseModelSelection ? (
                       <ProviderModelPicker
                         environmentId={selectedEnvironmentId ?? null}
@@ -866,7 +1017,7 @@ export function AgentsView(props: AgentsViewProps) {
                   {canEditAgent &&
                   detailModelProvider &&
                   detailModelOptionDescriptors.length > 0 ? (
-                    <DetailSidebarRow label="Model options" controlSelector="button">
+                    <DetailSidebarRow label={gt("Model options")} controlSelector="button">
                       <TraitsPicker
                         provider={detailModelProvider.driverKind}
                         instanceId={detailModelProvider.instanceId}
@@ -889,7 +1040,7 @@ export function AgentsView(props: AgentsViewProps) {
                       </DetailSidebarRow>
                     ))
                   ) : null}
-                  <DetailSidebarRow label="Interaction">
+                  <DetailSidebarRow label={gt("Interaction")}>
                     {canEditAgent ? (
                       <Select
                         value={form.interactionMode}
@@ -903,27 +1054,29 @@ export function AgentsView(props: AgentsViewProps) {
                         <SelectTrigger
                           className={DETAIL_SELECT_TRIGGER_CLASS}
                           variant="ghost"
-                          aria-label="Interaction mode"
+                          aria-label={gt("Interaction mode")}
                         >
                           <SelectValue>
-                            {INTERACTION_MODES.find(({ id }) => id === form.interactionMode)
-                              ?.label ?? form.interactionMode}
+                            {m(
+                              INTERACTION_MODES.find(({ id }) => id === form.interactionMode)
+                                ?.label,
+                            ) ?? form.interactionMode}
                           </SelectValue>
                         </SelectTrigger>
                         <SelectPopup>
                           {INTERACTION_MODES.map((mode) => (
                             <SelectItem key={mode.id} value={mode.id}>
-                              {mode.label}
+                              {m(mode.label)}
                             </SelectItem>
                           ))}
                         </SelectPopup>
                       </Select>
                     ) : (
-                      (INTERACTION_MODES.find(({ id }) => id === form.interactionMode)?.label ??
+                      (m(INTERACTION_MODES.find(({ id }) => id === form.interactionMode)?.label) ??
                       form.interactionMode)
                     )}
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Runtime">
+                  <DetailSidebarRow label={gt("Runtime")}>
                     {canEditAgent ? (
                       <Select
                         value={form.runtimeMode}
@@ -937,35 +1090,37 @@ export function AgentsView(props: AgentsViewProps) {
                         <SelectTrigger
                           className={DETAIL_SELECT_TRIGGER_CLASS}
                           variant="ghost"
-                          aria-label="Runtime mode"
+                          aria-label={gt("Runtime mode")}
                         >
                           <SelectValue>
-                            {RUNTIME_MODES.find(({ value }) => value === form.runtimeMode)?.label}
+                            {m(
+                              RUNTIME_MODES.find(({ value }) => value === form.runtimeMode)?.label,
+                            )}
                           </SelectValue>
                         </SelectTrigger>
                         <SelectPopup>
                           {RUNTIME_MODES.map((mode) => (
                             <SelectItem key={mode.value} value={mode.value}>
-                              {mode.label}
+                              {m(mode.label)}
                             </SelectItem>
                           ))}
                         </SelectPopup>
                       </Select>
                     ) : (
-                      RUNTIME_MODES.find(({ value }) => value === form.runtimeMode)?.label
+                      m(RUNTIME_MODES.find(({ value }) => value === form.runtimeMode)?.label)
                     )}
                   </DetailSidebarRow>
                 </dl>
               </DetailSidebarSection>
-              <DetailSidebarSection title="Triggers">
+              <DetailSidebarSection title={gt("Triggers")}>
                 <dl className="flex min-w-0 flex-col gap-0.5">
-                  <DetailSidebarRow label="Statuses">
+                  <DetailSidebarRow label={gt("Statuses")}>
                     {canEditAgent ? (
                       <input
                         className={DETAIL_INPUT_CLASS}
                         value={form.startStatuses}
-                        placeholder="Any status"
-                        aria-label="Auto-run statuses"
+                        placeholder={gt("Any status")}
+                        aria-label={gt("Auto-run statuses")}
                         onChange={(event) =>
                           setForm((current) => ({ ...current, startStatuses: event.target.value }))
                         }
@@ -980,16 +1135,16 @@ export function AgentsView(props: AgentsViewProps) {
                     ) : editingAgent.startStatuses.length ? (
                       editingAgent.startStatuses.join(", ")
                     ) : (
-                      "Any status"
+                      gt("Any status")
                     )}
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Required tags">
+                  <DetailSidebarRow label={gt("Required tags")}>
                     {canEditAgent ? (
                       <input
                         className={DETAIL_INPUT_CLASS}
                         value={form.startTags}
-                        placeholder="Any tag"
-                        aria-label="Required tags"
+                        placeholder={gt("Any tag")}
+                        aria-label={gt("Required tags")}
                         onChange={(event) =>
                           setForm((current) => ({ ...current, startTags: event.target.value }))
                         }
@@ -1004,17 +1159,19 @@ export function AgentsView(props: AgentsViewProps) {
                     ) : editingAgent.startTags.length ? (
                       editingAgent.startTags.join(", ")
                     ) : (
-                      "Any tag"
+                      gt("Any tag")
                     )}
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="After runs">
+                  <DetailSidebarRow label={gt("After runs")}>
                     {canEditAgent ? (
                       <input
                         className={DETAIL_INPUT_CLASS}
                         value={form.startRunStatuses}
-                        placeholder="Task state"
-                        title="Start when another worker's run on the task ends as failed, interrupted or blocked"
-                        aria-label="Start after runs ending as"
+                        placeholder={gt("Task state")}
+                        title={gt(
+                          "Start when another worker's run on the task ends as failed, interrupted or blocked",
+                        )}
+                        aria-label={gt("Start after runs ending as")}
                         onChange={(event) =>
                           setForm((current) => ({
                             ...current,
@@ -1032,22 +1189,24 @@ export function AgentsView(props: AgentsViewProps) {
                     ) : editingAgent.startRunStatuses.length ? (
                       editingAgent.startRunStatuses.join(", ")
                     ) : (
-                      "Task state"
+                      gt("Task state")
                     )}
                   </DetailSidebarRow>
                 </dl>
               </DetailSidebarSection>
-              <DetailSidebarSection title="Tasks" count={agentTasks.length}>
+              <DetailSidebarSection title={gt("Tasks")} count={agentTasks.length}>
                 <div className="flex flex-col gap-0.5">
                   {detailRunsStatus === "loading" && agentTasks.length === 0 ? (
-                    <p className="px-2 py-2 text-sm text-muted-foreground">Loading tasks…</p>
+                    <p className="px-2 py-2 text-sm text-muted-foreground">
+                      {gt("Loading tasks…")}
+                    </p>
                   ) : agentTasks.length === 0 ? (
-                    <p className="px-2 py-2 text-sm text-muted-foreground">No tasks yet.</p>
+                    <p className="px-2 py-2 text-sm text-muted-foreground">{gt("No tasks yet.")}</p>
                   ) : (
                     agentTasks.map(({ task, runs }) => (
                       <DetailSidebarRow
                         key={`${runs[0]?.environmentId}:${runs[0]?.taskId}`}
-                        label={task?.title ?? "Deleted task"}
+                        label={task?.title ?? gt("Deleted task")}
                         emphasizeLabel
                         interactive={task !== null}
                         onClick={
@@ -1055,20 +1214,24 @@ export function AgentsView(props: AgentsViewProps) {
                         }
                       >
                         <span className="shrink-0 text-sm text-muted-foreground">
-                          {runs.length} run{runs.length === 1 ? "" : "s"}
+                          {gt("{count, plural, one {# run} other {# runs}}", {
+                            count: runs.length,
+                          })}
                         </span>
                       </DetailSidebarRow>
                     ))
                   )}
                 </div>
               </DetailSidebarSection>
-              <DetailSidebarSection title="Threads" count={agentThreads.length}>
+              <DetailSidebarSection title={gt("Threads")} count={agentThreads.length}>
                 <div className="flex flex-col gap-0.5">
                   {detailRunsStatus === "loading" && agentThreads.length === 0 ? (
-                    <p className="px-2 py-2 text-sm text-muted-foreground">Loading threads…</p>
+                    <p className="px-2 py-2 text-sm text-muted-foreground">
+                      {gt("Loading threads…")}
+                    </p>
                   ) : agentThreads.length === 0 ? (
                     <p className="px-2 py-2 text-sm text-muted-foreground">
-                      No execution threads yet.
+                      {gt("No execution threads yet.")}
                     </p>
                   ) : (
                     agentThreads.map((run) => {
@@ -1082,7 +1245,7 @@ export function AgentsView(props: AgentsViewProps) {
                           key={`${run.environmentId}:${run.threadId}`}
                           environmentId={run.environmentId}
                           threadId={run.threadId}
-                          title={task?.title ?? "Execution thread"}
+                          title={task?.title ?? gt("Execution thread")}
                           runStatus={run.status}
                           timestamp={run.startedAt}
                           onOpen={props.onOpenThread}
@@ -1101,35 +1264,41 @@ export function AgentsView(props: AgentsViewProps) {
             <main className="flex min-h-0 min-w-0 flex-1 flex-col">
               <LazyMarkdownEditor
                 value={form.instructions}
-                placeholder="Instructions…"
-                ariaLabel="Worker instructions"
+                placeholder={gt("Instructions…")}
+                ariaLabel={gt("Worker instructions")}
                 className={INSTRUCTIONS_EDITOR_CLASS}
                 onChange={(instructions) => setForm((current) => ({ ...current, instructions }))}
               />
             </main>
             <DetailColumn>
-              <DetailSidebarSection title="Details">
+              <DetailSidebarSection title={gt("Details")}>
                 <dl className="flex min-w-0 flex-col gap-0.5">
-                  <DetailSidebarRow label="Name" controlSelector="input">
+                  <DetailSidebarRow label={gt("Name")} controlSelector="input">
                     <input
                       autoFocus
                       className={DETAIL_INPUT_CLASS}
                       value={form.name}
-                      placeholder="Worker name…"
-                      aria-label="Worker name"
+                      placeholder={gt("Worker name…")}
+                      aria-label={gt("Worker name")}
                       onChange={(event) =>
                         setForm((current) => ({ ...current, name: event.target.value }))
                       }
                     />
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Project" controlSelector="button">
+                  <DetailSidebarRow label={gt("Project")} controlSelector="button">
                     <Select
-                      value={selectedProject ? projectKey(selectedProject) : ""}
+                      value={
+                        selectedProjectOption
+                          ? projectKey(selectedProjectOption)
+                          : selectedProject
+                            ? projectKey(selectedProject)
+                            : ""
+                      }
                       onValueChange={(value) => {
-                        const project = mutableProjects.find(
+                        const project = projectOptions.find(
                           (candidate) => projectKey(candidate) === value,
                         );
-                        if (project)
+                        if (project && project !== selectedProjectOption)
                           setForm((current) => ({
                             ...current,
                             projectKey: projectKey(project),
@@ -1142,7 +1311,7 @@ export function AgentsView(props: AgentsViewProps) {
                       <SelectTrigger
                         className={DETAIL_SELECT_TRIGGER_CLASS}
                         variant="ghost"
-                        aria-label="Worker project"
+                        aria-label={gt("Worker project")}
                       >
                         <SelectValue>
                           {selectedProject ? (
@@ -1154,12 +1323,12 @@ export function AgentsView(props: AgentsViewProps) {
                               <span className="truncate">{selectedProject.name}</span>
                             </span>
                           ) : (
-                            "Select project"
+                            gt("Select project")
                           )}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectPopup>
-                        {mutableProjects.map((project) => (
+                        {projectOptions.map((project) => (
                           <SelectItem key={projectKey(project)} value={projectKey(project)}>
                             {project.name}
                           </SelectItem>
@@ -1168,7 +1337,7 @@ export function AgentsView(props: AgentsViewProps) {
                     </Select>
                   </DetailSidebarRow>
                   {baseModelSelection ? (
-                    <DetailSidebarRow label="Model">
+                    <DetailSidebarRow label={gt("Model")}>
                       <ProviderModelPicker
                         environmentId={selectedEnvironmentId ?? null}
                         activeInstanceId={
@@ -1204,7 +1373,7 @@ export function AgentsView(props: AgentsViewProps) {
                     </DetailSidebarRow>
                   ) : null}
                   {detailModelProvider && detailModelOptionDescriptors.length > 0 ? (
-                    <DetailSidebarRow label="Model options" controlSelector="button">
+                    <DetailSidebarRow label={gt("Model options")} controlSelector="button">
                       <TraitsPicker
                         provider={detailModelProvider.driverKind}
                         instanceId={detailModelProvider.instanceId}
@@ -1224,7 +1393,7 @@ export function AgentsView(props: AgentsViewProps) {
                       />
                     </DetailSidebarRow>
                   ) : null}
-                  <DetailSidebarRow label="Interaction" controlSelector="button">
+                  <DetailSidebarRow label={gt("Interaction")} controlSelector="button">
                     <Select
                       value={form.interactionMode}
                       onValueChange={(value) =>
@@ -1237,23 +1406,24 @@ export function AgentsView(props: AgentsViewProps) {
                       <SelectTrigger
                         className={DETAIL_SELECT_TRIGGER_CLASS}
                         variant="ghost"
-                        aria-label="Interaction mode"
+                        aria-label={gt("Interaction mode")}
                       >
                         <SelectValue>
-                          {INTERACTION_MODES.find(({ id }) => id === form.interactionMode)?.label ??
-                            form.interactionMode}
+                          {m(
+                            INTERACTION_MODES.find(({ id }) => id === form.interactionMode)?.label,
+                          ) ?? form.interactionMode}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectPopup>
                         {INTERACTION_MODES.map((mode) => (
                           <SelectItem key={mode.id} value={mode.id}>
-                            {mode.label}
+                            {m(mode.label)}
                           </SelectItem>
                         ))}
                       </SelectPopup>
                     </Select>
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Runtime" controlSelector="button">
+                  <DetailSidebarRow label={gt("Runtime")} controlSelector="button">
                     <Select
                       value={form.runtimeMode}
                       onValueChange={(value) =>
@@ -1266,25 +1436,25 @@ export function AgentsView(props: AgentsViewProps) {
                       <SelectTrigger
                         className={DETAIL_SELECT_TRIGGER_CLASS}
                         variant="ghost"
-                        aria-label="Runtime mode"
+                        aria-label={gt("Runtime mode")}
                       >
                         <SelectValue>
-                          {RUNTIME_MODES.find(({ value }) => value === form.runtimeMode)?.label}
+                          {m(RUNTIME_MODES.find(({ value }) => value === form.runtimeMode)?.label)}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectPopup>
                         {RUNTIME_MODES.map((mode) => (
                           <SelectItem key={mode.value} value={mode.value}>
-                            {mode.label}
+                            {m(mode.label)}
                           </SelectItem>
                         ))}
                       </SelectPopup>
                     </Select>
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Enabled">
+                  <DetailSidebarRow label={gt("Enabled")}>
                     <Switch
                       checked={form.enabled}
-                      aria-label="Enable new worker"
+                      aria-label={gt("Enable new worker")}
                       onCheckedChange={(checked) =>
                         setForm((current) => ({ ...current, enabled: Boolean(checked) }))
                       }
@@ -1292,27 +1462,28 @@ export function AgentsView(props: AgentsViewProps) {
                   </DetailSidebarRow>
                 </dl>
               </DetailSidebarSection>
-              <DetailSidebarSection title="Triggers">
+              <DetailSidebarSection title={gt("Triggers")}>
                 <dl className="flex min-w-0 flex-col gap-0.5">
-                  <DetailSidebarRow label="Statuses" controlSelector="input">
+                  <DetailSidebarRow label={gt("Statuses")} controlSelector="input">
                     <DetailAutocompleteInput
-                      ariaLabel="Auto-run statuses"
+                      ariaLabel={gt("Auto-run statuses")}
                       className={DETAIL_INPUT_CLASS}
+                      maxSuggestions={statusOptions.length}
                       onChange={(value) =>
                         setForm((current) => ({ ...current, startStatuses: value }))
                       }
                       options={statusOptions}
-                      placeholder="Any status"
+                      placeholder={gt("Any status")}
                       value={form.startStatuses}
                     />
                   </DetailSidebarRow>
-                  <DetailSidebarRow label="Required tags" controlSelector="input">
+                  <DetailSidebarRow label={gt("Required tags")} controlSelector="input">
                     <DetailAutocompleteInput
-                      ariaLabel="Required tags"
+                      ariaLabel={gt("Required tags")}
                       className={DETAIL_INPUT_CLASS}
                       onChange={(value) => setForm((current) => ({ ...current, startTags: value }))}
                       options={tagOptions}
-                      placeholder="Any tag"
+                      placeholder={gt("Any tag")}
                       value={form.startTags}
                     />
                   </DetailSidebarRow>
@@ -1323,81 +1494,74 @@ export function AgentsView(props: AgentsViewProps) {
         </div>
       ) : (
         <div className="flex w-full min-w-0 flex-col gap-5 py-6">
-          {hasReadOnlyProjects ? (
-            <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-              Some projects are read-only or do not currently have an available default provider and
-              model. Existing workers remain readable, while invalid creation controls stay hidden.
-            </div>
-          ) : null}
-          {props.status === "error" ? (
-            <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive-foreground">
-              Up.computer couldn't load your workers. {props.errorMessage ?? "Try again."}
-              <button type="button" className="ml-3 underline" onClick={props.onReload}>
-                Retry
-              </button>
-            </div>
-          ) : props.status === "offline" ? (
-            <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-              The environment with Tasks is not reachable right now. Workers show when it connects.
-            </div>
-          ) : null}
-          {props.status === "error" ? null : listedAgents.length === 0 ? (
+          {listedAgents.length + archivedAgents.length === 0 ? (
             // Blank while the list loads: it arrives within a moment of the page,
             // and a loading text would only flash before it.
-            props.status === "loading" || props.status === "offline" ? null : (
+            props.status === "loading" ? null : props.status === "offline" ? (
               <ListEmptyState
-                title="No workers yet"
-                hint="You don't need to set them up by hand. Ask any thread for something big, and it creates the workers and tasks it needs."
+                title={gt("Workers unavailable")}
+                hint={gt(
+                  "The computer with your workers isn't reachable right now. Workers show when it connects.",
+                )}
+              />
+            ) : props.status === "error" ? (
+              <ListEmptyState
+                title={gt("Workers didn't load")}
+                hint={gt("Notifications has the details.")}
+              />
+            ) : (
+              <ListEmptyState
+                title={gt("No workers yet")}
+                hint={gt(
+                  "You don't need to set them up by hand. Ask any thread for something big, and it creates the workers and tasks it needs.",
+                )}
               />
             )
           ) : (
-            <div className="min-w-0 overflow-x-auto">
+            // A container, so the Archived header can keep the visible width while the table scrolls.
+            <div className="@container min-w-0 overflow-x-auto">
               <table className="w-full min-w-[1000px] table-fixed border-collapse text-left text-sm">
                 <thead className="border-b border-border text-muted-foreground">
                   <tr>
                     <ProjectIconHeader />
-                    <th className="w-[22%] py-3 pr-4 font-medium">Name</th>
-                    <th className="w-[25%] px-4 py-3 font-medium">Model</th>
-                    <th className="px-4 py-3 font-medium">Triggers</th>
-                    <th className="w-28 px-4 py-3 text-center font-medium">Status</th>
+                    <th className="w-[22%] py-3 pr-4 font-medium">{gt("Name")}</th>
+                    <th className="w-[25%] px-4 py-3 font-medium">{gt("Model")}</th>
+                    <th className="px-4 py-3 font-medium">{gt("Triggers")}</th>
+                    <th className="w-28 px-4 py-3 text-center font-medium">{gt("Status")}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {listedAgents.map((agent) => {
-                    const editable = props.canMutateEnvironment(agent.environmentId);
-                    const agentProject = agent.projectId
-                      ? (iconProjectsByKey.get(`${agent.environmentId}:${agent.projectId}`) ?? null)
-                      : null;
-                    const triggerLabel = [
-                      agent.startStatuses.length > 0
-                        ? agent.startStatuses.join(", ")
-                        : "Any status",
-                      agent.startTags.length > 0 ? agent.startTags.join(", ") : "Any tag",
-                      ...(agent.startRunStatuses.length > 0
-                        ? [`after ${agent.startRunStatuses.join(", ")} runs`]
-                        : []),
-                    ].join(" · ");
-                    return (
-                      <AgentTableRow
-                        key={`${agent.environmentId}:${agent.id}`}
-                        agent={agent}
-                        agentProject={agentProject}
-                        showProject
-                        editable={editable}
-                        saving={savingKey !== null}
-                        triggerLabel={triggerLabel}
-                        modelLabel={getAgentModelLabel(
-                          props.providerCatalogByEnvironment.get(agent.environmentId)?.entries,
-                          agent.config.modelSelection,
-                        )}
-                        onOpen={() => openEdit(agent)}
-                        onToggleEnabled={() => {
-                          void toggleEnabled(agent);
-                        }}
-                      />
-                    );
-                  })}
+                  {listedAgents.length === 0 ? (
+                    <tr className="border-b border-border">
+                      <td colSpan={5} className="py-4 text-muted-foreground">
+                        <div className="sticky left-0 w-[100cqw]">
+                          {gt("No active workers. Unarchive one to put it back to work.")}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    listedAgents.map(renderRow)
+                  )}
                 </tbody>
+                {archivedAgents.length > 0 ? (
+                  <tbody data-archived-workers="">
+                    <tr>
+                      <td colSpan={5} className={`px-0 pb-1 ${SIDEBAR_SECTION_GAP}`}>
+                        <div className="sticky left-0 w-[100cqw]">
+                          <div className="-ms-2">
+                            <SidebarSectionHeader
+                              title={gt("Archived", { $context: "group of archived workers" })}
+                              open={archivedOpen}
+                              onToggle={() => setArchivedOpen((open) => !open)}
+                              action={<GroupCount count={archivedAgents.length} />}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    {archivedOpen ? archivedAgents.map(renderRow) : null}
+                  </tbody>
+                ) : null}
               </table>
             </div>
           )}

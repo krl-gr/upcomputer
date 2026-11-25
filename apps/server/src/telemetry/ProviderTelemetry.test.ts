@@ -255,7 +255,9 @@ describe("providerStatusProperties", () => {
       installed: true,
       version: "2.1.302 (Claude Code)",
       status: "warning",
+      statusReason: "models_missing",
       auth: { status: "authenticated", email: "someone@example.com", label: "Max" },
+      message: "OpenCode is installed but didn't report its models.",
     });
 
     assert.deepEqual(properties, {
@@ -264,6 +266,7 @@ describe("providerStatusProperties", () => {
       installed: true,
       version: "unparsed",
       status: "warning",
+      statusReason: "models_missing",
       authStatus: "authenticated",
     });
   });
@@ -337,6 +340,9 @@ it.effect("records each provider's state once, then again only when it changes",
                 sessionId: undefined,
                 internalDevice: Effect.succeed(false),
                 setInternalDevice: (enabled) => Effect.succeed(enabled),
+                preference: Effect.succeed({ enabled: true, lockedBy: null }),
+                setUserEnabled: (enabled) => Effect.succeed({ enabled, lockedBy: null }),
+                sendNow: () => Effect.succeed(true),
               }),
             ),
           ),

@@ -1,8 +1,14 @@
 import type { EnvironmentId, ProjectId, ScopedProjectRef } from "@t3tools/contracts";
-import type { TaskArchiveFilter, TaskPageInput } from "@t3tools/tasks-contracts/v1";
+import {
+  TASK_LAST_RUN_NONE,
+  type TaskArchiveFilter,
+  type TaskPageInput,
+  type TaskStatusCount,
+} from "@t3tools/tasks-contracts/v1";
 
 import type { TasksStateTarget } from "../state/tasksState.ts";
-import { ALL_FILTER } from "./pageFilters.ts";
+import { ALL_FILTER, NO_RUNS_FILTER } from "./pageFilters.ts";
+import { statusGroupKey } from "./taskStatusGroups.ts";
 
 /**
  * The logical project chosen in the Tasks, Agents and Automations headers
@@ -79,6 +85,8 @@ export interface TaskQueryLane {
   readonly key: string;
   readonly target: TasksStateTarget;
   readonly search: TaskPageInput;
+  /** The lane of one status group in a grouped list, which pages by itself. */
+  readonly group?: string;
 }
 
 /**
@@ -87,7 +95,7 @@ export interface TaskQueryLane {
  * `projectId`, so a project with several member projects in one environment gets
  * one lane per project; "all projects" is one unscoped lane per environment.
  * Environments without a matching project get no lane. Tags are matched by the
- * server, which requires every given tag.
+ * server, which requires every given tag, and so is the latest run.
  */
 export function planTaskQueryLanes(input: {
   readonly targets: ReadonlyArray<TasksStateTarget>;
@@ -96,14 +104,23 @@ export function planTaskQueryLanes(input: {
   readonly tags?: ReadonlyArray<string>;
   /** Active, the server's default, when absent. */
   readonly archive?: TaskArchiveFilter;
+  /** The Last run select's value: a raw run status, `NO_RUNS_FILTER` or `ALL_FILTER`. */
+  readonly lastRun?: string;
   readonly pageSize: number;
 }): TaskQueryLane[] {
+  const lastRun =
+    input.lastRun === undefined || input.lastRun === ALL_FILTER
+      ? undefined
+      : input.lastRun === NO_RUNS_FILTER
+        ? TASK_LAST_RUN_NONE
+        : input.lastRun;
   const keys = orderedProjectFilterKeys(input.projectFilter);
   const filterSearch = {
     audience: "agent" as const,
     ...(input.statusFilter === ALL_FILTER ? {} : { status: input.statusFilter }),
     ...(input.tags && input.tags.length > 0 ? { tags: [...input.tags] } : {}),
     ...(input.archive && input.archive !== "active" ? { archive: input.archive } : {}),
+    ...(lastRun === undefined ? {} : { lastRun }),
   };
   return input.targets.flatMap((target) => {
     if (keys === null) {
@@ -119,4 +136,55 @@ export function planTaskQueryLanes(input: {
       return { key: JSON.stringify([target.environmentId, projectId, search]), target, search };
     });
   });
+}
+
+/** The same lane, narrowed to one status. */
+function laneOfStatus(lane: TaskQueryLane, status: string, group?: string): TaskQueryLane {
+  const search: TaskPageInput = { ...lane.search, status };
+  return {
+    key: JSON.stringify([lane.target.environmentId, search.projectId ?? null, search]),
+    target: lane.target,
+    search,
+    ...(group === undefined ? {} : { group }),
+  };
+}
+
+/**
+ * A grouped list's page lanes: for each lane without a status, one lane per
+ * status it has tasks in (its server counts) whose group is open and passes
+ * the status filter. Spellings that differ only in ASCII letter case share one
+ * lane. A collapsed group costs nothing but its count. A lane whose counts are
+ * unknown (an older server) stays one lane for every status.
+ */
+export function planStatusGroupLanes(input: {
+  readonly lanes: ReadonlyArray<TaskQueryLane>;
+  /** Counts by lane key; absent while loading, null when the server has none. */
+  readonly counts: Readonly<Record<string, ReadonlyArray<TaskStatusCount> | null>>;
+  readonly open: (key: string) => boolean;
+  readonly statusFilter: string;
+}): TaskQueryLane[] {
+  const filterKey = input.statusFilter === ALL_FILTER ? null : statusGroupKey(input.statusFilter);
+  return input.lanes.flatMap((lane) => {
+    const counts = input.counts[lane.key];
+    if (counts === undefined) return [];
+    if (counts === null)
+      return [input.statusFilter === ALL_FILTER ? lane : laneOfStatus(lane, input.statusFilter)];
+    // The server matches a status filter case-insensitively, so one lane already
+    // returns every spelling that differs only in letter case: a second lane for
+    // "done" next to "Done" would list the same tasks twice.
+    const seen = new Set<string>();
+    return counts.flatMap(({ status }) => {
+      const key = statusGroupKey(status);
+      if ((filterKey !== null && key !== filterKey) || !input.open(key)) return [];
+      const match = sqliteNoCase(status);
+      if (seen.has(match)) return [];
+      seen.add(match);
+      return [laneOfStatus(lane, status, key)];
+    });
+  });
+}
+
+/** A status as the server's `COLLATE NOCASE` compares it: only ASCII letters fold. */
+function sqliteNoCase(status: string): string {
+  return status.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
 }

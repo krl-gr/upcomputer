@@ -18,6 +18,7 @@ import * as DesktopLifecycle from "./DesktopLifecycle.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
+import * as DesktopSessionState from "../telemetry/DesktopSessionState.ts";
 
 function layerElectronApp(
   appListeners: Map<string, (...args: readonly unknown[]) => void>,
@@ -52,6 +53,7 @@ function layerElectronApp(
     setAppUserModelId: () => Effect.void,
     getAppMetrics: Effect.succeed([]),
     setAsDefaultProtocolClient: () => Effect.succeed(true),
+    withoutDefaultProtocolClientClaims: (effect) => effect,
     setDesktopName: () => Effect.void,
     setDockIcon: () => Effect.void,
     appendCommandLineSwitch: () => Effect.void,
@@ -271,6 +273,82 @@ describe("DesktopLifecycle", () => {
       );
 
       assert.deepEqual(options, { execPath: "/opt/Up.computer/t3code", args: ["--no-sandbox"] });
+    }),
+  );
+
+  it.effect("stops the backend once when Windows ends the session, and says the OS ended it", () =>
+    Effect.gen(function* () {
+      const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
+      const shutdownRequested = yield* Deferred.make<void>();
+      const allowShutdown = yield* Deferred.make<void>();
+      const quitRequested = yield* Deferred.make<void>();
+      const events: string[] = [];
+      const layerDesktopShutdown = Layer.succeed(DesktopShutdown.DesktopShutdown, {
+        request: Effect.sync(() => {
+          events.push("request");
+        }).pipe(Effect.andThen(Deferred.succeed(shutdownRequested, undefined)), Effect.asVoid),
+        awaitRequest: Deferred.await(shutdownRequested),
+        markComplete: Deferred.succeed(allowShutdown, undefined).pipe(Effect.asVoid),
+        awaitComplete: Deferred.await(allowShutdown),
+        isComplete: Deferred.isDone(allowShutdown),
+      });
+      const quit = Effect.sync(() => {
+        events.push("quit");
+      }).pipe(Effect.andThen(Deferred.succeed(quitRequested, undefined)), Effect.asVoid);
+      const layerSessionState = Layer.succeed(DesktopSessionState.DesktopSessionState, {
+        sessionId: "6a7b8c9d-0e1f-4a2b-8c3d-4e5f6a7b8c9d",
+        recordUnsafe: (last) => {
+          events.push(`state:${last.state}`);
+        },
+        recoveredUnsafe: () => {},
+      });
+      const layerEnvironment = Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
+        platform: "win32",
+        isDevelopment: false,
+        appImagePath: Option.none(),
+      } as DesktopEnvironment.DesktopEnvironment["Service"]);
+      const layer = DesktopLifecycle.layer.pipe(
+        Layer.provideMerge(layerElectronApp(appListeners, quit)),
+        Layer.provideMerge(layerElectronTheme),
+        Layer.provideMerge(layerElectronWindow()),
+        Layer.provideMerge(layerDesktopWindow()),
+        Layer.provideMerge(layerEnvironment),
+        Layer.provideMerge(layerDesktopShutdown),
+        Layer.provideMerge(layerSessionState),
+        Layer.provideMerge(DesktopState.layer),
+      );
+      const openWindow = () => {
+        const listeners = new Map<string, (event: Electron.WindowSessionEndEvent) => void>();
+        appListeners.get("browser-window-created")?.(
+          {},
+          {
+            on: (name: string, listener: (event: Electron.WindowSessionEndEvent) => void) =>
+              listeners.set(name, listener),
+          },
+        );
+        return (reasons: Electron.WindowSessionEndEvent["reasons"]) =>
+          listeners.get("session-end")?.({ reasons } as Electron.WindowSessionEndEvent);
+      };
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+          yield* lifecycle.register;
+          const endMain = openWindow();
+          const endPreview = openWindow();
+
+          endMain(["shutdown"]);
+          // Windows may end the process once the listener returns, so the state comes first.
+          assert.equal(events[0], "state:os_shutdown");
+          // Restart Manager closing the app for an installer is not the OS ending.
+          endPreview(["close-app"]);
+          yield* Deferred.await(shutdownRequested);
+          yield* Deferred.succeed(allowShutdown, undefined);
+          yield* Deferred.await(quitRequested);
+
+          assert.deepEqual(events, ["state:os_shutdown", "request", "quit"]);
+        }),
+      ).pipe(Effect.provide(layer));
     }),
   );
 

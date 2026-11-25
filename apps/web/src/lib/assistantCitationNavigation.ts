@@ -1,10 +1,12 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { pipe } from "effect/Function";
-import type {
-  AssistantCitation,
-  OrchestrationV2ThreadShell,
-  ScopedThreadRef,
-  ThreadId,
+import {
+  isTaskOutputCitation,
+  type AssistantCitation,
+  type AssistantMessageCitation,
+  type OrchestrationV2ThreadShell,
+  type ScopedThreadRef,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { useRouter, type AnyRouter } from "@tanstack/react-router";
 import {
@@ -32,18 +34,20 @@ function assistantCitationHash(citation: AssistantCitation) {
   return `${CITATION_HASH_PREFIX}${Base64Url.encode(formatAssistantCitationHref(citation))}`;
 }
 
-export function assistantCitationFromLocation(href: string) {
+export function assistantCitationFromLocation(href: string): AssistantMessageCitation | null {
   const hashIndex = href.indexOf("#");
   if (hashIndex === -1) return null;
   const hash = href.slice(hashIndex + 1);
   if (!hash.startsWith(CITATION_HASH_PREFIX) || hash.length > 140_000) return null;
   try {
-    return pipe(
+    const citation = pipe(
       hash.slice(CITATION_HASH_PREFIX.length),
       Base64Url.decodeString,
       Result.getOrThrow,
       parseAssistantCitationHref,
     );
+    // UpComputer: a task quote's source is a task, which is not revealed in a thread.
+    return citation && !isTaskOutputCitation(citation) ? citation : null;
   } catch {
     return null;
   }
@@ -63,7 +67,10 @@ function sideChatParentId(sourceThread: SourceThread) {
 }
 
 /** Side chat quotes open on their parent thread, where the side chat is a tab. */
-export function assistantCitationRoute(citation: AssistantCitation, sourceThread: SourceThread) {
+export function assistantCitationRoute(
+  citation: AssistantMessageCitation,
+  sourceThread: SourceThread,
+) {
   return {
     to: "/$environmentId/$threadId" as const,
     params: {
@@ -77,7 +84,7 @@ export function assistantCitationRoute(citation: AssistantCitation, sourceThread
 
 /** A fresh activation lets the same link reveal its source again after dismissal. */
 export function assistantCitationNavigation(
-  citation: AssistantCitation,
+  citation: AssistantMessageCitation,
   sourceThread: SourceThread,
 ) {
   return {
@@ -123,7 +130,7 @@ export function revealSideChatCitation(
 
 export function useSideChatCitationReveal(
   routeThreadRef: ScopedThreadRef | null,
-  citation: AssistantCitation | null,
+  citation: AssistantMessageCitation | null,
   activation: string,
 ) {
   const router = useRouter();

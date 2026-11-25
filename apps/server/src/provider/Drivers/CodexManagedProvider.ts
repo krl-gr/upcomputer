@@ -79,6 +79,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
       return {
         ...base,
         installed: false,
+        status: "error" as const,
         models: [],
         message: "Set up Codex to get started.",
         auth: { status: "unauthenticated" as const },
@@ -89,6 +90,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
         ...base,
         installed: true,
         version: executable.value.version,
+        status: "error" as const,
         models: [],
         message:
           "Signed in with ChatGPT, but token sharing is disabled. Sign in again and enable token sharing, or use another provider.",
@@ -103,6 +105,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
         ...base,
         installed: true,
         version: executable.value.version,
+        status: "error" as const,
         models: [],
         message: "Sign in with ChatGPT to use Codex.",
         auth: { status: "unauthenticated" as const },

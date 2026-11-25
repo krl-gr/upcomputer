@@ -1,3 +1,5 @@
+import { sameTaskStatus } from "@t3tools/tasks-contracts/v1";
+
 /** An agent a person can hand a task to. */
 export interface HandOffAgent {
   readonly id: string;
@@ -5,6 +7,8 @@ export interface HandOffAgent {
   /** Null for an agent that serves every project. */
   readonly projectId: string | null;
   readonly enabled: boolean;
+  /** Set while the agent is archived; an archived agent takes no tasks. */
+  readonly archivedAt?: string | null;
   /** Statuses the agent starts on; empty means any. */
   readonly startStatuses: readonly string[];
   readonly startTags: readonly string[];
@@ -13,7 +17,7 @@ export interface HandOffAgent {
 }
 
 /**
- * The agents a task in `projectId` can go to: the enabled agents serving that
+ * The agents a task in `projectId` can go to: the enabled, unarchived agents serving that
  * project that start on a task's own state, by name. An agent that starts
  * only on another agent's run would never start on a handed-off task.
  */
@@ -25,6 +29,7 @@ export function handOffAgents<Agent extends HandOffAgent>(
     .filter(
       (agent) =>
         agent.enabled &&
+        agent.archivedAt == null &&
         agent.startRunStatuses.length === 0 &&
         (agent.projectId === null || agent.projectId === projectId),
     )
@@ -44,7 +49,8 @@ export function handOffPatch(
 ) {
   if (!agent) return { audience: "agent" as const };
   const startStatus =
-    agent.startStatuses.length === 0 || agent.startStatuses.includes(task.status)
+    agent.startStatuses.length === 0 ||
+    agent.startStatuses.some((status) => sameTaskStatus(status, task.status))
       ? null
       : agent.startStatuses[0];
   const metadata =

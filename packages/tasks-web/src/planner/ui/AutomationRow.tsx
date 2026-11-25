@@ -1,3 +1,4 @@
+import { useGT, useLocale, useMessages } from "gt-react";
 import { memo, useCallback, type MouseEvent } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { Maximize2Icon, MoreHorizontalIcon } from "lucide-react";
@@ -22,6 +23,9 @@ export const AutomationRow = memo(function AutomationRow(props: {
   readonly indicator: "above" | "below" | null;
   readonly onMenu: (automation: TaskAutomationListItem, point: MenuPoint) => void;
 }) {
+  const gt = useGT();
+  const m = useMessages();
+  const locale = useLocale();
   const { automation } = props;
   const { windows, projectById } = usePlanner();
   const project = projectById.get(automation.projectId) ?? null;
@@ -49,10 +53,14 @@ export const AutomationRow = memo(function AutomationRow(props: {
     event.preventDefault();
     props.onMenu(automation, { x: event.clientX, y: event.clientY });
   };
-  const next =
+  const schedule = describeCron(automation.schedule.cron, gt, m);
+  const scheduleLine =
     automation.status === "enabled" && automation.nextRunAt
-      ? `next ${shortDateTime(automation.nextRunAt)}`
-      : null;
+      ? gt("{schedule} · next {time}", {
+          schedule,
+          time: shortDateTime(automation.nextRunAt, locale),
+        })
+      : schedule;
   const count = automation.taskCount ?? null;
   return (
     <>
@@ -81,20 +89,19 @@ export const AutomationRow = memo(function AutomationRow(props: {
           <span
             role="img"
             className="flex shrink-0 items-center"
-            aria-label={project?.name ?? "Unknown project"}
+            aria-label={project?.name ?? gt("Unknown project")}
           >
             <ProjectIcon project={project} />
           </span>
-          <TablePill>{AUTOMATION_STATUS_LABELS[automation.status]}</TablePill>
-          <span className="min-w-0 truncate">
-            {describeCron(automation.schedule.cron)}
-            {next ? ` · ${next}` : ""}
-          </span>
+          <TablePill>{m(AUTOMATION_STATUS_LABELS[automation.status])}</TablePill>
+          <span className="min-w-0 truncate">{scheduleLine}</span>
           {count !== null ? (
-            <span className="shrink-0">{count === 1 ? "1 task" : `${count} tasks`}</span>
+            <span className="shrink-0">
+              {gt("{count, plural, one {# task} other {# tasks}}", { count })}
+            </span>
           ) : null}
           <IconAction
-            label="Open automation"
+            label={gt("Open automation")}
             variant="outline"
             onClick={(event) => {
               event.stopPropagation();
@@ -104,7 +111,7 @@ export const AutomationRow = memo(function AutomationRow(props: {
             <Maximize2Icon />
           </IconAction>
           <IconAction
-            label="More actions"
+            label={gt("More actions")}
             variant="outline"
             onClick={(event) => {
               event.stopPropagation();

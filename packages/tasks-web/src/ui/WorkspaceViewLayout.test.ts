@@ -26,7 +26,7 @@ test("pages use upstream's page header and leave the sidebar toggle to the share
     source,
     /import \{ WorkspacePageHeader \} from "\.\.\/\.\.\/\.\.\/\.\.\/apps\/web\/src\/extensionApi\.ts";/,
   );
-  NodeAssert.match(source, /<WorkspacePageHeader electron=\{isElectron\}>/);
+  NodeAssert.match(source, /<WorkspacePageHeader electron=\{isElectron\}[\s>]/);
   NodeAssert.doesNotMatch(source, /<header/);
   for (const file of sourceFiles(new URL("../", import.meta.url))) {
     NodeAssert.doesNotMatch(file, /SidebarTrigger/);
@@ -52,8 +52,8 @@ test("the Tasks header keeps its project, status, last-run and tag filters", () 
   NodeAssert.match(toolbar, /<TaskFilterRow/);
   NodeAssert.match(toolbar, /<TaskFiltersButton/);
   const filters = NodeFS.readFileSync(new URL("./TaskFilters.tsx", import.meta.url), "utf8");
-  NodeAssert.match(filters, /aria-label="Filter by status"/);
-  NodeAssert.match(filters, /aria-label="Filter by last run"/);
+  NodeAssert.match(filters, /aria-label=\{gt\("Filter by status"\)\}/);
+  NodeAssert.match(filters, /aria-label=\{gt\("Filter by last run"\)\}/);
   NodeAssert.match(filters, /<TagFilterCombobox/);
 });
 

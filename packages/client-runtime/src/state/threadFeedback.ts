@@ -1,3 +1,4 @@
+import { errorI18nMessage, resolveMarkedText } from "../errors/translatable.ts";
 import { MessageId, type ProviderUploadFeedbackResult } from "@t3tools/contracts";
 
 import {
@@ -6,6 +7,8 @@ import {
   type AtomCommandResult,
 } from "./runtime.ts";
 import { plainErrorSentence } from "../errors/plainError.ts";
+import { mFallback, msg } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 
 type CodexFeedbackSubmissionDetails = {
   readonly id: MessageId;
@@ -29,19 +32,25 @@ export function parseCodexFeedbackCommand(text: string): { readonly reason?: str
   return reason ? { reason } : {};
 }
 
-export function codexFeedbackNotice(submission: CodexFeedbackSubmission) {
+export function codexFeedbackNotice(
+  submission: CodexFeedbackSubmission,
+  resolve: MFunctionType = mFallback,
+) {
   switch (submission.status) {
     case "interrupted":
       return null;
     case "uploading":
-      return { title: "Sending feedback to OpenAI...", description: undefined };
+      return { title: resolve(msg("Sending feedback to OpenAI...")), description: undefined };
     case "sent":
       return {
-        title: "Feedback sent to OpenAI",
-        description: `Thread ID: ${submission.feedbackId}`,
+        title: resolve(msg("Feedback sent to OpenAI")),
+        description: resolve(msg("Thread ID: {feedbackId}", { feedbackId: submission.feedbackId })),
       };
     case "failed":
-      return { title: "Could not send feedback to OpenAI", description: submission.errorMessage };
+      return {
+        title: resolve(msg("Could not send feedback to OpenAI")),
+        description: submission.errorMessage,
+      };
   }
 }
 
@@ -58,15 +67,24 @@ export interface LocalChatMessage {
 export function codexFeedbackMessage(
   submission: CodexFeedbackSubmission,
   role: "user" | "assistant" = "user",
+  resolve: MFunctionType = mFallback,
 ): LocalChatMessage {
   const text =
     role === "user"
       ? submission.command
       : submission.status === "sent"
-        ? `Feedback sent to OpenAI.\n\nThread ID: \`${submission.feedbackId}\``
+        ? resolve(
+            msg("Feedback sent to OpenAI.\n\nThread ID: `{feedbackId}`", {
+              feedbackId: submission.feedbackId,
+            }),
+          )
         : submission.status === "failed"
-          ? `Could not send feedback to OpenAI.\n\n${submission.errorMessage}`
-          : "Sending feedback to OpenAI...";
+          ? resolve(
+              msg("Could not send feedback to OpenAI.\n\n{errorMessage}", {
+                errorMessage: submission.errorMessage,
+              }),
+            )
+          : resolve(msg("Sending feedback to OpenAI..."));
 
   return {
     id: role === "user" ? submission.id : MessageId.make(`${submission.id}:feedback`),
@@ -79,12 +97,15 @@ export function codexFeedbackMessage(
   };
 }
 
-export async function submitCodexFeedback<E>(input: {
-  readonly submission: CodexFeedbackSubmissionDetails;
-  readonly clearDraft: () => void;
-  readonly onUpdate: (submission: CodexFeedbackSubmission) => void;
-  readonly upload: () => Promise<AtomCommandResult<ProviderUploadFeedbackResult, E>>;
-}): Promise<AtomCommandResult<ProviderUploadFeedbackResult, E>> {
+export async function submitCodexFeedback<E>(
+  input: {
+    readonly submission: CodexFeedbackSubmissionDetails;
+    readonly clearDraft: () => void;
+    readonly onUpdate: (submission: CodexFeedbackSubmission) => void;
+    readonly upload: () => Promise<AtomCommandResult<ProviderUploadFeedbackResult, E>>;
+  },
+  resolve: MFunctionType = mFallback,
+): Promise<AtomCommandResult<ProviderUploadFeedbackResult, E>> {
   input.onUpdate({ ...input.submission, status: "uploading" });
   input.clearDraft();
 
@@ -99,10 +120,15 @@ export async function submitCodexFeedback<E>(input: {
     input.onUpdate({ ...input.submission, status: "interrupted" });
   } else {
     const error = squashAtomCommandFailure(result);
+    // Marked text is already written for people; anything else gets the plain sentence.
+    const markedText = errorI18nMessage(error);
     input.onUpdate({
       ...input.submission,
       status: "failed",
-      errorMessage: plainErrorSentence(error),
+      errorMessage:
+        markedText === undefined
+          ? plainErrorSentence(error)
+          : resolveMarkedText(markedText, resolve),
     });
   }
 

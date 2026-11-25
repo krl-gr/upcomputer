@@ -12,6 +12,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { useEffect, useEffectEvent, useState } from "react";
+import { useGT } from "gt-react";
 
 import { environmentCatalog } from "../connection/catalog";
 import { toastManager } from "../components/ui/toast";
@@ -73,6 +74,7 @@ export function AutoAddAccountComputers({
   readonly fresh: boolean;
   readonly primaryEnvironmentId: EnvironmentId | null;
 }) {
+  const gt = useGT();
   const { environments, isReady } = useEnvironments();
   const discovery = useRelayEnvironmentDiscovery();
   const registerEnvironment = useAtomCommand(environmentCatalog.register, {
@@ -116,8 +118,8 @@ export function AutoAddAccountComputers({
     if (result._tag === "Success") {
       toastManager.add({
         type: "success",
-        title: "Environment added",
-        description: `Connecting to ${label} through UpComputer Connect.`,
+        title: gt("Environment added"),
+        description: gt("Connecting to {label} through UpComputer Connect.", { label }),
       });
       return;
     }
@@ -126,9 +128,11 @@ export function AutoAddAccountComputers({
     console.error("[t3-connect] Could not add the account's computer", { environmentId, cause });
     toastManager.add({
       type: "error",
-      title: `Could not add ${label}`,
+      title: gt("Could not add {label}", { label }),
       description:
-        cause instanceof Error ? cause.message : "Could not connect through UpComputer Connect.",
+        cause instanceof Error
+          ? cause.message
+          : gt("Could not connect through UpComputer Connect."),
     });
   });
   const addNewComputers = useEffectEvent(

@@ -9,6 +9,8 @@ import {
   AgentRunTranscriptInput,
   AgentSearchInput,
   AgentUpdateInput,
+  BotCreateInput,
+  BotUpdateInput,
   AUTOMATION_DRAFT_LIMIT_PER_PROJECT,
   AutomationCreateInput,
   AutomationDeleteInput,
@@ -47,6 +49,8 @@ import {
   TaskUpdateInput,
   type Task,
   type TaskActor,
+  type Bot,
+  type BotWriteInput,
   type TaskAgent,
   type TaskAgentRun,
   type TaskAudience,
@@ -80,6 +84,8 @@ import type { TaskToolInvocationContext } from "./TaskToolTypes.ts";
 
 import { agentRunModes, broaderRunMode, type RunModes } from "../agents/runModes.ts";
 import {
+  agentWorks,
+  nextAgentArchivedAt,
   noMatchingAgentReason,
   releasedRunId,
   startsForTask,
@@ -95,6 +101,11 @@ import {
 } from "../context/TaskToolContextResolver.ts";
 import { InboxProject } from "../inbox/InboxProject.ts";
 import { BotService } from "../bots/BotService.ts";
+import {
+  callInstructionUpdateTool,
+  isInstructionUpdateTool,
+} from "../instructionUpdates/InstructionUpdateTools.ts";
+import { InstructionUpdatesService } from "../instructionUpdates/InstructionUpdatesService.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { TaskRepository, type PersistTaskInput } from "../persistence/TaskRepository.ts";
 import {
@@ -107,6 +118,12 @@ import {
   PROMPT_GUIDANCE_SCHEDULING,
   TASK_TRIGGER_RULES,
 } from "./TaskToolDefinitions.ts";
+import {
+  changedAgentFields,
+  changedTaskFields,
+  shortAgentReply,
+  shortTaskReply,
+} from "./TaskToolReplies.ts";
 import { TaskToolService, type TaskToolServiceShape } from "./TaskToolServiceTag.ts";
 import { setTasksArchived } from "../taskArchive.ts";
 import { makeFirstUseRecorder } from "../telemetry/firstUse.ts";
@@ -137,6 +154,8 @@ const decoders = {
   agent_create: Schema.decodeUnknownEffect(AgentCreateInput),
   agent_update: Schema.decodeUnknownEffect(AgentUpdateInput),
   agent_delete: Schema.decodeUnknownEffect(AgentDeleteInput),
+  bot_create: Schema.decodeUnknownEffect(BotCreateInput),
+  bot_update: Schema.decodeUnknownEffect(BotUpdateInput),
   agent_run_get: Schema.decodeUnknownEffect(AgentRunGetInput),
   agent_run_search: Schema.decodeUnknownEffect(AgentRunSearchInput),
   agent_run_transcript: Schema.decodeUnknownEffect(AgentRunTranscriptInput),
@@ -399,7 +418,10 @@ function newTask(
     createdBy: item.createdBy ?? "agent",
     assigneeAgentRunId: item.assigneeAgentRunId ?? null,
     originThreadId: threadId,
-    sourceThreadId: item.sourceThreadId === undefined ? threadId : item.sourceThreadId,
+    // The calling thread is the chat its runs report back to. A thread id the
+    // caller passes may be copied from history, as in a fork of the chat that
+    // created earlier tasks, and would send the reports there. null opts out.
+    sourceThreadId: item.sourceThreadId === null ? null : (threadId ?? item.sourceThreadId ?? null),
     sourceRunId: item.sourceRunId ?? null,
     metadata: item.metadata ?? null,
     tags: item.tags ?? [],
@@ -532,11 +554,59 @@ const make = Effect.gen(function* () {
   const inbox = yield* InboxProject;
   const schedule = yield* TaskScheduleService;
   const bots = yield* BotService;
+  const instructionUpdates = yield* InstructionUpdatesService;
   const crypto = yield* SecureRandom.SecureRandom;
   const recordFirstUse = yield* makeFirstUseRecorder;
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const randomId = (prefix: string) =>
     crypto.uuidV4().pipe(Effect.map((uuid) => `${prefix}-${uuid}`));
+  const notABot = (id: TaskAgentId) =>
+    repository
+      .getAgentById({ id })
+      .pipe(
+        Effect.map((agent) =>
+          Option.isSome(agent)
+            ? `${agent.value.name} is a worker, not a bot. Use agent_update for it.`
+            : `Bot '${id}' was not found.`,
+        ),
+      );
+  /**
+   * Same rule as `instructionsWriteAccess`: unattended task-agent runs read
+   * untrusted content and cannot create or edit bots unless explicitly opted in.
+   */
+  const botWriteAccess = Effect.fn("TaskToolService.botWriteAccess")(function* (
+    name: string,
+    context: TaskToolInvocationContext,
+  ) {
+    const run = context.threadId
+      ? yield* repository.findLatestAgentRunByThreadId({ threadId: context.threadId })
+      : Option.none<TaskAgentRun>();
+    if (Option.isNone(run)) return null;
+    const agent = yield* repository.getAgentById({ id: run.value.agentId });
+    if (Option.isSome(agent) && (agent.value.config.tools ?? []).includes(name)) return null;
+    return `Task-agent run '${run.value.id}' cannot create or edit bots: a run may be acting on untrusted content. This also applies after the run ended. Put the suggested change in your task output instead. A person can allow this agent by adding '${name}' to its tools. This guards against accidental or injected writes; it is not a security boundary.`;
+  });
+  const botEditRefusal = Effect.fn("TaskToolService.botEditRefusal")(function* (
+    context: TaskToolInvocationContext,
+    existingBot: Bot,
+    existingConfig: TaskAgent["config"],
+    nextConfig: TaskAgent["config"],
+  ) {
+    // Check existing config, requested config, and the live chat's current modes (a mode
+    // picked in the bot chat's composer can exceed the saved config).
+    const botChat = yield* threads
+      .getThreadShell(existingBot.threadId)
+      .pipe(Effect.orElseSucceed(() => null));
+    return (
+      runStartRefusal(context, agentRunModes(existingConfig), "Changing a bot") ??
+      runStartRefusal(context, agentRunModes(nextConfig), "Changing a bot") ??
+      runStartRefusal(
+        context,
+        botChat ?? { runtimeMode: "full-access", interactionMode: "default" },
+        "Changing a bot",
+      )
+    );
+  });
   /**
    * Task-agent runs read untrusted content, so an injected "add to the
    * instructions" must not rewrite every agent's rules. A thread that any run
@@ -600,7 +670,7 @@ const make = Effect.gen(function* () {
     context: TaskToolInvocationContext,
   ) {
     const refusals = new Map<TaskId, string>();
-    const agents = (yield* repository.listAllAgents()).filter((agent) => agent.enabled);
+    const agents = (yield* repository.listAllAgents()).filter(agentWorks);
     if (agents.length === 0) return refusals;
     for (const id of new Set(ids)) {
       const task = Option.getOrNull(yield* repository.getById({ id }));
@@ -747,8 +817,11 @@ const make = Effect.gen(function* () {
   });
 
   const call: TaskToolServiceShape["call"] = Effect.fn("TaskToolService.call")(
-    function* ({ name, args, context }) {
+    function* ({ name, args: rawArgs, context }) {
       const isDryRun = dryRun(context);
+      // Not a field of any input: it only picks the reply's shape.
+      const { verbose, ...args } = rawArgs;
+      const full = verbose === true;
       switch (name) {
         case "task_context": {
           const input = yield* decoders.task_context(args);
@@ -845,7 +918,11 @@ const make = Effect.gen(function* () {
           if (isDryRun)
             return {
               isError: false,
-              text: json({ dryRun: true, task, resolution: compactTaskToolContext(resolution) }),
+              text: json({
+                dryRun: true,
+                ...(full ? { task } : shortTaskReply(task)),
+                resolution: compactTaskToolContext(resolution),
+              }),
             };
           // An existing id updates that task; a status change is the caller's.
           const callerRun = context.threadId
@@ -867,7 +944,7 @@ const make = Effect.gen(function* () {
               audience: saved.audience,
               shownIn: SHOWN_IN[saved.audience],
               ...(waiting === null ? {} : { warning: waiting }),
-              task: saved,
+              ...(full ? { task: saved } : shortTaskReply(saved)),
             }),
           };
         }
@@ -875,27 +952,44 @@ const make = Effect.gen(function* () {
           const input = yield* decoders.task_update(args);
           if (isDryRun) {
             const existing = yield* repository.getById({ id: input.id });
-            return Option.isSome(existing)
-              ? {
-                  isError: false,
-                  text: json({ dryRun: true, task: patchTask(existing.value, input, yield* now) }),
-                }
-              : { isError: true, text: `Task '${input.id}' was not found.` };
+            if (Option.isNone(existing))
+              return { isError: true, text: `Task '${input.id}' was not found.` };
+            const task = patchTask(existing.value, input, yield* now);
+            return {
+              isError: false,
+              text: json({
+                dryRun: true,
+                ...(full
+                  ? { task }
+                  : shortTaskReply(task, changedTaskFields(existing.value, task))),
+              }),
+            };
           }
           const before = yield* repository.getById({ id: input.id });
-          if (Option.isSome(before)) {
-            // A status set with the update must suit the audience it ends with;
-            // a task handed to a person without one reopens (see upsert).
-            const invalid =
-              taskKindAudienceError(
-                input.kind ?? before.value.kind,
-                input.audience ?? before.value.audience,
-              ) ??
-              (input.status !== undefined
-                ? personTaskStatusError(input.audience ?? before.value.audience, input.status)
-                : null);
-            if (invalid !== null)
-              return { isError: true, text: `${invalid} The task was not changed.` };
+          if (Option.isNone(before))
+            return { isError: true, text: `Task '${input.id}' was not found.` };
+          // A status set with the update must suit the audience it ends with;
+          // a task handed to a person without one reopens (see upsert).
+          const invalid =
+            taskKindAudienceError(
+              input.kind ?? before.value.kind,
+              input.audience ?? before.value.audience,
+            ) ??
+            (input.status !== undefined
+              ? personTaskStatusError(input.audience ?? before.value.audience, input.status)
+              : null);
+          if (invalid !== null)
+            return { isError: true, text: `${invalid} The task was not changed.` };
+          // A chat acting on a stale report (a failed run it wants to retry) must not
+          // relabel a task that a newer run, such as a person's Continue, already works on.
+          if (input.status !== undefined && input.status !== before.value.status) {
+            const active = yield* repository.listActiveAgentRunsForTask({ id: input.id });
+            const run = active[0];
+            if (run !== undefined && !active.some((each) => each.threadId === context.threadId))
+              return {
+                isError: true,
+                text: `Task '${input.id}' is being worked on by run ${run.id}, started ${run.startedAt}, so its status was not changed. Read it again with task_get; message the run with agent_run_message, or stop it with task_cancel first.`,
+              };
           }
           const callerRun = context.threadId
             ? Option.getOrNull(
@@ -925,29 +1019,43 @@ const make = Effect.gen(function* () {
           yield* taskAgents.scheduleTaskChanged({
             task,
             reason: "updated",
-            releasedRunId: Option.isSome(before)
-              ? releasedRunId({
-                  before: before.value,
-                  after: task,
-                  requestedAssignee: update.assigneeAgentRunId,
-                  callerRun,
-                })
-              : null,
+            releasedRunId: releasedRunId({
+              before: before.value,
+              after: task,
+              requestedAssignee: update.assigneeAgentRunId,
+              callerRun,
+            }),
           });
-          return { isError: false, text: json({ task }) };
+          return {
+            isError: false,
+            text: json(
+              full ? { task } : shortTaskReply(task, changedTaskFields(before.value, task)),
+            ),
+          };
         }
         case "task_reorder": {
           const input = yield* decoders.task_reorder(args);
-          if (isDryRun) {
-            const existing = yield* repository.getById({ id: input.id });
-            return Option.isSome(existing)
-              ? {
-                  isError: false,
-                  text: json({ dryRun: true, task: existing.value, reorder: input }),
-                }
-              : { isError: true, text: `Task '${input.id}' was not found.` };
-          }
-          return { isError: false, text: json({ task: yield* repository.reorder(input) }) };
+          const existing = yield* repository.getById({ id: input.id });
+          if (Option.isNone(existing))
+            return { isError: true, text: `Task '${input.id}' was not found.` };
+          if (isDryRun)
+            return {
+              isError: false,
+              text: json({
+                dryRun: true,
+                task: full ? existing.value : shortTaskReply(existing.value, []).task,
+                reorder: input,
+              }),
+            };
+          const reordered = yield* repository.reorder(input);
+          return {
+            isError: false,
+            text: json(
+              full
+                ? { task: reordered }
+                : shortTaskReply(reordered, changedTaskFields(existing.value, reordered)),
+            ),
+          };
         }
         case "task_delete": {
           const input = yield* decoders.task_delete(args);
@@ -965,6 +1073,8 @@ const make = Effect.gen(function* () {
         }
         case "task_event_append": {
           const input = yield* decoders.task_event_append(args);
+          if (Option.isNone(yield* repository.getById({ id: input.taskId })))
+            return { isError: true, text: `Task '${input.taskId}' was not found.` };
           const event = {
             id: input.id ?? TaskEventId.make(yield* randomId("task-event")),
             taskId: input.taskId,
@@ -1037,6 +1147,8 @@ const make = Effect.gen(function* () {
           if (input.taskId !== undefined) {
             if (input.from !== undefined || input.to !== undefined)
               return { isError: true, text: "Pass either taskId or from and to, not both." };
+            if (Option.isNone(yield* repository.getById({ id: input.taskId })))
+              return { isError: true, text: `Task '${input.taskId}' was not found.` };
             return {
               isError: false,
               text: json(
@@ -1097,10 +1209,15 @@ const make = Effect.gen(function* () {
         }
         case "agent_get": {
           const input = yield* decoders.agent_get(args);
-          const agent = yield* repository.getAgentById(input);
-          return Option.isSome(agent)
-            ? { isError: false, text: json({ agent: agent.value }) }
-            : { isError: true, text: `Agent '${input.id}' was not found.` };
+          const agent = yield* repository.getAgentById({ id: input.id });
+          if (Option.isNone(agent))
+            return { isError: true, text: `Agent '${input.id}' was not found.` };
+          if (agent.value.archivedAt !== null && input.includeArchived !== true)
+            return {
+              isError: true,
+              text: `Agent '${input.id}' is archived. Pass includeArchived: true to read it.`,
+            };
+          return { isError: false, text: json({ agent: agent.value }) };
         }
         case "agent_search": {
           return {
@@ -1165,11 +1282,16 @@ const make = Effect.gen(function* () {
             config: buildAgentConfig({ name: input.name, modelSelection: model, patch: input }),
             createdAt: timestamp,
             updatedAt: timestamp,
+            archivedAt: null,
           };
           if (isDryRun)
             return {
               isError: false,
-              text: json({ dryRun: true, agent, resolution: compactTaskToolContext(resolution) }),
+              text: json({
+                dryRun: true,
+                ...(full ? { agent } : shortAgentReply(agent)),
+                resolution: compactTaskToolContext(resolution),
+              }),
             };
           // An enabled agent starts runs on every matching task right away.
           const createRefusal = agent.enabled
@@ -1181,7 +1303,10 @@ const make = Effect.gen(function* () {
           yield* recordFirstUse("app.first_agent_created", { via: "agent" });
           return {
             isError: false,
-            text: json({ agent: saved, resolution: compactTaskToolContext(resolution) }),
+            text: json({
+              ...(full ? { agent: saved } : shortAgentReply(saved)),
+              resolution: compactTaskToolContext(resolution),
+            }),
           };
         }
         case "agent_update": {
@@ -1189,6 +1314,23 @@ const make = Effect.gen(function* () {
           const existing = yield* repository.getAgentById({ id: input.id });
           if (Option.isNone(existing))
             return { isError: true, text: `Agent '${input.id}' was not found.` };
+          const existingBot = (yield* bots.list).find(
+            (item) => item.agent.id === existing.value.id,
+          );
+          if (existingBot !== undefined) {
+            const writeRefusal = yield* botWriteAccess("agent_update", context);
+            if (writeRefusal !== null) return { isError: true, text: writeRefusal };
+          }
+          const { startTags } = existing.value;
+          if (
+            input.archived === true &&
+            (existingBot !== undefined ||
+              (startTags.length === 1 && startTags[0] === `bot:${input.id}`))
+          )
+            return {
+              isError: true,
+              text: `Agent '${input.id}' belongs to a bot and can't be archived. Remove the bot in the app instead.`,
+            };
           const explicitProject = Object.prototype.hasOwnProperty.call(input, "projectId");
           const needsResolution =
             input.workspaceRoot !== undefined ||
@@ -1234,6 +1376,7 @@ const make = Effect.gen(function* () {
                 resolution,
               }),
             };
+          const timestamp = yield* now;
           const agent: TaskAgent = {
             ...existing.value,
             projectId,
@@ -1254,22 +1397,29 @@ const make = Effect.gen(function* () {
                   }),
                 }
               : {}),
-            updatedAt: yield* now,
+            updatedAt: timestamp,
+            archivedAt: nextAgentArchivedAt(existing.value.archivedAt, input.archived, timestamp),
           };
           if (isDryRun)
             return {
               isError: false,
               text: json({
                 dryRun: true,
-                agent,
+                ...(full
+                  ? { agent }
+                  : shortAgentReply(agent, changedAgentFields(existing.value, agent))),
                 resolution: resolution && compactTaskToolContext(resolution),
               }),
             };
-          // Any edit of an enabled agent lets it run again on its matching tasks
-          // (see runsAgain); disabling it starts nothing.
-          const updateRefusal = agent.enabled
-            ? runStartRefusal(context, agentRunModes(agent.config), "Changing an enabled agent")
-            : null;
+          // Any edit of an enabled, unarchived agent lets it run again on its matching
+          // tasks (see runsAgain); disabling or archiving it starts nothing. A bot's permanent
+          // chat stays callable regardless of enabled, so bots always enforce the mode ceiling.
+          const updateRefusal =
+            existingBot !== undefined
+              ? yield* botEditRefusal(context, existingBot, existing.value.config, agent.config)
+              : agentWorks(agent)
+                ? runStartRefusal(context, agentRunModes(agent.config), "Changing an enabled agent")
+                : null;
           if (updateRefusal !== null) return { isError: true, text: updateRefusal };
           const saved = yield* repository.upsertAgent(agent);
           yield* taskAgents.scheduleAgentChanged({ agent: saved, reason: "upserted" });
@@ -1277,7 +1427,9 @@ const make = Effect.gen(function* () {
           return {
             isError: false,
             text: json({
-              agent: saved,
+              ...(full
+                ? { agent: saved }
+                : shortAgentReply(saved, changedAgentFields(existing.value, saved))),
               resolution: resolution && compactTaskToolContext(resolution),
             }),
           };
@@ -1302,6 +1454,140 @@ const make = Effect.gen(function* () {
           yield* repository.deleteAgent(input);
           yield* taskAgents.scheduleAgentChanged({ agent: existing.value, reason: "deleted" });
           return { isError: false, text: json({ deleted: true, id: input.id }) };
+        }
+        case "bot_create": {
+          const input = yield* decoders.bot_create(args);
+          const writeRefusal = yield* botWriteAccess("bot_create", context);
+          if (writeRefusal !== null) return { isError: true, text: writeRefusal };
+          if (input.id !== undefined && (yield* bots.removal(input.id)) !== null)
+            return {
+              isError: true,
+              text: `Bot '${input.id}' already exists. Use bot_update to change it, or create a new bot.`,
+            };
+          const resolution = yield* resolver.resolve({
+            args: {
+              ...(input.projectId ? { projectId: input.projectId } : {}),
+              ...(input.workspaceRoot ? { workspaceRoot: input.workspaceRoot } : {}),
+              ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
+              ...(input.modelAlias ? { modelAlias: input.modelAlias } : {}),
+            },
+            invocationContext: context,
+          });
+          const modelDecision = resolveAgentCreateModelDecision(
+            input,
+            resolution.resolvedModel?.modelSelection,
+          );
+          if (!modelDecision.ok)
+            return {
+              isError: true,
+              text: json({
+                error:
+                  modelDecision.reason === "missing-explicit-selection"
+                    ? "Bot creation requires an explicit model decision. Pass modelSelection or modelAlias (use modelAlias: 'project' to intentionally select the project default)."
+                    : "Unable to resolve the explicit bot model selection or alias.",
+                resolution,
+              }),
+            };
+          const projectId = input.projectId ?? resolution.resolvedProject?.project.id;
+          if (projectId === undefined)
+            return {
+              isError: true,
+              text: json({
+                error:
+                  "Couldn't tell which project this bot works in. Name the project, or start from a chat inside it.",
+                resolution,
+              }),
+            };
+          const bot: BotWriteInput = {
+            id: input.id ?? TaskAgentId.make(`bot:${yield* crypto.uuidV4()}`),
+            projectId,
+            allowedProjectIds: [projectId],
+            name: input.name,
+            config: buildAgentConfig({
+              name: input.name,
+              modelSelection: modelDecision.modelSelection,
+              patch: input,
+            }),
+            ...(input.appearance !== undefined ? { appearance: input.appearance } : {}),
+            ...(input.memoryMode !== undefined ? { memoryMode: input.memoryMode } : {}),
+          };
+          if (isDryRun) return { isError: false, text: json({ dryRun: true, bot }) };
+          // The bot's own tag starts it on tasks right away, as an enabled agent's would.
+          const refusal = runStartRefusal(context, agentRunModes(bot.config), "Creating a bot");
+          if (refusal !== null) return { isError: true, text: refusal };
+          return { isError: false, text: json({ bot: yield* bots.save(bot) }) };
+        }
+        case "bot_update": {
+          const input = yield* decoders.bot_update(args);
+          const writeRefusal = yield* botWriteAccess("bot_update", context);
+          if (writeRefusal !== null) return { isError: true, text: writeRefusal };
+          const existing = (yield* bots.list).find((item) => item.agent.id === input.id);
+          if (existing === undefined) return { isError: true, text: yield* notABot(input.id) };
+          const resolution =
+            input.workspaceRoot !== undefined ||
+            input.modelSelection !== undefined ||
+            input.modelAlias !== undefined
+              ? yield* resolver.resolve({
+                  args: {
+                    ...(input.projectId ? { projectId: input.projectId } : {}),
+                    ...(input.workspaceRoot ? { workspaceRoot: input.workspaceRoot } : {}),
+                    ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
+                    ...(input.modelAlias ? { modelAlias: input.modelAlias } : {}),
+                  },
+                  invocationContext: context,
+                })
+              : null;
+          const projectId =
+            input.projectId ??
+            (input.workspaceRoot ? resolution?.resolvedProject?.project.id : existing.projectId);
+          if (projectId === undefined)
+            return {
+              isError: true,
+              text: json({
+                error:
+                  "Couldn't tell which project this bot works in. Name the project, or start from a chat inside it.",
+                resolution,
+              }),
+            };
+          const model = resolveAgentUpdateModelSelection(
+            input,
+            existing.agent.config.modelSelection,
+            resolution?.resolvedModel?.modelSelection,
+          );
+          if (model === undefined)
+            return {
+              isError: true,
+              text: json({
+                error: "Unable to resolve the explicit bot model selection or alias.",
+                resolution,
+              }),
+            };
+          const name = input.name ?? existing.agent.name;
+          const bot: BotWriteInput = {
+            id: existing.agent.id,
+            projectId,
+            allowedProjectIds: [projectId],
+            name,
+            config: hasAgentConfigPatch(input)
+              ? buildAgentConfig({
+                  name,
+                  existing: existing.agent.config,
+                  modelSelection: model,
+                  patch: input,
+                })
+              : existing.agent.config,
+            ...(input.appearance !== undefined ? { appearance: input.appearance } : {}),
+            ...(input.memoryMode !== undefined ? { memoryMode: input.memoryMode } : {}),
+          };
+          if (isDryRun) return { isError: false, text: json({ dryRun: true, bot }) };
+          const refusal = yield* botEditRefusal(
+            context,
+            existing,
+            existing.agent.config,
+            bot.config,
+          );
+          if (refusal !== null) return { isError: true, text: refusal };
+          return { isError: false, text: json({ bot: yield* bots.save(bot) }) };
         }
         case "agent_run_get": {
           const input = yield* decoders.agent_run_get(args);
@@ -1724,6 +2010,24 @@ const make = Effect.gen(function* () {
           };
         }
         default:
+          if (isInstructionUpdateTool(name))
+            return yield* callInstructionUpdateTool(
+              {
+                updates: instructionUpdates,
+                repository,
+                bots,
+                writeRefusal: (tool, caller) =>
+                  Effect.map(instructionsWriteAccess(tool, caller), ({ refusal }) => refusal),
+                actor: (caller) =>
+                  Effect.map(
+                    caller.threadId
+                      ? repository.findActiveAgentRunByThreadId({ threadId: caller.threadId })
+                      : Effect.succeed(Option.none<TaskAgentRun>()),
+                    (run) => toolActor(caller, Option.getOrNull(run)),
+                  ),
+              },
+              { name, args, context, dryRun: isDryRun },
+            );
           return { isError: true, text: `Unknown task tool: ${name}` };
       }
     },

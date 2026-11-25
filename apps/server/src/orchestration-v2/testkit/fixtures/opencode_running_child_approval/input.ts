@@ -5,6 +5,8 @@ export const OPENCODE_RUNNING_CHILD_APPROVAL_PENDING_SHELL_KEY =
 
 export function openCodeRunningChildApprovalInput(): OrchestratorFixtureInput {
   return {
+    // Full access answers OpenCode's asks itself, so only an approval mode shows one.
+    runtimeMode: "approval-required",
     steps: [
       { type: "message", text: OPENCODE_SUBAGENT_PROMPT },
       {

@@ -3,7 +3,8 @@ import { toastManager } from "~/components/ui/toast";
 import { useAtomValue } from "@effect/atom-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { Atom } from "effect/reactivity";
-import { useEffect, useState } from "react";
+import { useGT } from "gt-react";
+import { useEffect, useEffectEvent, useState } from "react";
 
 import {
   ensureClientSettingsHydrated,
@@ -11,7 +12,16 @@ import {
   useClientSettingsHydrationStatus,
 } from "../../hooks/useSettings";
 import { completeOnboarding } from "../../onboarding/firstRun";
-import { FirstRunAgentStarter } from "../../onboardingSurface/FirstRunAgent";
+import { useFirstRunAgentStarterEnvironment } from "../../onboardingSurface/FirstRunAgent";
+import {
+  FirstRunAgentSetup,
+  NoAgentFirstMessageReporter,
+} from "../../onboardingSurface/NoAgentFirstRun";
+import {
+  asksAgainForAgent,
+  readNoAgentScreenRecord,
+} from "../../onboardingSurface/noAgentScreenRecord";
+import { firstRunWorkspaceProjects } from "../../onboardingSurface/upComputerOnboarding.logic";
 import { productSurface } from "../../product/productFlags";
 import {
   isFirstRunWorkspaceProvenanceAuthoritative,
@@ -80,6 +90,7 @@ export function FirstRunGate({
   readonly hostedStatic: boolean;
   readonly children: React.ReactNode;
 }) {
+  const gt = useGT();
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const hydrationStatus = useClientSettingsHydrationStatus();
@@ -87,10 +98,15 @@ export function FirstRunGate({
   const onboardingCompletedAt = useClientSettings((settings) => settings.onboardingCompletedAt);
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const { isReady: environmentCatalogReady } = useEnvironments();
-  const projects = useProjects();
+  const allProjects = useProjects();
   const threadCount = useAtomValue(threadCountAtom);
   const soleThread = useAtomValue(soleThreadAtom);
   const serverConfig = useAtomValue(primaryServerConfigAtom);
+  // UpComputer: the scratch project home opens for a new user is not their workspace.
+  const projects = firstRunWorkspaceProjects(allProjects, {
+    environmentId: serverConfig?.environment.environmentId ?? null,
+    scratchWorkspaceRoot: serverConfig?.scratchWorkspaceRoot,
+  });
   const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
   const primaryShellLive = useAtomValue(primaryShellLiveAtom);
   const workspaceEvidenceLive = useAtomValue(workspaceEvidenceLiveAtom);
@@ -147,20 +163,38 @@ export function FirstRunGate({
     if (transitioned !== gateState) setGateState(transitioned);
   }
 
+  const warnSetupNotSaved = useEffectEvent(() =>
+    toastManager.add({
+      type: "warning",
+      title: gt("Setup wasn't saved"),
+      description: gt(
+        "Up.computer couldn't save that setup is finished, so you might see it again. Your projects are not affected.",
+      ),
+    }),
+  );
+
+  // UpComputer: a new user lands in the app while it sets up OpenCode, or on
+  // the no-agent screen, which also comes back on a launch after the user left
+  // it without a working agent. The Welcome page stays at /welcome.
+  const [noAgentScreen] = useState(readNoAgentScreenRecord);
+  const installsFirstAgent =
+    (decision === "wizard" ||
+      (decision === "app" && enabled && asksAgainForAgent(noAgentScreen))) &&
+    !hostedStatic &&
+    primaryEnvironmentId !== null &&
+    productSurface("onboarding") === "upcomputer";
+  const firstAgentEnvironmentId = useFirstRunAgentStarterEnvironment(
+    installsFirstAgent ? primaryEnvironmentId : null,
+  );
+
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists onboarding completion to settings once the gate settles on skipping the wizard
   useEffect(() => {
-    if (decision === "wizard" || !hydrated) return;
+    // UpComputer: a running first-agent setup completes onboarding itself, with its events.
+    if (decision === "wizard" || !hydrated || firstAgentEnvironmentId !== null) return;
     if (persistCompletion && onboardingCompletedAt === null) {
-      void completeOnboarding().catch(() =>
-        toastManager.add({
-          type: "warning",
-          title: "Setup wasn't saved",
-          description:
-            "Up.computer couldn't save that setup is finished, so you might see it again. Your projects are not affected.",
-        }),
-      );
+      void completeOnboarding().catch(() => warnSetupNotSaved());
     }
-  }, [decision, hydrated, onboardingCompletedAt, persistCompletion]);
+  }, [decision, firstAgentEnvironmentId, hydrated, onboardingCompletedAt, persistCompletion]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer gives up on a pending first-run decision after the timeout
   useEffect(() => {
@@ -172,14 +206,6 @@ export function FirstRunGate({
     return () => window.clearTimeout(timer);
   }, [decision, enabled, hydrated]);
 
-  // UpComputer: a new user lands in the app while it sets up OpenCode; the
-  // agent table stays at /welcome for connecting other agents.
-  const installsFirstAgent =
-    decision === "wizard" &&
-    !hostedStatic &&
-    primaryEnvironmentId !== null &&
-    productSurface("onboarding") === "upcomputer";
-
   // Setup opens by itself only from the home route. A direct link, such as
   // Settings, opens as asked so setup can never lock a user out of the app.
   const wizardOwnsRoute = pathname === "/";
@@ -190,14 +216,24 @@ export function FirstRunGate({
     }
   }, [decision, installsFirstAgent, navigate, wizardOwnsRoute]);
 
+  // UpComputer: the first message after the no-agent screen, on whichever launch it comes.
+  const firstMessageReporter =
+    primaryEnvironmentId !== null && productSurface("onboarding") === "upcomputer" ? (
+      <NoAgentFirstMessageReporter environmentId={primaryEnvironmentId} />
+    ) : null;
   if (settingsReadFailed) {
     return <FirstRunRecovery reason="settings" retrying={hydrationStatus === "retrying"} />;
   }
-  if (installsFirstAgent) {
+  if (firstAgentEnvironmentId !== null) {
     return (
       <>
-        <FirstRunAgentStarter environmentId={primaryEnvironmentId} />
-        {children}
+        {firstMessageReporter}
+        <FirstRunAgentSetup
+          environmentId={firstAgentEnvironmentId}
+          askAgain={asksAgainForAgent(noAgentScreen)}
+        >
+          {children}
+        </FirstRunAgentSetup>
       </>
     );
   }
@@ -207,7 +243,12 @@ export function FirstRunGate({
   if (decision !== "app") {
     return stalled ? <FirstRunRecovery reason="connection" /> : <BootSplash />;
   }
-  return children;
+  return (
+    <>
+      {firstMessageReporter}
+      {children}
+    </>
+  );
 }
 
 function FirstRunRecovery({
@@ -217,19 +258,24 @@ function FirstRunRecovery({
   readonly reason: "settings" | "connection";
   readonly retrying?: boolean;
 }) {
+  const gt = useGT();
   const settingsReadFailed = reason === "settings";
   return (
     <main className="flex h-dvh min-h-0 items-center justify-center bg-background px-6 text-foreground">
       <div className="flex max-w-sm flex-col items-center text-center">
         <h1 className="text-lg font-semibold">
           {settingsReadFailed
-            ? "Couldn't read your settings"
-            : "Up.computer is taking too long to start"}
+            ? gt("Couldn't read your settings")
+            : gt("Up.computer is taking too long to start")}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           {settingsReadFailed
-            ? "Your saved settings couldn't be loaded. Try again, and restart the app if it keeps happening."
-            : "Up.computer on this computer hasn't answered yet. Reload, and if it keeps happening, restart the app."}
+            ? gt(
+                "Your saved settings couldn't be loaded. Try again, and restart the app if it keeps happening.",
+              )
+            : gt(
+                "Up.computer on this computer hasn't answered yet. Reload, and if it keeps happening, restart the app.",
+              )}
         </p>
         <Button
           className="mt-5"
@@ -245,7 +291,7 @@ function FirstRunRecovery({
           }}
         >
           <RefreshIcon refreshing={retrying} />
-          {settingsReadFailed ? "Retry" : "Reload"}
+          {settingsReadFailed ? gt("Retry") : gt("Reload")}
         </Button>
       </div>
     </main>

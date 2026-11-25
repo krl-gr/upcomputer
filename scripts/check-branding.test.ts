@@ -141,10 +141,10 @@ describe("apply-branding rules", () => {
   it("rewrites the HTML render tool copy", () => {
     expect(
       rebrandText(
-        'const text = "T3 fits the frame. T3 is still installing its browser in T3\'s home directory.";',
+        'const text = "T3 fits the frame. T3 is still installing its browser in T3\'s home directory. The gateway sent an answer T3 could not read.";',
       ),
     ).toBe(
-      'const text = "Up.computer fits the frame. Up.computer is still installing its browser in Up.computer\'s home directory.";',
+      'const text = "Up.computer fits the frame. Up.computer is still installing its browser in Up.computer\'s home directory. The gateway sent an answer Up.computer could not read.";',
     );
   });
 

@@ -9,6 +9,8 @@ import type {
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 
+import { foldLatinDiacritics } from "./path.ts";
+
 // Up.computer V1 used `upcomputer/`; keeping it keeps V1 temporary branches recognized.
 export const WORKTREE_BRANCH_PREFIX = "upcomputer";
 // Canonical form is `upcomputer/<8 hex>`. `upcomputer-<8 hex>` is the fallback when a
@@ -25,9 +27,7 @@ const TEMP_WORKTREE_BRANCH_PATTERN = new RegExp(
 );
 
 export function sanitizeBranchFragment(raw: string): string {
-  const normalized = raw
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
+  const normalized = foldLatinDiacritics(raw)
     .trim()
     .toLowerCase()
     .replace(/['"`]/g, "")
@@ -131,6 +131,23 @@ export function isTemporaryWorktreeBranch(refName: string): boolean {
 
 const stripGitSuffix = (path: string) => path.replace(/\.git$/i, "");
 
+function canonicalPathSegment(segment: string): string {
+  try {
+    // Lowercase before encoding: lowercasing the escape `%C3%84` never reaches the `Ä` it names.
+    return encodeURIComponent(decodeURIComponent(segment).toLowerCase()).toLowerCase();
+  } catch {
+    return segment.toLowerCase();
+  }
+}
+
+/**
+ * A repository path in one lower-case spelling. Remotes, browsers and agents escape a name
+ * differently (`a%20(b)`, `a%20%28b%29`, `a (b)`), and keys built from them are compared as text.
+ */
+export function canonicalRepositoryPath(path: string): string {
+  return path.split("/").map(canonicalPathSegment).join("/");
+}
+
 function lowerCaseRemote(value: string, dropSuffix = stripGitSuffix): string {
   return dropSuffix(value.trim().replace(/\/+$/g, "")).toLowerCase();
 }
@@ -155,7 +172,7 @@ export function parseGitRemoteRepository(
         .split("/")
         .filter((segment) => segment.length > 0);
       if (url.hostname && repositorySegments.length > 1) {
-        return { host: url.hostname, path: repositorySegments.join("/") };
+        return { host: url.hostname, path: canonicalRepositoryPath(repositorySegments.join("/")) };
       }
     } catch {
       return null;
@@ -171,10 +188,11 @@ export function parseGitRemoteRepository(
   const scpHost = scpStyleHostAndPath?.[1];
   const scpPath = scpStyleHostAndPath?.[2];
   if (!scpHost || !scpPath) return null;
-  if (!scpHost.startsWith("[")) return { host: scpHost, path: scpPath };
+  const path = canonicalRepositoryPath(scpPath);
+  if (!scpHost.startsWith("[")) return { host: scpHost, path };
   try {
     // Spell an IPv6 host as the URL branch does, so `[::1]:a/b` and `ssh://[::1]/a/b` share a key.
-    return { host: new URL(`ssh://${scpHost}`).hostname, path: scpPath };
+    return { host: new URL(`ssh://${scpHost}`).hostname, path };
   } catch {
     return null;
   }
@@ -272,8 +290,7 @@ export function parseOriginUrlFromGitConfig(configText: string): string | null {
   let section: string | null = null;
   let originUrl: string | null = null;
   let firstRemoteUrl: string | null = null;
-  const joined = configText.replace(/\\\r?\n[ \t]*/g, "");
-  for (const rawLine of joined.split(/\r?\n/)) {
+  for (const rawLine of gitConfigLines(configText)) {
     let line = rawLine.trim();
     if (line.length === 0 || line.startsWith("#") || line.startsWith(";")) continue;
     // Git preserves case in quoted remote subsections but lowercases legacy dotted ones,

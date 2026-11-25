@@ -27,7 +27,7 @@ export const TaskFeatureCountsLive = Layer.effectDiscard(
           (SELECT COUNT(*) FROM tasks
             WHERE archived_at IS NULL AND kind = 'task' AND audience = 'person') AS "personTaskCount",
           (SELECT COUNT(*) FROM task_agents a
-            WHERE a.enabled = 1
+            WHERE a.enabled = 1 AND a.archived_at IS NULL
               AND NOT EXISTS (SELECT 1 FROM bots b WHERE b.agent_id = a.id)) AS "enabledAgentCount",
           (SELECT COUNT(*) FROM bots) AS "botCount",
           (SELECT COUNT(*) FROM task_automations WHERE status = 'enabled') AS "automationCount"

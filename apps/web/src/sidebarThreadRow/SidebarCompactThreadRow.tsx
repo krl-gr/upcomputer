@@ -1,6 +1,7 @@
+import { T, useGT, useLocale, useMessages } from "gt-react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ContextMenuSource, ScopedThreadRef } from "@t3tools/contracts";
 import type { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { EllipsisIcon } from "lucide-react";
@@ -23,6 +24,7 @@ import {
   resolveThreadLastVisitedAt,
 } from "../components/Sidebar.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { contextMenuSourceOf } from "../contextMenuSource";
 import { cn } from "../lib/utils";
 import { ProductThreadRowAccessory } from "../product/ProductSlots";
 import {
@@ -30,7 +32,7 @@ import {
   SIDEBAR_LIST_ROW_SPACING,
 } from "../sidebarMetrics/sidebarMetrics";
 import { useThreadSelectionStore } from "../threadSelectionStore";
-import { formatRelativeTimeLabel } from "../timestampFormat";
+import { relativeTimeElapsedMs } from "../timestampFormat";
 import type { SidebarThreadSummary } from "../types";
 import { useUiStateStore } from "../uiStateStore";
 import {
@@ -82,7 +84,11 @@ export interface SidebarCompactThreadRowProps {
   readonly isRenaming: boolean;
   readonly renamingTitle: string;
   /** Upstream's thread actions menu, the same one right-click opens. */
-  readonly onContextMenu: (threadRef: ScopedThreadRef, position: { x: number; y: number }) => void;
+  readonly onContextMenu: (
+    threadRef: ScopedThreadRef,
+    position: { x: number; y: number },
+    source: ContextMenuSource,
+  ) => void;
   readonly onFileDropThreads?: ((threadRef: ScopedThreadRef, files: File[]) => void) | undefined;
   /** Upstream's route reveal: until the open thread's row mounts, its project scope may widen. */
   readonly revealRef?: ((row: HTMLElement, threadKey: string) => void) | undefined;
@@ -91,14 +97,25 @@ export interface SidebarCompactThreadRowProps {
 const MENU_CLOSING_KEYS = new Set(["Escape", "Enter", " ", "Tab"]);
 
 /**
- * Upstream's compact relative time ("3h", "now"). It subscribes to the minute
- * tick itself, so it advances inside the memoized rows.
+ * Upstream's compact relative time ("3h", "now"), in the UI locale. It
+ * subscribes to the minute tick itself, so it advances inside the memoized rows.
  */
 export function CompactRelativeTime(props: { readonly timestamp: string }) {
+  const gt = useGT();
+  const locale = useLocale();
   const nowMinute = useNowMinute();
-  const label = formatRelativeTimeLabel(props.timestamp, Date.parse(`${nowMinute}:00.000Z`));
-  if (label === "just now") return "now";
-  return label.endsWith(" ago") ? label.slice(0, -4) : label;
+  const elapsedMs = relativeTimeElapsedMs(props.timestamp, Date.parse(`${nowMinute}:00.000Z`));
+  if (elapsedMs === null) return "";
+  if (elapsedMs < 60_000) return gt("now", { $context: "compact relative time of a sidebar row" });
+  const [value, unit] =
+    elapsedMs < 3_600_000
+      ? [elapsedMs / 60_000, "minute"]
+      : elapsedMs < 86_400_000
+        ? [elapsedMs / 3_600_000, "hour"]
+        : [elapsedMs / 86_400_000, "day"];
+  return new Intl.NumberFormat(locale, { style: "unit", unit, unitDisplay: "narrow" }).format(
+    Math.floor(value),
+  );
 }
 
 /**
@@ -125,6 +142,8 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
     onThreadActivate,
     onThreadClick,
   } = props;
+  const gt = useGT();
+  const m = useMessages();
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const threadKey = scopedThreadKey(threadRef);
   const localLastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
@@ -140,7 +159,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
   });
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
-    statusLabel: statusLabel?.label ?? null,
+    statusLabel: statusLabel ? m(statusLabel.label) : null,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isActive,
   });
@@ -167,7 +186,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
     event.stopPropagation();
     const rect = event.currentTarget.getBoundingClientRect();
     setMenuOpen(true);
-    onContextMenu(threadRef, { x: rect.left, y: rect.bottom + 4 });
+    onContextMenu(threadRef, { x: rect.left, y: rect.bottom + 4 }, contextMenuSourceOf(event));
   };
 
   const [titleTruncated, setTitleTruncated] = useState(false);
@@ -285,7 +304,11 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
               }}
               onContextMenu={(event) => {
                 event.preventDefault();
-                onContextMenu(threadRef, { x: event.clientX, y: event.clientY });
+                onContextMenu(
+                  threadRef,
+                  { x: event.clientX, y: event.clientY },
+                  contextMenuSourceOf(event),
+                );
               }}
             />
           }
@@ -296,7 +319,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
             <input
               autoFocus
               value={renamingTitle}
-              aria-label="Thread title"
+              aria-label={gt("Thread title")}
               onChange={(event) => onRenameTitleChange(event.target.value)}
               onFocus={(event) => event.currentTarget.select()}
               onKeyDown={handleRenameKeyDown}
@@ -327,7 +350,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
               <button
                 type="button"
                 data-thread-selection-safe
-                aria-label={`Thread actions for ${thread.title}`}
+                aria-label={gt("Thread actions for {title}", { title: thread.title })}
                 className={sidebarListRowActionClassName(menuOpen)}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={openMenu}
@@ -364,7 +387,7 @@ export const SidebarCompactThreadRow = memo(function SidebarCompactThreadRow(
           </SidebarListRowEnd>
           {thread.titleRegeneration != null ? (
             <span role="status" className="sr-only">
-              Regenerating title
+              <T>Regenerating title</T>
             </span>
           ) : null}
         </TooltipTrigger>

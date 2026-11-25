@@ -46,8 +46,62 @@ export type TaskAudience = typeof TaskAudience.Type;
 export const TaskKind = Schema.Literals(["task", "routine"]);
 export type TaskKind = typeof TaskKind.Type;
 
+/**
+ * Which built-in workflow an install follows: its standard statuses, their
+ * default group order, its default instructions and whether the server marks
+ * crashed runs Failed. Installs from before workflow versions stay on 1 until
+ * they opt in; new installs start on the current one.
+ */
+export const TaskWorkflowVersion = Schema.Literals([1, 2]);
+export type TaskWorkflowVersion = typeof TaskWorkflowVersion.Type;
+export const LEGACY_TASK_WORKFLOW_VERSION = 1 as const satisfies TaskWorkflowVersion;
+export const CURRENT_TASK_WORKFLOW_VERSION = 2 as const satisfies TaskWorkflowVersion;
+
+/** Workflow 1's standard statuses, in workflow order. */
+export const LEGACY_TASK_STATUSES = [
+  "Idea",
+  "Backlog",
+  "To Do",
+  "In Progress",
+  "In Review",
+  "Needs Input",
+  "Needs Review",
+  "Blocked",
+  "Done",
+  "Cancelled",
+] as const;
+
+/**
+ * The statuses the UI offers and defaults to, in workflow order. Statuses are
+ * free strings; these spellings keep "done" and "Done" from becoming two.
+ */
+export const TASK_STATUSES = [
+  "Idea",
+  "Queued",
+  "To Do",
+  "In Progress",
+  "In Review",
+  "Needs You",
+  "Blocked",
+  "Failed",
+  "To Verify",
+  "Done",
+  "Cancelled",
+] as const;
+export const DEFAULT_TASK_STATUS = "To Do" as const;
+
+export function taskStatusesFor(version: TaskWorkflowVersion): readonly string[] {
+  return version === LEGACY_TASK_WORKFLOW_VERSION ? LEGACY_TASK_STATUSES : TASK_STATUSES;
+}
+
+/** Status names compare without case or spacing: "done" only respells "Done". */
+export function sameTaskStatus(left: string, right: string): boolean {
+  const normalize = (status: string) => status.trim().replace(/\s+/g, " ").toLowerCase();
+  return normalize(left) === normalize(right);
+}
+
 /** The statuses the planner sets on person tasks: Restore and Done. */
-export const PERSON_OPEN_STATUS = "To Do" as const;
+export const PERSON_OPEN_STATUS = DEFAULT_TASK_STATUS;
 export const PERSON_DONE_STATUS = "Done" as const;
 /**
  * The status the planner's Restore sets on agent tasks. No agent starts on it,
@@ -67,7 +121,7 @@ export function personTaskStatusError(audience: TaskAudience, status: string): s
 
 /** The status a task keeps when it becomes a person task: Done stays done, any other reopens. */
 export function statusForPersonAudience(status: string): string {
-  return status === PERSON_DONE_STATUS ? PERSON_DONE_STATUS : PERSON_OPEN_STATUS;
+  return sameTaskStatus(status, PERSON_DONE_STATUS) ? PERSON_DONE_STATUS : PERSON_OPEN_STATUS;
 }
 
 /** Why a kind and audience cannot go together, or null. Routines are person tasks. */
@@ -316,16 +370,82 @@ export const TaskPageCursor = Schema.Struct({
   id: TaskId,
 });
 export type TaskPageCursor = typeof TaskPageCursor.Type;
+/** The `lastRun` value for tasks that never ran. */
+export const TASK_LAST_RUN_NONE = "none";
+/** Only tasks whose latest run (latest start) has this raw status, or `none`: never ran. */
+const TaskLastRunFilter = Schema.optional(TrimmedNonEmptyString);
+/** Lists that read a task's text from its own detail read leave it out of every row. */
+const TaskListOmitText = Schema.optional(Schema.Boolean);
+
 export const TaskPageInput = Schema.Struct({
   ...TaskListFilterFields,
+  lastRun: TaskLastRunFilter,
   cursor: Schema.optional(TaskPageCursor),
+  omitText: TaskListOmitText,
 });
 export type TaskPageInput = typeof TaskPageInput.Type;
+
+/** A list's filters without its status: the counts per status a status filter chooses from. */
+export const TaskStatusCountsInput = Schema.Struct({
+  projectId: TaskListFilterFields.projectId,
+  tags: TaskListFilterFields.tags,
+  archive: TaskListFilterFields.archive,
+  audience: TaskListFilterFields.audience,
+  kind: TaskListFilterFields.kind,
+  lastRun: TaskLastRunFilter,
+});
+export type TaskStatusCountsInput = typeof TaskStatusCountsInput.Type;
+export const TaskStatusCount = Schema.Struct({ status: Schema.String, count: PositiveInt });
+export type TaskStatusCount = typeof TaskStatusCount.Type;
+/** Statuses with at least one task, by name. */
+export const TaskStatusCountsResult = Schema.Struct({ counts: Schema.Array(TaskStatusCount) });
+export type TaskStatusCountsResult = typeof TaskStatusCountsResult.Type;
+
+/**
+ * How the agents' task list shows, kept with the tasks so it follows the user
+ * across devices. Status keys are lower-cased status names.
+ */
+export const TaskListSettings = Schema.Struct({
+  groupByStatus: Schema.Boolean,
+  /** Status keys in the user's group order; a status missing here keeps its default place. */
+  statusGroupOrder: Schema.Array(Schema.String).check(Schema.isMaxLength(200)),
+  /** Status key to open; a status missing here takes its default. */
+  statusGroupOpen: Schema.Record(Schema.String, Schema.Boolean),
+  /**
+   * The install's workflow, set by the server only. A server from before
+   * workflow versions leaves it out: it follows workflow 1.
+   */
+  workflowVersion: Schema.optional(TaskWorkflowVersion),
+});
+export type TaskListSettings = typeof TaskListSettings.Type;
+
+export function taskWorkflowVersionOf(settings: {
+  readonly workflowVersion?: TaskWorkflowVersion | undefined;
+}): TaskWorkflowVersion {
+  return settings.workflowVersion ?? LEGACY_TASK_WORKFLOW_VERSION;
+}
+export const DEFAULT_TASK_LIST_SETTINGS: TaskListSettings = {
+  groupByStatus: true,
+  statusGroupOrder: [],
+  statusGroupOpen: {},
+};
+export const TaskListSettingsGetInput = Schema.Struct({});
+export type TaskListSettingsGetInput = typeof TaskListSettingsGetInput.Type;
+/** Changes the given settings. `statusGroupOpen` merges into the stored keys, so two devices can open different groups. */
+export const TaskListSettingsUpdateInput = Schema.Struct({
+  groupByStatus: Schema.optional(TaskListSettings.fields.groupByStatus),
+  statusGroupOrder: Schema.optional(TaskListSettings.fields.statusGroupOrder),
+  statusGroupOpen: Schema.optional(TaskListSettings.fields.statusGroupOpen),
+});
+export type TaskListSettingsUpdateInput = typeof TaskListSettingsUpdateInput.Type;
 export const TaskRunCount = Schema.Struct({ status: Schema.String, count: PositiveInt });
 export type TaskRunCount = typeof TaskRunCount.Type;
 export const TaskListItem = withClosedAtAlias(
   Schema.Struct({
     ...Task.fields,
+    /** Absent when the request set `omitText`. */
+    description: Schema.optional(Task.fields.description),
+    output: Schema.optional(Task.fields.output),
     runCounts: Schema.Array(TaskRunCount),
     /** Raw status of the task's latest run (latest start); null without runs. Absent from older servers. */
     latestRunStatus: Schema.optional(Schema.NullOr(Schema.String)),
@@ -340,6 +460,7 @@ export type TaskPageResult = typeof TaskPageResult.Type;
 
 export const TaskListItemsInput = Schema.Struct({
   ids: Schema.Array(TaskId).check(Schema.isMaxLength(500)),
+  omitText: TaskListOmitText,
 });
 export type TaskListItemsInput = typeof TaskListItemsInput.Type;
 export const TaskListItemsResult = Schema.Struct({ tasks: Schema.Array(TaskListItem) });
@@ -375,6 +496,10 @@ export const TaskChange = Schema.Struct({
   reminders: Schema.optional(Schema.Array(TaskReminder)),
   /** An agent was saved or deleted, so bot lists are stale; absent when none was. */
   agentsChanged: Schema.optional(Schema.Boolean),
+  /** The list settings changed; absent when they did not. */
+  listSettingsChanged: Schema.optional(Schema.Boolean),
+  /** The instruction updates' mode or an entry's state changed; absent when they did not. */
+  instructionUpdatesChanged: Schema.optional(Schema.Boolean),
 });
 export type TaskChange = typeof TaskChange.Type;
 

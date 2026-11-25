@@ -33,7 +33,7 @@ const row = (id: string, title = id) =>
   }) as unknown as TaskPageResult["tasks"][number];
 const page = (ids = ["a", "b"], more = true): TaskPageResult => ({
   tasks: ids.map((id) => row(id)),
-  statuses: ["Backlog"],
+  statuses: ["Backlog", "Done", "To Do"],
   nextCursor: more ? { rank: "0000000000000001" as never, id: ids.at(-1)! as TaskId } : null,
 });
 async function until(predicate: () => boolean) {
@@ -43,7 +43,7 @@ async function until(predicate: () => boolean) {
   }
   throw new Error("Condition did not settle");
 }
-function harness() {
+function harness(query: TaskPageInput = { limit: 2 }) {
   const requests: TaskPageInput[] = [];
   const itemRequests: TaskId[][] = [];
   const states: TaskPageLoadState[] = [];
@@ -67,7 +67,7 @@ function harness() {
       },
     },
   } as unknown as TasksStateTarget;
-  const loader = new TaskPageLoader(target, { limit: 2 }, (state) => states.push(state), 2);
+  const loader = new TaskPageLoader(target, query, (state) => states.push(state), 2);
   return {
     loader,
     target,
@@ -108,6 +108,35 @@ test("idle lists make no requests; row/run changes batch only loaded IDs and pre
     current,
     "identical row snapshots retain the whole page reference",
   );
+});
+
+test("a status lane reloads only for list changes of tasks that are or can be in it", async (context) => {
+  const h = harness({ limit: 2, status: "To Do", omitText: true });
+  context.onTestFinished(() => h.loader.dispose());
+  h.loader.change(sync);
+  await until(() => !!h.latest()?.page);
+  const statuses: Record<string, string> = { done: "Done", todo: "to do", blocked: "Blocked" };
+  h.rows(async (ids) => ({
+    tasks: ids.map((id) => ({ ...row(id), status: statuses[id] ?? "Backlog" })),
+  }));
+  // Another lane's task moved: one slim read, no reload.
+  h.loader.change(changed(["done"], true));
+  await until(() => h.itemRequests.length === 1);
+  await NodeTimersPromises.setTimeout(15);
+  NodeAssert.deepEqual(h.itemRequests, [["done"]]);
+  NodeAssert.equal(h.requests.length, 1);
+  // A task that now has this lane's status can enter it.
+  h.loader.change(changed(["todo"], true));
+  await until(() => h.requests.length === 2);
+  // A task the lane holds can leave or reorder it, so it reloads without asking.
+  h.loader.change(changed(["a"], true));
+  await until(() => h.requests.length === 3);
+  NodeAssert.equal(h.itemRequests.length, 2);
+  // A status the page does not list yet reloads it for the status filter.
+  h.loader.change(changed(["blocked"], true));
+  await until(() => h.requests.length === 4);
+  NodeAssert.equal(h.itemRequests.length, 3);
+  NodeAssert.ok(h.requests.every((request) => request.omitText === true));
 });
 
 test("Load more during background refresh is queued, not lost; rows stay visible and loadingMore belongs to the click", async (context) => {
@@ -346,6 +375,17 @@ test("a request cut off by a dying socket counts as a disconnected computer", as
     ),
   );
   h.loader.change(sync);
+  await until(() => h.latest()?.disconnected === true);
+});
+
+test("a change stream that ends before its first event counts as a disconnected computer", async (context) => {
+  const h = harness();
+  context.onTestFinished(() => h.loader.dispose());
+  const off = createTaskChangeSubscription(() => Promise.resolve(), 60_000)(
+    (change) => h.loader.change(change),
+    (error) => h.loader.fail(error),
+  );
+  context.onTestFinished(off);
   await until(() => h.latest()?.disconnected === true);
 });
 

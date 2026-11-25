@@ -1,70 +1,80 @@
 # Contributing
 
+Thanks for wanting to help. Up.computer has one maintainer, so this page says what is easy for me
+to review and what is not.
+
 ## Developer setup
 
 See the [development runbook](docs/operations/development.md#first-checkout) for the initial checkout,
 development commands, tests, and platform-specific desktop packaging prerequisites.
 
-## Read This First
+## Report a bug
 
-We are not actively accepting contributions right now.
+Bug reports are welcome. Open an issue with the **Bug report** form on
+[GitHub](https://github.com/krl-gr/upcomputer/issues).
 
-You can still open an issue or PR, but please do so knowing there is a high chance we close it, defer it forever, or never look at it.
+- Search existing issues first.
+- Keep each report to one problem.
+- Include the app version, your OS, the agent you used, and the steps to reproduce.
+- Screenshots or a short video help when the problem is visual.
 
-If that sounds annoying, that is because it is. This project is still early and we are trying to keep scope, quality, and direction under control.
+## Suggest a feature
 
-PRs are automatically labeled with a `vouch:*` trust status and a `size:*` diff size based on changed lines.
+Focused feedback and ideas are welcome. Use the **Feature request** form, and describe the problem
+you want solved, not only the solution. Small, concrete requests are the easiest to act on.
 
-If you are an external contributor, expect `vouch:unvouched` until we explicitly add you to [.github/VOUCHED.td](.github/VOUCHED.td).
+## Pull requests
 
-## What We Are Most Likely To Accept
+Focused fixes are welcome: bug fixes, reliability fixes, performance improvements and docs fixes.
 
-Small, focused bug fixes.
+<a id="prior-approval"></a>
 
-Small reliability fixes.
+### Open an issue before large work
 
-Small performance improvements.
+A small fix for an obvious bug needs no issue. For anything larger, open an issue first. That
+includes new features, UI changes, new providers and changes to the architecture. We can agree on
+the scope before you spend time on a branch. A large pull request that arrives without an agreed
+issue is likely to be closed. Link the issue in your pull request.
 
-Tightly scoped maintenance work that clearly improves the project without changing its direction.
+<a id="one-problem"></a>
 
-## What We Are Least Likely To Accept
+### One problem per pull request
 
-Large PRs.
+Fix one problem. Include every change that fix needs, across contracts, server, clients, tests and
+docs. Cleanup, refactors and a second fix go in their own pull requests.
 
-Drive-by feature work.
+<a id="verification"></a>
 
-Opinionated rewrites.
+### Show that it works
 
-Anything that expands product scope without us asking for it first.
+Say what changed and why, how you checked it, and what you saw. "Tests pass" alone is not enough.
 
-If you open a 1,000+ line PR full of new features, we will probably close it quickly and remember that you ignored the clearly written instructions.
+- Add tests for logic you changed, where it makes sense.
+- Add before and after screenshots for any UI change.
+- Add a short video if the change involves motion, timing or interaction.
 
-## If You Still Want To Open A PR
+Upload screenshots and videos to the pull request. Do not commit them.
 
-Keep it small.
+### What happens next
 
-Explain exactly what changed.
+Pull requests are labeled automatically with a `size:*` label for the diff size and a `vouch:*`
+trust status. Expect `vouch:unvouched` until you are added to
+[.github/VOUCHED.td](.github/VOUCHED.td). That only means I have not worked with you yet.
 
-Explain exactly why the change should exist.
+I review as time allows. I may ask you to shrink a change, or implement the idea differently
+myself.
 
-Do not mix unrelated fixes together.
+A banned account is denounced in [.github/VOUCHED.td](.github/VOUCHED.td). Any issue or PR it opens
+is closed when it is opened.
 
-If the PR makes anything resembling a UI change, include clear before/after images.
+<a id="closure-and-reconsideration"></a>
 
-If the change depends on motion, timing, transitions, or interaction details, include a short video.
+### If I close your pull request
 
-If we have to guess what changed, we are much less likely to review it.
+I will say which rule it broke and what would fix it, such as splitting it or opening an issue
+first. Once that is done, you are welcome to open it again or ask me to reopen it.
 
-## Issues First
+## Security issues
 
-If you are thinking about a non-trivial change, open an issue first.
-
-That still does not mean we will want the PR, but it gives you a chance to avoid wasting your time.
-
-## Be Realistic
-
-Opening a PR does not create an obligation on our side.
-
-We may close it. We may ignore it. We may ask you to shrink it. We may reimplement the idea ourselves later.
-
-If you are fine with that, proceed.
+Do not report security problems in a public issue. Email **support@up.computer** instead. See
+[SECURITY.md](.github/SECURITY.md) for what to include.

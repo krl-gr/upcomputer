@@ -1,22 +1,13 @@
-import { useAtomValue } from "@effect/atom-react";
-import {
-  AlarmClockIcon,
-  ArchiveIcon,
-  CircleCheckIcon,
-  PinOffIcon,
-  Trash2Icon,
-  TriangleAlertIcon,
-} from "lucide-react";
+import { TriangleAlertIcon } from "lucide-react";
 import type { DesktopBridge } from "@t3tools/contracts";
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
+import { T, useGT } from "gt-react";
 
 import { isElectron } from "../../env";
-import { undoLatestThreadAction, useThreadUndoNotice } from "../../hooks/showThreadUndoNotice";
-import { shortcutLabelForCommand } from "../../keybindings";
+import { undoLatestThreadAction } from "../../hooks/showThreadUndoNotice";
 import { cn } from "../../lib/utils";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { confirmAndInstallLocalUpdate } from "../../sidebarNotifications/useSidebarUpdates";
-import { primaryServerKeybindingsAtom } from "../../state/server";
 import {
   getArm64IntelBuildWarningDescription,
   resolveDesktopUpdateButtonAction,
@@ -24,10 +15,9 @@ import {
 } from "../desktopUpdate.logic";
 import { Kbd } from "../ui/kbd";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SidebarCompactUndoNotice } from "./SidebarCompactUndoNotice.upcomputer";
 import { downloadLocalUpdate } from "./SidebarUpdatePill";
-
-// Matches the pill's `duration-180` class, like the provider update pill above it.
-const PILL_EXIT_MS = 180;
+import { useThreadUndoNoticeView } from "./threadUndoNoticeView.upcomputer";
 
 const PILL_TONES = {
   neutral: "bg-sidebar-control-surface text-sidebar-foreground",
@@ -68,7 +58,7 @@ function SidebarFooterPill(props: {
       aria-hidden={props.exiting || undefined}
       inert={props.exiting}
       className={cn(
-        "relative flex min-h-7 w-full shrink-0 items-center overflow-hidden rounded-lg text-2xs leading-4 font-medium transform-gpu transition-all duration-180 ease-drawer will-change-transform starting:translate-y-1.5 starting:opacity-0",
+        "relative flex min-h-7 w-full shrink-0 items-center overflow-hidden rounded-lg text-2xs leading-4 pointer-coarse:min-h-9 font-medium transform-gpu transition-all duration-180 ease-drawer will-change-transform starting:translate-y-1.5 starting:opacity-0",
         PILL_TONES[props.tone],
         props.exiting
           ? "pointer-events-none translate-y-1.5 opacity-0"
@@ -108,7 +98,7 @@ function SidebarFooterPill(props: {
           disabled={props.action.disabled}
           aria-describedby={describedBy}
           onClick={props.action.onClick}
-          className="mr-1 flex h-5 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-default disabled:opacity-60"
+          className="mr-1 flex h-5 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 outline-none pointer-coarse:h-7 pointer-coarse:px-2.5 hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-default disabled:opacity-60"
         >
           {props.action.label}
         </button>
@@ -117,57 +107,46 @@ function SidebarFooterPill(props: {
   );
 }
 
-const UNDO_ICONS = {
-  Archived: ArchiveIcon,
-  Snoozed: AlarmClockIcon,
-  Settled: CircleCheckIcon,
-  Unpinned: PinOffIcon,
-  Discarded: Trash2Icon,
-} as const;
-
 /** The thread undo notice: what just happened, and Undo with its shortcut. */
 function SidebarUndoNoticePill() {
-  const notice = useThreadUndoNotice((state) => state.notice);
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const current = notice ? { action: notice.action, count: notice.count } : null;
-
-  // Keeps the last notice on screen while it fades out, then unmounts on a timer.
-  const [shown, setShown] = useState(current);
-  if (current && (current.action !== shown?.action || current.count !== shown.count)) {
-    setShown(current);
-  }
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- unmounts after the exit fade on a timer, since a hidden or cancelled fade fires no transitionend
-  useEffect(() => {
-    if (current || !shown) return;
-    const timeoutId = window.setTimeout(() => setShown(null), PILL_EXIT_MS);
-    return () => window.clearTimeout(timeoutId);
-  }, [current, shown]);
-
-  const visible = current ?? shown;
-  if (!visible) return null;
-  const Icon = UNDO_ICONS[visible.action];
-  const shortcut = shortcutLabelForCommand(keybindings, "thread.undo");
+  const view = useThreadUndoNoticeView();
+  if (!view) return null;
+  const Icon = view.icon;
   return (
-    <SidebarFooterPill
-      tone="neutral"
-      exiting={!current}
-      icon={<Icon className="size-3.5 shrink-0" />}
-      label={visible.count === 1 ? visible.action : `${visible.action} ${visible.count}`}
-      action={{
-        label: (
-          <>
-            Undo
-            {shortcut ? <Kbd>{shortcut}</Kbd> : null}
-          </>
-        ),
-        onClick: undoLatestThreadAction,
-      }}
-    />
+    <>
+      <SidebarFooterPill
+        tone="neutral"
+        exiting={view.exiting}
+        icon={<Icon className="size-3.5 shrink-0" />}
+        label={view.label}
+        action={{
+          label: (
+            <>
+              <T>Undo</T>
+              {view.shortcut ? (
+                // A touch screen has no key to press.
+                <span className="flex pointer-coarse:hidden">
+                  <Kbd>{view.shortcut}</Kbd>
+                </span>
+              ) : null}
+            </>
+          ),
+          onClick: undoLatestThreadAction,
+        }}
+      />
+      <SidebarCompactUndoNotice
+        label={view.label}
+        shortcut={view.shortcut}
+        exiting={view.exiting}
+        onUndo={undoLatestThreadAction}
+      />
+    </>
   );
 }
 
 /** The desktop app's warning that an Intel build runs on Apple Silicon. */
 function SidebarArchitecturePill() {
+  const gt = useGT();
   const state = useDesktopUpdateState();
   const [pending, setPending] = useState(false);
   if (!state || !shouldShowArm64IntelBuildWarning(state)) return null;
@@ -182,15 +161,15 @@ function SidebarArchitecturePill() {
   const action: PillAction | null =
     updateAction === "download"
       ? {
-          label: "Download",
+          label: gt("Download"),
           disabled: pending,
           onClick: () => run((bridge) => downloadLocalUpdate(bridge, { notifyDownloaded: true })),
         }
       : updateAction === "install"
         ? {
-            label: "Restart",
+            label: gt("Restart"),
             disabled: pending,
-            onClick: () => run((bridge) => confirmAndInstallLocalUpdate(bridge, state)),
+            onClick: () => run((bridge) => confirmAndInstallLocalUpdate(bridge, state, gt)),
           }
         : null;
 
@@ -198,7 +177,7 @@ function SidebarArchitecturePill() {
     <SidebarFooterPill
       tone="warning"
       icon={<TriangleAlertIcon className="size-3.5 shrink-0" />}
-      label="Intel build on Apple Silicon"
+      label={gt("Intel build on Apple Silicon")}
       description={getArm64IntelBuildWarningDescription(state)}
       {...(action ? { action } : {})}
     />

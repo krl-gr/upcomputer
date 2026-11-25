@@ -6,9 +6,11 @@ import type {
   AssetCreateUrlResult,
   AssetResource,
   EnvironmentId,
-  ScopedThreadRef,
+  ThreadId,
 } from "@t3tools/contracts";
 import { videoMimeType } from "@t3tools/shared/video";
+import { msg } from "gt-react";
+import { m } from "~/i18n/messages";
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import {
@@ -27,6 +29,7 @@ export interface ExpandedImageItem {
   /** Revoke this owned object URL; other blob URLs belong to the timeline. */
   ownsSrc?: boolean;
   source?: SnapShotSource;
+  onCopySnapshot?: (() => Promise<void>) | undefined;
   autoPlay?: boolean;
   originalUrl?: string;
   srcFragment?: string;
@@ -42,7 +45,9 @@ export async function resolveMarkdownMediaPreview(input: {
   source: string;
   resolvedFilePath?: string | undefined;
   cwd?: string | undefined;
-  threadRef?: ScopedThreadRef | undefined;
+  environmentId?: EnvironmentId | null | undefined;
+  /** Without a thread, files load through `cwd`. */
+  threadId?: ThreadId | undefined;
   httpBaseUrl?: string | undefined;
   onOpenFile?: ((relativePath: string) => void) | undefined;
   createAssetUrl: (input: {
@@ -51,7 +56,7 @@ export async function resolveMarkdownMediaPreview(input: {
   }) => Promise<AtomCommandResult<AssetCreateUrlResult, unknown>>;
 }): Promise<ExpandedImagePreview | null> {
   const media = resolveMediaSource(input.source, {
-    threadId: input.threadRef?.threadId,
+    threadId: input.threadId,
     workspaceRoot: input.cwd,
     resolvedFilePath: input.resolvedFilePath,
   });
@@ -64,17 +69,19 @@ export async function resolveMarkdownMediaPreview(input: {
   if (media.access === "direct") {
     src = resolveProtocolRelativeMediaUrl(media.uri);
   } else {
-    if (media.access === "unavailable" || !input.threadRef || !input.httpBaseUrl) {
-      throw new Error("Reconnect to this environment and open the media again.");
+    if (media.access === "unavailable" || input.environmentId == null || !input.httpBaseUrl) {
+      throw new Error(m(msg("Reconnect to this environment and open the media again.")));
     }
-    asset = { environmentId: input.threadRef.environmentId, resource: media.resource };
+    asset = { environmentId: input.environmentId, resource: media.resource };
     const result = await input.createAssetUrl({
       environmentId: asset.environmentId,
       input: { resource: asset.resource },
     });
     if (result._tag === "Failure") throw squashAtomCommandFailure(result);
     const assetUrl = resolveAssetUrl(input.httpBaseUrl, result.value.relativeUrl);
-    if (assetUrl === null) throw new Error("The environment returned an invalid media URL.");
+    if (assetUrl === null) {
+      throw new Error(m(msg("The environment returned an invalid media URL.")));
+    }
     src = assetUrl + media.srcFragment;
   }
   return {
@@ -162,6 +169,7 @@ export function attachVideoThumbnail(video: HTMLVideoElement, file: File): () =>
 export function buildExpandedImagePreview(
   images: ReadonlyArray<ChatImageAttachment | ComposerFileAttachment>,
   selectedImageId: string,
+  onCopySnapshot?: (id: string) => Promise<void>,
 ): ExpandedImagePreview | null {
   const selected = images.find((image) => image.id === selectedImageId);
   if (selected?.type === "file" && selected.file && isVideoAttachment(selected)) {
@@ -202,7 +210,12 @@ export function buildExpandedImagePreview(
       src: image.src,
       name: image.name,
       mimeType: image.mimeType,
-      ...(image.source?.kind === "snap-shot" ? { source: image.source } : {}),
+      ...(image.source?.kind === "snap-shot"
+        ? {
+            source: image.source,
+            onCopySnapshot: onCopySnapshot ? () => onCopySnapshot(image.id) : undefined,
+          }
+        : {}),
     })),
     index: selectedIndex,
   };

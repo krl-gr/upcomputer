@@ -413,6 +413,7 @@ const agent: TaskAgent = {
   },
   createdAt: timestamp,
   updatedAt: timestamp,
+  archivedAt: null,
 };
 
 const task: Task = {
@@ -1220,6 +1221,16 @@ it.live("a person's message in a failed run's thread continues it as a new run",
         `;
         assert.lengthOf(results, 1);
         assert.include(results[0]?.payload_json ?? "", continuation.id);
+        // The failed run left the task Failed; its continuation took it back.
+        const statuses = yield* sql<{ readonly payload_json: string }>`
+          SELECT payload_json FROM task_events
+          WHERE task_id = ${task.id} AND kind = 'task.status-changed'
+          ORDER BY created_at, rowid
+        `;
+        assert.deepStrictEqual(
+          statuses.map((row) => JSON.parse(row.payload_json).to),
+          ["Failed", "In Progress", "Needs Review"],
+        );
       }),
   ),
 );
@@ -1774,11 +1785,16 @@ it.live("a chat creates a task through MCP tools and, waking off, hears back as 
       const textOf = (result: McpSchema.CallToolResult) =>
         result.content.map((part) => (part.type === "text" ? part.text : "")).join("");
 
+      // A chat forked from another repeats the parent's thread id from history;
+      // the run still reports back to the chat that called.
       const created = yield* callTool("task_create", {
         title: task.title,
         description: task.description,
         status: "To Do",
         audience: "agent",
+        sourceThreadId: "thread:task-agents-v2:parent",
+        // The stored fields below come only with the whole task.
+        verbose: true,
       });
       assert.isFalse(created.isError, textOf(created));
       const createdTask = JSON.parse(textOf(created)).task;
@@ -2549,6 +2565,21 @@ it.live(
           createdBy: "user",
         });
         assert.notInclude(chat.text, injected);
+        // An agent that keeps its own memory gets no memory tools, in the chat or a run.
+        yield* bots.save({ ...input, memoryMode: "agent" });
+        for (const threadId of [bot.threadId, taskTurn!.threadId])
+          for (const [name, args] of [
+            ["bot_memory", {}],
+            ["bot_remember", { id: "fact", text: "A fact" }],
+            ["bot_forget", { id: "task-fact" }],
+          ] as const)
+            assert.include(
+              (yield* callTaskTool(threadId, name, args).pipe(Effect.flip)).message,
+              name,
+            );
+        assert.isTrue((yield* bots.memory(bot.agent.id)).some((entry) => entry.id === "task-fact"));
+        yield* bots.save({ ...input, memoryMode: "upcomputer" });
+        assert.isFalse((yield* callTaskTool(bot.threadId, "bot_memory", {})).isError);
         const refused = yield* bots.save({ ...input, allowedProjectIds: [] }).pipe(Effect.result);
         assert.equal(refused._tag, "Failure");
       }),

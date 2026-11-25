@@ -37,11 +37,13 @@ import { collectStreamAsString } from "@t3tools/provider-core/server/snapshotPro
 import * as NetService from "@t3tools/shared/Net";
 import { AgentScope } from "@t3tools/shared/AgentScope";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
+import { parseSemver } from "@t3tools/shared/semver";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
 
+// UpComputer: the oldest local OpenCode the managed installer accepts in place of its own copy.
+// Runtime refusals come from the compatibility manifest.
 export const MINIMUM_OPENCODE_VERSION = "1.14.19";
 const OPENCODE_HEALTH_TIMEOUT_MS = 5_000;
 
@@ -91,14 +93,15 @@ export interface OpenCodeServerProcess {
   readonly serverPassword?: string;
   readonly version: string;
   readonly isRunning: Effect.Effect<boolean>;
-  readonly exitCode: Effect.Effect<number, never>;
+  /** null when no exit code exists, as for a process killed by a signal. */
+  readonly exitCode: Effect.Effect<number | null, never>;
 }
 
 export interface OpenCodeServerConnection {
   readonly url: string;
   readonly serverPassword?: string;
   readonly version: string;
-  readonly exitCode: Effect.Effect<number, never> | null;
+  readonly exitCode: Effect.Effect<number | null, never> | null;
   readonly external: boolean;
 }
 
@@ -122,8 +125,12 @@ export class OpenCodeRuntimeError extends Schema.TaggedError<OpenCodeRuntimeErro
 ) {}
 
 // Classify stderr database locks at exit so callers need not parse diagnostics.
-function classifyStartupExit(stderr: string): OpenCodeStartupFailureReason | undefined {
-  return /SQLITE_BUSY|database is locked/i.test(stderr) ? "databaseLocked" : undefined;
+// Two first starts on a fresh opencode.db both migrate it, and the one that
+// loses fails on a schema statement the other already ran.
+export function classifyStartupExit(stderr: string): OpenCodeStartupFailureReason | undefined {
+  return /SQLITE_BUSY|database is locked|Failed query:\s*(?:CREATE|ALTER|DROP)\s/i.test(stderr)
+    ? "databaseLocked"
+    : undefined;
 }
 
 export const isOpenCodeRuntimeError = (u: unknown): u is OpenCodeRuntimeError =>
@@ -167,7 +174,7 @@ export const runOpenCodeSdk = <A>(
       new OpenCodeRuntimeError({ operation, detail: openCodeRuntimeErrorDetail(cause), cause }),
   }).pipe(Effect.withSpan(`opencode.${operation}`));
 
-export const verifyOpenCodeServerVersion = Effect.fn("verifyOpenCodeServerVersion")(function* (
+const verifyOpenCodeServerVersion = Effect.fn("verifyOpenCodeServerVersion")(function* (
   client: OpencodeClient,
   environment?: NodeJS.ProcessEnv,
 ) {
@@ -191,7 +198,7 @@ export const verifyOpenCodeServerVersion = Effect.fn("verifyOpenCodeServerVersio
       (cause) =>
         new OpenCodeRuntimeError({
           operation: "global.health",
-          detail: `OpenCode server returned an invalid health response. Up.computer requires OpenCode v${MINIMUM_OPENCODE_VERSION} or newer.`,
+          detail: "OpenCode server returned an invalid health response.",
           reason: "version_unsupported",
           cause,
         }),
@@ -200,14 +207,7 @@ export const verifyOpenCodeServerVersion = Effect.fn("verifyOpenCodeServerVersio
   if (parseSemver(health.version) === null) {
     return yield* new OpenCodeRuntimeError({
       operation: "global.health",
-      detail: `OpenCode server returned an invalid version. Up.computer requires OpenCode v${MINIMUM_OPENCODE_VERSION} or newer.`,
-      reason: "version_unsupported",
-    });
-  }
-  if (compareSemverVersions(health.version, MINIMUM_OPENCODE_VERSION) < 0) {
-    return yield* new OpenCodeRuntimeError({
-      operation: "global.health",
-      detail: `OpenCode v${health.version} is too old. Upgrade to v${MINIMUM_OPENCODE_VERSION} or newer.`,
+      detail: "OpenCode server returned an invalid version.",
       reason: "version_unsupported",
     });
   }
@@ -794,9 +794,10 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       ...(serverPassword !== undefined ? { serverPassword } : {}),
       version,
       isRunning: child.isRunning.pipe(Effect.orElseSucceed(() => false)),
+      // Effect fails `exitCode` for a process a signal ended.
       exitCode: child.exitCode.pipe(
         Effect.map(Number),
-        Effect.orElseSucceed(() => 0),
+        Effect.orElseSucceed(() => null),
       ),
     } satisfies OpenCodeServerProcess;
   });
@@ -816,8 +817,9 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       // Shared opencode.db locks are transient; retry those, not configuration/executable errors.
       return yield* attempt.pipe(
         Effect.retry({
-          times: 3,
-          schedule: Schedule.spaced("250 millis"),
+          // About 4 seconds in all: a first migration on a slow disk outlasts a fixed short wait.
+          times: 4,
+          schedule: Schedule.exponential("250 millis"),
           while: (error) => error.reason === "databaseLocked",
         }),
       );

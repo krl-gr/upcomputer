@@ -18,6 +18,7 @@ import {
   resolveActiveThreadRouteRef,
   resolveThreadRouteRenderState,
   resolveThreadRouteTarget,
+  shouldCloseOffShellThread,
 } from "./threadRoutes";
 
 describe("threadRoutes", () => {
@@ -121,6 +122,20 @@ describe("threadRoutes", () => {
       ).toBe("ready");
     },
   );
+
+  it("closes a hidden off-shell thread only after its family read answers", () => {
+    const loaded = { bootstrapComplete: true, detailLoaded: true };
+    // The family of an idle task-agent thread can still bring its row into the shell.
+    expect(shouldCloseOffShellThread({ ...loaded, familyRead: "pending" })).toBe(false);
+    expect(shouldCloseOffShellThread({ ...loaded, familyRead: "settled" })).toBe(true);
+    expect(shouldCloseOffShellThread({ ...loaded, familyRead: "failed" })).toBe(true);
+    expect(
+      shouldCloseOffShellThread({ ...loaded, bootstrapComplete: false, familyRead: "settled" }),
+    ).toBe(false);
+    expect(
+      shouldCloseOffShellThread({ ...loaded, detailLoaded: false, familyRead: "settled" }),
+    ).toBe(false);
+  });
 
   it("distinguishes bootstrap loading from a missing thread", () => {
     expect(

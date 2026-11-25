@@ -1,6 +1,7 @@
 import { describeError, plainErrorSentence } from "@t3tools/client-runtime/errors";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon } from "lucide-react";
 import { createElement, useState, type ReactNode } from "react";
+import { msg, useGT } from "gt-react";
 
 import { Button } from "~/components/ui/button";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -10,8 +11,15 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
  * with a copy button. Notices, toasts, banners and settings rows reuse it.
  */
 export function ErrorDetails({ detail }: { readonly detail: string | null | undefined }) {
+  const gt = useGT();
   const [open, setOpen] = useState(false);
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "error details" });
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    target: {
+      target: "error details",
+      unavailableMessage: msg("Clipboard API is unavailable while copying error details."),
+      failureMessage: msg("Failed to copy error details to the clipboard."),
+    },
+  });
   const text = detail?.trim();
   if (!text) return null;
   return (
@@ -28,12 +36,12 @@ export function ErrorDetails({ detail }: { readonly detail: string | null | unde
           ) : (
             <ChevronDownIcon className="size-3.5 opacity-80" />
           )}
-          {open ? "Hide details" : "Details"}
+          {open ? gt("Hide details") : gt("Details")}
         </button>
         <Button
           size="icon-micro"
           variant="ghost-muted"
-          aria-label={isCopied ? "Copied details" : "Copy details"}
+          aria-label={isCopied ? gt("Copied details") : gt("Copy details")}
           onClick={() => copyToClipboard(text, undefined)}
         >
           {isCopied ? <CheckIcon /> : <CopyIcon />}

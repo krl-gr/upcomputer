@@ -25,9 +25,10 @@ Run `up help` or `up --help` for the full reference. To start in a new working
 directory, use an explicit path such as `up ./my-project`. A bare directory name
 is accepted only if it already exists.
 
-If `up` or `up start` reports an already running server, connect to that server
-instead. Stop it before starting a replacement, or use a different `--base-dir`
-for an independent server.
+If `up` or `up start` reports an already running server, run the `up pair`
+command it names and open the pairing URL to connect to that server. Stop it
+before starting a replacement, or use a different `--base-dir` for an
+independent server.
 
 ## Desktop app
 
@@ -77,9 +78,9 @@ folder paths, so in the web app use **Add project** instead.
 
 ## Mobile app
 
-Up.computer has no mobile app of its own yet. Upstream's Up.computer mobile app can
-connect to an Up.computer server through a pairing URL; see
-[remote access](./remote-access.md).
+Up.computer has no mobile app of its own yet. The mobile app of the upstream project,
+[pingdotgg/t3code](https://github.com/pingdotgg/t3code), can connect to an Up.computer
+server through a pairing URL; see [remote access](./remote-access.md).
 
 ## Providers
 
@@ -184,6 +185,7 @@ installation, update checks, and shutdown limits keep their existing behavior.
 
 ## Next steps
 
+- [Getting started](./getting-started.md): your first chat, task and worker.
 - [Working with threads](./thread-sidebar.md): start tasks and organize parallel work.
 - [Permission modes](./permission-modes.md): choose when agents ask before acting.
 - [Remote access](./remote-access.md): connect from another device.

@@ -15,7 +15,10 @@ import {
   BrowserAutomationService,
   type BrowserAutomationServiceShape,
 } from "../browser/BrowserAutomationService.ts";
-import { readBrowserUseSettings } from "../browser/BrowserUseSettings.ts";
+import {
+  browserUseSettingsSection,
+  readBrowserUseSettings,
+} from "../browser/BrowserUseSettings.ts";
 import {
   ComputerUseService,
   type ComputerUseServiceShape,
@@ -50,8 +53,11 @@ async function snapshotFor(services: RuntimeServices): Promise<ComputerUseStateS
   return {
     browser: {
       status: browser.status,
-      alwaysUseChrome: browserUse.alwaysUseChrome,
+      alwaysUseChrome: browserUse.browserForAgents === "chrome",
+      browserForAgents: browserUse.browserForAgents,
       profilePath: browser.profilePath,
+      installed: browser.installed,
+      ...(browser.launchError ? { launchError: browser.launchError } : {}),
       ...(browser.browserName ? { browserName: browser.browserName } : {}),
       ...(browser.currentUrl ? { currentUrl: browser.currentUrl } : {}),
       ...(browser.currentTitle ? { currentTitle: browser.currentTitle } : {}),
@@ -142,9 +148,14 @@ export const COMPUTER_USE_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
           runtimeAction((services) => services.browser.closeBrowser()),
         [COMPUTER_USE_RPC_METHODS.clearBrowserProfile]: () =>
           runtimeAction((services) => services.browser.clearProfileData()),
-        [COMPUTER_USE_RPC_METHODS.updateBrowserSettings]: ({ alwaysUseChrome }) =>
+        [COMPUTER_USE_RPC_METHODS.updateBrowserSettings]: ({ alwaysUseChrome, browserForAgents }) =>
           runtimeAction(async (services) => {
-            await updateSettingsSection(services.settingsPath, "browser", { alwaysUseChrome });
+            const choice = browserForAgents ?? (alwaysUseChrome ? "chrome" : "builtin");
+            await updateSettingsSection(
+              services.settingsPath,
+              "browser",
+              browserUseSettingsSection(choice),
+            );
           }),
         [COMPUTER_USE_RPC_METHODS.startComputerUse]: () =>
           runtimeAction((services) => services.computerUse.restart()),

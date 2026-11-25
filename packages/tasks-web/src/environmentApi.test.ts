@@ -70,21 +70,30 @@ describe("Tasks access", () => {
     });
   });
 
-  it("asks again after a disconnected environment comes back", async () => {
+  it("asks again soon after a disconnected environment comes back, then less often", async () => {
     vi.useFakeTimers();
-    rpc.request.mockRejectedValueOnce(
-      new EnvironmentRpcUnavailableError({ environmentId: "remote", message: "not connected" }),
-    );
+    const disconnected = () =>
+      new EnvironmentRpcUnavailableError({ environmentId: "remote", message: "not connected" });
+    rpc.request.mockRejectedValueOnce(disconnected());
+    rpc.request.mockRejectedValueOnce(disconnected());
     rpc.request.mockResolvedValueOnce({ runCounts: [] });
     const environmentId = EnvironmentId.make("environment-reconnecting");
     readTasksWebAccess(environmentId);
     await vi.advanceTimersByTimeAsync(0);
     expect(readTasksWebAccess(environmentId).availability).toBe("loading");
-    await vi.advanceTimersByTimeAsync(2_000);
+    // At startup the check often runs before the connection; the sidebar waits on it.
+    await vi.advanceTimersByTimeAsync(250);
+    readTasksWebAccess(environmentId);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(rpc.request).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(250);
+    readTasksWebAccess(environmentId);
+    expect(rpc.request).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(250);
     readTasksWebAccess(environmentId);
     await vi.advanceTimersByTimeAsync(0);
     expect(readTasksWebAccess(environmentId).availability).toBe("enabled");
-    expect(rpc.request).toHaveBeenCalledTimes(2);
+    expect(rpc.request).toHaveBeenCalledTimes(3);
   });
 });
 

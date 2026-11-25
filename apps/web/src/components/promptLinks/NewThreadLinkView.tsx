@@ -24,6 +24,7 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { Atom } from "effect/reactivity";
+import { T, useGT } from "gt-react";
 import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "~/composerDraftStore";
@@ -32,7 +33,7 @@ import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useScratchProject } from "~/hooks/useScratchProject";
 import { newProjectId } from "~/lib/utils";
 import { isProductFeatureShown } from "~/product/productFlags";
-import { useProjects, useThreadShells, waitForProject } from "~/state/entities";
+import { useProjects, useQuietThreadShells, waitForProject } from "~/state/entities";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { environmentPresentations } from "~/state/presentation";
@@ -65,7 +66,10 @@ type LinkState =
 type LinkLaunch =
   | {
       readonly kind: "thread";
-      readonly thread: Pick<ReturnType<typeof useThreadShells>[number], "environmentId" | "id">;
+      readonly thread: Pick<
+        ReturnType<typeof useQuietThreadShells>[number],
+        "environmentId" | "id"
+      >;
     }
   | { readonly kind: "draft"; readonly project: EnvironmentProject }
   | { readonly kind: "scratch" }
@@ -105,10 +109,11 @@ const NO_PULL_REQUEST_THREAD_LOOKUP = Atom.make(null);
 
 export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
   const locationKey = useLocation({ select: (location) => location.state.__TSR_key ?? "" });
+  const gt = useGT();
   const navigate = useNavigate();
   const ready = useAtomValue(allReachableShellsLiveAtom);
   const projects = useProjects();
-  const threads = useThreadShells();
+  const threads = useQuietThreadShells();
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const handleNewThread = useNewThreadHandler();
@@ -143,7 +148,7 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
       replace: true,
     }).catch(() => null);
     if (opened === null) {
-      setState({ status: "failed", message: "Up.computer could not open a new thread." });
+      setState({ status: "failed", message: gt("Up.computer could not open a new thread.") });
       return;
     }
     setState({ status: "opened" });
@@ -166,8 +171,14 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
       if (resolved === null || !resolved.exact) {
         notes.push(
           resolved === null
-            ? `The link asked for ${link.provider}, which is not set up here, so your default model is used.`
-            : `The link asked for ${link.model}, which ${link.provider} does not offer here, so its default model is used.`,
+            ? gt(
+                "The link asked for {provider}, which is not set up here, so your default model is used.",
+                { provider: link.provider },
+              )
+            : gt(
+                "The link asked for {model}, which {provider} does not offer here, so its default model is used.",
+                { model: link.model, provider: link.provider },
+              ),
         );
       }
     }
@@ -186,7 +197,7 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
     if (project === null) {
       setState({
         status: "failed",
-        message: "None of your machines can start a thread without a project right now.",
+        message: gt("None of your machines can start a thread without a project right now."),
       });
       return;
     }
@@ -209,8 +220,9 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
     if (environmentId === null || serverConfig === null || newProjectsRoot === null) {
       setState({
         status: "failed",
-        message:
+        message: gt(
           "This machine cannot clone from a link. Update Up.computer on it, or clone the repository from the command palette.",
+        ),
       });
       return;
     }
@@ -238,7 +250,7 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Clone failed",
+            title: gt("Clone failed"),
             description: errorToastDescription(error),
           }),
         );
@@ -255,14 +267,19 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
       5_000,
     ).catch(() => null);
     if (project === null) {
-      setState({ status: "failed", message: "The clone started, but its project did not appear." });
+      setState({
+        status: "failed",
+        message: gt("The clone started, but its project did not appear."),
+      });
       return;
     }
     if (link.kind === "pull-request") {
       setState({
         status: "failed",
-        title: `Cloning ${repository.owner}/${repository.name}`,
-        message: "Open this link again when the clone finishes.",
+        title: gt("Cloning {repository}", {
+          repository: `${repository.owner}/${repository.name}`,
+        }),
+        message: gt("Open this link again when the clone finishes."),
       });
       return;
     }
@@ -301,7 +318,7 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
     const project =
       repository === null ? undefined : findPromptLinkProjects(recentProjects(), repository)[0];
     if (link.kind === "pull-request" && !isProductFeatureShown("pullRequests")) {
-      setState({ status: "failed", message: "Up.computer does not open pull request links." });
+      setState({ status: "failed", message: gt("Up.computer does not open pull request links.") });
       setLaunch({ kind: "settled" });
     } else if (pullRequestThread !== undefined) {
       setState({ status: "opened" });
@@ -351,10 +368,10 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
 
   switch (state.status) {
     case "opening":
-      return <LinkPage title="Opening the link..." />;
+      return <LinkPage title={gt("Opening the link...")} />;
     case "opened":
       return (
-        <LinkPage title="This link is open">
+        <LinkPage title={gt("This link is open")}>
           <Button
             size="sm"
             variant="outline"
@@ -364,26 +381,29 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
               setState({ status: "opening" });
             }}
           >
-            Open it again
+            <T>Open it again</T>
           </Button>
         </LinkPage>
       );
     case "failed":
       return (
-        <LinkPage title={state.title ?? "Could not open the link"} description={state.message} />
+        <LinkPage
+          title={state.title ?? gt("Could not open the link")}
+          description={state.message}
+        />
       );
     case "missing-repository": {
       const name = `${state.repository.owner}/${state.repository.name}`;
       return (
         <LinkPage
-          title={`You don't have ${name}`}
-          description="Clone it to work on it here, or start without a project."
+          title={gt("You don't have {repository}", { repository: name })}
+          description={gt("Clone it to work on it here, or start without a project.")}
         >
           <Button size="sm" onClick={() => void cloneRepository(state.repository)}>
-            Clone {name}
+            {gt("Clone {repository}", { repository: name })}
           </Button>
           <Button size="sm" variant="outline" onClick={openWithoutProject}>
-            Use without project
+            <T>Use without project</T>
           </Button>
         </LinkPage>
       );
@@ -411,6 +431,7 @@ function PullRequestLinkCheckout({
       url: promptLinkPullRequestUrl(link.pullRequest),
     },
   });
+  const gt = useGT();
   const warnedRef = useRef(false);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- shows the hidden-characters warning toast once per linked prompt
   useEffect(() => {
@@ -421,8 +442,10 @@ function PullRequestLinkCheckout({
   const { owner, name, number } = link.pullRequest;
   return (
     <LinkPage
-      title={`Check out ${owner}/${name}#${number}?`}
-      description="This puts the pull request's code in a new worktree and runs your project's setup script on it."
+      title={gt("Check out {pullRequest}?", { pullRequest: `${owner}/${name}#${number}` })}
+      description={gt(
+        "This puts the pull request's code in a new worktree and runs your project's setup script on it.",
+      )}
     >
       <Button
         size="sm"
@@ -434,7 +457,7 @@ function PullRequestLinkCheckout({
           )
         }
       >
-        {handoff !== null ? "Checking out..." : "Check out"}
+        {handoff !== null ? gt("Checking out...") : gt("Check out")}
       </Button>
     </LinkPage>
   );

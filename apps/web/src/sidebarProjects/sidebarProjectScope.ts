@@ -50,7 +50,8 @@ function resolveProjectScope(input: ProjectScopeInput): ReadonlyArray<ScopedProj
     keys: input.keys,
     settings: input.settings,
   });
-  const chosen = groups.filter((group) => scoped.includes(group.projectKey));
+  // As in Threads, an archived project's scope reads as All projects.
+  const chosen = groups.filter((group) => scoped.includes(group.projectKey) && !group.archived);
   const scope = chosen.length === 0 ? null : chosen.flatMap((group) => group.memberProjectRefs);
   lastScope = { input, scope };
   return scope;
@@ -58,7 +59,8 @@ function resolveProjectScope(input: ProjectScopeInput): ReadonlyArray<ScopedProj
 
 /**
  * The projects the sidebar's Projects filter selected, for sections that follow it (Bots): null for All
- * projects, which a key of no listed project also reads as; No project selects the Scratch projects.
+ * projects, which a key of no listed or an archived project also reads as; No project selects the
+ * Scratch projects.
  * Keys resolve to groups as the Threads list resolves them.
  */
 export function useSidebarProjectScope(): ReadonlyArray<ScopedProjectRef> | null {

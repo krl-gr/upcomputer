@@ -1,9 +1,11 @@
 # Product usage data
 
-The Up.computer server sends product usage events to PostHog, associated with a hashed account or
-installation identifier. To count how many installations one person uses, the server also sends
-hashed account identifiers: your UpComputer Connect account, your OpenAI and Claude accounts when
-you are signed in, and a random identifier for each device that connects. Events include the
+The Up.computer server sends product usage events to PostHog, associated with a hashed random
+identifier for the installation. To count how many installations one person uses, the server also
+sends a hashed identifier for your UpComputer Connect account when you are signed in to one, and a
+random identifier for each device that connects. Usage data never includes identifiers from
+your provider accounts, such as your OpenAI or Claude account, and Up.computer never reads them
+for it. Events include the
 provider, model, reasoning effort, permission mode, turn result and, for a failed turn, a
 category of why (such as a usage limit), duration, release channel, and main-agent token totals
 when available. They also say whether the agent could connect to Up.computer's tools and how
@@ -35,17 +37,54 @@ names or titles of your threads, tasks, projects, or workers, raw provider event
 output. Child-agent token use is excluded from the totals.
 
 Up.computer also sends relay connection traces to Axiom to diagnose UpComputer Connect connectivity.
+Traces carry connection timings, request paths, environment and thread identifiers, and error
+types. They omit machine addresses, query strings, log lines, error messages, and stack frames.
 
-To disable product events and relay tracing, set `T3CODE_TELEMETRY_ENABLED=false` in the server's
-environment before starting it. Relay tracing also stops when `T3CODE_OTEL_SDK_DISABLED` or
-`OTEL_SDK_DISABLED` turns OpenTelemetry export off. The web app in a browser, including one the
-`up` CLI opens, does not read these variables.
+## Turn it off
 
-An administrator can turn product events and relay tracing off in the server and desktop app with
-a [managed policy](./managed-policy.md#other-capabilities).
+Turn off **Share anonymous usage data** in **Settings > About**. Product events, error reports and
+relay traces stop at once, events waiting to be sent are dropped, and nothing announces the
+change. The choice is kept across restarts and updates. Turning it back on resumes with the same
+installation identifier.
 
-The desktop app reads `T3CODE_TELEMETRY_ENABLED` from your shell profile (for example `~/.zshrc`) on macOS and
-Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
+You can also set `UPCOMPUTER_TELEMETRY_ENABLED=false` (or `T3CODE_TELEMETRY_ENABLED=false`) in the
+server's environment before starting it. The desktop app reads it from your shell profile (for
+example `~/.zshrc`) on macOS and Linux, so export it there and restart the app. On Windows, set it
+as a user environment variable. Relay tracing also stops when `T3CODE_OTEL_SDK_DISABLED` or
+`OTEL_SDK_DISABLED` turns OpenTelemetry export off.
+
+An administrator can turn product events and relay tracing off with a
+[managed policy](./managed-policy.md#other-capabilities). The variable and the policy win over the
+Settings switch, which then shows as off and cannot be changed.
+
+A browser opened from an Up.computer server sends relay traces only while connected and allowed by
+that server. The hosted web app sends relay traces when configured.
+
+## Surveys
+
+After you have used Up.computer for a week, on at least three different days, the notifications
+button may show a short survey from the Up.computer team. It asks at most once a month, and the
+questions come with the app, so nothing is fetched to show it. With product events on, your
+answers are sent as you go: the card's answer when you pick it, your answers so far each time
+you press **Continue** or **Skip**, and the rest when you press **Send**. With product events
+off, nothing is sent until you press **Send**. Then the answers go out alone, under a random
+identifier, with nothing about your installation, and Up.computer asks the analytics service
+not to keep your IP address or work out your location from it. Close the card to dismiss the
+survey; it does not come back. A managed policy that turns usage data off also turns
+surveys off.
+
+## Send feedback
+
+To report a bug or share an idea, open the notifications button and choose **Send feedback**
+at the bottom, or search for it in the command palette. Only what you write is sent, with two
+optional extras: **Include app version and system info** (on by default) adds the app version,
+your operating system and the names of your connected providers, and **You can email me about
+this** adds your email. Chats, files, paths and tokens are never included. Feedback is sent when
+you press **Send**, also with product events off; then it goes out the same way as survey
+answers, under a random identifier. Without system info it always goes out that way. With
+product events on and system info included, feedback is sent with the same identity as your
+other usage data, so an email you add is linked to it too. A managed
+policy that turns usage data off also turns feedback off.
 
 ## Mark a team or test device
 

@@ -1,5 +1,6 @@
 import { PlusIcon, XIcon } from "lucide-react";
 import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { useGT } from "gt-react";
 
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { Popover, PopoverPopup } from "../../../../apps/web/src/components/ui/popover.tsx";
@@ -20,6 +21,7 @@ export function TagChipsField(props: {
   readonly disabled?: boolean;
   readonly onChange: (tags: string[]) => void;
 }) {
+  const gt = useGT();
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
   const listboxId = useId();
@@ -68,7 +70,7 @@ export function TagChipsField(props: {
           <button
             type="button"
             className="flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none"
-            aria-label={`Remove tag ${tag}`}
+            aria-label={gt("Remove tag {tag}", { tag })}
             disabled={props.disabled}
             onClick={() => props.onChange(props.tags.filter((other) => other !== tag))}
           >
@@ -83,7 +85,7 @@ export function TagChipsField(props: {
             id={inputId}
             autoFocus
             role="combobox"
-            aria-label="Add a tag"
+            aria-label={gt("Add a tag")}
             aria-autocomplete="list"
             aria-expanded={popupOpen}
             aria-controls={popupOpen ? listboxId : undefined}
@@ -91,7 +93,7 @@ export function TagChipsField(props: {
               popupOpen && activeIndex >= 0 ? `${listboxId}-${activeIndex}` : undefined
             }
             className="h-6 w-28 min-w-0 bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-            placeholder="Tag…"
+            placeholder={gt("Tag…")}
             value={query}
             disabled={props.disabled}
             onChange={(event) => {
@@ -114,7 +116,7 @@ export function TagChipsField(props: {
             className="w-64 min-w-48 max-w-[calc(100vw-24px)]"
             padding="compact"
           >
-            <div id={listboxId} role="listbox" aria-label="Tag suggestions">
+            <div id={listboxId} role="listbox" aria-label={gt("Tag suggestions")}>
               {suggestions.map((suggestion, index) => (
                 <button
                   key={suggestion.tag}
@@ -142,7 +144,7 @@ export function TagChipsField(props: {
           type="button"
           variant="ghost"
           size="icon-xs"
-          aria-label="Add a tag"
+          aria-label={gt("Add a tag")}
           disabled={props.disabled}
           onClick={() => setAdding(true)}
         >

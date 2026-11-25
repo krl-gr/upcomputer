@@ -1,3 +1,4 @@
+import { gtFallback, useGT, useLocale } from "gt-react";
 import { useEffect, useEffectEvent, useMemo } from "react";
 import { BellIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
@@ -24,17 +25,20 @@ import { dateOfKey, todayKey } from "../logic/dates.ts";
 import { formatTime } from "../logic/time.ts";
 import { windowStoreFor } from "../windows/windowStore.ts";
 
-const dayFormatter = new Intl.DateTimeFormat(undefined, {
-  weekday: "short",
-  month: "short",
-  day: "numeric",
-});
-
-function reminderBody(reminder: TaskReminder): string {
-  const time = formatTime(reminder.startTime);
-  return reminder.date === todayKey()
-    ? `Starts at ${time}`
-    : `Starts ${dayFormatter.format(dateOfKey(reminder.date))} at ${time}`;
+/** The reminder's text in `locale`; the component passes its `useGT()`. */
+function reminderBody(
+  reminder: TaskReminder,
+  gt: ReturnType<typeof useGT> = gtFallback,
+  locale?: string,
+): string {
+  const time = formatTime(reminder.startTime, locale);
+  if (reminder.date === todayKey()) return gt("Starts at {time}", { time });
+  const day = dateOfKey(reminder.date).toLocaleDateString(locale, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  return gt("Starts {day} at {time}", { day, time });
 }
 
 /**
@@ -49,6 +53,8 @@ function EnvironmentReminders(props: {
   readonly client: TasksWebRpcClient;
 }) {
   const { environmentId, client } = props;
+  const gt = useGT();
+  const locale = useLocale();
   const navigate = useNavigate();
   const [, setPlannerEnvironment] = useStoredPlannerEnvironment();
   const open = useEffectEvent((reminder: TaskReminder) => {
@@ -56,10 +62,15 @@ function EnvironmentReminders(props: {
     windowStoreFor(environmentId).openDetail(reminder.taskId);
     void navigate({ to: "/tasks", search: { view: "planner" } } as never);
   });
+  // An effect event, so the translations are current without re-subscribing.
+  const reminderText = useEffectEvent((reminder: TaskReminder) => ({
+    body: reminderBody(reminder, gt, locale),
+    open: gt("Open", { $context: "button that opens the reminded task" }),
+  }));
 
   useEffect(() => {
     const present = (reminder: TaskReminder) => {
-      const body = reminderBody(reminder);
+      const { body, open: openLabel } = reminderText(reminder);
       const mode = getClientSettings().notificationMode;
       if (hasNotificationSound(mode))
         void playNotificationSound("input", () =>
@@ -75,7 +86,7 @@ function EnvironmentReminders(props: {
           leadingIcon: <BellIcon aria-hidden className="size-4 text-info-foreground" />,
         },
         actionProps: {
-          children: "Open",
+          children: openLabel,
           onClick: () => {
             toastManager.close(toastId);
             open(reminder);

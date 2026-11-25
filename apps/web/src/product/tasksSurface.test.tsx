@@ -66,6 +66,8 @@ const { createRoot } = await import("react-dom/client");
 type Root = import("react-dom/client").Root;
 const { RightPanelTabs } = await import("../components/RightPanelTabs");
 const { ProductRightPanelSurface } = await import("./ProductSlots");
+const { RightPanelSurfacesSettingsSection } = await import("./RightPanelSurfacesSettingsSection");
+const { useProductPanelSurfacePaletteItems } = await import("./useProductPanelSurfacePaletteItems");
 const { SidebarProvider } = await import("../components/ui/sidebar");
 
 // The UpComputer product, with or without the Tasks feature composed in.
@@ -87,6 +89,15 @@ vi.mock("./productEntry", async () => {
     },
   };
 });
+
+// The command palette's thread, beside which its panel entries open.
+vi.mock("../hooks/useThreadRouteTarget", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/useThreadRouteTarget")>()),
+  useThreadRouteTarget: () => ({
+    kind: "server",
+    threadRef: { environmentId: "local", threadId: "thread" },
+  }),
+}));
 
 // One environment with a Tasks server holding a routine and a task in Health and in Life OS.
 const tasksServer = vi.hoisted(() => {
@@ -124,21 +135,34 @@ const tasksServer = vi.hoisted(() => {
     row("Health task", "health", "task"),
     row("Life OS task", "life-os", "task"),
   ];
-  const pageInputs: Array<{ readonly projectId?: string; readonly kind?: string }> = [];
+  interface ListInput {
+    readonly projectId?: string;
+    readonly kind?: string;
+    readonly status?: string;
+  }
+  const pageInputs: ListInput[] = [];
+  const matching = (input: ListInput) =>
+    rows.filter(
+      (task) =>
+        (input.projectId === undefined || task.projectId === input.projectId) &&
+        (input.kind === undefined || task.kind === input.kind) &&
+        (input.status === undefined || task.status === input.status),
+    );
   const tasks = new Proxy(
     {
-      page: async (input: { readonly projectId?: string; readonly kind?: string }) => {
+      page: async (input: ListInput) => {
         pageInputs.push(input);
-        return {
-          tasks: rows.filter(
-            (task) =>
-              (input.projectId === undefined || task.projectId === input.projectId) &&
-              (input.kind === undefined || task.kind === input.kind),
-          ),
-          nextCursor: null,
-          statuses: ["To Do"],
-        };
+        return { tasks: matching(input), nextCursor: null, statuses: ["To Do"] };
       },
+      statusCounts: async (input: ListInput) => {
+        const count = matching({ ...input, status: "To Do" }).length;
+        return { counts: count > 0 ? [{ status: "To Do", count }] : [] };
+      },
+      getListSettings: async () => ({
+        groupByStatus: true,
+        statusGroupOrder: [],
+        statusGroupOpen: {},
+      }),
       scheduleRange: async () => ({ entries: [], tasks: [] }),
       scheduleProgress: async () => ({ progress: [] }),
       // Like the server, a subscription starts with a sync.
@@ -158,7 +182,9 @@ const tasksServer = vi.hoisted(() => {
     } as Record<string, unknown>,
     { get: (target, key: string) => target[key] ?? (async () => ({})) },
   );
-  return { client: { tasks }, pageInputs };
+  // A second environment whose server has no planner, for tests that turn it on.
+  const second = { on: false, environmentId: "remote" };
+  return { client: { tasks }, pageInputs, second };
 });
 
 vi.mock("../../../../packages/tasks-web/src/environmentApi.ts", async () => {
@@ -167,7 +193,10 @@ vi.mock("../../../../packages/tasks-web/src/environmentApi.ts", async () => {
     readTasksWebAccess: () => resolveTasksWebAccess({ availability: "enabled" }),
     readTasksWebClient: () => tasksServer.client,
     readPlannerAvailability: () => "enabled",
-    usePlannerAvailability: () => "enabled",
+    usePlannerAvailability: (environmentId: string | null) =>
+      tasksServer.second.on && environmentId === tasksServer.second.environmentId
+        ? "unavailable"
+        : "enabled",
     useTasksWebAccessRevision: () => 0,
   };
 });
@@ -215,8 +244,15 @@ vi.mock("../../../../packages/tasks-web/src/ui/useWorkspaceData.ts", async () =>
     memberProjectRefs: [{ environmentId, projectId: item.id }],
     remoteEnvironmentLabels: [],
   }));
+  const withSecond = {
+    ...data,
+    taskTargets: [
+      ...data.taskTargets,
+      { ...data.taskTargets[0]!, environmentId: tasksServer.second.environmentId },
+    ],
+  };
   return {
-    useTasksWorkspaceData: () => data,
+    useTasksWorkspaceData: () => (tasksServer.second.on ? withSecond : data),
     useSidebarProjectSnapshots: () => groups,
   };
 });
@@ -234,6 +270,7 @@ afterEach(() => {
   product.tasks = true;
   window.localStorage.clear();
   tasksServer.pageInputs.length = 0;
+  tasksServer.second.on = false;
 });
 
 const previewSurface = {
@@ -303,6 +340,13 @@ function renderPanel(
   );
 }
 
+function renderSettings() {
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  act(() => root!.render(<RightPanelSurfacesSettingsSection />));
+}
+
 function launcherKeys() {
   return document
     .querySelector("[data-surface-launcher-keys]")
@@ -316,18 +360,18 @@ function pressKey(target: EventTarget, key: string) {
 }
 
 describe("the Tasks surface in the right panel", () => {
-  it("lists Tasks after core's surfaces in the launcher, and K opens it", () => {
+  it("lists Tasks and its four views after core's surfaces in the launcher, and K opens Tasks", () => {
     const onAddFeatureSurface = vi.fn();
     renderPanel([], onAddFeatureSurface);
 
-    expect(launcherKeys()).toBe("BTFDK");
+    expect(launcherKeys()).toBe("BTFDMKYWAR");
     expect(document.querySelector("[data-surface-launcher-keys]")?.textContent).toContain("Tasks");
 
     pressKey(document.body, "k");
     expect(onAddFeatureSurface).toHaveBeenCalledExactlyOnceWith("tasks");
   });
 
-  it("offers Tasks last in the + menu, where K opens it too", async () => {
+  it("offers Tasks and its four views last in the + menu, where K opens Tasks too", async () => {
     const onAddFeatureSurface = vi.fn();
     renderPanel([previewSurface], onAddFeatureSurface);
 
@@ -346,7 +390,12 @@ describe("the Tasks surface in the right panel", () => {
       "TerminalT",
       "FilesF",
       "DiffD",
+      "DeviceM",
       "TasksK",
+      "My tasksY",
+      "Worker tasksW",
+      "AutomationsA",
+      "My routinesR",
     ]);
 
     pressKey(items[0]!, "k");
@@ -360,16 +409,78 @@ describe("the Tasks surface in the right panel", () => {
     expect(document.querySelector('[aria-label="Close Tasks"]')).not.toBeNull();
   });
 
+  it("leaves the entries switched off in Settings out of the panel menu and the palette", () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    function PaletteItems() {
+      return (
+        <ul data-palette-items="">
+          {useProductPanelSurfacePaletteItems().map((item) => (
+            <li key={item.value}>{item.title}</li>
+          ))}
+        </ul>
+      );
+    }
+    const paletteTitles = () =>
+      [...document.querySelectorAll("[data-palette-items] li")].map((item) => item.textContent);
+    act(() =>
+      root!.render(
+        <>
+          <RightPanelSurfacesSettingsSection />
+          <PaletteItems />
+        </>,
+      ),
+    );
+    const panelSwitch = (label: string) =>
+      document.querySelector<HTMLElement>(`[aria-label="Show ${label} in the panel menu"]`)!;
+    expect(paletteTitles()).toEqual([
+      "Open Tasks in the panel",
+      "Open My tasks in the panel",
+      "Open Worker tasks in the panel",
+      "Open Automations in the panel",
+      "Open My routines in the panel",
+    ]);
+
+    act(() => panelSwitch("Tasks").click());
+    act(() => panelSwitch("My routines").click());
+    expect(panelSwitch("Tasks").getAttribute("aria-checked")).toBe("false");
+    expect(paletteTitles()).toEqual([
+      "Open My tasks in the panel",
+      "Open Worker tasks in the panel",
+      "Open Automations in the panel",
+    ]);
+    act(() => root?.unmount());
+    container.remove();
+
+    const onAddFeatureSurface = vi.fn();
+    renderPanel([], onAddFeatureSurface);
+    expect(launcherKeys()).toBe("BTFDMYWA");
+    pressKey(document.body, "k");
+    pressKey(document.body, "r");
+    expect(onAddFeatureSurface).not.toHaveBeenCalled();
+    act(() => root?.unmount());
+    container.remove();
+
+    // Switched back on, an entry returns.
+    renderSettings();
+    act(() => panelSwitch("Tasks").click());
+    act(() => root?.unmount());
+    container.remove();
+    renderPanel([], onAddFeatureSurface);
+    expect(launcherKeys()).toBe("BTFDMKYWA");
+  });
+
   it("leaves Tasks out of a build without the feature and of panels not beside a thread", () => {
     product.tasks = false;
     renderPanel([], vi.fn());
-    expect(launcherKeys()).toBe("BTFD");
+    expect(launcherKeys()).toBe("BTFDM");
     act(() => root?.unmount());
     container?.remove();
 
     product.tasks = true;
     renderPanel([], undefined);
-    expect(launcherKeys()).toBe("BTFD");
+    expect(launcherKeys()).toBe("BTFDM");
   });
 });
 
@@ -383,7 +494,7 @@ describe("the Tasks surface's content", () => {
   }, 60_000);
 
   // The thread beside the panel is in Life OS; the page's filters decide what is listed.
-  function renderTasks(storage: Record<string, unknown>) {
+  function renderTasks(storage: Record<string, unknown>, featureSurfaceId = "tasks") {
     for (const [key, value] of Object.entries(storage)) {
       window.localStorage.setItem(key, JSON.stringify(value));
     }
@@ -394,7 +505,7 @@ describe("the Tasks surface's content", () => {
       root!.render(
         <SidebarProvider>
           <ProductRightPanelSurface
-            featureSurfaceId="tasks"
+            featureSurfaceId={featureSurfaceId}
             environmentId={"local" as never}
             threadId={"thread" as never}
             projectId={"life-os" as never}
@@ -404,6 +515,8 @@ describe("the Tasks surface's content", () => {
     );
   }
   const shows = (text: string) => document.body.textContent?.includes(text) === true;
+  const floatingControl = (selector: string) =>
+    document.querySelector(`[data-tasks-floating-actions] ${selector}`);
 
   it("lists the planner's routines in every project, not only the thread's", async () => {
     renderTasks({ "tasks.view": "planner", "tasks.planner.kind": "routine" });
@@ -441,6 +554,64 @@ describe("the Tasks surface's content", () => {
     } finally {
       measure.mockRestore();
     }
+  });
+
+  it("opens each entry on its own view, whatever the Tasks tab last showed, with no switches", async () => {
+    const floating = () => document.querySelector("[data-tasks-floating-actions]");
+    const switches = () => document.querySelector('[aria-label="Whose tasks"]');
+    // The combined tab's last choice: the table, and routines in the planner.
+    const tasksTab = { "tasks.view": "table", "tasks.planner.kind": "routine" };
+    const remount = () => {
+      act(() => root?.unmount());
+      container?.remove();
+    };
+
+    renderTasks(tasksTab, "tasks.mine");
+    await vi.waitFor(() => expect(shows("Life OS task")).toBe(true), { timeout: 5000 });
+    expect(shows("Health routine")).toBe(false);
+    expect(floatingControl('[aria-label="New task"]')).not.toBeNull();
+    expect(switches()).toBeNull();
+    remount();
+
+    renderTasks({ "tasks.view": "table", "tasks.planner.kind": "task" }, "tasks.routines");
+    await vi.waitFor(() => expect(shows("Life OS routine")).toBe(true), { timeout: 5000 });
+    expect(shows("Life OS task")).toBe(false);
+    expect(floatingControl('[aria-label="New routine"]')).not.toBeNull();
+    expect(switches()).toBeNull();
+    remount();
+
+    renderTasks({ "tasks.view": "planner" }, "tasks.workers");
+    await vi.waitFor(() => expect(shows("Health task")).toBe(true), { timeout: 5000 });
+    expect(floatingControl("[data-task-filters-button]")).not.toBeNull();
+    expect(switches()).toBeNull();
+    remount();
+
+    renderTasks({ "tasks.view": "planner" }, "tasks.automations");
+    await vi.waitFor(() => expect(floating()).not.toBeNull(), { timeout: 5000 });
+    expect(floatingControl('[aria-label="New automation"]')).not.toBeNull();
+    expect(switches()).toBeNull();
+  });
+
+  it("floats the environment choice in My tasks while its environment has no planner", async () => {
+    tasksServer.second.on = true;
+    renderTasks({ "tasks.planner.environment": tasksServer.second.environmentId }, "tasks.mine");
+
+    await vi.waitFor(() => expect(shows("older server without the planner")).toBe(true), {
+      timeout: 5000,
+    });
+    expect(floatingControl('[aria-label="Environment"]')).not.toBeNull();
+  });
+
+  it("keeps the Worker tasks entry's filters apart from the Tasks page's", async () => {
+    renderTasks({ "upcomputer:pages:project": "health" }, "tasks.workers");
+    await vi.waitFor(() => expect(shows("Health task")).toBe(true), { timeout: 5000 });
+    expect(shows("Life OS task")).toBe(true);
+    act(() => root?.unmount());
+    container?.remove();
+
+    renderTasks({ "upcomputer:pages:project:panel.workers": "health" }, "tasks.workers");
+    await vi.waitFor(() => expect(shows("Health task")).toBe(true), { timeout: 5000 });
+    expect(shows("Life OS task")).toBe(false);
   });
 
   it("filters the table by the page's project, not the thread's", async () => {

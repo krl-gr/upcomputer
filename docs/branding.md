@@ -34,7 +34,7 @@ literals against it and against the electron-builder config.
 | Home directory          | `~/.upcomputer`, worktrees `.upcomputer`                                                           | `apps/desktop/src/app/DesktopStatePaths.ts`, `apps/server/src/os-jank.ts`, `packages/shared/src/devHome.ts`, `scripts/dev-runner.ts`, `.gitignore`                                                |
 | Electron profile folder | `Up.computer`, dev `Up.computer (Dev)`                                                             | `apps/desktop/src/app/DesktopUserData.ts`                                                                                                                                                         |
 | Local test build        | `computer.up.upcomputer.localtest`, `UpComputer Local Test`, `~/.upcomputer-local-test`            | `apps/desktop/src/app/UpcomputerStartupEnvironment.ts`, `DesktopEnvironment.ts`, `DesktopUserData.ts`, build config                                                                               |
-| Demo build (`-demo.N`)  | `computer.up.upcomputer.demo`, `Up.computer Demo`, `~/.upcomputer-demo`                            | `apps/desktop/src/app/UpcomputerStartupEnvironment.ts`, `DesktopEnvironment.ts`, `DesktopUserData.ts`, build config                                                                               |
+| Demo build (`-demo.N`)  | `computer.up.upcomputer.demo`, `Up.computer Demo` (menu bar `Up.computer`), `~/.upcomputer-demo`   | `apps/desktop/src/app/UpcomputerStartupEnvironment.ts`, `DesktopEnvironment.ts`, `DesktopUserData.ts`, build config                                                                               |
 | Linux names             | executable and WM class `upcomputer`, entry `computer.up.upcomputer.desktop`                       | `apps/desktop/src/app/DesktopEarlyElectronStartup.ts`, build config                                                                                                                               |
 | Package name            | `upcomputer` (NSIS name, updater cache)                                                            | `scripts/build-desktop-artifact.ts`                                                                                                                                                               |
 | Update feed             | GitHub releases of `krl-gr/upcomputer`, stable tags `core-vX.Y.Z`, channels `latest` and `nightly` | `.github/workflows/release.yml`, `scripts/build-desktop-artifact.ts` (`GITHUB_REPOSITORY`), `scripts/resolve-previous-release-tag.ts`                                                             |
@@ -92,6 +92,20 @@ Apple sign-in, no EAS project and no over-the-air updates.
   `apps/desktop/src/app/DesktopEnvironment.ts` (window titles, about panel, menus), the sidebar and
   Welcome page (`SidebarChrome.tsx`, `WelcomePage.tsx`), `apps/web/index.html`,
   `apps/web/public/manifest.webmanifest`.
+- **Repository links:** the GitHub star prompt (`GitHubStarPrompt.tsx`), the startup error
+  page's issue and reinstall links (`apps/web/src/lib/bootError.ts`), the UpComputer Connect
+  troubleshooting link (`packages/contracts/src/environmentHttp.ts`) and that guide's "Report a
+  problem" link point at krl-gr/upcomputer or up.computer and are pinned by check-branding, as are
+  the hosted-app name in the policy and triage client text (app.up.computer). Upstream's copies point at pingdotgg/t3code, so a sync that takes their side
+  would have our users star and file issues on T3 Code. Triage (`up triage` and Triage an
+  issue) clones krl-gr/upcomputer at our release tag
+  (`core-v<version>`, or `v<version>` for nightlies and older releases, in
+  `apps/server/src/triage/TriageService.ts`), and the playbook (`triagePrompt.ts`, kept
+  byte-identical to `.github/triage/PLAYBOOK.md`) searches and files issues there with our
+  `.github/ISSUE_TEMPLATE/via-triage.yml`. The suggested command is `up triage` (`bootError.ts`,
+  `useStartTriage.ts`), and the stale service launcher hint (`apps/server/src/cloud/servicePreflight.ts`)
+  says to update the desktop app instead of running T3 Code's installer. check-branding pins all of
+  these; upstream's versions use pingdotgg/t3code, `v<version>` tags and `npx t3`.
 - **Artwork from V1:** `assets/prod/upcomputer-*` and `assets/dev/upcomputer-blueprint-*` (nightly
   uses the blueprint too), wired in `scripts/lib/brand-assets.ts`, `DesktopAssets.ts` and the dev
   launcher; `apps/web/public` favicons; the app icon replaces the T3 wordmark in `T3Wordmark.tsx`;

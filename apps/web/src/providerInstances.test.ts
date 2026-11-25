@@ -1,5 +1,6 @@
 import {
   DEFAULT_MODEL_BY_PROVIDER,
+  DEFAULT_SERVER_SETTINGS,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -14,6 +15,7 @@ import {
   getDefaultProviderInstanceModel,
   isProviderInstancePickerReady,
   resolveDefaultProviderModelSelection,
+  resolveProjectDefaultProviderModelSelection,
   resolveSelectableProviderInstance,
   shouldShowInstanceBadge,
 } from "./providerInstances";
@@ -22,10 +24,12 @@ function provider(input: {
   provider: ProviderDriverKind;
   instanceId: string;
   enabled?: boolean;
+  installed?: boolean;
   availability?: ServerProvider["availability"];
   displayName?: string;
   accentColor?: string;
   status?: ServerProvider["status"];
+  auth?: ServerProvider["auth"];
   models?: ServerProvider["models"];
   supportsTextGeneration?: boolean;
 }): ServerProvider {
@@ -38,11 +42,11 @@ function provider(input: {
     ...(input.displayName ? { displayName: input.displayName } : {}),
     ...(input.accentColor ? { accentColor: input.accentColor } : {}),
     enabled: input.enabled ?? true,
-    installed: true,
+    installed: input.installed ?? true,
     version: null,
     status: input.status ?? "ready",
     ...(input.availability ? { availability: input.availability } : {}),
-    auth: { status: "authenticated" },
+    auth: input.auth ?? { status: "authenticated" },
     checkedAt: "2026-01-01T00:00:00.000Z",
     models: input.models ?? [],
     slashCommands: [],
@@ -70,6 +74,66 @@ describe("isProviderInstancePickerReady", () => {
 
     expect(entry?.status).toBe("ready");
     expect(entry && isProviderInstancePickerReady(entry)).toBe(false);
+  });
+
+  it("offers a warning provider's models on its usable sub-providers only", () => {
+    const backendModel = (slug: string, subProvider: string) => ({ ...model(slug), subProvider });
+    const fx = (models: ServerProvider["models"]) => ({
+      ...provider({
+        provider: ProviderDriverKind.make("fx"),
+        instanceId: "fx",
+        status: "warning",
+        models,
+      }),
+      subProviders: [
+        { name: "Gateway" },
+        { name: "Codex", unavailableReason: "Signed out. Run `fx login codex` on this machine." },
+      ],
+    });
+    const ready = (snapshot: ServerProvider) =>
+      deriveProviderInstanceEntries([snapshot]).map(isProviderInstancePickerReady)[0];
+
+    expect(
+      ready(fx([model("default", false, true), backendModel("openai/gpt-5.5", "Gateway")])),
+    ).toBe(true);
+    expect(ready(fx([model("default", false, true), backendModel("gpt-5.5", "Codex")]))).toBe(
+      false,
+    );
+  });
+
+  it("keeps offering the models a refresh retained when the catalog did not arrive in time", () => {
+    const [entry] = deriveProviderInstanceEntries([
+      {
+        ...provider({
+          provider: ProviderDriverKind.make("codex"),
+          instanceId: "codex",
+          status: "warning",
+          models: [model("gpt-5.5", false, true), model("gpt-5.4")],
+        }),
+        message: "Codex did not return its model catalog in time.",
+      },
+    ]);
+
+    expect(entry && isProviderInstancePickerReady(entry)).toBe(true);
+    expect(
+      entry && isProviderInstancePickerReady({ ...entry, models: [model("bailian", true)] }),
+    ).toBe(true);
+    expect(entry && isProviderInstancePickerReady({ ...entry, models: [] })).toBe(false);
+  });
+
+  it("offers a failed provider's models only while the server marks them retained", () => {
+    const failed = provider({
+      provider: ProviderDriverKind.make("codex"),
+      instanceId: "codex",
+      status: "error",
+      models: [model("gpt-5.5", false, true)],
+    });
+    const ready = (snapshot: ServerProvider) =>
+      deriveProviderInstanceEntries([snapshot]).map(isProviderInstancePickerReady)[0];
+
+    expect(ready({ ...failed, modelsRetained: true })).toBe(true);
+    expect(ready(failed)).toBe(false);
+    expect(ready({ ...failed, status: "warning", auth: { status: "unknown" } })).toBe(false);
   });
 });
 
@@ -536,6 +600,69 @@ describe("resolveDefaultProviderModelSelection", () => {
         null,
       ),
     ).toBeNull();
+    expect(
+      resolveDefaultProviderModelSelection(
+        [
+          provider({
+            provider: ProviderDriverKind.make("codex"),
+            instanceId: "codex",
+            status: "warning",
+            auth: { status: "unauthenticated" },
+          }),
+        ],
+        null,
+      ),
+    ).toBeNull();
+  });
+
+  it("skips unauthenticated warning providers (such as managed Codex without an account) in favor of a ready provider", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex",
+        status: "warning",
+        auth: { status: "unauthenticated" },
+        models: [],
+      }),
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        status: "error",
+        auth: { status: "unauthenticated" },
+        models: [],
+      }),
+      provider({
+        provider: ProviderDriverKind.make("opencode"),
+        instanceId: "opencode",
+        status: "ready",
+        auth: { status: "authenticated" },
+        models: [model("opencode/deepseek-v4.1-free", false, true)],
+      }),
+    ];
+
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        ...DEFAULT_SERVER_SETTINGS.providerInstances,
+        [ProviderInstanceId.make("opencode")]: {
+          driver: ProviderDriverKind.make("opencode"),
+          enabled: true,
+        },
+      },
+    };
+    expect(resolveProjectDefaultProviderModelSelection(providers, settings, null)).toEqual({
+      instanceId: "opencode",
+      model: "opencode/deepseek-v4.1-free",
+    });
+    expect(
+      resolveDefaultProviderModelSelection(providers, {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-6-astra",
+      }),
+    ).toEqual({
+      instanceId: "opencode",
+      model: "opencode/deepseek-v4.1-free",
+    });
   });
 });
 

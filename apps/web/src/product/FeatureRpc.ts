@@ -5,6 +5,7 @@ import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
 import {
   createEnvironmentCommand,
   createCommandPermissions,
+  runAtomCommand,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Effect from "effect/Effect";
@@ -79,25 +80,52 @@ export async function requestExperimentalFeatureRpc<Group extends RpcGroup.Any, 
   authorization?: { readonly method: string; readonly input: unknown },
 ): Promise<A> {
   featureRpcRequest ??= makeFeatureRpcRequest();
-  const result = await featureRpcRequest.run(appAtomRegistry, {
-    environmentId,
-    input: {
-      ...authorization,
-      execute: (client) =>
-        execute(client as ExperimentalFeatureRpcClient<Group>).pipe(
-          Effect.mapError((error) => new FeatureRpcFailure({ error })),
-        ),
+  const result = await runAtomCommand(
+    appAtomRegistry,
+    featureRpcRequest,
+    {
+      environmentId,
+      input: {
+        ...authorization,
+        execute: (client) =>
+          execute(client as ExperimentalFeatureRpcClient<Group>).pipe(
+            Effect.mapError((error) => new FeatureRpcFailure({ error })),
+          ),
+      },
     },
-  });
+    { reportFailure: false, reportDefect: false },
+  );
   if (result._tag === "Success") return result.value as A;
   const failure = squashAtomCommandFailure(result);
   throw isFeatureRpcFailure(failure) ? failure.error : failure;
 }
 
+const permissionsByMethod = new Map<string, ReturnType<typeof createCommandPermissions>>();
+
+function featureRpcPermissions(method: string) {
+  let permissions = permissionsByMethod.get(method);
+  if (permissions === undefined) {
+    permissions = createCommandPermissions(connectionAtomRuntime, method);
+    permissionsByMethod.set(method, permissions);
+  }
+  return permissions;
+}
+
 export const useExperimentalFeatureRpcPermission = (
   environmentId: EnvironmentId | null,
   method: string,
+) => useAtomValue(featureRpcPermissions(method).permissionAtom(environmentId));
+
+export const readExperimentalFeatureRpcPermission = (
+  environmentId: EnvironmentId | null,
+  method: string,
+) => appAtomRegistry.get(featureRpcPermissions(method).permissionAtom(environmentId));
+
+export const subscribeExperimentalFeatureRpcPermission = (
+  environmentId: EnvironmentId | null,
+  method: string,
+  listener: () => void,
 ) =>
-  useAtomValue(
-    createCommandPermissions(connectionAtomRuntime, method).permissionAtom(environmentId),
+  appAtomRegistry.subscribe(featureRpcPermissions(method).permissionAtom(environmentId), () =>
+    listener(),
   );

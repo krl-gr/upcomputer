@@ -1,19 +1,6 @@
-import {
-  Heading1Icon,
-  Heading2Icon,
-  Heading3Icon,
-  ListIcon,
-  ListOrderedIcon,
-  ListTodoIcon,
-  type LucideIcon,
-  MinusIcon,
-  PilcrowIcon,
-  QuoteIcon,
-  SquareCodeIcon,
-  Table2Icon,
-} from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useGT, useMessages } from "gt-react";
 
 import { readLocalApi } from "../../../../apps/web/src/localApi.ts";
 import { cn } from "../../../../apps/web/src/lib/utils.ts";
@@ -25,6 +12,7 @@ import {
   type SlashCommandId,
   type SlashMenuState,
 } from "./markdownEditorCore.ts";
+import { slashCommandsFor } from "./slashCommands.ts";
 import "./markdownEditor.css";
 
 export interface MarkdownEditorProps {
@@ -32,31 +20,14 @@ export interface MarkdownEditorProps {
   /** Called on every edit, never for opening, focusing or scrolling the text. */
   readonly onChange: (value: string) => void;
   readonly onBlur?: () => void;
+  /** Called once Milkdown has mounted its initial document DOM. */
+  readonly onReady?: (() => void) | undefined;
   readonly placeholder?: string;
   readonly ariaLabel: string;
   readonly disabled?: boolean;
   readonly autoFocus?: boolean;
   readonly className?: string;
 }
-
-const SLASH_COMMANDS: ReadonlyArray<{
-  readonly id: SlashCommandId;
-  readonly label: string;
-  readonly keywords: string;
-  readonly icon: LucideIcon;
-}> = [
-  { id: "text", label: "Text", keywords: "paragraph p", icon: PilcrowIcon },
-  { id: "h1", label: "Heading 1", keywords: "title", icon: Heading1Icon },
-  { id: "h2", label: "Heading 2", keywords: "", icon: Heading2Icon },
-  { id: "h3", label: "Heading 3", keywords: "", icon: Heading3Icon },
-  { id: "bullet", label: "Bullet list", keywords: "ul", icon: ListIcon },
-  { id: "ordered", label: "Numbered list", keywords: "ordered ol", icon: ListOrderedIcon },
-  { id: "task", label: "Checklist", keywords: "task todo checkbox", icon: ListTodoIcon },
-  { id: "quote", label: "Quote", keywords: "blockquote", icon: QuoteIcon },
-  { id: "divider", label: "Divider", keywords: "hr rule", icon: MinusIcon },
-  { id: "table", label: "Table", keywords: "grid", icon: Table2Icon },
-  { id: "code", label: "Code block", keywords: "snippet", icon: SquareCodeIcon },
-];
 
 interface OpenMenu {
   readonly state: SlashMenuState;
@@ -72,17 +43,14 @@ interface OpenMenu {
  * `LazyMarkdownEditor`.
  */
 export default function MarkdownEditor(props: MarkdownEditorProps) {
+  const gt = useGT();
+  const m = useMessages();
   const rootRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<MarkdownEditorSession | null>(null);
   const propsRef = useRef(props);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const items = useMemo(() => {
-    const query = menu?.state.query.toLowerCase() ?? "";
-    return SLASH_COMMANDS.filter((command) =>
-      `${command.label} ${command.keywords}`.toLowerCase().includes(query),
-    );
-  }, [menu]);
+  const items = useMemo(() => slashCommandsFor(menu?.state.query ?? "", m), [m, menu]);
   const runCommand = (id: SlashCommandId) => {
     const session = sessionRef.current;
     if (!session || !menu) return;
@@ -105,46 +73,62 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
       setActiveIndex(0);
       setMenu(state ? { state, insertBelow } : null);
     };
-    const session = new MarkdownEditorSession(
-      root,
-      {
-        value: () => propsRef.current.value,
-        onChange: (value) => propsRef.current.onChange(value),
-        onEdit: () => setMenu((open) => (open?.insertBelow ? null : open)),
-        onBlur: () => {
-          setMenu(null);
-          propsRef.current.onBlur?.();
-        },
-        onSlashMenu: (state) => openMenu(state, false),
-        onKey: (event) => {
-          const latest = latestRef.current;
-          if (!latest.menu) return false;
-          if (event.key === "Escape") {
+    let session: MarkdownEditorSession;
+    try {
+      session = new MarkdownEditorSession(
+        root,
+        {
+          value: () => propsRef.current.value,
+          onChange: (value) => propsRef.current.onChange(value),
+          onEdit: () => setMenu((open) => (open?.insertBelow ? null : open)),
+          onBlur: () => {
             setMenu(null);
-            return true;
-          }
-          if (latest.items.length === 0) return false;
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            const step = event.key === "ArrowDown" ? 1 : -1;
-            setActiveIndex((latest.activeIndex + step + latest.items.length) % latest.items.length);
-            return true;
-          }
-          if (event.key === "Enter" || event.key === "Tab") {
-            const command = latest.items[latest.activeIndex] ?? latest.items[0];
-            if (command) latest.runCommand(command.id);
-            return true;
-          }
-          return false;
+            propsRef.current.onBlur?.();
+          },
+          onSlashMenu: (state) => openMenu(state, false),
+          onKey: (event) => {
+            const latest = latestRef.current;
+            if (!latest.menu) return false;
+            if (event.key === "Escape") {
+              setMenu(null);
+              return true;
+            }
+            if (latest.items.length === 0) return false;
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              const step = event.key === "ArrowDown" ? 1 : -1;
+              setActiveIndex(
+                (latest.activeIndex + step + latest.items.length) % latest.items.length,
+              );
+              return true;
+            }
+            if (event.key === "Enter" || event.key === "Tab") {
+              const command = latest.items[latest.activeIndex] ?? latest.items[0];
+              if (command) latest.runCommand(command.id);
+              return true;
+            }
+            return false;
+          },
+          onOpenLink: (href) => void readLocalApi()?.shell.openExternal(href),
+          isEditable: () => propsRef.current.disabled !== true,
+          placeholder: () => propsRef.current.placeholder ?? "",
+          ariaLabel: () => propsRef.current.ariaLabel,
         },
-        onOpenLink: (href) => void readLocalApi()?.shell.openExternal(href),
-        isEditable: () => propsRef.current.disabled !== true,
-        placeholder: () => propsRef.current.placeholder ?? "",
-        ariaLabel: () => propsRef.current.ariaLabel,
-      },
-      (ctx) => configureBlockHandle(ctx, (state) => openMenu(state, true)),
-      propsRef.current.autoFocus,
-    );
+        (ctx) => configureBlockHandle(ctx, (state) => openMenu(state, true)),
+        propsRef.current.autoFocus,
+      );
+    } catch (error) {
+      if (!disposed) propsRef.current.onReady?.();
+      throw error;
+    }
     sessionRef.current = session;
+    void session.ready.then(
+      () => {
+        if (!disposed) propsRef.current.onReady?.();
+      },
+      () => {
+        if (!disposed) propsRef.current.onReady?.();
+      },
+    );
     return () => {
       disposed = true;
       sessionRef.current = null;
@@ -172,7 +156,7 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
         ? createPortal(
             <div
               role="listbox"
-              aria-label="Insert block"
+              aria-label={gt("Insert block")}
               className="fixed z-[200] w-56 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg"
               style={{ left: menu.state.left, top: menu.state.top }}
               onMouseDown={(event) => event.preventDefault()}

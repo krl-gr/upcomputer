@@ -38,6 +38,11 @@ import {
   TaskSearchInput,
   TaskPageInput,
   TaskPageResult,
+  TaskListSettings,
+  TaskWorkflowVersion,
+  TaskListSettingsUpdateInput,
+  TaskStatusCountsInput,
+  TaskStatusCountsResult,
   TaskListItemsInput,
   TaskListItemsResult,
   TaskChange,
@@ -89,6 +94,30 @@ export interface SetTasksArchivedInput {
   readonly archived: boolean;
   readonly reason?: string | undefined;
   readonly actor: TaskActor;
+}
+
+/**
+ * Renames one status on the tasks that have it: all of them, or only those
+ * in the project, with all the tags, or among the ids. A rename relabels what
+ * a status means, so it keeps triggerChangedAt and starts no agent.
+ */
+export interface RenameTaskStatusInput {
+  readonly from: string;
+  readonly to: string;
+  readonly ids?: ReadonlyArray<TaskId> | undefined;
+  readonly projectId?: ProjectId | undefined;
+  readonly tags?: ReadonlyArray<string> | undefined;
+  /** Also rename it in automations' task templates (in the project, when one is given). */
+  readonly automationTemplates?: boolean | undefined;
+  readonly actor: TaskActor;
+  readonly dryRun?: boolean | undefined;
+}
+
+export interface RenameTaskStatusResult {
+  readonly renamed: ReadonlyArray<TaskId>;
+  /** Person tasks only take To Do and Done. */
+  readonly skipped: ReadonlyArray<{ readonly id: TaskId; readonly reason: string }>;
+  readonly automations: ReadonlyArray<string>;
 }
 
 /** Per requested id, in request order; `task` is set when this call changed it. */
@@ -155,6 +184,12 @@ export interface FinalizeTaskAgentRunInput {
   readonly completedAt: IsoDateTime;
   readonly taskId: TaskId;
   readonly taskStatus?: Task["status"];
+  /**
+   * Set only while this run still holds an agent task, and without moving
+   * triggerChangedAt: the server reports how the run ended, it does not hand
+   * the task on. Ignored when `taskStatus` is set.
+   */
+  readonly heldTaskStatus?: Task["status"];
   readonly taskOutput?: string | null;
   readonly releaseAssignment: boolean;
   readonly events: ReadonlyArray<PersistTaskEventInput>;
@@ -227,6 +262,25 @@ export interface TaskRepositoryShape {
     input: TaskSearchInput,
   ) => Effect.Effect<ReadonlyArray<Task>, TaskRepositoryError>;
   readonly page: (input: TaskPageInput) => Effect.Effect<TaskPageResult, TaskRepositoryError>;
+  /** Tasks per status for a list's filters, without its status. */
+  readonly statusCounts: (
+    input: TaskStatusCountsInput,
+  ) => Effect.Effect<TaskStatusCountsResult, TaskRepositoryError>;
+  readonly listSettings: () => Effect.Effect<TaskListSettings, TaskRepositoryError>;
+  /** Saves the given list settings and announces them on the change stream. */
+  readonly updateListSettings: (
+    input: TaskListSettingsUpdateInput,
+  ) => Effect.Effect<TaskListSettings, TaskRepositoryError>;
+  /** The install's workflow (see TaskWorkflowVersion); list settings carry it to clients. */
+  readonly workflowVersion: () => Effect.Effect<TaskWorkflowVersion, TaskRepositoryError>;
+  /**
+   * Moves the install to a workflow and announces it like a list settings
+   * change. It changes no task, status or instruction text: the workflow
+   * update applies those itself.
+   */
+  readonly setWorkflowVersion: (input: {
+    readonly version: TaskWorkflowVersion;
+  }) => Effect.Effect<void, TaskRepositoryError>;
   readonly items: (
     input: TaskListItemsInput,
   ) => Effect.Effect<TaskListItemsResult, TaskRepositoryError>;
@@ -261,6 +315,11 @@ export interface TaskRepositoryShape {
   readonly setArchived: (
     input: SetTasksArchivedInput,
   ) => Effect.Effect<SetTasksArchivedResult, TaskRepositoryError>;
+  readonly renameTaskStatus: (
+    input: RenameTaskStatusInput,
+  ) => Effect.Effect<RenameTaskStatusResult, TaskRepositoryError>;
+  /** Tells clients the instruction updates' mode or states changed. */
+  readonly announceInstructionUpdatesChanged: () => Effect.Effect<void>;
   readonly reorder: (input: TaskReorderInput) => Effect.Effect<Task, TaskRepositoryError>;
   /** Moves the tasks as one block in their current relative order; returns them in that order. */
   readonly reorderMany: (
@@ -349,7 +408,14 @@ export interface TaskRepositoryShape {
    * they ignore notBefore, audience and kind, as they ignore triggers.
    */
   readonly startAgentRun: (
-    input: PersistTaskAgentRunInput & { readonly startableAt: string | null },
+    input: PersistTaskAgentRunInput & {
+      readonly startableAt: string | null;
+      /**
+       * When the run starts on an agent task in status `from`, the task moves
+       * to `to` without moving triggerChangedAt.
+       */
+      readonly reopenTaskStatus?: { readonly from: string; readonly to: string };
+    },
   ) => Effect.Effect<Option.Option<TaskAgentRun>, TaskRepositoryError>;
   readonly getAgentRunById: (input: {
     readonly id: TaskAgentRunId;

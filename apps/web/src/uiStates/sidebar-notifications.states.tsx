@@ -18,6 +18,7 @@ import type {
 import { setUpdateEverythingRun } from "../components/sidebar/updateEverythingRun";
 import { SidebarMenu, SidebarProvider } from "../components/ui/sidebar";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
+import { type ClientNoticeInput, holdClientNotice } from "../sidebarNotifications/clientNotices";
 import { SidebarNotifications } from "../sidebarNotifications/SidebarNotifications";
 import { captureUiStateSheet, type UiState } from "./uiStateSheet";
 
@@ -34,6 +35,7 @@ const source = vi.hoisted(() => ({
   notices: [] as ReadonlyArray<BackgroundNotice>,
   providers: [] as ReadonlyArray<ServerProvider>,
   servers: [] as UpdateEverythingPlan["servers"],
+  outages: [] as ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly since: number }>,
 }));
 
 // Data sources, not UI: the update feed, server configs (notices, versions), the
@@ -60,9 +62,26 @@ vi.mock("../state/environments", async (importOriginal) => ({
         label: "This Mac",
         connection: { phase: "connected" },
       },
+      {
+        environmentId: "environment-studio",
+        label: "Studio",
+        connection: { phase: "reconnecting" },
+      },
+      {
+        environmentId: "environment-office",
+        label: "Office",
+        connection: { phase: "error", error: "This device's pairing was revoked." },
+      },
     ],
   }),
   useEnvironmentProviders: () => new Map([["environment-ui-states", source.providers]]),
+}));
+// The connection clock: which computers stay unreachable past the grace.
+vi.mock("../sidebarNotifications/computerOutages", () => ({
+  useComputerOutages: () => ({
+    unreachable: new Map(source.outages.map((outage) => [outage.environmentId, outage.since])),
+    shown: source.outages,
+  }),
 }));
 vi.mock("../components/sidebar/useUpdateEverything", async (importOriginal) => {
   const { describeUpdateEverything } = await import("../components/sidebar/updateEverything.logic");
@@ -96,6 +115,7 @@ vi.mock("../components/sidebar/useUpdateEverything", async (importOriginal) => {
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-ui-states");
 const STUDIO_ID = EnvironmentId.make("environment-studio");
+const OFFICE_ID = EnvironmentId.make("environment-office");
 const NOW = Date.now();
 const minutesAgo = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
 
@@ -305,9 +325,8 @@ function openPopover(inside?: (popup: HTMLElement) => Promise<void>) {
 }
 
 async function expandErrorDetails(popup: HTMLElement) {
-  const details = [...popup.querySelectorAll("button")].find(
-    (button) => button.textContent === "Details",
-  )!;
+  // ErrorDetails' toggle, found by its state so sheets work in every UI language.
+  const details = popup.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!;
   await userEvent.click(details);
   await vi.waitFor(() => {
     if (!popup.querySelector("pre")) throw new Error("Details did not expand");
@@ -323,6 +342,9 @@ function bell(
     readonly servers?: UpdateEverythingPlan["servers"];
     readonly run?: () => UpdateEverythingRun;
     readonly inside?: (popup: HTMLElement) => Promise<void>;
+    /** Problems this client found: lists that didn't load. */
+    readonly clientNotices?: ReadonlyArray<ClientNoticeInput>;
+    readonly outages?: ReadonlyArray<EnvironmentId>;
   } = {},
 ): UiState {
   return {
@@ -333,12 +355,25 @@ function bell(
       source.notices = options.notices ?? [];
       source.providers = options.providers ?? [];
       source.servers = options.servers ?? [];
+      source.outages = (options.outages ?? []).map((environmentId) => ({
+        environmentId,
+        since: NOW - 4 * 60_000,
+      }));
       if (options.run) setUpdateEverythingRun(options.run);
+      const releases = (options.clientNotices ?? []).map((notice, index) =>
+        holdClientNotice(
+          notice,
+          () => undefined,
+          () => minutesAgo(index + 1),
+        ),
+      );
       return () => {
+        for (const release of releases) release();
         source.update = null;
         source.notices = [];
         source.providers = [];
         source.servers = [];
+        source.outages = [];
         setUpdateEverythingRun(() => null);
       };
     },
@@ -464,6 +499,43 @@ const NOTICE_STATES: ReadonlyArray<UiState> = [
   bell("three notices: Clear all, error, warning, info", { notices: [INFO, WARNING, ERROR] }),
 ];
 
+const BOTS_DID_NOT_LOAD: ClientNoticeInput = {
+  id: "bots:list",
+  environmentId: ENVIRONMENT_ID,
+  severity: "error",
+  title: "Bots didn't load on {computer}",
+  message: "The list shows what it had before.",
+  detail: "Bots are temporarily unavailable: the database is locked.",
+};
+const TASKS_DID_NOT_LOAD_ON_STUDIO: ClientNoticeInput = {
+  id: "tasks:list",
+  environmentId: STUDIO_ID,
+  severity: "error",
+  title: "Tasks didn't load on {computer}",
+  message: "The list shows what it had before.",
+  detail: "Tasks are temporarily unavailable.",
+};
+
+const CLIENT_STATES: ReadonlyArray<UiState> = [
+  bell("a list didn't load: red tile, Retry and Details", {
+    clientNotices: [BOTS_DID_NOT_LOAD],
+  }),
+  bell("a computer stays unreachable: amber tile, Retry and Connections", {
+    outages: [STUDIO_ID],
+  }),
+  bell("a connection stopped on an error: red tile, the reason in Details", {
+    outages: [OFFICE_ID],
+  }),
+  bell("an unreachable computer's card stands for its failed lists", {
+    outages: [STUDIO_ID],
+    clientNotices: [BOTS_DID_NOT_LOAD, TASKS_DID_NOT_LOAD_ON_STUDIO],
+  }),
+  bell("this client's cards beside a server notice", {
+    notices: [WARNING],
+    clientNotices: [BOTS_DID_NOT_LOAD],
+  }),
+];
+
 const MIXED_STATES: ReadonlyArray<UiState> = [
   bell("download in progress with alerts: errors, warnings, update, info", {
     update: DOWNLOADING,
@@ -519,6 +591,11 @@ it("sidebar-notifications", async () => {
   await captureUiStateSheet(
     "sidebar-notifications-notices",
     [{ title: "Alerts", states: NOTICE_STATES }],
+    options,
+  );
+  await captureUiStateSheet(
+    "sidebar-notifications-client",
+    [{ title: "Problems this app found", states: CLIENT_STATES }],
     options,
   );
   await captureUiStateSheet(

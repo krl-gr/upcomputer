@@ -1,4 +1,6 @@
+import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import type { BackgroundNotice, DesktopUpdateState, EnvironmentId } from "@t3tools/contracts";
+import type { useGT } from "gt-react";
 
 import { APP_BASE_NAME } from "../branding";
 import type { UpdateEverythingRun } from "../components/sidebar/updateEverything.logic";
@@ -21,6 +23,71 @@ export function visibleBackgroundNotices<Notice extends BackgroundNotice>(
     .flatMap((notices) => notices ?? [])
     .filter((notice) => !dismissed.has(backgroundNoticeDismissalKey(notice)))
     .toSorted((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+}
+
+/** How long a computer stays unreachable before its card shows: a quick reconnect shows nothing. */
+const COMPUTER_OUTAGE_GRACE_MS = 60_000;
+
+/**
+ * Trying and failing to connect, or stopped on an error. A computer switched off (`available`) is
+ * not, one too old to connect (`unsupported`) has its update card instead, and one waiting for the
+ * user to approve this device says so in the composer.
+ */
+export function isComputerOutage(
+  connection: Pick<EnvironmentConnectionPresentation, "phase" | "awaitingApproval">,
+): boolean {
+  const { phase } = connection;
+  if (connection.awaitingApproval) return false;
+  return (
+    phase === "connecting" || phase === "reconnecting" || phase === "error" || phase === "offline"
+  );
+}
+
+/**
+ * When each unreachable computer stopped being reachable, or was first seen unreachable, which
+ * for one that never connected is the launch. Returns `previous` when nothing changed.
+ */
+export function trackComputerOutages(
+  previous: ReadonlyMap<EnvironmentId, number>,
+  computers: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly unreachable: boolean;
+  }>,
+  now: number,
+): ReadonlyMap<EnvironmentId, number> {
+  const next = new Map<EnvironmentId, number>();
+  for (const { environmentId, unreachable } of computers) {
+    if (unreachable) next.set(environmentId, previous.get(environmentId) ?? now);
+  }
+  const same =
+    next.size === previous.size &&
+    [...next].every(([environmentId, since]) => previous.get(environmentId) === since);
+  return same ? previous : next;
+}
+
+/** The outages past the grace, oldest first, and when the next one passes it. */
+export function shownComputerOutages(
+  starts: ReadonlyMap<EnvironmentId, number>,
+  now: number,
+  grace = COMPUTER_OUTAGE_GRACE_MS,
+): {
+  readonly shown: ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly since: number }>;
+  readonly nextAt: number | null;
+} {
+  const shown: Array<{ readonly environmentId: EnvironmentId; readonly since: number }> = [];
+  let nextAt: number | null = null;
+  for (const [environmentId, since] of starts) {
+    if (now - since >= grace) shown.push({ environmentId, since });
+    else nextAt = Math.min(nextAt ?? Infinity, since + grace);
+  }
+  return { shown: shown.toSorted((left, right) => left.since - right.since), nextAt };
+}
+
+/** A computer's own problems wait while it is unreachable: its one card stands for them. */
+export function withoutUnreachableComputers<
+  Notice extends { readonly environmentId: EnvironmentId },
+>(notices: ReadonlyArray<Notice>, unreachable: ReadonlyMap<EnvironmentId, unknown>): Notice[] {
+  return notices.filter((notice) => !unreachable.has(notice.environmentId));
 }
 
 /** A notice's in-app link, on the computer the notice came from. */
@@ -65,41 +132,68 @@ export type SidebarNotificationsDot = "error" | "warning" | "neutral";
  * its label counts what the popover holds. Download progress shows as the
  * button's ring instead of a dot.
  */
-export function describeSidebarNotificationsButton({
-  severities,
-  update,
-  updateFailed = false,
-}: {
-  readonly severities: ReadonlyArray<BackgroundNotice["severity"]>;
-  readonly update: SidebarUpdateSignal;
-  /** An update card shows a failure: see `hasFailedUpdate`. */
-  readonly updateFailed?: boolean;
-}): { readonly dot: SidebarNotificationsDot | null; readonly label: string } {
+export function describeSidebarNotificationsButton(
+  {
+    severities,
+    survey = false,
+    instructionUpdates = 0,
+    update,
+    updateFailed = false,
+  }: {
+    readonly severities: ReadonlyArray<BackgroundNotice["severity"]>;
+    /** A survey card waits for an answer. */
+    readonly survey?: boolean;
+    /** Instruction updates a release brought that wait for a decision. */
+    readonly instructionUpdates?: number;
+    readonly update: SidebarUpdateSignal;
+    /** An update card shows a failure: see `hasFailedUpdate`. */
+    readonly updateFailed?: boolean;
+  },
+  gt: ReturnType<typeof useGT>,
+): { readonly dot: SidebarNotificationsDot | null; readonly label: string } {
   const dot: SidebarNotificationsDot | null =
     severities.includes("error") || updateFailed
       ? "error"
       : severities.includes("warning")
         ? "warning"
-        : severities.length > 0 || update.kind === "available" || update.kind === "ready"
+        : severities.length > 0 ||
+            survey ||
+            instructionUpdates > 0 ||
+            update.kind === "available" ||
+            update.kind === "ready"
           ? "neutral"
           : null;
+  // Lowercase phrases in a list; the first letter of the list is capitalized.
   const parts = [
     severities.length > 0
-      ? `${severities.length} notification${severities.length === 1 ? "" : "s"}`
+      ? gt("{count, plural, one {# notification} other {# notifications}}", {
+          count: severities.length,
+        })
       : null,
-    updateFailed ? "update failed" : null,
+    updateFailed ? gt("update failed") : null,
     update.kind === "available"
-      ? "update available"
+      ? gt("update available")
       : update.kind === "ready"
-        ? "update ready"
+        ? gt("update ready")
         : update.kind === "downloading"
-          ? `downloading update${update.percent === null ? "" : ` ${Math.floor(update.percent)}%`}`
+          ? update.percent === null
+            ? gt("downloading update")
+            : gt("downloading update {percent}%", { percent: Math.floor(update.percent) })
           : null,
+    instructionUpdates > 0
+      ? gt(
+          "{count, plural, one {{count} instruction update} other {{count} instruction updates}}",
+          {
+            count: instructionUpdates,
+          },
+        )
+      : null,
+    survey ? gt("survey") : null,
   ].filter((part) => part !== null);
   const label = parts.join(", ");
   return {
     dot,
-    label: label === "" ? "Notifications" : `${label[0]!.toUpperCase()}${label.slice(1)}`,
+    label: label === "" ? gt("Notifications") : `${label[0]!.toUpperCase()}${label.slice(1)}`,
   };
 }
 
@@ -114,55 +208,62 @@ export interface AppUpdateCard {
 export function describeAppUpdateCard(
   state: DesktopUpdateState,
   action: DesktopUpdateButtonAction,
+  gt: ReturnType<typeof useGT>,
 ): AppUpdateCard | null {
   if (getDesktopUpdateDisabledReason(state)) return null;
-  const version = getDesktopUpdateDownloadedVersion(state) ?? "update";
+  const downloadedVersion = getDesktopUpdateDownloadedVersion(state);
+  const version =
+    downloadedVersion ?? gt("update", { $context: "stands in for an unknown version number" });
   const failed = (title: string, cardAction: AppUpdateCard["action"]): AppUpdateCard => ({
     kind: "failed",
     title,
-    detail: state.message ?? "Try again in a moment.",
+    detail: state.message ?? gt("Try again in a moment."),
     action: cardAction,
   });
   if (state.status === "downloading") {
     return {
       kind: "downloading",
-      title: `Downloading ${APP_BASE_NAME} ${version}`,
+      title: gt("Downloading {appName} {version}", { appName: APP_BASE_NAME, version }),
       detail:
         state.downloadPercent === null
-          ? "Starting the download"
-          : `${Math.floor(state.downloadPercent)}% downloaded`,
+          ? gt("Starting the download")
+          : gt("{percent}% downloaded", { percent: Math.floor(state.downloadPercent) }),
       action: null,
     };
   }
   if (action === "install") {
     if (state.status === "error" && state.errorContext === "install") {
-      return failed(`Could not install ${version}`, "install");
+      return failed(gt("Could not install {version}", { version }), "install");
     }
-    if (state.notAppliedVersion !== undefined && state.notAppliedVersion === version) {
+    if (state.notAppliedVersion !== undefined && state.notAppliedVersion === downloadedVersion) {
       return {
         kind: "failed",
-        title: `Update ${version} did not apply`,
-        detail: `You still have ${state.currentVersion}. Restart to try again.`,
+        title: gt("Update {version} did not apply", { version }),
+        detail: gt("You still have {currentVersion}. Restart to try again.", {
+          currentVersion: state.currentVersion,
+        }),
         action: "install",
       };
     }
     return {
       kind: "ready",
-      title: `${APP_BASE_NAME} ${version} is ready`,
-      detail: "Restart to finish updating.",
+      title: gt("{appName} {version} is ready", { appName: APP_BASE_NAME, version }),
+      detail: gt("Restart to finish updating."),
       action: "install",
     };
   }
   if (action === "download") {
-    if (state.status === "error") return failed(`Could not download ${version}`, "download");
+    if (state.status === "error") {
+      return failed(gt("Could not download {version}", { version }), "download");
+    }
     return {
       kind: "available",
       title: `${APP_BASE_NAME} ${version}`,
-      detail: `You have ${state.currentVersion}`,
+      detail: gt("You have {currentVersion}", { currentVersion: state.currentVersion }),
       action: "download",
     };
   }
-  if (state.status === "error") return failed("Could not check for updates", "check");
+  if (state.status === "error") return failed(gt("Could not check for updates"), "check");
   return null;
 }
 
@@ -206,20 +307,29 @@ export function updateRunFailed(run: UpdateEverythingRun): boolean {
 }
 
 /** The Update everything card's words; upstream's capsule below them carries the count. */
-export function describeUpdateRun(run: UpdateEverythingRun): {
+export function describeUpdateRun(
+  run: UpdateEverythingRun,
+  gt: ReturnType<typeof useGT>,
+): {
   readonly title: string;
   readonly detail: string;
 } {
-  const running = (detail: string) => ({ title: "Updating everything", detail });
-  if (run.phase === "countdown") return running(`${APP_BASE_NAME} restarts to finish updating.`);
-  if (run.phase === "installing") return running(`Restarting ${APP_BASE_NAME}.`);
+  const running = (detail: string) => ({ title: gt("Updating everything"), detail });
+  if (run.phase === "countdown") {
+    return running(gt("{appName} restarts to finish updating.", { appName: APP_BASE_NAME }));
+  }
+  if (run.phase === "installing") {
+    return running(gt("Restarting {appName}.", { appName: APP_BASE_NAME }));
+  }
   if (updateRunFailed(run)) {
-    return { title: "Update everything failed", detail: "Some updates did not finish." };
+    return { title: gt("Update everything failed"), detail: gt("Some updates did not finish.") };
   }
   if (run.machines.some((machine) => machine.result === null)) {
     return running(
-      run.phase === "providers" ? "Updating provider CLIs first." : "Updating servers.",
+      run.phase === "providers" ? gt("Updating provider CLIs first.") : gt("Updating servers."),
     );
   }
-  return running(run.localVersion === null ? "Finishing up." : "Downloading the app update.");
+  return running(
+    run.localVersion === null ? gt("Finishing up.") : gt("Downloading the app update."),
+  );
 }

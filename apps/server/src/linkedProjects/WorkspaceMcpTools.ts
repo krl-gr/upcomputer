@@ -12,7 +12,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/ai";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { toolkitRegistration } from "../mcp/McpHttpServer.ts";
@@ -84,7 +84,8 @@ const ThreadLinkProjectTool = Tool.make("thread_link_project", {
 })
   .annotate(Tool.Title, "Link projects to this thread")
   .annotate(Tool.Destructive, false)
-  .annotate(Tool.Idempotent, true);
+  .annotate(Tool.Idempotent, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const ThreadUnlinkProjectTool = Tool.make("thread_unlink_project", {
   description:
@@ -97,7 +98,8 @@ const ThreadUnlinkProjectTool = Tool.make("thread_unlink_project", {
 })
   .annotate(Tool.Title, "Unlink projects from this thread")
   .annotate(Tool.Destructive, false)
-  .annotate(Tool.Idempotent, true);
+  .annotate(Tool.Idempotent, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const THREAD_SEARCH_DEFAULT_LIMIT = 20;
 const THREAD_SEARCH_MAX_LIMIT = 50;

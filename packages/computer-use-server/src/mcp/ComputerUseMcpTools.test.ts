@@ -21,6 +21,7 @@ import {
   McpInvocationContext,
   ThreadManagementService,
 } from "../../../../apps/server/src/extensionApi.ts";
+import { enumsGeminiRejects } from "../../../../apps/server/src/mcp/geminiToolSchema.testkit.ts";
 import { ComputerUseService, createComputerUseService } from "../computerUse/ComputerUseService.ts";
 import { COMPUTER_USE_TOOL_NAMES } from "../computerUse/ComputerUseToolDefinitions.ts";
 import { computerUseSettingsPath } from "../settings/ComputerUseSettingsFile.ts";
@@ -153,6 +154,10 @@ it.live("every provider session gets the computer-use tools under its thread's m
     assert.deepStrictEqual([...listed.keys()].toSorted(), [...COMPUTER_USE_TOOL_NAMES].toSorted());
     assert.strictEqual(listed.get("computer_click")?.annotations?.readOnlyHint, false);
     assert.strictEqual(listed.get("computer_list_apps")?.annotations?.readOnlyHint, true);
+    assert.deepStrictEqual(
+      server.tools.flatMap(({ tool }) => enumsGeminiRejects(tool.name, tool.inputSchema)),
+      [],
+    );
 
     // Plan only observes: reading works, acting is refused before the backend.
     const observed = yield* call("computer_get_app_state", { app: "Notes" });

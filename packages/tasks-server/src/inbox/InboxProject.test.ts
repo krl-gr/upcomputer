@@ -28,6 +28,7 @@ import { TaskRepositoryLive } from "../persistence/TaskRepositoryLive.ts";
 import { TASKS_RPC_CONTRIBUTION } from "../rpc/contributions.ts";
 import { TaskScheduleService } from "../schedule/TaskScheduleService.ts";
 import { INBOX_FOLDER, InboxProject, InboxProjectLive } from "./InboxProject.ts";
+import { InstructionUpdatesService } from "../instructionUpdates/InstructionUpdatesService.ts";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -38,7 +39,7 @@ afterEach(() => {
 interface FakeProject {
   readonly id: ProjectId;
   title: string;
-  readonly workspaceRoot: string;
+  workspaceRoot: string;
   deleted: boolean;
 }
 
@@ -64,6 +65,12 @@ function harness() {
           const project = { ...input, id: input.projectId, deleted: false };
           projects.push(project);
           return { project, created: true };
+        }),
+      update: (input: { projectId: ProjectId; workspaceRoot: string }) =>
+        Effect.sync(() => {
+          const project = projects.find(({ id }) => id === input.projectId)!;
+          project.workspaceRoot = input.workspaceRoot;
+          return project;
         }),
     } as never),
     Layer.succeed(ProjectStoreV2, {
@@ -115,11 +122,45 @@ it.effect("the Inbox is created once on its folder, reused, and recreated after 
   }).pipe(Effect.provide(layer));
 });
 
+it.effect("an Inbox whose folder is missing moves back, keeping its id", () => {
+  const { home, projects, layer } = harness();
+  const inboxFolder = NodePath.join(home, INBOX_FOLDER);
+  return Effect.gen(function* () {
+    const inbox = yield* InboxProject;
+    const id = yield* inbox.ensure;
+
+    // A folder the user chose stays, inside the home or outside it.
+    const chosen = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "tasks-inbox-chosen-"));
+    directories.push(chosen);
+    for (const folder of [chosen, NodePath.join(home, "projects", "inbox")]) {
+      NodeFS.mkdirSync(folder, { recursive: true });
+      projects[0]!.workspaceRoot = folder;
+      assert.equal(yield* inbox.ensure, id);
+      assert.equal(projects[0]!.workspaceRoot, folder);
+    }
+
+    // A folder on an external drive that is not mounted now stays too.
+    const unmounted = NodePath.join("/Volumes", `tasks-inbox-${id}`, "Inbox");
+    projects[0]!.workspaceRoot = unmounted;
+    assert.equal(yield* inbox.ensure, id);
+    assert.equal(projects[0]!.workspaceRoot, unmounted);
+
+    // A database copied from a dev home points at that home's folder, now gone.
+    projects[0]!.workspaceRoot = NodePath.join(chosen, ".upcomputer", INBOX_FOLDER);
+    NodeFS.rmSync(inboxFolder, { recursive: true });
+    assert.equal(yield* inbox.ensure, id);
+    assert.equal(projects[0]!.workspaceRoot, inboxFolder);
+    assert.ok(NodeFS.statSync(inboxFolder).isDirectory());
+    assert.equal(projects.length, 1);
+  }).pipe(Effect.provide(layer));
+});
+
 it.effect("a task created over RPC without a project goes to the Inbox, at its placement", () => {
   const { layer } = harness();
   const services = Layer.mergeAll(
     Layer.succeed(TaskAgentService, { scheduleTaskChanged: () => Effect.void } as never),
     Layer.succeed(TaskScheduleService, {} as never),
+    Layer.succeed(InstructionUpdatesService, {} as never),
     Layer.succeed(TaskPromptSettingsStore, {} as never),
   );
   return Effect.gen(function* () {

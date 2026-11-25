@@ -74,6 +74,7 @@ function agent(overrides: Partial<TaskAgent> = {}): TaskAgent {
     startRunStatuses: [],
     createdAt: now,
     updatedAt: now,
+    archivedAt: null,
     ...overrides,
   };
 }
@@ -154,6 +155,11 @@ test("a person task starts only an agent with start tags it carries, and a routi
     "catch-all",
   );
   NodeAssert.equal(startsForTask(agent({ startTags: [] }), task({ status: "new" }), nowMs), true);
+  NodeAssert.equal(
+    startsForTask(agent({ startTags: [] }), task({ status: "New" }), nowMs),
+    true,
+    "start statuses match without case",
+  );
   NodeAssert.equal(startsForTask(agent(), { ...person, kind: "routine" }, nowMs), false);
 });
 
@@ -194,9 +200,10 @@ test("a started run keeps running while its task's status and tags change", () =
   NodeAssert.equal(continuesTaskAgentRun(agent(), task({ status: "in_progress", tags: [] })), true);
 });
 
-test("closing the task or disabling the agent ends a run", () => {
+test("closing the task, or disabling or archiving the agent, ends a run", () => {
   NodeAssert.equal(continuesTaskAgentRun(agent(), task({ archivedAt: now })), false);
   NodeAssert.equal(continuesTaskAgentRun(agent({ enabled: false }), task()), false);
+  NodeAssert.equal(continuesTaskAgentRun(agent({ archivedAt: now }), task()), false);
 });
 
 test("an agent runs again only after a trigger change made after its previous run ended", () => {

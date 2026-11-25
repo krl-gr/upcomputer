@@ -4,6 +4,7 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { CheckIcon } from "lucide-react";
 import { memo, useRef, useState } from "react";
+import { T, useGT } from "gt-react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { ProjectFavicon } from "../components/ProjectFavicon";
@@ -26,7 +27,12 @@ import {
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { NoProjectIcon } from "../sidebarProjects/sidebarProjectIcons";
-import { useProject, useProjects, useThreadShell, useThreadShells } from "../state/entities";
+import {
+  useProject,
+  useProjects,
+  useQuietThreadShell,
+  useQuietThreadShells,
+} from "../state/entities";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
@@ -51,8 +57,9 @@ export const ThreadHeaderProjects = memo(function ThreadHeaderProjects(props: {
   readonly threadId: ThreadId;
 }) {
   const { environmentId, threadId } = props;
+  const gt = useGT();
   const threadRef = scopeThreadRef(environmentId, threadId);
-  const serverThread = useThreadShell(threadRef);
+  const serverThread = useQuietThreadShell(threadRef);
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
   const draftId = useComposerDraftStore((store) => store.getDraftIdByRef(threadRef));
   const projectRef = serverThread
@@ -62,7 +69,7 @@ export const ThreadHeaderProjects = memo(function ThreadHeaderProjects(props: {
       : null;
   const threadProject = useProject(projectRef);
   const projects = useProjects();
-  const threads = useThreadShells();
+  const threads = useQuietThreadShells();
   const { scratchWorkspaceRootFor } = useScratchProject();
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata);
   const retargetDraft = useRetargetDraftToProject();
@@ -138,7 +145,7 @@ export const ThreadHeaderProjects = memo(function ThreadHeaderProjects(props: {
   const headerProjects = ownProject ? [ownProject, ...linkedProjects] : linkedProjects;
   const label =
     headerProjects.length === 0
-      ? "No project"
+      ? gt("No project")
       : headerProjects.map((project) => project.title).join(", ");
   const hiddenProjectCount = headerProjects.length - MAX_HEADER_ICONS;
   const singleProject = headerProjects.length === 1 ? headerProjects[0] : undefined;
@@ -166,7 +173,7 @@ export const ThreadHeaderProjects = memo(function ThreadHeaderProjects(props: {
                       className="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-expanded:text-foreground"
                     />
                   }
-                  aria-label={`Projects: ${label}`}
+                  aria-label={gt("Projects: {projects}", { projects: label })}
                   data-thread-header-projects=""
                 />
               }
@@ -190,13 +197,13 @@ export const ThreadHeaderProjects = memo(function ThreadHeaderProjects(props: {
           </Tooltip>
           <ComboboxPopup align="start" side="bottom" anchor={triggerRef} className="w-72">
             <ComboboxSearchInput
-              aria-label="Search projects"
-              placeholder="Search projects"
+              aria-label={gt("Search projects")}
+              placeholder={gt("Search projects")}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
             <ComboboxEmpty>
-              {menuProjects.length === 0 ? "No projects yet." : "No matching projects."}
+              {menuProjects.length === 0 ? gt("No projects yet.") : gt("No matching projects.")}
             </ComboboxEmpty>
             <ComboboxList className="max-h-64">
               {filteredIds.map((id) => {
@@ -220,7 +227,7 @@ export const ThreadHeaderProjects = memo(function ThreadHeaderProjects(props: {
             <div className="shrink-0 border-t border-border/60 p-1">
               {choiceEffect === null ? (
                 <p className="px-2 py-1 text-muted-foreground text-xs">
-                  Link more projects after the first message.
+                  <T>Link more projects after the first message.</T>
                 </p>
               ) : null}
               <button
@@ -231,7 +238,7 @@ export const ThreadHeaderProjects = memo(function ThreadHeaderProjects(props: {
                   openCommandPalette({ open: "add-project" });
                 }}
               >
-                New project…
+                <T>New project…</T>
               </button>
             </div>
           </ComboboxPopup>

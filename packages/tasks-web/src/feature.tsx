@@ -1,15 +1,25 @@
 import { lazy, Suspense } from "react";
-import { BotIcon, ListTodoIcon, MessageSquareTextIcon } from "lucide-react";
+import {
+  BotIcon,
+  CalendarClockIcon,
+  ListTodoIcon,
+  MessageSquareTextIcon,
+  RepeatIcon,
+  UserIcon,
+} from "lucide-react";
+import { msg } from "gt-react";
 
 // The pure host module, not the web extension API: the product entry imports
 // this file while the connection runtime is still initializing, so nothing here
 // may reach web state at module load. The UI below loads on first render.
 import {
   defineExperimentalWebFeature,
+  type ExperimentalWebNotificationCardProps,
   type ExperimentalWebThreadAccessoryProps,
   type ExperimentalWebThreadRowAccessoryProps,
 } from "../../../apps/web/src/product/WebFeature.ts";
 import { TasksWebRpcGroup } from "./rpc/tasksRpcGroup.ts";
+import { RememberedBotChatsHold } from "./bots/rememberedBotChats.ts";
 
 const LazyNavigationRunCounts = lazy(() =>
   import("./ui/TaskNavigationRunCounts.tsx").then((module) => ({
@@ -40,6 +50,28 @@ const LazySidebarBots = lazy(() =>
     return { default: bots.SidebarBots };
   }),
 );
+// The composer's `@` asks synchronously too; an open composer loads this module and the list.
+let botRecipients: typeof import("./bots/botRecipients.ts") | undefined;
+function subscribeBotRecipients(
+  environmentId: ExperimentalWebThreadAccessoryProps["environmentId"],
+  onChange: () => void,
+) {
+  if (botRecipients !== undefined) {
+    return botRecipients.subscribeBotRecipients(environmentId, onChange);
+  }
+  let stop: (() => void) | undefined;
+  let stopped = false;
+  void import("./bots/botRecipients.ts").then((module) => {
+    botRecipients = module;
+    if (stopped) return;
+    stop = module.subscribeBotRecipients(environmentId, onChange);
+    onChange();
+  });
+  return () => {
+    stopped = true;
+    stop?.();
+  };
+}
 /**
  * A bot's own chat, once the Bots section has loaded. It stays in its bot's working project,
  * so other features leave out moving it.
@@ -50,9 +82,23 @@ const LazyBotHeader = lazy(() =>
   import("./bots/Bots.tsx").then((module) => ({ default: module.BotHeader })),
 );
 
-function SidebarBots() {
+const LazyBotMentionNotificationCard = lazy(() =>
+  import("./bots/BotMentionNotificationCard.tsx").then((module) => ({
+    default: module.BotMentionNotificationCard,
+  })),
+);
+
+function BotMentionNotificationCardSlot(props: ExperimentalWebNotificationCardProps) {
   return (
     <Suspense fallback={null}>
+      <LazyBotMentionNotificationCard {...props} />
+    </Suspense>
+  );
+}
+
+function SidebarBots() {
+  return (
+    <Suspense fallback={<RememberedBotChatsHold />}>
       <LazySidebarBots />
     </Suspense>
   );
@@ -108,12 +154,18 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   threadRowAccessory: ThreadRowRunCounts,
   chatHeaderAccessory: ChatHeaderRunCounts,
   threadActions: (thread) => botMenu?.botThreadActions(thread) ?? [],
+  composerRecipients: (context) => botRecipients?.botComposerRecipients(context) ?? [],
+  subscribeComposerRecipients: subscribeBotRecipients,
+  notificationCard: {
+    kinds: ["bot_mention"],
+    component: BotMentionNotificationCardSlot,
+  },
   sidebarSection: SidebarBots,
   coordinator: TaskReminders,
   settings: [
     {
       id: "instructions",
-      label: "Instructions",
+      label: msg("Instructions"),
       path: "/settings/instructions",
       order: 40,
       icon: MessageSquareTextIcon,
@@ -123,10 +175,50 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   rightPanelSurfaces: [
     {
       id: "tasks",
-      label: "Tasks",
+      label: msg("Tasks"),
+      description: msg("Every view in one tab, with its switches on top."),
       shortcut: "K",
       icon: ListTodoIcon,
       load: () => import("./ui/TasksPanel.tsx"),
+    },
+    // One entry per Tasks view, each without the switches' header. Letters free of core's.
+    {
+      id: "tasks.mine",
+      label: msg("My tasks"),
+      description: msg("Your own tasks, with the week on top."),
+      shortcut: "Y",
+      icon: UserIcon,
+      load: () =>
+        import("./ui/TasksPanel.tsx").then((module) => ({ default: module.MyTasksPanel })),
+    },
+    {
+      id: "tasks.workers",
+      label: msg("Worker tasks"),
+      description: msg("The tasks your workers do."),
+      shortcut: "W",
+      icon: BotIcon,
+      load: () =>
+        import("./ui/TasksPanel.tsx").then((module) => ({ default: module.WorkerTasksPanel })),
+    },
+    {
+      id: "tasks.automations",
+      label: msg("Automations"),
+      description: msg("Work your workers start on a schedule."),
+      shortcut: "A",
+      icon: CalendarClockIcon,
+      load: () =>
+        import("./ui/TasksPanel.tsx").then((module) => ({
+          default: module.AutomationsEntryPanel,
+        })),
+    },
+    {
+      id: "tasks.routines",
+      label: msg("My routines"),
+      description: msg("Your own repeating habits and chores, with the week on top."),
+      shortcut: "R",
+      icon: RepeatIcon,
+      load: () =>
+        import("./ui/TasksPanel.tsx").then((module) => ({ default: module.RoutinesPanel })),
     },
   ],
   routes: [
@@ -140,7 +232,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
   navigation: [
     {
       id: "tasks",
-      label: "Tasks",
+      label: msg("Tasks"),
       path: "/tasks",
       order: 20,
       icon: ListTodoIcon,
@@ -148,7 +240,7 @@ export const TASKS_WEB_FEATURE = defineExperimentalWebFeature({
     },
     {
       id: "agents",
-      label: "Workers",
+      label: msg("Workers"),
       path: "/workers",
       order: 30,
       icon: BotIcon,

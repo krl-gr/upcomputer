@@ -197,6 +197,7 @@ export function bot(id: string, name: string): Bot {
       },
       createdAt: iso(-7 * 24 * HOUR),
       updatedAt: iso(-7 * 24 * HOUR),
+      archivedAt: null,
     },
     appearance: null,
     threadId: ThreadId.make(`${id}-chat`),

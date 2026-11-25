@@ -16,31 +16,34 @@ const selectedDetail = source.slice(
 const mainColumn = selectedDetail.slice(0, selectedDetail.indexOf("<DetailColumn"));
 const sidebar = selectedDetail.slice(selectedDetail.indexOf("<DetailColumn"));
 
-test("source thread is conditionally rendered once in the detail sidebar", () => {
+test("source thread is conditionally rendered once inside Details, with no Active runs or removed rows", () => {
   NodeAssert.doesNotMatch(mainColumn, /Source thread/);
+  NodeAssert.match(mainColumn, /<DetailTitleHeading\b/);
   NodeAssert.equal(sidebar.match(/selectedTask\.sourceThreadId \? \(/g)?.length, 1);
-  NodeAssert.match(
-    sidebar,
-    /\{selectedTask\.sourceThreadId \? \([\s\S]*?<DetailSidebarSection title="Source thread">[\s\S]*?<\/DetailSidebarSection>\s*\) : null\}/,
-  );
-  NodeAssert.equal(sidebar.match(/<DetailSidebarSection title="Source thread">/g)?.length, 1);
-  NodeAssert.equal(sidebar.match(/title="Source thread"/g)?.length, 2);
+  NodeAssert.doesNotMatch(sidebar, /<DetailSidebarSection title=\{gt\("Source thread"\)\}>/);
+  NodeAssert.doesNotMatch(sidebar, /<DetailSidebarSection title=\{gt\("Active runs"\)\}/);
+  NodeAssert.doesNotMatch(sidebar, /<DetailSidebarRow[^>]*label=\{gt\("Title"\)\}/);
+  NodeAssert.doesNotMatch(sidebar, /<DetailSidebarRow[^>]*label=\{gt\("For"/);
+  NodeAssert.doesNotMatch(sidebar, /<DetailSidebarRow[^>]*label=\{gt\("ID"\)\}/);
 
-  const detailsIndex = sidebar.indexOf('<DetailSidebarSection title="Details">');
-  const sourceThreadIndex = sidebar.indexOf('<DetailSidebarSection title="Source thread">');
-  const runsIndex = sidebar.indexOf('<DetailSidebarSection title="Runs"');
-  NodeAssert.ok(detailsIndex < sourceThreadIndex);
+  const detailsIndex = sidebar.indexOf('<DetailSidebarSection title={gt("Details")}>');
+  const sourceThreadIndex = sidebar.indexOf("<DetailSourceThreadRow");
+  const runsIndex = sidebar.indexOf('title={gt("Runs"');
+  NodeAssert.ok(detailsIndex >= 0 && detailsIndex < sourceThreadIndex);
   NodeAssert.ok(sourceThreadIndex < runsIndex);
 });
 
 test("agent executions retain the canonical Runs label across task surfaces", () => {
-  NodeAssert.match(sidebar, /<DetailSidebarSection title="Runs" count=\{detailRuns\.length\}>/);
-  NodeAssert.doesNotMatch(sidebar, /<DetailSidebarSection title="Threads"/);
-  NodeAssert.match(source, /<th[^>]*>\s*Runs\s*<\/th>/);
+  NodeAssert.match(
+    sidebar,
+    /<DetailSidebarSection\s+title=\{gt\("Runs"[^)]*\)\}\s+count=\{detailRuns\.length\}\s*>/,
+  );
+  NodeAssert.doesNotMatch(sidebar, /<DetailSidebarSection title=\{gt\("Threads"/);
+  NodeAssert.match(source, /<th[^>]*>\s*\{gt\("Runs"[^)]*\)\}\s*<\/th>/);
 });
 
 test("task rows expose isolated pointer and keyboard reorder controls", () => {
-  NodeAssert.match(source, /aria-label=\{`Reorder \$\{props\.task\.title\}`\}/);
+  NodeAssert.match(source, /ariaLabel=\{gt\("Reorder \{title\}", \{ title: task\.title \}\)\}/);
   NodeAssert.match(source, /draggable=\{props\.enabled\}/);
   NodeAssert.match(source, /event\.key !== "ArrowUp" && event\.key !== "ArrowDown"/);
   NodeAssert.match(source, /event\.stopPropagation\(\);[\s\S]*persistVisibleMove/);
@@ -177,7 +180,7 @@ test("the rendered table preserves global order and exposes accessible isolated 
   NodeAssert.match(html, /data-run-count="Failed" aria-label="Show Failed runs \(1\)">1</);
   NodeAssert.match(html, /Load more tasks/);
   NodeAssert.doesNotMatch(html, /tasks loaded|More available/);
-  NodeAssert.match(html, /in progress/);
+  NodeAssert.match(html, /In Progress/, "a lowercase status lists in its canonical spelling");
   NodeAssert.ok(html.indexOf("First") < html.indexOf("Second"));
   NodeAssert.ok(html.indexOf("Second") < html.indexOf("Third"));
   NodeAssert.match(html, /draggable="true"[^>]*aria-label="Reorder First"/);
@@ -299,6 +302,8 @@ test("the rendered table preserves global order and exposes accessible isolated 
   let prevented = 0;
   const handle = TaskReorderHandle({
     task: makeTask("task-1", "0000000000000010", "First"),
+    ariaLabel: "Reorder First",
+    title: "Drag to reorder",
     enabled: true,
     onDragStart: () => {
       dragStarts += 1;
@@ -347,7 +352,7 @@ test("the rendered table preserves global order and exposes accessible isolated 
 test("source thread link preserves its target and open behavior", () => {
   NodeAssert.match(
     sidebar,
-    /<TaskThreadLink\s+environmentId=\{selectedTask\.environmentId\}\s+threadId=\{selectedTask\.sourceThreadId as ThreadId\}\s+title="Source thread"\s+onOpen=\{props\.onOpenThread\}/,
+    /<DetailSourceThreadRow\s+environmentId=\{selectedTask\.environmentId\}\s+threadId=\{selectedTask\.sourceThreadId as ThreadId\}\s+onOpen=\{props\.onOpenThread\}\s*\/>/,
   );
   NodeAssert.match(sidebar, /className="flex min-w-0 flex-col gap-0\.5"/);
   NodeAssert.match(sidebar, /^<DetailColumn[\s>]/);
@@ -355,7 +360,7 @@ test("source thread link preserves its target and open behavior", () => {
 
 test("task details caption tags as Tags, with no Labels left in tasks-web text", () => {
   NodeAssert.equal(
-    source.match(/<DetailSidebarRow\s+label="Tags"/g)?.length,
+    source.match(/<DetailSidebarRow\s+label=\{gt\("Tags"\)\}/g)?.length,
     2,
     "detail and create",
   );

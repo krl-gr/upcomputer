@@ -75,6 +75,7 @@ export function useComposerProviderModel(
     ],
     lockedProvider,
     lockedInstanceId,
+    preferRunnableCandidate: !threadStarted && !draftModelState.modelSelectionExplicit,
   });
   const selectedInstanceId =
     selection.selectedProviderEntry?.instanceId ?? NO_PROVIDER_MODEL_SELECTION.instanceId;

@@ -57,11 +57,15 @@ export interface PreviewAutomationInvokeInput {
 
 /**
  * A host running inside the server, such as a product's managed browser. It
- * serves after desktop hosts, and claims every call while `preferred` is true,
- * ahead of a `preferred` connection.
+ * serves after desktop hosts, and claims each call `preferred` answers true
+ * for, ahead of a `preferred` connection. Its failures reach agents with the
+ * host's own reason.
  */
 export interface PreviewAutomationServerHost {
-  readonly preferred: Effect.Effect<boolean>;
+  readonly preferred: (call: {
+    readonly scope: McpInvocationContext.McpThreadInvocationScope;
+    readonly operation: PreviewAutomationOperation;
+  }) => Effect.Effect<boolean>;
 }
 
 export interface PreviewAutomationConnectOptions {
@@ -83,6 +87,10 @@ export class PreviewAutomationBroker extends Context.Service<
     readonly invoke: <A = unknown>(
       request: PreviewAutomationInvokeInput,
     ) => Effect.Effect<A, PreviewAutomationError>;
+    /** The thread's tabs in server hosts, which have no preview session to list. */
+    readonly serverHostTabs: (
+      scope: McpInvocationContext.McpThreadInvocationScope,
+    ) => Effect.Effect<ReadonlyArray<PreviewTabId>>;
   }
 >()("t3/mcp/PreviewAutomationBroker") {}
 
@@ -103,6 +111,8 @@ interface PendingRequest {
   readonly queue: ClientConnection["queue"];
   readonly deferred: Deferred.Deferred<unknown, PreviewAutomationError>;
   readonly context: PreviewAutomationRequestErrorContext;
+  /** In-process hosts word their errors for agents, so their reason is passed on. */
+  readonly serverSide: boolean;
 }
 
 /** A lease belongs to this exact connectionId/queue; replacing the host invalidates it. */
@@ -112,6 +122,8 @@ interface HostAssignment {
   readonly queue: ClientConnection["queue"];
   readonly tabId?: PreviewTabId;
   readonly tabSequence?: number;
+  /** The session's previous host, resumed with its tab when the session moves back. */
+  readonly parked?: HostAssignment;
 }
 
 interface PreviewAutomationRequestErrorContext {
@@ -174,6 +186,9 @@ const selectorDiagnosticsFromInput = (
   return {};
 };
 
+const withoutParked = ({ parked: _parked, ...assignment }: HostAssignment): HostAssignment =>
+  assignment;
+
 /** Codex/OpenCode share sessions across threads; include thread id to isolate tabs and ownership. */
 const hostAssignmentKey = (scope: McpInvocationContext.McpThreadInvocationScope): string =>
   `${scope.environmentId}\u0000${scope.thread.providerSessionId}\u0000${scope.thread.threadId}`;
@@ -231,6 +246,7 @@ const decodeTimeoutDetail = Schema.decodeUnknownOption(PreviewAutomationTimeoutD
 const classifyResponseError = (
   context: PreviewAutomationRequestErrorContext,
   error: NonNullable<PreviewAutomationResponse["error"]>,
+  serverSide: boolean,
 ): PreviewAutomationError => {
   const remoteDiagnostics = {
     remoteTag: error._tag,
@@ -281,7 +297,7 @@ const classifyResponseError = (
       return new PreviewAutomationTimeoutError({
         ...context,
         ...remoteDiagnostics,
-        ...(context.clientId === SERVER_BROWSER_AUTOMATION_CLIENT_ID && remoteReason !== undefined
+        ...(serverSide && remoteReason !== undefined
           ? { reason: remoteReason.slice(0, MAX_REASON_CHARS) }
           : {}),
         ...(remoteTimeoutMs === undefined
@@ -366,9 +382,7 @@ const classifyResponseError = (
       return new PreviewAutomationExecutionError({
         ...context,
         ...remoteDiagnostics,
-        ...(context.clientId === SERVER_BROWSER_AUTOMATION_CLIENT_ID
-          ? { reason: error.message.slice(0, MAX_REASON_CHARS) }
-          : {}),
+        ...(serverSide ? { reason: error.message.slice(0, MAX_REASON_CHARS) } : {}),
       });
   }
 };
@@ -523,7 +537,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       yield* Deferred.fail(
         pending.deferred,
         response.error
-          ? classifyResponseError(pending.context, response.error)
+          ? classifyResponseError(pending.context, response.error, pending.serverSide)
           : new PreviewAutomationMalformedResponseError(pending.context),
       );
     }
@@ -539,7 +553,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
         host.serverHost !== undefined &&
         host.environmentId === input.scope.environmentId &&
         supportsOperation(host, input.operation) &&
-        (yield* host.serverHost.preferred)
+        (yield* host.serverHost.preferred({ scope: input.scope, operation: input.operation }))
       ) {
         preferredClientId = host.clientId;
         break;
@@ -558,7 +572,25 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       const assignmentKey = hostAssignmentKey(input.scope);
       const assigned = assignments.get(assignmentKey);
       const assignedConnection = assigned ? current.clients.get(assigned.clientId) : undefined;
-      const hasLiveAssignment = assignedConnection?.environmentId === input.scope.environmentId;
+      const preferredConnection =
+        preferredClientId === undefined ? undefined : current.clients.get(preferredClientId);
+      // A server host keeps a session only for its open tabs; a new tab goes back to the earlier host.
+      const releasesServerHost =
+        preferredConnection === undefined &&
+        input.operation === "open" &&
+        assignedConnection?.serverHost !== undefined;
+      const hasLiveAssignment =
+        assignedConnection?.environmentId === input.scope.environmentId && !releasesServerHost;
+      const parkedConnection =
+        releasesServerHost && assigned?.parked
+          ? current.clients.get(assigned.parked.clientId)
+          : undefined;
+      const resumedConnection =
+        parkedConnection?.queue === assigned?.parked?.queue &&
+        parkedConnection?.environmentId === input.scope.environmentId &&
+        supportsOperation(parkedConnection, input.operation)
+          ? parkedConnection
+          : undefined;
       // Pin interactions to one desktop runtime so cookie/DOM state cannot jump between hosts.
       const ownsTargetTab = (host: ClientConnection, visibleOnly = false) =>
         host.liveTabs.some(
@@ -567,10 +599,9 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
             (!visibleOnly || tab.visible === true) &&
             (input.tabId === undefined || tab.tabId === input.tabId),
         );
-      const preferredConnection =
-        preferredClientId === undefined ? undefined : current.clients.get(preferredClientId);
-      const connection = preferredConnection
-        ? preferredConnection
+      const claimedConnection = preferredConnection ?? resumedConnection;
+      const routedConnection = claimedConnection
+        ? claimedConnection
         : hasLiveAssignment && supportsOperation(assignedConnection, input.operation)
           ? assignedConnection
           : hasLiveAssignment
@@ -587,12 +618,26 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
                       Number(input.tabId !== undefined && ownsTargetTab(left)) ||
                     Number(right.preferred) - Number(left.preferred) ||
                     Number(ownsTargetTab(right, true)) - Number(ownsTargetTab(left, true)) ||
-                    Number(ownsTargetTab(right)) - Number(ownsTargetTab(left)) ||
+                    // A server host's tabs only route calls that name them.
+                    Number(right.serverHost === undefined && ownsTargetTab(right)) -
+                      Number(left.serverHost === undefined && ownsTargetTab(left)) ||
                     Number(left.serverHost !== undefined) -
                       Number(right.serverHost !== undefined) ||
                     Number(right.focused) - Number(left.focused) ||
                     right.focusOrder - left.focusOrder,
                 )[0];
+      // A named tab another host has goes to that host, and the session stays where it is.
+      const tabOwner =
+        input.tabId === undefined ||
+        (routedConnection !== undefined && ownsTargetTab(routedConnection))
+          ? undefined
+          : Array.from(current.clients.values()).find(
+              (host) =>
+                host.environmentId === input.scope.environmentId &&
+                supportsOperation(host, input.operation) &&
+                ownsTargetTab(host),
+            );
+      const connection = tabOwner ?? routedConnection;
       if (!connection) {
         if (!hasLiveAssignment) assignments.delete(assignmentKey);
         return [undefined, { ...current, assignments }] as const;
@@ -600,23 +645,27 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       // First open may install Chromium for ten minutes; keep it alive without replaying effects.
       const timeoutMs =
         input.timeoutMs ?? (input.operation === "open" && connection.preferred ? 660_000 : 15_000);
-      const canReuseAssignedTab =
-        assigned !== undefined &&
-        assigned.connectionId === connection.connectionId &&
-        assigned.queue === connection.queue;
-      assignments.set(assignmentKey, {
-        clientId: connection.clientId,
-        connectionId: connection.connectionId,
-        queue: connection.queue,
-        ...(canReuseAssignedTab && assigned.tabId !== undefined ? { tabId: assigned.tabId } : {}),
-        ...(canReuseAssignedTab && assigned.tabSequence !== undefined
-          ? { tabSequence: assigned.tabSequence }
-          : {}),
-      });
+      const onConnection = (assignment: HostAssignment | undefined) =>
+        assignment?.connectionId === connection.connectionId &&
+        assignment.queue === connection.queue
+          ? assignment
+          : undefined;
+      const previous = onConnection(assigned) ?? onConnection(assigned?.parked);
+      const parked = previous === assigned ? assigned?.parked : assigned && withoutParked(assigned);
+      if (tabOwner === undefined) {
+        assignments.set(assignmentKey, {
+          clientId: connection.clientId,
+          connectionId: connection.connectionId,
+          queue: connection.queue,
+          ...(previous?.tabId === undefined ? {} : { tabId: previous.tabId }),
+          ...(previous?.tabSequence === undefined ? {} : { tabSequence: previous.tabSequence }),
+          ...(parked === undefined ? {} : { parked }),
+        });
+      }
 
       const requestSequence = current.requestSequence;
       const requestId = `preview-${requestSequence}`;
-      const tabId = input.tabId ?? (canReuseAssignedTab ? assigned.tabId : undefined);
+      const tabId = input.tabId ?? previous?.tabId;
       const selectorDiagnostics = selectorDiagnosticsFromInput(input.input);
       const context: PreviewAutomationRequestErrorContext = {
         operation: input.operation,
@@ -632,7 +681,14 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
         ...selectorDiagnostics,
       };
       const pending = new Map(current.pending);
-      pending.set(requestId, { queue: connection.queue, deferred, context });
+      pending.set(requestId, {
+        queue: connection.queue,
+        deferred,
+        context,
+        serverSide:
+          connection.clientId === SERVER_BROWSER_AUTOMATION_CLIENT_ID ||
+          connection.serverHost !== undefined,
+      });
       return [
         { connection, requestId, requestContext: context, requestSequence },
         { ...current, assignments, pending, requestSequence: current.requestSequence + 1 },
@@ -739,7 +795,20 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     return result;
   });
 
-  return PreviewAutomationBroker.of({ connect, focusHost, respond, invoke });
+  const serverHostTabs: PreviewAutomationBroker["Service"]["serverHostTabs"] = (scope) =>
+    SynchronizedRef.get(state).pipe(
+      Effect.map((current) =>
+        Array.from(current.clients.values()).flatMap((host) =>
+          host.serverHost !== undefined && host.environmentId === scope.environmentId
+            ? host.liveTabs
+                .filter((tab) => tab.threadId === scope.thread.threadId)
+                .map((tab) => tab.tabId)
+            : [],
+        ),
+      ),
+    );
+
+  return PreviewAutomationBroker.of({ connect, focusHost, respond, invoke, serverHostTabs });
 }).pipe(Effect.withSpan("PreviewAutomationBroker.make"));
 
 export const layer = Layer.effect(PreviewAutomationBroker, make);

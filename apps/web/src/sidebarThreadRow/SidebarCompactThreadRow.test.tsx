@@ -346,6 +346,7 @@ describe("SidebarCompactThreadRow", () => {
     expect(spies.onContextMenu).toHaveBeenCalledWith(
       { environmentId, threadId: "plain" },
       { x: 10, y: 20 },
+      "mouse",
     );
   });
 

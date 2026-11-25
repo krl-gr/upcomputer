@@ -1,0 +1,29 @@
+/*
+ * With a pointer that hovers, a card's status select shows only on hover, keyboard
+ * focus or while its menu is open, over the end of the title and tags, which fade
+ * out under it; at rest the title has the whole width. Touch screens keep it in
+ * its own column. `--card-status-width` is the select's width, set by the card.
+ */
+@media (hover: hover) {
+  [data-task-card] > [data-card-status] {
+    grid-area: 1 / -2 / 2 / -1;
+    justify-self: end;
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+  }
+  [data-task-card]:is(:hover, :has(:focus-visible), :has([data-popup-open])) > [data-card-status] {
+    opacity: 1;
+  }
+  [data-task-card]:is(:hover, :has(:focus-visible), :has([data-popup-open])) > [data-card-content] {
+    mask-image: linear-gradient(
+      to left,
+      transparent calc(var(--card-status-width, 0px) + 0.25rem),
+      #000 calc(var(--card-status-width, 0px) + 1.5rem)
+    );
+  }
+}
+@media (hover: none) {
+  [data-task-card] > [data-card-side] + [data-card-status] {
+    margin-inline-start: -0.375rem;
+  }
+}

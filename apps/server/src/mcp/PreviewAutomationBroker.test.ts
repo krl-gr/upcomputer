@@ -732,7 +732,7 @@ it.effect("serves from a server-side host only while no desktop host takes the c
     yield* answer(
       "server",
       yield* broker.connect(makeHost({ clientId: "server" }), {
-        serverHost: { preferred: Effect.sync(() => preferred) },
+        serverHost: { preferred: () => Effect.sync(() => preferred) },
       }),
     );
     yield* Effect.yieldNow;
@@ -743,7 +743,7 @@ it.effect("serves from a server-side host only while no desktop host takes the c
     yield* answer(
       "server",
       yield* broker.connect(makeHost({ clientId: "server" }), {
-        serverHost: { preferred: Effect.sync(() => preferred) },
+        serverHost: { preferred: () => Effect.sync(() => preferred) },
       }),
     );
     yield* Effect.yieldNow;
@@ -760,6 +760,8 @@ it.effect("serves from the environment browser, and from Chrome while it is pref
   Effect.gen(function* () {
     const broker = yield* makeBroker;
     let alwaysUseChrome = false;
+    let openedTabs = 0;
+    // Each host reuses the tab the broker names, or opens a new one.
     const answer = (clientId: string, events: Stream.Stream<PreviewAutomationStreamEvent>) =>
       Stream.runForEach(requestsFrom(events), (request) =>
         broker.respond({
@@ -767,20 +769,22 @@ it.effect("serves from the environment browser, and from Chrome while it is pref
           connectionId: request.connectionId,
           requestId: request.requestId,
           ok: true,
-          result: clientId,
+          result: { tabId: request.tabId ?? `${clientId}-${++openedTabs}` },
         }),
       ).pipe(Effect.forkScoped);
-    const status = (providerSessionId: string) =>
-      broker.invoke<string>({
-        scope: { ...scope, thread: { ...scope.thread, providerSessionId } },
-        operation: "status",
-        input: {},
-      });
+    const call = (operation: "open" | "status", providerSessionId = "session-1") =>
+      broker
+        .invoke<{ readonly tabId: string }>({
+          scope: { ...scope, thread: { ...scope.thread, providerSessionId } },
+          operation,
+          input: {},
+        })
+        .pipe(Effect.map((result) => result.tabId));
 
     yield* answer(
       "chrome",
       yield* broker.connect(makeHost({ clientId: "chrome" }), {
-        serverHost: { preferred: Effect.sync(() => alwaysUseChrome) },
+        serverHost: { preferred: () => Effect.sync(() => alwaysUseChrome) },
       }),
     );
     yield* answer("desktop", yield* broker.connect(makeHost({ clientId: "desktop" })));
@@ -789,16 +793,23 @@ it.effect("serves from the environment browser, and from Chrome while it is pref
       yield* broker.connect(makeHost({ clientId: "environment-browser" }), { preferred: true }),
     );
     yield* Effect.yieldNow;
-    expect(yield* status("session-1")).toBe("environment-browser");
+    expect(yield* call("open")).toBe("environment-browser-1");
 
     alwaysUseChrome = true;
-    expect(yield* status("session-1")).toBe("chrome");
+    expect(yield* call("open")).toBe("chrome-2");
 
-    // Turned off again, new sessions go back to the environment browser. A
-    // session Chrome served stays there, as every session keeps one runtime.
+    // Turned off, the Chrome tab serves its session until the next open, which
+    // returns to the session's environment browser tab.
     alwaysUseChrome = false;
-    expect(yield* status("session-2")).toBe("environment-browser");
-    expect(yield* status("session-1")).toBe("chrome");
+    expect(yield* call("status")).toBe("chrome-2");
+    expect(yield* call("open", "session-2")).toBe("environment-browser-3");
+    expect(yield* call("open")).toBe("environment-browser-1");
+    expect(yield* call("status")).toBe("environment-browser-1");
+
+    alwaysUseChrome = true;
+    expect(yield* call("open")).toBe("chrome-2");
+    alwaysUseChrome = false;
+    expect(yield* call("open")).toBe("environment-browser-1");
   }),
 );
 

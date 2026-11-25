@@ -1,10 +1,16 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { AssistantCitation, ResponseContextRecord } from "@t3tools/contracts";
+import {
+  isTaskOutputCitation,
+  type AssistantCitation,
+  type ResponseContextRecord,
+} from "@t3tools/contracts";
 import {
   assistantCitationLabel,
   serializeAssistantCitation,
 } from "@t3tools/shared/assistantCitations";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useOpenTask } from "@t3tools/tasks-web/openTask";
+import { useGT } from "gt-react";
 import { PencilIcon, QuoteIcon } from "lucide-react";
 import {
   useEffect,
@@ -35,8 +41,18 @@ import { textDirection } from "~/textDirection";
 function useCitationSourceLinkProps(citation: AssistantCitation) {
   const navigate = useNavigate();
   const sourceThread = useQuietThreadShell(
-    scopeThreadRef(citation.environmentId, citation.threadId),
+    isTaskOutputCitation(citation)
+      ? null
+      : scopeThreadRef(citation.environmentId, citation.threadId),
   );
+  // UpComputer: a quote from a task's output opens that task beside the chat.
+  const openTask = useOpenTask();
+  if (isTaskOutputCitation(citation)) {
+    return {
+      ...openTask.linkProps(citation.environmentId, citation.taskId),
+      "data-markdown-copy": serializeAssistantCitation(citation),
+    };
+  }
   return {
     ...assistantCitationRoute(citation, sourceThread),
     "data-markdown-copy": serializeAssistantCitation(citation),
@@ -51,6 +67,12 @@ function useCitationSourceLinkProps(citation: AssistantCitation) {
 }
 
 const flat = (text: string) => text.replace(/\s+/g, " ");
+
+const isTitleOnlyTaskCitation = (citation: AssistantCitation): boolean =>
+  isTaskOutputCitation(citation) &&
+  citation.prefix === "" &&
+  citation.suffix === "" &&
+  flat(citation.text) === flat(citation.taskTitle);
 
 /**
  * The card a response shows as inside a message. Clicking it goes to the source; a comment follows
@@ -72,7 +94,7 @@ function ResponseCard({
   cardCopyMarkdown?: string;
   label: string;
   title?: string | undefined;
-  preview: ReactNode;
+  preview: ReactNode | null;
   comment?: string | undefined;
   leading: boolean;
   trailing: boolean;
@@ -99,9 +121,11 @@ function ResponseCard({
             {title}
           </span>
         ) : null}
-        <span className="line-clamp-2" dir={textDirection(citation.text)}>
-          {preview}
-        </span>
+        {preview !== null ? (
+          <span className="line-clamp-2" dir={textDirection(citation.text)}>
+            {preview}
+          </span>
+        ) : null}
       </Link>
       {comment ? (
         <span className="mt-1.5 block whitespace-pre-wrap" dir={textDirection(comment)}>
@@ -122,19 +146,32 @@ export function AssistantCitationEmbed({
   leading: boolean;
   trailing: boolean;
 }) {
+  const gt = useGT();
   const wholeResponse = citation.prefix === "" && citation.suffix === "";
+  const titleOnlyTask = isTitleOnlyTaskCitation(citation);
   const { comment, ...quoted } = citation;
   return (
     <ResponseCard
       citation={citation}
       copyMarkdown={serializeAssistantCitation(citation)}
       cardCopyMarkdown={serializeAssistantCitation(quoted)}
-      label={`Go to quoted response: ${assistantCitationLabel(quoted)}`}
+      label={
+        titleOnlyTask
+          ? gt("Go to quoted task: {label}", { label: assistantCitationLabel(quoted) })
+          : isTaskOutputCitation(citation)
+            ? gt("Go to quoted task output: {label}", { label: assistantCitationLabel(quoted) })
+            : gt("Go to quoted response: {label}", { label: assistantCitationLabel(quoted) })
+      }
+      title={
+        isTaskOutputCitation(citation)
+          ? gt("Task: {title}", { title: citation.taskTitle })
+          : undefined
+      }
       comment={comment}
       leading={leading}
       trailing={trailing}
       preview={
-        wholeResponse ? (
+        titleOnlyTask ? null : wholeResponse ? (
           flat(citation.text)
         ) : (
           <>
@@ -162,11 +199,12 @@ export function ResponseReplyCard({
   leading: boolean;
   trailing: boolean;
 }) {
+  const gt = useGT();
   return (
     <ResponseCard
       citation={record.citation}
       copyMarkdown={copyMarkdown}
-      label={`Go to the response this replies to: ${record.label}`}
+      label={gt("Go to the response this replies to: {label}", { label: record.label })}
       title={record.subagents?.map((subagent) => subagent.title).join(", ")}
       preview={flat(record.citation.text)}
       leading={leading}
@@ -192,6 +230,7 @@ export function AssistantCitationChip({
     onRestoreFocus?: () => void;
   };
 }) {
+  const gt = useGT();
   const sourceLinkProps = useCitationSourceLinkProps(citation);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const commentPopupRef = useRef<HTMLDivElement>(null);
@@ -256,7 +295,13 @@ export function AssistantCitationChip({
     <Link
       {...sourceLinkProps}
       className="inline-flex min-w-0 items-center gap-[0.2em] self-baseline text-inherit no-underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-current rounded-sm"
-      aria-label={`View cited assistant text: ${label}`}
+      aria-label={
+        isTitleOnlyTaskCitation(citation)
+          ? gt("View cited task: {label}", { label })
+          : isTaskOutputCitation(citation)
+            ? gt("View cited task output: {label}", { label })
+            : gt("View cited assistant text: {label}", { label })
+      }
     >
       <QuoteIcon aria-hidden="true" />
       <ContextChipLabel className="max-w-[16em]" dir={textDirection(label)}>
@@ -284,7 +329,9 @@ export function AssistantCitationChip({
           }}
         >
           <PopoverTrigger
-            aria-label={citation.comment ? "Edit citation comment" : "Add comment to citation"}
+            aria-label={
+              citation.comment ? gt("Edit citation comment") : gt("Add comment to citation")
+            }
             data-citation-comment-trigger="true"
             render={<ContextChipAction />}
           >
@@ -323,7 +370,7 @@ export function AssistantCitationChip({
                   : undefined
               }
               ref={commentPopupRef}
-              aria-label="Edit citation comment"
+              aria-label={gt("Edit citation comment")}
               width="md"
               padding="compact"
               onPointerDown={(event) => event.stopPropagation()}

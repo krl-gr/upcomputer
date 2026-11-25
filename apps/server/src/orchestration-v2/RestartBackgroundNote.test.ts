@@ -52,7 +52,7 @@ it("keeps the note for the provider thread that lost the work across a provider 
     pendingRestartCancelledBackgroundWork({
       runs,
       providerTurns: runs.filter((source) => source.id !== target.id).map(turnFor),
-      commandMessageIds: new Set(),
+      commandMessageIds: () => new Set(),
       run: target,
       attempts: [{ id: target.activeAttemptId!, runId: target.id }],
     });
@@ -71,7 +71,7 @@ it("leaves a slash command without the note, so the next prompt carries it", () 
     pendingRestartCancelledBackgroundWork({
       runs,
       providerTurns: runs.filter((source) => source.id !== target.id).map(turnFor),
-      commandMessageIds: new Set([command.userMessageId]),
+      commandMessageIds: () => new Set([command.userMessageId]),
       run: target,
       attempts: [{ id: target.activeAttemptId!, runId: target.id }],
     });
@@ -94,7 +94,7 @@ it("delivers a resumed queued run's note even after a higher-ordinal run", () =>
     pendingRestartCancelledBackgroundWork({
       runs,
       providerTurns: [resumed, ranFirst].map(turnFor),
-      commandMessageIds: new Set(),
+      commandMessageIds: () => new Set(),
       run: next,
       attempts: [{ id: next.activeAttemptId!, runId: next.id }],
     }),
@@ -158,7 +158,30 @@ it("names a lost subagent by the id the agent resumes it with", () => {
       title: "Review",
       nativeItemRef: { driver: "claudeAgent", nativeId: "agent-1", strength: "strong" },
     } as never)?.label,
-    "Review (id agent-1)",
+    "Review (id agent-1; resume it with SendMessage to 'agent-1')",
+  );
+  assert.equal(
+    cancelledTurnItemWork(
+      {
+        id: "item-2",
+        type: "subagent",
+        origin: "provider_native",
+        title: "Audit",
+        nativeItemRef: { driver: "codex", nativeId: "call_1:agent", strength: "strong" },
+      } as never,
+      "agent-thread",
+    )?.label,
+    "Audit (id agent-thread)",
+  );
+  assert.equal(
+    cancelledTurnItemWork({
+      id: "item-3",
+      type: "subagent",
+      origin: "provider_native",
+      title: "Lost",
+      nativeItemRef: { driver: "claudeAgent", nativeId: null, strength: "strong" },
+    } as never)?.label,
+    "Lost",
   );
 });
 
@@ -192,7 +215,7 @@ it("does not repeat the note when a steer restarts the run on a new attempt", ()
             ]
           : []),
       ],
-      commandMessageIds: new Set(),
+      commandMessageIds: () => new Set(),
       run: steered,
       attempts: runAttemptIds.map((id) => ({ id, runId: steered.id })),
     });
@@ -219,7 +242,7 @@ it("counts a prompted mid-turn or chained continuation as delivering the note", 
     pendingRestartCancelledBackgroundWork({
       runs: [cut, continuation, later],
       providerTurns: [cutTurn, ...(delivered ? [turnFor(continuation)] : [])],
-      commandMessageIds: new Set(),
+      commandMessageIds: () => new Set(),
       run: later,
       attempts: [{ id: later.activeAttemptId!, runId: later.id }],
     });
@@ -243,7 +266,7 @@ it("counts a prompted mid-turn or chained continuation as delivering the note", 
       pendingRestartCancelledBackgroundWork({
         runs: [cut, unstarted, later],
         providerTurns: turns,
-        commandMessageIds: new Set(),
+        commandMessageIds: () => new Set(),
         run: later,
         attempts: [{ id: later.activeAttemptId!, runId: later.id }],
       }),
@@ -264,7 +287,7 @@ it("counts a prompted mid-turn or chained continuation as delivering the note", 
     pendingRestartCancelledBackgroundWork({
       runs: [cut, steered, later],
       providerTurns: turns,
-      commandMessageIds: new Set(),
+      commandMessageIds: () => new Set(),
       run: later,
       attempts,
     }),

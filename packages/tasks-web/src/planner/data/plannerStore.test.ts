@@ -9,6 +9,7 @@ import type {
   TaskScheduleEntry,
 } from "@t3tools/tasks-contracts/v1";
 
+import { TaskChangeStreamEnded } from "../../rpc/taskChanges.ts";
 import { PlannerStore } from "./plannerStore.ts";
 import type { PlannerTask } from "./pendingOps.ts";
 
@@ -99,6 +100,7 @@ function harness() {
   const calls: Array<{ method: string; input: any }> = [];
   const errors: string[] = [];
   let emitChange: ((change: TaskChange) => void) | undefined;
+  let failStream: ((error: unknown) => void) | undefined;
   let subscribes = 0;
   let pageTasks: PlannerTask[] = [task("a", "0000000000000001"), task("b", "0000000000000002")];
   let rangeEntries: TaskScheduleEntry[] = [];
@@ -143,9 +145,10 @@ function harness() {
   const client = {
     tasks: {
       ...tasks,
-      subscribe: (listener: (change: TaskChange) => void) => {
+      subscribe: (listener: (change: TaskChange) => void, onError?: (error: unknown) => void) => {
         subscribes += 1;
         emitChange = listener;
+        failStream = onError;
         return () => {
           emitChange = undefined;
         };
@@ -172,6 +175,7 @@ function harness() {
       rangeEntries = rows;
     },
     emit: (event: TaskChange) => emitChange?.(event),
+    failStream: (error: unknown) => failStream?.(error),
     count: (name: string) => calls.filter((call) => call.method === name).length,
     reset: () => {
       calls.length = 0;
@@ -262,6 +266,30 @@ describe("planner store: change events", () => {
       h.calls.filter((call) => call.method === "items").map((call) => call.input.ids),
       [["x"]],
     );
+  });
+
+  test("a computer that went away is not a failed week, but a real failure is", async () => {
+    const h = harness();
+    h.store.retain();
+    h.failStream(new TaskChangeStreamEnded());
+    NodeAssert.equal(h.store.getSnapshot().rangeError, null);
+    h.failStream(new Error("Database is locked."));
+    NodeAssert.notEqual(h.store.getSnapshot().rangeError, null);
+
+    // The same for the week's own load.
+    const loaded = harness();
+    await started(loaded);
+    const reloadWeek = async (error: unknown) => {
+      loaded.handlers.scheduleRange = () => Promise.reject(error);
+      loaded.emit(change({ scheduleDates: ["2026-10-07"] }));
+      await until(() => loaded.count("scheduleRange") >= 1);
+      await NodeTimersPromises.setTimeout(15);
+      loaded.reset();
+    };
+    await reloadWeek(new TaskChangeStreamEnded());
+    NodeAssert.equal(loaded.store.getSnapshot().rangeError, null);
+    await reloadWeek(new Error("Database is locked."));
+    NodeAssert.notEqual(loaded.store.getSnapshot().rangeError, null);
   });
 
   test("a sync reloads lists, days, progress and open schedules", async () => {

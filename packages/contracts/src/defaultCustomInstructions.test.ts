@@ -1,7 +1,8 @@
-import { expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import {
   DEFAULT_CUSTOM_INSTRUCTIONS,
+  FREE_AGENT_SETUP_INSTRUCTIONS,
   upgradeCustomInstructions,
 } from "./defaultCustomInstructions.ts";
 
@@ -71,4 +72,61 @@ it("gives sign-in commands by the path each installer uses", () => {
   expect(installLine).toContain("`~/.local/bin/claude auth login`");
   expect(installLine).toContain("`~/.local/bin/codex login`");
   expect(installLine).toContain("`~/.grok/bin/grok login`");
+});
+
+it("leaves the free agent's setup to its own block", () => {
+  // The free agent sets up agents with FREE_AGENT_SETUP_INSTRUCTIONS; the offer is for real agents.
+  expect(DEFAULT_CUSTOM_INSTRUCTIONS).not.toContain("OpenCode");
+  const shipped =
+    "- I write them for you.\n- If OpenCode on a free model is the only available harness: UpComputer also works with other agents, such as Claude Code, Codex, Cursor and Grok. Right now I run on OpenCode's free model. Tell me which one you want and I'll install it for you, then tell you how to sign in.\n- If you'd rather I do the work myself, say so.";
+  expect(upgradeCustomInstructions(shipped)).toBe(
+    "- I write them for you.\n- If you'd rather I do the work myself, say so.",
+  );
+});
+
+it("signs a newly installed agent in through the chat first", () => {
+  const shipped =
+    "Then tell the user to sign in from a new Terminal window with the full path, `~/.local/bin/claude auth login`, `~/.local/bin/codex login` or `~/.grok/bin/grok login` (Windows: `claude auth login`, `codex login`, `grok login`), to turn Grok on in Settings → Providers, and to press Refresh provider status there.";
+  const upgraded = upgradeCustomInstructions(shipped);
+  expect(upgraded).toMatch(/^Then call provider_sign_in for it/);
+  expect(DEFAULT_CUSTOM_INSTRUCTIONS).toContain(upgraded);
+  expect(upgradeCustomInstructions(upgraded)).toBe(upgraded);
+});
+
+describe("FREE_AGENT_SETUP_INSTRUCTIONS", () => {
+  const lines = FREE_AGENT_SETUP_INSTRUCTIONS.split("\n");
+
+  it("answers the app's first message and covers every choice", () => {
+    expect(FREE_AGENT_SETUP_INSTRUCTIONS).toContain("Which one do you want to start with?");
+    for (const choice of ["Claude Code", "Codex", "Antigravity", "something else", "not now"]) {
+      expect(FREE_AGENT_SETUP_INSTRUCTIONS.toLowerCase()).toContain(choice.toLowerCase());
+    }
+  });
+
+  it("asks for the plan, installs, signs in through the tool and checks", () => {
+    const step = (prefix: string) => lines.find((line) => line.startsWith(prefix)) ?? "";
+    expect(step("1.")).toMatch(/^1\. Before you install anything, ask once/);
+    expect(step("1.")).toContain("Claude Pro or Max");
+    expect(step("1.")).toContain("ChatGPT Plus, Pro or Business");
+    expect(step("2.")).toContain("https://claude.ai/install.sh");
+    expect(step("2.")).toContain("https://chatgpt.com/codex/install.sh");
+    expect(step("3.")).toContain("provider_sign_in");
+    expect(step("4.")).toContain("provider_sign_in again to check");
+    expect(step("4.")).toContain("switching this chat");
+    // The installers are the same ones the onboarding block names.
+    expect(DEFAULT_CUSTOM_INSTRUCTIONS).toContain("curl -fsSL https://claude.ai/install.sh | bash");
+  });
+
+  it("falls back to Terminal with full paths", () => {
+    const fallback = lines.find((line) => line.startsWith("If provider_sign_in is missing")) ?? "";
+    expect(fallback).toContain("`~/.local/bin/claude auth login`");
+    expect(fallback).toContain("`~/.local/bin/codex login`");
+  });
+
+  it("keeps small-model lines short and ends with the trigger", () => {
+    const body = lines.slice(1, -1);
+    for (const line of body) expect(line.length).toBeLessThan(400);
+    expect(body.at(-1)).toMatch(/^Use these steps whenever/);
+    expect(FREE_AGENT_SETUP_INSTRUCTIONS).not.toContain("—");
+  });
 });

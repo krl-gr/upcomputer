@@ -11,6 +11,7 @@ import {
   BotAppearance,
   BotAppearanceStyle,
   BotPortraitId,
+  type BotMemoryMode,
   BotWriteInput,
   defaultBotAppearance,
   BotMemory,
@@ -32,6 +33,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -122,7 +124,7 @@ const cannotAdopt = (reason: string, fix: string) =>
 // tasks report back here through the chat being their source thread. agent_search lists the
 // bot too, so the text names it and keeps "another task agent" apart from its own work.
 const delegation = (bot: Bot) =>
-  `You are the bot ${bot.agent.name}, agent id ${bot.agent.id}. agent_search and task_context list you as an agent too, but you are not "another agent". Work that needs more than a quick answer goes one of two ways:\n- Another task agent: when the user asks for another agent, or another agent suits the work, call task_context first and follow the user's task guidance it returns. Pick a suitable enabled agent other than you and task_create a task with its trigger status and tags. If none fits, create one with agent_create and leave runtimeMode out so it runs with full access, unless the user asked for another mode; then create the task.\n- Your own background work: bot_assign, or a To Do task with your own tag bot:${bot.agent.id}. You do that work yourself in a separate background run. Tell the user plainly that you are doing it yourself, never that another agent does it.\nTasks created from this chat report back here; follow each one and tell the user its result when it finishes.\n`;
+  `You are the bot ${bot.agent.name}, agent id ${bot.agent.id}. agent_search and task_context list you as an agent too, but you are not "another agent". Work that needs more than a quick answer goes one of two ways:\n- Another task agent: when the user asks for another agent, or another agent suits the work, call task_context first and follow the user's task guidance it returns. Pick a suitable enabled agent other than you and task_create a task with its trigger status and tags. If none fits, create one with agent_create and leave runtimeMode out so it runs with full access, unless the user asked for another mode; then create the task.\n- Your own background work: bot_assign, or a To Do task with your own tag bot:${bot.agent.id}. You do that work yourself in a separate background run. Tell the user plainly that you are doing it yourself, never that another agent does it.\nWhen the user asks for a new bot, create it with bot_create, not agent_create: a bot has its own permanent chat and memory and is listed under Bots; a worker from agent_create has no chat and only picks up tasks by tag and status.\nTasks created from this chat report back here; follow each one and tell the user its result when it finishes.\n`;
 const MEMORY_LIMIT = 200;
 /** A bot's status reads this many of the active runs its chat's tasks have. */
 const ACTIVE_RUNS_SHOWN = 20;
@@ -150,12 +152,15 @@ interface BotRow {
   readonly allowed: string;
   readonly adopted: number;
   readonly appearance: string | null;
+  readonly memoryMode: string;
 }
 
 export class BotService extends Context.Service<
   BotService,
   {
     readonly list: Effect.Effect<ReadonlyArray<Bot>, TaskError>;
+    /** Emits when a bot's memory mode changes, so clients can list its memory tools again. */
+    readonly memoryModeChanges: Stream.Stream<void>;
     readonly recover: Effect.Effect<void, TaskError>;
     readonly save: (input: BotWriteInput) => Effect.Effect<Bot, TaskError>;
     /**
@@ -207,6 +212,7 @@ export class BotService extends Context.Service<
     readonly removal: (
       agentId: TaskAgentId,
     ) => Effect.Effect<{ readonly name: string; readonly memories: number } | null, TaskError>;
+    readonly get: (agentId: TaskAgentId) => Effect.Effect<Bot, TaskError>;
     readonly forThread: (threadId: ThreadId) => Effect.Effect<Bot | null, TaskError>;
     /**
      * Why the thread may not move to the project, or null. A bot's chat follows its bot's
@@ -276,8 +282,12 @@ const make = Effect.gen(function* () {
   // turn start never waits on a bot save. Take `lock` first when both are needed.
   const lock = yield* Semaphore.make(1);
   const memoryLock = yield* Semaphore.make(1);
+  const memoryModeChanges = yield* PubSub.unbounded<void>();
   const rows = sql<BotRow>`SELECT agent_id AS "agentId", thread_id AS "threadId",
-    project_id AS "projectId", allowed_projects_json AS allowed, adopted, appearance_json AS appearance FROM bots`;
+    project_id AS "projectId", allowed_projects_json AS allowed, adopted, appearance_json AS appearance,
+    memory_mode AS "memoryMode" FROM bots`;
+  const memoryModeOf = (row: BotRow): BotMemoryMode =>
+    row.memoryMode === "agent" ? "agent" : "upcomputer";
   /**
    * `lenient` reads damaged settings as defaults, so the bot still lists and its settings can
    * be saved again, which rewrites them. Turns and startup read them strictly and report it.
@@ -300,6 +310,7 @@ const make = Effect.gen(function* () {
         accessory: isAccessory(appearance.accessory) ? appearance.accessory : "none",
         ...(isPortrait(appearance.portrait) ? { portrait: appearance.portrait } : {}),
       },
+      memoryMode: memoryModeOf(row),
       threadId: ThreadId.make(row.threadId),
       projectId: ProjectId.make(row.projectId),
       allowedProjectIds: yield* decodeProjects(row.allowed).pipe(
@@ -730,6 +741,8 @@ const make = Effect.gen(function* () {
     // Older clients may still send more projects; a bot works only in its own.
     const allowed = JSON.stringify([input.projectId]);
     const appearanceJson = appearance == null ? null : JSON.stringify(appearance);
+    const memoryMode = input.memoryMode ?? (existing ? memoryModeOf(existing) : "upcomputer");
+    const memoryModeChanged = (existing ? memoryModeOf(existing) : "upcomputer") !== memoryMode;
     const at = yield* now;
     yield* sql.withTransaction(
       Effect.gen(function* () {
@@ -754,20 +767,24 @@ const make = Effect.gen(function* () {
             startRunStatuses: [],
             createdAt: Option.isSome(oldAgent) ? oldAgent.value.createdAt : at,
             updatedAt: at,
+            archivedAt: Option.isSome(oldAgent) ? oldAgent.value.archivedAt : null,
           });
         if (
           !existing ||
           existing.projectId !== input.projectId ||
           existing.allowed !== allowed ||
+          memoryModeChanged ||
           (appearance !== undefined && existing.appearance !== appearanceJson)
         )
-          yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted, appearance_json)
-        VALUES (${input.id}, ${threadId}, ${input.projectId}, ${allowed}, ${input.threadId === undefined ? 0 : 1}, ${appearanceJson})
+          yield* sql`INSERT INTO bots (agent_id, thread_id, project_id, allowed_projects_json, adopted, appearance_json, memory_mode)
+        VALUES (${input.id}, ${threadId}, ${input.projectId}, ${allowed}, ${input.threadId === undefined ? 0 : 1}, ${appearanceJson}, ${memoryMode})
         ON CONFLICT(agent_id) DO UPDATE SET project_id = excluded.project_id, allowed_projects_json = excluded.allowed_projects_json,
+        memory_mode = excluded.memory_mode,
         appearance_json = CASE WHEN ${appearance === undefined ? 0 : 1} = 1 THEN excluded.appearance_json ELSE bots.appearance_json END`;
       }),
     );
     const bot = yield* get(input.id);
+    if (memoryModeChanged) yield* PubSub.publish(memoryModeChanges, undefined);
     yield* ensureThread(bot, existing ? existing.adopted === 1 : input.threadId !== undefined);
     const thread = (yield* threads.getThreadRecords(threadId, [])).thread;
     const commandSuffix = yield* crypto.uuidV4();
@@ -812,6 +829,17 @@ const make = Effect.gen(function* () {
         threadId,
         runtimeMode: config.runtimeMode,
       });
+    if (
+      previous !== null &&
+      previous.agent.config.interactionMode !== config.interactionMode &&
+      thread.interactionMode !== config.interactionMode
+    )
+      yield* threads.dispatch({
+        type: "thread.interaction-mode.set",
+        commandId: CommandId.make(`bot:interaction:${input.id}:${commandSuffix}`),
+        threadId,
+        interactionMode: config.interactionMode,
+      });
     // A saved bot has its chat and its name again.
     yield* resolve(restoreNotice(input.id));
     yield* resolve(nameNotice(input.id));
@@ -838,6 +866,18 @@ const make = Effect.gen(function* () {
         canonical,
       );
     if (input.createdBy === "user") yield* recordFirstUse("app.first_bot_chat");
+    const identity = `Bot identity: ${bot.agent.id}\nName: ${bot.agent.name}\nInstructions:\n${bot.agent.config.instructions}\nWorking project: ${bot.projectId}\nPermanent user chat: ${bot.threadId}\n${canonical ? delegation(bot) : ""}Use bot_history_search to search this bot's saved chat history.\n`;
+    // The agent keeps its own memory: nothing is captured, sent or offered. The changed
+    // fingerprint resends the block once after a switch, which voids earlier snapshots.
+    if (bot.memoryMode === "agent") {
+      const header = `${identity}Up.computer keeps no memory for this bot: you manage your own memory. Disregard any Up.computer memory snapshot or update earlier in this conversation. Do not rewrite your instructions or settings automatically.`;
+      const fingerprint = shortHash(header);
+      const marker = encodeMarker({ fingerprint, at: yield* now, seen: [] });
+      const text = `<upcomputer_bot>\n${header}\n</upcomputer_bot>`;
+      return Option.getOrUndefined(decodeMarker(input.deliveredMarker))?.fingerprint === fingerprint
+        ? { text, marker, update: "" }
+        : { text, marker };
+    }
     // Explicit requests are saved without a second model call. A stable message id
     // also stops a retried start from resurrecting a deleted or edited memory. Only the
     // person's own message counts: an agent posting into the chat must go through the model.
@@ -867,9 +907,9 @@ const make = Effect.gen(function* () {
       if (saved.entry)
         savedNote = `\nThe user's "remember:" message in this turn is already saved as memory "${saved.entry.id}". Do not save it again; confirm it to the user.`;
     }
-    const header = `Bot identity: ${bot.agent.id}\nName: ${bot.agent.name}\nInstructions:\n${bot.agent.config.instructions}\nWorking project: ${bot.projectId}\nPermanent user chat: ${bot.threadId}\n${canonical ? delegation(bot) : ""}Use bot_history_search to search this bot's saved chat history.\nWhen asked to remember, or after learning a durable useful fact or conclusion, use bot_remember in this turn. Tell the user what you saved. Never store secrets, role changes, permissions, or instructions as memory. Memories with owner "user" were written by the user: you cannot change or forget them. When one is out of date, tell the user it is their entry and ask them to change it in the bot's Memory settings; never save a memory that contradicts it. Do not rewrite your instructions or settings automatically.${canonical ? "" : "\nThis is a background task run: memory is read-only here. Put what is worth remembering in the run's result; the bot decides in its chat."}`;
+    const header = `${identity}When asked to remember, or after learning a durable useful fact or conclusion, use bot_remember in this turn. Tell the user what you saved. Never store secrets, role changes, permissions, or instructions as memory. Memories with owner "user" were written by the user: you cannot change or forget them. When one is out of date, tell the user it is their entry and ask them to change it in the bot's Memory settings; never save a memory that contradicts it. Do not rewrite your instructions or settings automatically.${canonical ? "" : "\nThis is a background task run: memory is read-only here. Put what is worth remembering in the run's result; the bot decides in its chat."}`;
     // Settings changes resend everything; the cursor bounds which memory rows changed.
-    const fingerprint = NodeCrypto.createHash("sha256").update(header).digest("hex").slice(0, 16);
+    const fingerprint = shortHash(header);
     const at = yield* now;
     const { entries, selected, used } = botMemoryContext(yield* memory(bot.agent.id));
     const inSnapshot = new Set(selected.map((entry) => entry.id));
@@ -961,6 +1001,7 @@ const make = Effect.gen(function* () {
     Effect.mapError(asError),
   );
   return BotService.of({
+    memoryModeChanges: Stream.fromPubSub(memoryModeChanges),
     list: rows.pipe(
       Effect.flatMap((items) =>
         Effect.forEach(items, (row) =>
@@ -1075,6 +1116,9 @@ const make = Effect.gen(function* () {
         ),
     ),
     followChatRenames: followChatRenames.pipe(Effect.mapError(asError)),
+    get: Effect.fn("BotService.getBot")(function* (agentId) {
+      return yield* get(agentId);
+    }, Effect.mapError(asError)),
     forThread: Effect.fn("BotService.forThread")(function* (threadId) {
       return yield* forThread(threadId);
     }, Effect.mapError(asError)),
@@ -1131,6 +1175,7 @@ const make = Effect.gen(function* () {
         const bot = yield* get(agentId);
         yield* sql.withTransaction(
           Effect.gen(function* () {
+            yield* sql`DELETE FROM bot_mentions WHERE agent_id = ${agentId}`;
             yield* sql`DELETE FROM bot_memories WHERE agent_id = ${agentId}`;
             yield* sql`DELETE FROM bots WHERE agent_id = ${agentId}`;
             yield* repository.deleteAgent({ id: agentId });
@@ -1197,6 +1242,10 @@ const make = Effect.gen(function* () {
     extract: Effect.fn("BotService.extract")(
       function* (agentId, requestId) {
         const bot = yield* get(agentId);
+        if (bot.memoryMode === "agent")
+          return yield* fail(
+            `${bot.agent.name} manages its own memory. Switch its memory to Up.computer memory first.`,
+          );
         yield* threads.sendToThread({
           projectId: (yield* threads.getThreadRecords(bot.threadId, [])).thread.projectId,
           commandId: CommandId.make(`bot:extract:${agentId}:${requestId}`),

@@ -1,12 +1,27 @@
 import {
+  createContext,
+  useContext,
   useEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
+import {
+  closestCenter,
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { PlusIcon, SettingsIcon } from "lucide-react";
+import { useGT, useMessages } from "gt-react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
@@ -89,6 +104,7 @@ import {
   TaskThreadTasksSubmenu,
 } from "../ui/TaskThreadRunCounts.tsx";
 import { botRowMenuEntries } from "./botMenu.ts";
+import { BOTS_ORDER_STORAGE_KEY, botOrderKey, moveBotInOrder, orderBots } from "./botOrder.ts";
 import { botsInProjectScope } from "./botProjectScope.ts";
 import {
   BotAvatar,
@@ -99,8 +115,12 @@ import {
   useBots,
   useBotSectionLists,
   useBotStatus,
+  useRememberedBotChatKeys,
+  useRememberedBotCount,
   type BotSectionList,
 } from "./botData.tsx";
+
+export { BOTS_ORDER_STORAGE_KEY, botOrderKey };
 
 /**
  * The bot lists the one Bots section merges: this computer first, then each connected one, as
@@ -110,12 +130,19 @@ function useBotLists() {
   const connected = useConnectedEnvironmentIds();
   const primary = usePrimaryEnvironmentId();
   const computerScope = useSidebarComputerScope();
-  return useBotSectionLists(
-    filterIdsToComputerScope(
-      [...new Set([...(primary ? [primary] : []), ...connected])],
-      computerScope,
-    ),
+  const environmentIds = filterIdsToComputerScope(
+    [...new Set([...(primary ? [primary] : []), ...connected])],
+    computerScope,
   );
+  const lists = useBotSectionLists(environmentIds);
+  // A loaded computer's chats are the Bots section's own claim; these cover the rest.
+  const remembered = useRememberedBotChatKeys(environmentIds);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the claims registry entry while mounted
+  useEffect(
+    () => claimSidebarThreads("bots:remembered", remembered ? remembered.split("\n") : []),
+    [remembered],
+  );
+  return { lists, rememberedCount: useRememberedBotCount(environmentIds) };
 }
 
 /** Each computer's bots the sidebar's Projects filter leaves, merged in the lists' order. */
@@ -125,6 +152,16 @@ function useShownBots(lists: ReadonlyArray<BotSectionList>) {
     botsInProjectScope(environmentId, bots, scope).map((bot) => ({ environmentId, bot })),
   );
 }
+
+/**
+ * The Bots section's order, which the user sets by dragging. It is this browser's, as the
+ * Projects section's manual order is: one list across every computer's bots.
+ */
+function useBotOrder() {
+  return useLocalStorage(BOTS_ORDER_STORAGE_KEY, NO_ORDER, botOrderSchema);
+}
+const NO_ORDER: ReadonlyArray<string> = [];
+const botOrderSchema = Schema.Array(Schema.String);
 
 /** Whether a bot is the one on screen: its page or its chat. */
 function useIsBotActive() {
@@ -155,14 +192,63 @@ function openBotChat(
 }
 
 export function SidebarBots() {
-  const lists = useBotLists();
+  const { lists, rememberedCount } = useBotLists();
   const computerScope = useSidebarComputerScope();
   const selected = computerScope === null ? null : ([...computerScope][0] ?? null);
   if (selected !== null && !lists.some((list) => list.environmentId === selected)) {
     return <UnavailableComputerBots environmentId={selected} />;
   }
-  return lists.length > 0 ? <BotsSection lists={lists} /> : null;
+  if (lists.length > 0) return <BotsSection lists={lists} />;
+  return rememberedCount === null ? null : <LoadingBotsSection rows={rememberedCount} />;
 }
+
+/**
+ * The Bots section's room while its lists load, as many rows as they last had, so Threads
+ * below it does not jump when they arrive.
+ */
+function LoadingBotsSection({ rows }: { readonly rows: number }) {
+  const gt = useGT();
+  const [open] = useLocalStorage(BOTS_OPEN_STORAGE_KEY, true, Schema.Boolean);
+  return (
+    <div aria-hidden inert data-bots-loading="">
+      <div className={SIDEBAR_SECTION_GAP}>
+        <SidebarSectionHeader
+          title={gt("Bots")}
+          open={open}
+          onToggle={() => {}}
+          action={
+            <SidebarSectionHeaderAction
+              label={gt("New bot")}
+              track="bots.create"
+              onClick={() => {}}
+            >
+              <PlusIcon />
+            </SidebarSectionHeaderAction>
+          }
+        />
+      </div>
+      {open ? (
+        <div className={`${SIDEBAR_SECTION_HEADER_GAP} ${SIDEBAR_MENU_SCOPE}`}>
+          <SidebarMenu>
+            {rows === 0 ? (
+              <SidebarEmptyRow label={gt("New bot")} disabled onClick={() => {}} />
+            ) : (
+              Array.from({ length: rows }, (_, index) => (
+                <SidebarMenuItem key={index}>
+                  <div className={cn(SIDEBAR_LIST_ROW, SIDEBAR_LIST_ROW_REST)}>
+                    <span className={SIDEBAR_BOT_FACE_SLOT} />
+                  </div>
+                </SidebarMenuItem>
+              ))
+            )}
+          </SidebarMenu>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const BOTS_OPEN_STORAGE_KEY = "upcomputer:bots-open";
 
 /**
  * The Bots section of a picked computer that shows none: offline, its last known bots dimmed
@@ -170,22 +256,31 @@ export function SidebarBots() {
  * saying so. Nothing while it still loads, or while offline with no bots seen yet.
  */
 function UnavailableComputerBots({ environmentId }: { readonly environmentId: EnvironmentId }) {
+  const gt = useGT();
   const connected = useConnectedEnvironmentIds().includes(environmentId);
   const access = useTasksWebAccess(environmentId);
   useTasksWebAccessRevision();
-  const name = useComputerName(environmentId) ?? "This computer";
+  const name = useComputerName(environmentId);
+  const [order] = useBotOrder();
   const unsupported =
     connected && (readBotsUnsupported(environmentId) || access.availability === "unavailable");
   if (connected && !unsupported) return null;
-  const lastBots = connected ? [] : (readShownBots(environmentId) ?? []);
+  const lastBots = connected
+    ? []
+    : orderBots(
+        (readShownBots(environmentId) ?? []).map((bot) => ({ environmentId, bot })),
+        order,
+      ).map(({ bot }) => bot);
   if (!connected && lastBots.length === 0) return null;
   return (
     <div className={SIDEBAR_SECTION_GAP} data-computer-bots={connected ? "unsupported" : "offline"}>
-      <SidebarSectionHeader title="Bots" open onToggle={() => {}} />
+      <SidebarSectionHeader title={gt("Bots")} open onToggle={() => {}} />
       <div className={`${SIDEBAR_SECTION_HEADER_GAP} ${SIDEBAR_MENU_SCOPE}`}>
         {connected ? (
           <p className="px-3 pt-1 text-xs text-sidebar-muted-foreground [[data-sidebar-compact=true]_&]:hidden">
-            Bots need a newer Up.computer on {name}.
+            {name
+              ? gt("Bots need a newer Up.computer on {name}.", { name })
+              : gt("Bots need a newer Up.computer on this computer.")}
           </p>
         ) : (
           <div className="opacity-55" aria-disabled>
@@ -213,14 +308,33 @@ function UnavailableComputerBots({ environmentId }: { readonly environmentId: En
   );
 }
 
-function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> }) {
-  const shown = useShownBots(lists);
+// useSensor memoizes on its options' identity; fresh ones rebuild the DndContext.
+const DRAG_SENSOR_OPTIONS = { activationConstraint: { distance: 6 } };
+const DRAG_MODIFIERS = [restrictToVerticalAxis, restrictToParentElement];
+
+/** The one Bots section over the computers' lists, in the order the user dragged. */
+export function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> }) {
+  const gt = useGT();
+  const [order, setOrder] = useBotOrder();
+  const shown = orderBots(useShownBots(lists), order);
+  const sensors = useSensors(useSensor(PointerSensor, DRAG_SENSOR_OPTIONS));
+  const handleDragEnd = (event: DragEndEvent) => {
+    if (event.over === null) return;
+    setOrder(
+      moveBotInOrder({
+        order,
+        lists,
+        activeKey: String(event.active.id),
+        overKey: String(event.over.id),
+      }),
+    );
+  };
   // New bots go to the first computer shown: this one in All computers.
   const createOn = lists[0]!.environmentId;
   const canWrite = useExperimentalFeatureRpcPermission(createOn, BOTS_RPC_METHODS.save);
   const navigate = useNavigate();
   const isActive = useIsBotActive();
-  const [open, setOpen] = useLocalStorage("upcomputer:bots-open", true, Schema.Boolean);
+  const [open, setOpen] = useLocalStorage(BOTS_OPEN_STORAGE_KEY, true, Schema.Boolean);
   // Each bot's chat belongs here, so Threads leaves it out, even while the
   // Projects filter hides its bot; a removed bot's chat returns there with the next list.
   const chatKeys = lists
@@ -230,7 +344,6 @@ function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> 
     .join("\n");
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the claims registry entry while mounted
   useEffect(() => claimSidebarThreads("bots", chatKeys ? chatKeys.split("\n") : []), [chatKeys]);
-  const errors = lists.filter((list) => list.error !== "");
   const create = () => {
     if (canWrite) void navigate(botPage(createOn));
   };
@@ -238,11 +351,11 @@ function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> 
     <Collapsible open={open}>
       <div className={SIDEBAR_SECTION_GAP}>
         <SidebarSectionHeader
-          title="Bots"
+          title={gt("Bots")}
           open={open}
           onToggle={() => setOpen(!open)}
           action={
-            <SidebarSectionHeaderAction label="New bot" track="bots.create" onClick={create}>
+            <SidebarSectionHeaderAction label={gt("New bot")} track="bots.create" onClick={create}>
               <PlusIcon />
             </SidebarSectionHeaderAction>
           }
@@ -252,57 +365,74 @@ function BotsSection({ lists }: { readonly lists: ReadonlyArray<BotSectionList> 
       <CollapsiblePanel className="[[data-sidebar-compact=true]_&]:overflow-visible">
         <div className={`${SIDEBAR_SECTION_HEADER_GAP} ${SIDEBAR_MENU_SCOPE}`}>
           <SidebarMenu>
-            {shown.map(({ environmentId, bot }) => (
-              <SidebarMenuItem key={`${environmentId}:${bot.agent.id}`}>
-                <BotRow
-                  environmentId={environmentId}
-                  bot={bot}
-                  active={isActive(environmentId, bot)}
-                  onOpen={() => openBotChat(navigate, environmentId, bot)}
-                  onSettings={() => {
-                    void navigate(botPage(environmentId, { bot: bot.agent.id }));
-                  }}
-                />
-              </SidebarMenuItem>
-            ))}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              modifiers={DRAG_MODIFIERS}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={shown.map(({ environmentId, bot }) => botOrderKey(environmentId, bot))}
+                strategy={verticalListSortingStrategy}
+              >
+                {shown.map(({ environmentId, bot }) => (
+                  <SortableBotItem
+                    key={botOrderKey(environmentId, bot)}
+                    id={botOrderKey(environmentId, bot)}
+                  >
+                    <BotRow
+                      environmentId={environmentId}
+                      bot={bot}
+                      active={isActive(environmentId, bot)}
+                      onOpen={() => openBotChat(navigate, environmentId, bot)}
+                      onSettings={() => {
+                        void navigate(botPage(environmentId, { bot: bot.agent.id }));
+                      }}
+                    />
+                  </SortableBotItem>
+                ))}
+              </SortableContext>
+            </DndContext>
             {/* The section always shows; the Projects filter only picks its rows. */}
             {shown.length > 0 ? null : lists.some((list) => list.bots.length > 0) ? (
               <li className="px-3 py-1 text-xs text-sidebar-muted-foreground [[data-sidebar-compact=true]_&]:hidden">
-                No bots in this project
+                {gt("No bots in this project")}
               </li>
             ) : (
-              <SidebarEmptyRow label="New bot" disabled={!canWrite} onClick={create} />
+              <SidebarEmptyRow label={gt("New bot")} disabled={!canWrite} onClick={create} />
             )}
           </SidebarMenu>
-          {errors.map((list) => (
-            <BotListError
-              key={list.environmentId}
-              environmentId={list.environmentId}
-              error={list.error}
-              named={lists.length > 1}
-            />
-          ))}
         </div>
       </CollapsiblePanel>
     </Collapsible>
   );
 }
 
-/** A computer's failed bot list; with several computers merged, it names the computer. */
-function BotListError({
-  environmentId,
-  error,
-  named,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly error: string;
-  readonly named: boolean;
-}) {
-  const name = useComputerName(environmentId);
+/** Whether the row's bot is lifted under the pointer, which keeps its tooltips closed. */
+const BotDragging = createContext(false);
+
+/**
+ * A Bots row the pointer drags, in both the full sidebar and its icon column. The rename
+ * field keeps the pointer for selecting text. Its row is a stable child, so a pointer move
+ * re-renders only this item.
+ */
+function SortableBotItem(props: { readonly id: string; readonly children: ReactNode }) {
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.id,
+  });
+  // dnd-kit's sensor swallows the click that ends a drag, so a drop never opens the bot.
   return (
-    <p role="alert" className="px-3 text-xs text-destructive">
-      {named && name ? `${name}: ${error}` : error}
-    </p>
+    <SidebarMenuItem
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={cn(isDragging && "relative z-20")}
+      data-dragging={isDragging || undefined}
+      onPointerDown={(event) => {
+        if ((event.target as Element).closest("input") === null) listeners?.onPointerDown?.(event);
+      }}
+    >
+      <BotDragging.Provider value={isDragging}>{props.children}</BotDragging.Provider>
+    </SidebarMenuItem>
   );
 }
 
@@ -325,7 +455,11 @@ export function BotRow({
   readonly onOpen: () => void;
   readonly onSettings: () => void;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const status = useBotStatus(environmentId, bot);
+  const detail = m(status.detail);
+  const dragging = useContext(BotDragging);
   const compact = useSidebarCompact();
   const canRename = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope) && !compact;
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
@@ -341,7 +475,7 @@ export function BotRow({
     setRenaming(null);
     const trimmed = title.trim();
     if (trimmed.length === 0) {
-      toastManager.add({ type: "warning", title: "Bot name cannot be empty" });
+      toastManager.add({ type: "warning", title: gt("Bot name cannot be empty") });
       return;
     }
     if (trimmed === bot.agent.name) return;
@@ -353,13 +487,16 @@ export function BotRow({
         const error = squashAtomCommandFailure(result);
         toastManager.add({
           type: "error",
-          title: "Couldn't save the bot",
+          title: gt("Couldn't save the bot"),
           description: errorToastDescription(
             error,
             undefined,
-            `Couldn't save ${bot.agent.name}'s settings: ${errorReason(error)}. Try again.`,
+            gt("Couldn't save {name}'s settings: {reason}. Try again.", {
+              name: bot.agent.name,
+              reason: errorReason(error, gt),
+            }),
           ),
-          actionProps: { children: "Retry", onClick: () => commitRename(trimmed) },
+          actionProps: { children: gt("Retry"), onClick: () => commitRename(trimmed) },
         });
       }
     });
@@ -371,7 +508,8 @@ export function BotRow({
     <>
       <SidebarRowContextMenu disabled={renaming !== null}>
         <SidebarCompactTooltip
-          label={status.detail ? `${bot.agent.name}: ${status.detail}` : bot.agent.name}
+          label={detail ? `${bot.agent.name}: ${detail}` : bot.agent.name}
+          disabled={dragging}
         >
           <SidebarRowContextMenuTrigger
             render={
@@ -383,6 +521,8 @@ export function BotRow({
                 className={cn(
                   SIDEBAR_LIST_ROW,
                   active ? SIDEBAR_LIST_ROW_ACTIVE : SIDEBAR_LIST_ROW_REST,
+                  // Lifted under the pointer, as a dragged thread row is.
+                  "group-data-[dragging]/menu-item:bg-sidebar group-data-[dragging]/menu-item:bg-linear-to-b group-data-[dragging]/menu-item:from-sidebar-row-active group-data-[dragging]/menu-item:to-sidebar-row-active group-data-[dragging]/menu-item:opacity-100 group-data-[dragging]/menu-item:shadow-lg",
                 )}
                 onClick={(event) => {
                   if (isRowEvent(event)) onOpen();
@@ -414,7 +554,7 @@ export function BotRow({
                   <input
                     autoFocus
                     value={renaming}
-                    aria-label="Bot name"
+                    aria-label={gt("Bot name")}
                     onChange={(event) => setRenaming(event.target.value)}
                     onFocus={(event) => event.currentTarget.select()}
                     onKeyDown={(event) => {
@@ -434,12 +574,12 @@ export function BotRow({
                     }}
                     className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm text-card-foreground outline-none focus:border-foreground"
                   />
-                ) : status.detail ? (
-                  <Tooltip>
+                ) : detail ? (
+                  <Tooltip disabled={dragging}>
                     <TooltipTrigger render={<span className={nameClassName} />}>
                       {bot.agent.name}
                     </TooltipTrigger>
-                    <TooltipPopup side="top">{status.detail}</TooltipPopup>
+                    <TooltipPopup side="top">{detail}</TooltipPopup>
                   </Tooltip>
                 ) : (
                   <span className={nameClassName}>{bot.agent.name}</span>
@@ -449,7 +589,7 @@ export function BotRow({
                   action={
                     <button
                       type="button"
-                      aria-label={`Settings for ${bot.agent.name}`}
+                      aria-label={gt("Settings for {name}", { name: bot.agent.name })}
                       className={sidebarListRowActionClassName(tasksMenuOpen)}
                       onClick={onSettings}
                     >
@@ -465,7 +605,7 @@ export function BotRow({
                         <TaskThreadTasksButton
                           environmentId={environmentId}
                           threadId={bot.threadId}
-                          label={`Tasks for ${bot.agent.name}`}
+                          label={gt("Tasks for {name}", { name: bot.agent.name })}
                           className={sidebarListRowExtraActionClassName(tasksMenuOpen)}
                           onOpenChange={setTasksMenuOpen}
                         />
@@ -483,7 +623,7 @@ export function BotRow({
             entry === "settings" ? (
               <MenuItem key={entry} onClick={onSettings}>
                 <SettingsIcon />
-                Settings
+                {gt("Settings")}
               </MenuItem>
             ) : (
               <TaskThreadTasksSubmenu

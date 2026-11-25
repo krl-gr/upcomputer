@@ -1,4 +1,5 @@
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import { htmlRenderMarkdown } from "@t3tools/shared/htmlRender";
 import * as Effect from "effect/Effect";
 
 import * as HtmlRender from "../../../htmlRender/HtmlRender.ts";
@@ -78,8 +79,9 @@ const handlers = {
         .pipe(Effect.mapError(toFailure));
       return {
         htmlRender: reference,
+        markdown: htmlRenderMarkdown(reference),
         message:
-          "Shown to the reader above your reply. Don't mention or describe the page; reply with only what it doesn't already say.",
+          "Shown to the reader above your reply. Don't mention or describe the page; reply with only what it doesn't already say. To show it in a task's output too, put `markdown` there.",
       };
     }),
   ),

@@ -1,6 +1,9 @@
 import type { AssetResource, ProjectReadFileError, ScopedThreadRef } from "@t3tools/contracts";
 import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
 import { isHostPath, workspaceRelativeFilePath } from "@t3tools/shared/path";
+import { msg } from "gt-react";
+
+import { m, type MessageResolver } from "~/i18n/messages";
 
 export function resolveFilePreviewPath(path: string | null, cwd: string): string | null {
   if (path === null) return null;
@@ -10,20 +13,25 @@ export function resolveFilePreviewPath(path: string | null, cwd: string): string
 export const isMarkdownPreviewFile = (path: string): boolean =>
   /\.(?:md|mdx|markdown|mdown|mkd)$/i.test(path);
 
-export function filePreviewReadErrorMessage(error: ProjectReadFileError): string {
+export function filePreviewReadErrorMessage(
+  error: ProjectReadFileError,
+  resolve: MessageResolver = m,
+): string {
   switch (error.failure) {
     case "path_not_file":
-      return "The path is a directory or special file, not a regular file.";
+      return resolve(msg("The path is a directory or special file, not a regular file."));
     case "binary_file":
-      return "The file is binary and cannot be displayed as text.";
+      return resolve(msg("The file is binary and cannot be displayed as text."));
     case "workspace_path_outside_root":
-      return "The requested path is outside the workspace.";
+      return resolve(msg("The requested path is outside the workspace."));
     case "resolved_path_outside_root":
-      return "The path resolves to a location outside the workspace.";
+      return resolve(msg("The path resolves to a location outside the workspace."));
     case "operation_failed":
       return error.operation === "realpath-workspace-root"
-        ? "The workspace folder could not be accessed."
-        : "The file could not be accessed or read. It may be missing or inaccessible.";
+        ? resolve(msg("The workspace folder could not be accessed."))
+        : resolve(
+            msg("The file could not be accessed or read. It may be missing or inaccessible."),
+          );
     default:
       return error.message;
   }
@@ -47,12 +55,12 @@ export function shouldShowFileExplorer(input: {
  */
 export function workspaceAssetResource(input: {
   readonly kind: "workspace-file" | "media-file";
-  readonly threadRef: ScopedThreadRef;
+  readonly threadRef: ScopedThreadRef | undefined;
   readonly draft: boolean;
   readonly workspaceRoot: string;
   readonly absolutePath: string;
 }): AssetResource {
-  if (input.draft) {
+  if (input.draft || input.threadRef === undefined) {
     return { _tag: "draft-workspace-file", cwd: input.workspaceRoot, path: input.absolutePath };
   }
   const insideWorkspace =
@@ -62,4 +70,25 @@ export function workspaceAssetResource(input: {
     threadId: input.threadRef.threadId,
     path: input.absolutePath,
   };
+}
+
+/** Any host file as a download: through the thread when there is one, else the project folder. */
+export function hostFileDownloadResource(input: {
+  readonly threadRef: ScopedThreadRef | undefined;
+  readonly workspaceRoot: string;
+  readonly absolutePath: string;
+}): Extract<AssetResource, { _tag: "media-file" | "draft-workspace-file" }> {
+  return input.threadRef
+    ? {
+        _tag: "media-file",
+        threadId: input.threadRef.threadId,
+        path: input.absolutePath,
+        disposition: "attachment",
+      }
+    : {
+        _tag: "draft-workspace-file",
+        cwd: input.workspaceRoot,
+        path: input.absolutePath,
+        disposition: "attachment",
+      };
 }

@@ -79,7 +79,9 @@ To see a component in every state without a dev server, run `vp run ui-states [s
 the real components in headless Chromium with the app's CSS and theme, and writes
 `.ui-states/<sheet>-dark.png` and `<sheet>-light.png` (gitignored), one labelled row per state.
 A sheet is `apps/web/src/uiStates/<sheet>.states.tsx`; the `ui-states` vitest project runs only
-those files and only from this command, never in `vp run test` or CI.
+those files and only from this command, never in `vp run test` or CI. Add `--locale de` (any UI
+language) to render a sheet in that language; German and Russian show which labels overflow.
+Find elements in a sheet's `settle` by structure, not by English text, so it works in every language.
 
 To add a state, add an entry to the sheet's list: a name and a `render` that mounts the real
 component with typed props, so a prop change breaks typecheck instead of leaving the sheet stale.

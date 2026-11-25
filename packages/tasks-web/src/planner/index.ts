@@ -8,3 +8,5 @@ export { PlannerView } from "./ui/PlannerView.tsx";
 export { TasksViewSwitch } from "./ui/TasksViewSwitch.tsx";
 export { windowStoreFor } from "./windows/windowStore.ts";
 export { TableSectionSwitch } from "../ui/TableSectionSwitch.tsx";
+export { isInboxRoot, ProjectChip, ProjectIcon, type PlannerProject } from "./ui/ProjectChip.tsx";
+export { pickerProjects, taskProjectsOf } from "../ui/taskProjects.ts";

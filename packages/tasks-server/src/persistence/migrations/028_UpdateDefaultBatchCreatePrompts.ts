@@ -1,4 +1,4 @@
-import { DEFAULT_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
+import { LEGACY_TASK_PROMPT_SETTINGS } from "@t3tools/tasks-contracts/v1";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -32,7 +32,7 @@ export const UpdateDefaultBatchCreatePromptsMigration = Effect.gen(function* () 
   if (row === undefined || row.taskCreation !== PREVIOUS_TASK_CREATION) return;
 
   const revision = row.revision + 1;
-  const next = DEFAULT_TASK_PROMPT_SETTINGS.taskCreation;
+  const next = LEGACY_TASK_PROMPT_SETTINGS.taskCreation;
   yield* sql`
     INSERT INTO task_prompt_settings_changes (
       id, revision, field, previous_text, new_text, reason,

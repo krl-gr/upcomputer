@@ -32,9 +32,11 @@ import {
   timelineTurnFoldRunIdsByEntryId,
   liveAnswerPreview,
   deriveMessagesTimelineRowsWithState,
+  isTimelineMinimapTurnVisible,
   resolveAssistantMessageCopyState,
   type MessagesTimelineRow,
   workEntryDisplayLabel,
+  workEntryReadOutput,
 } from "./MessagesTimeline.logic";
 import { workEntryIconName } from "./TimelineWorkEntryRow.logic";
 
@@ -685,7 +687,7 @@ describe("deriveMessagesTimelineRows", () => {
           active: true,
           label: "Compacting before the cache expires…",
         },
-        "Context automatically compacted before cache expiry",
+        "Auto-compacted before cache expiry",
       ],
       ["onReturn", { kind: "working", compacting: true }, "Context compacted before sending"],
       [undefined, { kind: "context-compaction", active: true }, undefined],
@@ -1487,6 +1489,80 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
   });
 
+  it("keeps a finished turn's duration once a later turn starts", () => {
+    const time = (seconds: number) => new Date(Date.UTC(2026, 0, 1) + seconds * 1000).toISOString();
+    const message = (
+      id: string,
+      role: "user" | "assistant",
+      seconds: number,
+      runId: string | null,
+    ) => ({
+      id: `${id}-entry`,
+      kind: "message" as const,
+      createdAt: time(seconds),
+      message: {
+        id: MessageId.make(id),
+        role,
+        text: id,
+        runId: runId === null ? null : RunId.make(runId),
+        createdAt: time(seconds),
+        updatedAt: time(seconds),
+        streaming: false,
+      },
+    });
+    const firstTurn = [
+      message("prompt-1", "user", 0, null),
+      {
+        id: "work-entry",
+        kind: "work" as const,
+        createdAt: time(5),
+        entry: {
+          id: "work",
+          createdAt: time(5),
+          runId: RunId.make("turn-1"),
+          label: "Ran command",
+          tone: "tool" as const,
+        },
+      },
+      message("reply-1", "assistant", 11, "turn-1"),
+    ];
+    const firstRun = { startedAt: time(1.7), completedAt: time(11) };
+    const foldLabel = (rows: ReturnType<typeof deriveMessagesTimelineRows>) =>
+      rows.find(
+        (row): row is Extract<(typeof rows)[number], { kind: "turn-fold" }> =>
+          row.kind === "turn-fold" && row.runId === "turn-1",
+      )?.label;
+    const settled = foldLabel(
+      deriveMessagesTimelineRows({
+        timelineEntries: firstTurn,
+        latestRun: { runId: RunId.make("turn-1"), status: "completed", ...firstRun },
+        finishedRunElapsedMs: new Map([[RunId.make("turn-1"), 9_300]]),
+        isWorking: false,
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      }),
+    );
+    expect(settled).toBe("Worked for 9.3s");
+    // The QA saw "Worked for 9.3s" become "Worked for 11s" once the next message was sent.
+    const later = foldLabel(
+      deriveMessagesTimelineRows({
+        timelineEntries: [...firstTurn, message("prompt-2", "user", 20, null)],
+        latestRun: {
+          runId: RunId.make("turn-2"),
+          status: "running",
+          startedAt: time(20),
+          completedAt: null,
+        },
+        finishedRunElapsedMs: new Map([[RunId.make("turn-1"), 9_300]]),
+        isWorking: true,
+        activeTurnStartedAt: time(20),
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      }),
+    );
+    expect(later).toBe(settled);
+  });
+
   it.each(["steer", "promoted_queued_to_steer"] as const)(
     "keeps the duration header at the initiating prompt when %s arrives before output",
     (inputIntent) => {
@@ -1601,8 +1677,20 @@ describe("deriveMessagesTimelineRows", () => {
           message("steer", 10, "user", "steer"),
           work("work-after-steer", 15),
           message("final", 30, "assistant"),
+          {
+            kind: "event",
+            id: "late-subagent",
+            createdAt: time(50),
+            projectedItem: { item: { type: "subagent", status: "completed", runId } } as never,
+          },
         ],
-        latestRun: { runId, status: "completed", startedAt: time(0), completedAt: time(30) },
+        // A later wake run is the latest, so this turn's times come from its entries.
+        latestRun: {
+          runId: RunId.make("wake-run"),
+          status: "completed",
+          startedAt: time(55),
+          completedAt: time(58),
+        },
         isWorking: false,
         expandedRunIds,
         turnDiffSummaries: [],
@@ -1617,6 +1705,7 @@ describe("deriveMessagesTimelineRows", () => {
       "steer",
       `turn-fold:${segmentKey}`,
       "final",
+      "late-subagent",
     ]);
     expect(collapsed[1]).toMatchObject({ label: "Worked for 30s" });
     expect(collapsed[3]).toMatchObject({ label: "Continued for 20s", createdAt: time(10) });
@@ -1628,6 +1717,7 @@ describe("deriveMessagesTimelineRows", () => {
       `turn-fold:${segmentKey}`,
       "work-after-steer",
       "final",
+      "late-subagent",
     ]);
   });
 
@@ -5221,5 +5311,27 @@ describe("subagent continued by a later turn", () => {
       `turn-fold:${run2}`,
       "closing-2",
     ]);
+  });
+});
+
+describe("isTimelineMinimapTurnVisible", () => {
+  it("keeps a turn lit while only its reply is on screen", () => {
+    // Turn rows 10..499, viewport inside the reply.
+    expect(isTimelineMinimapTurnVisible(10, 500, 200, 210)).toBe(true);
+    expect(isTimelineMinimapTurnVisible(500, undefined, 600, 610)).toBe(true);
+    expect(isTimelineMinimapTurnVisible(500, undefined, 200, 210)).toBe(false);
+    expect(isTimelineMinimapTurnVisible(10, 500, 500, 510)).toBe(false);
+    expect(isTimelineMinimapTurnVisible(10, 500, null, null)).toBe(false);
+  });
+});
+
+describe("workEntryReadOutput", () => {
+  it("joins relative paths to the workspace root but keeps home paths as written", () => {
+    expect(
+      workEntryReadOutput(
+        { changedFiles: ["src/app.ts", "~/.claude/CLAUDE.md", "~\\.gitconfig"] },
+        "/workspace/t3code",
+      ),
+    ).toBe("/workspace/t3code/src/app.ts\n~/.claude/CLAUDE.md\n~/.gitconfig");
   });
 });
