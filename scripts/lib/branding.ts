@@ -68,6 +68,12 @@ const MOBILE_PRODUCT_RULE: CopyRule = {
   replacement: "Up.computer",
 };
 
+/** The app's name as a message argument (`msg("Open {app}", { app: "T3" })`), as in the widgets. */
+const MOBILE_APP_ARGUMENT_RULE: CopyRule = {
+  pattern: /\bapp: "T3"/g,
+  replacement: 'app: "Up.computer"',
+};
+
 // Catalogs also carry shared packages' copy, which the app rule does not rebrand at its source.
 const isMobileFile = (path: string): boolean =>
   path.startsWith("apps/mobile/") && !TRANSLATION_FILE.test(path);
@@ -240,7 +246,7 @@ export function rebrandLine(line: string, path = ""): string {
   return [
     ...COPY_RULES,
     ...(isCliFile(path) ? [CLI_PROSE_RULE, CLI_PRODUCT_RULE, CLI_ENV_ALIAS_RULE] : []),
-    ...(isMobileFile(path) ? [MOBILE_PRODUCT_RULE] : []),
+    ...(isMobileFile(path) ? [MOBILE_PRODUCT_RULE, MOBILE_APP_ARGUMENT_RULE] : []),
   ].reduce((text, rule) => text.replace(rule.pattern, rule.replacement), line);
 }
 
@@ -541,7 +547,10 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   },
   { path: "apps/mobile/src/components/T3Wordmark.tsx", forbids: ["M33.4509"] },
   { path: "apps/mobile/src/components/brandAssets.ts", forbids: ["black-ios-1024", "nightly-ios"] },
-  { path: "apps/mobile/src/components/CompactBrandTitle.tsx", forbids: ["        Code\n"] },
+  {
+    path: "apps/mobile/src/components/CompactBrandTitle.tsx",
+    requires: ['const WORDMARK_SUFFIX = "Up.computer";'],
+  },
   { path: "apps/mobile/plugins/withWidgetLogoAsset.cjs", requires: ['"UpcomputerMark.svg"'] },
   {
     path: "apps/mobile/src/features/settings/lib/legal-document-url.ts",

@@ -11,7 +11,7 @@ import { resolveMobileStageLabel } from "../lib/mobileBranding";
 import { useAndroidControlSizing } from "./ui/useAndroidControlSizing";
 
 const BRAND_MAX_FONT_SCALE = 1.4;
-const WORDMARK_SUFFIX = "Code";
+const WORDMARK_SUFFIX = "Up.computer";
 
 export function brandTitleOffset(): number {
   if (Platform.OS !== "ios") return 0;
