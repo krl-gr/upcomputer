@@ -3,7 +3,6 @@ import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environ
 import { describeError } from "@t3tools/client-runtime/errors";
 import { ThreadId, type EnvironmentId } from "@t3tools/contracts";
 import { gtFallback, msg, type useGT } from "gt-react";
-import * as Schema from "effect/Schema";
 import {
   defaultBotAppearance,
   type Bot,
@@ -19,10 +18,7 @@ import { useUiStateStore } from "../../../../apps/web/src/uiStateStore.ts";
 import { ConfigurableBotCharacter } from "../../../../apps/web/src/components/bot-character-configurable/ConfigurableBotCharacter.tsx";
 import { holdClientNotice } from "../../../../apps/web/src/sidebarNotifications/clientNotices.ts";
 import { allSidebarThreadsClaimKey } from "../../../../apps/web/src/product/sidebarThreadClaims.ts";
-import {
-  readLocalStorageValue,
-  writeLocalStorageValue,
-} from "../../../../apps/web/src/hooks/useLocalStorage.ts";
+import { writeLocalStorageValue } from "../../../../apps/web/src/hooks/useLocalStorage.ts";
 import {
   readTasksWebAccess,
   readTasksWebClient,
@@ -31,6 +27,12 @@ import {
 } from "../environmentApi.ts";
 import { isDisconnectError } from "../state/taskPageLoader.ts";
 import { useOmittedThreadShell } from "../ui/useOmittedThreadShell.ts";
+import {
+  BOT_CHATS_STORAGE_KEY,
+  BotChats,
+  botChatKeys,
+  readRememberedBotChats,
+} from "./rememberedBotChats.ts";
 import {
   botChatStatus,
   botStatus,
@@ -69,13 +71,9 @@ interface BotListStore {
 const EMPTY: BotList = { bots: [], loaded: false, failed: false, unsupported: false };
 const stores = new Map<EnvironmentId, BotListStore>();
 
-/** Each computer's bot chat thread ids as its last loaded list had them. */
-export const BOT_CHATS_STORAGE_KEY = "upcomputer:bot-chats";
-export const BotChats = Schema.Record(Schema.String, Schema.Array(Schema.String));
-
 function rememberBotChats(environmentId: EnvironmentId, bots: ReadonlyArray<Bot>) {
   const threadIds = bots.map((bot) => bot.threadId);
-  const remembered = readLocalStorageValue(BOT_CHATS_STORAGE_KEY, {}, BotChats)[environmentId];
+  const remembered = readRememberedBotChats()[environmentId];
   if (remembered?.join("\n") === threadIds.join("\n")) return;
   writeLocalStorageValue(
     BOT_CHATS_STORAGE_KEY,
@@ -100,7 +98,7 @@ function rememberedWhileLoading(
     return !list.loaded && !list.failed;
   });
   if (loading.length === 0) return [];
-  const remembered = readLocalStorageValue(BOT_CHATS_STORAGE_KEY, {}, BotChats);
+  const remembered = readRememberedBotChats();
   return loading.map((environmentId) => [environmentId, remembered[environmentId]] as const);
 }
 
@@ -112,10 +110,7 @@ function rememberedWhileLoading(
  */
 export function rememberedBotChatKeys(environmentIds: ReadonlyArray<EnvironmentId>): string[] {
   return rememberedWhileLoading(environmentIds).flatMap(([environmentId, threadIds]) => {
-    if (threadIds !== undefined)
-      return threadIds.map((threadId) =>
-        scopedThreadKey(scopeThreadRef(environmentId, ThreadId.make(threadId))),
-      );
+    if (threadIds !== undefined) return botChatKeys(environmentId, threadIds);
     // Nothing remembered, as on the first start after an update: any thread may be a bot chat.
     // At startup the Tasks check often runs before the connection, so it is held through it.
     return [allSidebarThreadsClaimKey(environmentId)];

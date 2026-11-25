@@ -19,6 +19,7 @@ import {
   type ExperimentalWebThreadRowAccessoryProps,
 } from "../../../apps/web/src/product/WebFeature.ts";
 import { TasksWebRpcGroup } from "./rpc/tasksRpcGroup.ts";
+import { RememberedBotChatsHold } from "./bots/rememberedBotChats.ts";
 
 const LazyNavigationRunCounts = lazy(() =>
   import("./ui/TaskNavigationRunCounts.tsx").then((module) => ({
@@ -97,7 +98,7 @@ function BotMentionNotificationCardSlot(props: ExperimentalWebNotificationCardPr
 
 function SidebarBots() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<RememberedBotChatsHold />}>
       <LazySidebarBots />
     </Suspense>
   );
