@@ -7100,6 +7100,9 @@
   "cd609620fafff02b": "{count, plural, other {프로젝트 {count}개 가져오고 시작}}",
   "99decfb4ea686b61": "스레드 가져오고 시작",
   "88ddebac4d96eb62": "시작",
+  "87f235cc2f052d82": "조직에서 익명 사용 데이터를 껐습니다.",
+  "251da8bdd9d46d2f": "익명 사용 데이터가 UPCOMPUTER_TELEMETRY_ENABLED 환경 변수로 꺼져 있습니다.",
+  "8b84f0eb17aa6132": "익명 사용 데이터가 꺼져 있습니다.",
   "9877b52c6722fe99": "{agent}을(를) 켤 수 없습니다",
   "15903f7ea6a43f95": "{action}: {agent}",
   "82e9b02a3e95e425": "켜기: {agent}",
@@ -12236,7 +12239,6 @@
     },
     "(으)로 전환"
   ],
-  "87f235cc2f052d82": "조직에서 익명 사용 데이터를 껐습니다.",
   "5d413e151932b5a0": "UPCOMPUTER_TELEMETRY_ENABLED 환경 변수로 꺼져 있습니다.",
   "efca95f8da8503ff": "익명 사용 데이터 공유",
   "105dc8ba736e43ca": [

@@ -7121,6 +7121,9 @@
   "cd609620fafff02b": "{count, plural, one {{count} Projekt importieren und starten} other {{count} Projekte importieren und starten}}",
   "99decfb4ea686b61": "Threads importieren und starten",
   "88ddebac4d96eb62": "Starten",
+  "87f235cc2f052d82": "Deine Organisation hat anonyme Nutzungsdaten ausgeschaltet.",
+  "251da8bdd9d46d2f": "Anonyme Nutzungsdaten sind durch die Umgebungsvariable UPCOMPUTER_TELEMETRY_ENABLED ausgeschaltet.",
+  "8b84f0eb17aa6132": "Anonyme Nutzungsdaten sind ausgeschaltet.",
   "9877b52c6722fe99": "{agent} konnte nicht aktiviert werden",
   "15903f7ea6a43f95": "{action}: {agent}",
   "82e9b02a3e95e425": "Aktivieren: {agent}",
@@ -12291,7 +12294,6 @@
     },
     " wechseln"
   ],
-  "87f235cc2f052d82": "Deine Organisation hat anonyme Nutzungsdaten ausgeschaltet.",
   "5d413e151932b5a0": "Durch die Umgebungsvariable UPCOMPUTER_TELEMETRY_ENABLED ausgeschaltet.",
   "efca95f8da8503ff": "Anonyme Nutzungsdaten teilen",
   "105dc8ba736e43ca": [

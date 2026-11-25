@@ -52,6 +52,7 @@ const state = vi.hoisted(() => ({
   openTerminal: vi.fn(),
   writeTerminal: vi.fn(),
   closeTerminal: vi.fn(),
+  getTelemetryPreference: vi.fn(),
 }));
 
 vi.mock(import("@t3tools/client-runtime/state/session"), async (original) => {
@@ -112,6 +113,7 @@ vi.mock(import("../../state/server"), async (original) => {
       providersValueAtom: (() => state.providers) as never,
       configValueAtom: (() => state.config) as never,
       refreshProviders: "refreshProviders" as never,
+      getTelemetryPreference: "getTelemetryPreference" as never,
     },
   };
 });
@@ -195,7 +197,8 @@ vi.mock(import("../../state/use-atom-command"), async (original) => ({
       | "refreshProviders"
       | "openTerminal"
       | "writeTerminal"
-      | "closeTerminal",
+      | "closeTerminal"
+      | "getTelemetryPreference",
     // UpComputer: the page also records onboarding events, which these cases ignore.
   ) => state[command] ?? (async () => ({ _tag: "Success", value: undefined }))) as never,
 }));
@@ -377,6 +380,9 @@ function setup() {
   for (const command of [state.openTerminal, state.writeTerminal, state.closeTerminal]) {
     command.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   }
+  state.getTelemetryPreference
+    .mockReset()
+    .mockResolvedValue({ _tag: "Success", value: { enabled: true, lockedBy: null } });
   localStorage.removeItem(welcomeImportSelectionKey(primaryId));
   return now;
 }
@@ -750,6 +756,20 @@ it("opens the list of agents to add once the checks find none, even after a wron
     ]),
   );
   expect(fold()?.getAttribute("aria-expanded")).toBe("true");
+});
+
+it.each([
+  [null, "Anonymous usage data is off."],
+  ["environment", "Anonymous usage data is turned off by the UPCOMPUTER_TELEMETRY_ENABLED"],
+] as const)("says usage data is off when it is (locked by %s)", async (lockedBy, notice) => {
+  using _now = setup();
+  state.getTelemetryPreference.mockResolvedValue({
+    _tag: "Success",
+    value: { enabled: false, lockedBy },
+  });
+  await using _screen = await mountWelcome();
+  await vi.waitFor(() => expect(pageText()).toContain(notice));
+  expect(pageText()).not.toContain("collects anonymous usage data");
 });
 
 it("starts without importing when this connection cannot import projects", async () => {
