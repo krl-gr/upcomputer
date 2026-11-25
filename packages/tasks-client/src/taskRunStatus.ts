@@ -74,8 +74,3 @@ export function taskRunState(
       };
   }
 }
-
-/** Whether a run in this state is still going: it needs no person yet. */
-export function isActiveTaskRunKind(kind: TaskRunState["kind"]): boolean {
-  return kind === "working" || kind === "finalizing";
-}

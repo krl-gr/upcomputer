@@ -65,6 +65,7 @@ describe("workspace root navigation", () => {
   it("keeps the registered defaults while customization is unavailable", () => {
     expect(resolveWorkspaceTabOrder(undefined)).toEqual([
       "threads",
+      "tasks",
       "pullRequests",
       "issues",
       "usage",

@@ -13,6 +13,7 @@ import { hotSwappableAtomRuntime } from "../lib/hot-swappable-atom-runtime";
 import * as Runtime from "../lib/runtime";
 import { appAtomRegistry } from "../state/atom-registry";
 import * as BackgroundActivity from "./background-activity";
+import { makeTasksSessionRpcClient } from "../features/tasks/tasksSessionRpc";
 import * as ConnectionPlatform from "./platform";
 
 declare const module: { readonly hot?: FoundationHotModule } | undefined;
@@ -42,6 +43,7 @@ const layerProvidedClientConnection = layerSnapshotLoader.pipe(
       providerCatalogsOnDemand: true,
       providerCatalogDigests: true,
       providerStatusDeltas: true,
+      makeClient: makeTasksSessionRpcClient,
     }),
   ),
   Layer.provideMerge(

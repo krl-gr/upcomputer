@@ -570,7 +570,7 @@ export default defineConfig({
       {
         // Product feature RPC groups are not core methods; the server authorizes them by the
         // scopes each feature declares (`rpcContributionScopes`).
-        files: ["apps/web/src/product/FeatureRpc.ts"],
+        files: ["apps/web/src/product/FeatureRpc.ts", "apps/mobile/src/features/tasks/tasksRpc.ts"],
         rules: { "t3code/no-rpc-permission-bypass": ["error", { allowRawClientAccess: true }] },
       },
       {
