@@ -57,6 +57,7 @@ const workspaceFiles = [
   "packages/source-control-github/package.json",
   "packages/source-control-gitlab/package.json",
   "packages/source-control-testing/package.json",
+  "packages/tasks-client/package.json",
   "packages/tasks-contracts/package.json",
   "packages/tasks-server/package.json",
   "packages/tasks-web/package.json",
