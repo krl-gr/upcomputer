@@ -88,6 +88,7 @@ import { agentSessionImport } from "../../state/agentSessions";
 import { readProjects, useProjects, waitForProject } from "../../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { managedTelemetryOffMessage, useManagedPolicy } from "../../state/managedPolicy";
+import { useTelemetryPreference } from "../settings/UsageDataSetting";
 import { useProjectScans } from "../../onboarding/useProjectScans";
 import { projectEnvironment } from "../../state/projects";
 import { serverEnvironment } from "../../state/server";
@@ -356,8 +357,20 @@ export function WelcomePage({
 }
 
 function TelemetryNotice({ environmentId }: { readonly environmentId: EnvironmentId }) {
+  const gt = useGT();
   const messages = useMessages();
-  const telemetryOff = managedTelemetryOffMessage(useManagedPolicy(environmentId), messages);
+  const [preference] = useTelemetryPreference(environmentId);
+  const telemetryOff =
+    managedTelemetryOffMessage(useManagedPolicy(environmentId), messages) ??
+    (preference?.lockedBy === "policy"
+      ? gt("Your organization turned off anonymous usage data.")
+      : preference?.lockedBy === "environment"
+        ? gt(
+            "Anonymous usage data is turned off by the UPCOMPUTER_TELEMETRY_ENABLED environment variable.",
+          )
+        : preference?.enabled === false
+          ? gt("Anonymous usage data is off.")
+          : undefined);
   return (
     <p className="mt-auto pt-12 text-2xs leading-relaxed text-muted-foreground/70">
       {telemetryOff === undefined ? (

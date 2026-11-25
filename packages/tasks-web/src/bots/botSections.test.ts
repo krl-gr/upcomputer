@@ -49,9 +49,8 @@ import {
   removeLocalStorageItem,
   writeLocalStorageValue,
 } from "../../../../apps/web/src/hooks/useLocalStorage.ts";
+import { BOT_CHATS_STORAGE_KEY, BotChats } from "./rememberedBotChats.ts";
 import {
-  BOT_CHATS_STORAGE_KEY,
-  BotChats,
   botsChanged,
   rememberedBotChatKeys,
   useBotSectionLists,

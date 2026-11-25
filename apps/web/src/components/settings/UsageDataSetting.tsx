@@ -12,21 +12,12 @@ import { Switch } from "../ui/switch";
 import { useSearchableSetting } from "./settingsSearch";
 import { SettingsRow } from "./settingsLayout";
 
-/** The install's "Share anonymous usage data" switch, kept by this computer's server. */
-export function UsageDataSettingRow({ environmentId }: { readonly environmentId: EnvironmentId }) {
-  const gt = useGT();
-  const messages = useMessages();
-  const setting = useSearchableSetting();
-  const policyOff = managedTelemetryOffMessage(usePrimaryManagedPolicy(), messages);
-  const canEdit = useAtomValue(
-    serverEnvironment.setTelemetryPreference.permissionAtom(environmentId),
-  );
+/** The server's usage data choice, with what locks it; null until it is read. */
+export function useTelemetryPreference(environmentId: EnvironmentId) {
   const [preference, setPreference] = useState<TelemetryPreference | null>(null);
-  const [saving, setSaving] = useState(false);
   const getPreference = useAtomCommand(serverEnvironment.getTelemetryPreference, {
     reportFailure: false,
   });
-  const savePreference = useAtomCommand(serverEnvironment.setTelemetryPreference);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the server's saved choice
   useEffect(() => {
@@ -38,6 +29,21 @@ export function UsageDataSettingRow({ environmentId }: { readonly environmentId:
       current = false;
     };
   }, [environmentId, getPreference]);
+  return [preference, setPreference] as const;
+}
+
+/** The install's "Share anonymous usage data" switch, kept by this computer's server. */
+export function UsageDataSettingRow({ environmentId }: { readonly environmentId: EnvironmentId }) {
+  const gt = useGT();
+  const messages = useMessages();
+  const setting = useSearchableSetting();
+  const policyOff = managedTelemetryOffMessage(usePrimaryManagedPolicy(), messages);
+  const canEdit = useAtomValue(
+    serverEnvironment.setTelemetryPreference.permissionAtom(environmentId),
+  );
+  const [preference, setPreference] = useTelemetryPreference(environmentId);
+  const [saving, setSaving] = useState(false);
+  const savePreference = useAtomCommand(serverEnvironment.setTelemetryPreference);
 
   const lockedReason =
     preference?.lockedBy === "policy"

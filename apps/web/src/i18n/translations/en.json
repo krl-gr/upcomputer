@@ -7122,6 +7122,9 @@
   "cd609620fafff02b": "{count, plural, one {Import {count} project and start} other {Import {count} projects and start}}",
   "99decfb4ea686b61": "Import threads and start",
   "88ddebac4d96eb62": "Start",
+  "87f235cc2f052d82": "Your organization turned off anonymous usage data.",
+  "251da8bdd9d46d2f": "Anonymous usage data is turned off by the UPCOMPUTER_TELEMETRY_ENABLED environment variable.",
+  "8b84f0eb17aa6132": "Anonymous usage data is off.",
   "9877b52c6722fe99": "Could not turn on {agent}",
   "15903f7ea6a43f95": "{action}: {agent}",
   "82e9b02a3e95e425": "Turn on: {agent}",
@@ -12300,7 +12303,6 @@
       "v": "v"
     }
   ],
-  "87f235cc2f052d82": "Your organization turned off anonymous usage data.",
   "5d413e151932b5a0": "Turned off by the UPCOMPUTER_TELEMETRY_ENABLED environment variable.",
   "efca95f8da8503ff": "Share anonymous usage data",
   "105dc8ba736e43ca": [

@@ -7120,6 +7120,9 @@
   "cd609620fafff02b": "{count, plural, one {Importar {count} proyecto y empezar} other {Importar {count} proyectos y empezar}}",
   "99decfb4ea686b61": "Importar hilos y empezar",
   "88ddebac4d96eb62": "Empezar",
+  "87f235cc2f052d82": "Tu organización desactivó los datos de uso anónimos.",
+  "251da8bdd9d46d2f": "Los datos de uso anónimos están desactivados por la variable de entorno UPCOMPUTER_TELEMETRY_ENABLED.",
+  "8b84f0eb17aa6132": "Los datos de uso anónimos están desactivados.",
   "9877b52c6722fe99": "No se pudo activar {agent}",
   "15903f7ea6a43f95": "{action}: {agent}",
   "82e9b02a3e95e425": "Activar: {agent}",
@@ -12285,7 +12288,6 @@
       "v": "v"
     }
   ],
-  "87f235cc2f052d82": "Tu organización desactivó los datos de uso anónimos.",
   "5d413e151932b5a0": "Desactivado por la variable de entorno UPCOMPUTER_TELEMETRY_ENABLED.",
   "efca95f8da8503ff": "Compartir datos de uso anónimos",
   "105dc8ba736e43ca": [
