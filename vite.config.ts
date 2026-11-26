@@ -523,7 +523,6 @@ export default defineConfig({
           "packages/tasks-server/src/agents/TaskAgentService.v2.integration.test.ts",
           "packages/tasks-server/src/agents/TaskTriggerSemantics.test.ts",
           "packages/tasks-server/src/tools/InstructionsTools.test.ts",
-          "packages/tasks-web/src/bots/botAutosave.test.ts",
           "packages/tasks-web/src/environmentApi.test.ts",
           "packages/tasks-client/src/automations/automationStore.test.ts",
           "packages/tasks-web/src/ui/environmentRunCounts.test.ts",
