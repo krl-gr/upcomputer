@@ -140,6 +140,8 @@ const RUN_COUNT_ORDER: readonly TaskRunKind[] = [
 
 export interface TaskRunCount extends TaskRunPresentation {
   readonly count: number;
+  /** The group's first run status: the run filter a tap on its count opens, as on the desktop. */
+  readonly status: string;
 }
 
 /** A task's runs by state, as the desktop's Runs column counts them. */
@@ -157,6 +159,7 @@ export function taskRunCounts(
     byState.set(key, {
       ...presentation,
       count: (previous?.count ?? 0) + count,
+      status: previous?.status ?? status,
       rank: state.kind === "other" ? RUN_COUNT_ORDER.length : RUN_COUNT_ORDER.indexOf(state.kind),
     });
   }

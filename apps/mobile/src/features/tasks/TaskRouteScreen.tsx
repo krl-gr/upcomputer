@@ -6,18 +6,18 @@ import {
   PERSON_OPEN_STATUS,
   TaskId,
   type TaskActor,
-  type TaskAgent,
   type TaskAgentRun,
+  type TaskUpdateInput,
 } from "@t3tools/tasks-contracts/v1";
 import { msg, useGT, useMessages } from "gt-react-native";
-import { useState } from "react";
-import { Pressable, View } from "react-native";
+import { useRef, useState } from "react";
+import { Pressable, View, type ScrollViewInstance } from "react-native";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppBar } from "../../components/ui/AppBar";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
-import { Button } from "../../components/ui/Button";
+import * as Dialog from "../../components/ui/Dialog";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Menu } from "../../components/ui/Menu";
 import { RefreshControl } from "../../components/ui/RefreshControl";
@@ -30,10 +30,14 @@ import { useWorkspaceState } from "../../state/workspace";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useAndroidWorkspaceBack } from "../layout/workspace/useAndroidWorkspaceNavigation";
 import { PullRequestSectionHeading } from "../pull-requests/PullRequestSectionHeading";
+import { TaskDescriptionField, TaskDetailRow, TaskTitleField } from "./TaskDetailFields";
 import { TaskMarkdown } from "./TaskMarkdown";
+import { TaskProjectBadge } from "./TaskProjectBadge";
+import { TaskRunsSection } from "./TaskRunsSection";
 import { taskStatusChoices } from "./taskListState";
-import { taskRunPresentation, taskStatusTone } from "./taskPresentation";
+import { taskStatusTone } from "./taskPresentation";
 import { readTasksClient, useTasksAccess } from "./tasksRpc";
+import { useTaskRuns } from "./useTaskRuns";
 import { useTaskDetail, useTaskWorkflow } from "./useTasks";
 
 export type TaskRouteParams = {
@@ -41,12 +45,17 @@ export type TaskRouteParams = {
   readonly taskId: string;
   /** The row's title, shown while the task loads. */
   readonly title?: string;
+  /** A run count's status: the page opens on the runs in it. */
+  readonly runStatus?: string;
 };
 
 // Selecting another task reuses this route, so its busy state and errors are keyed.
 export function TaskRouteScreen({ route }: StaticScreenProps<TaskRouteParams>) {
   return (
-    <TaskRoute key={`${route.params.environmentId}:${route.params.taskId}`} params={route.params} />
+    <TaskRoute
+      key={`${route.params.environmentId}:${route.params.taskId}:${route.params.runStatus ?? ""}`}
+      params={route.params}
+    />
   );
 }
 
@@ -64,26 +73,52 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
   const access = useTasksAccess(connected ? environmentId : null);
   const workflow = useTaskWorkflow(environmentId, access);
   const detail = useTaskDetail(environmentId, taskId, access);
+  const [runFilter, setRunFilter] = useState<string | null>(params.runStatus ?? null);
+  const runs = useTaskRuns(environmentId, taskId, access, runFilter);
   const task = detail.task;
   const project = useProjects().find(
     (entry) => entry.environmentId === environmentId && entry.id === task?.projectId,
   );
   const [refreshing, setRefreshing] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [busyField, setBusyField] = useState<string | null>(null);
   const canEdit = connected && access?.canMutateTasks === true && task !== null;
+  const archived = task?.archivedAt != null;
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const scrolledToRuns = useRef(params.runStatus === undefined);
 
-  const moveTo = async (status: string) => {
-    if (!task || busy || status === task.status) return;
-    setBusy(true);
-    setMutationError(null);
-    await readTasksClient(environmentId)
-      .tasks.update({ id: task.id, status })
-      .then(detail.applyLocal, (cause: unknown) =>
-        setMutationError(cause instanceof Error ? cause.message : String(cause)),
+  const updateTask = async (field: string, update: Omit<TaskUpdateInput, "id">) => {
+    if (!task) return false;
+    setBusyField(field);
+    const saved = await readTasksClient(environmentId)
+      .tasks.update({ id: task.id, ...update })
+      .then(
+        (updated) => {
+          detail.applyLocal(updated);
+          return true;
+        },
+        (cause: unknown) => {
+          Dialog.alert(gt("Couldn't save the task"), errorText(cause));
+          return false;
+        },
       );
-    setBusy(false);
+    setBusyField(null);
+    return saved;
   };
+  const setArchived = async (archive: boolean) => {
+    if (!task || busyField !== null) return;
+    setBusyField("archive");
+    const client = readTasksClient(environmentId);
+    await (archive ? client.tasks.archive : client.tasks.unarchive)({ ids: [task.id] }).then(
+      () => detail.refresh(),
+      (cause: unknown) =>
+        Dialog.alert(
+          archive ? gt("Failed to archive task") : gt("Failed to unarchive task"),
+          errorText(cause),
+        ),
+    );
+    setBusyField(null);
+  };
+  const latestRun = runFilter === null ? (runs.runs[0] ?? null) : null;
   const openTranscript = (run: TaskAgentRun) =>
     navigation.dispatch(
       StackActions.push("Thread", {
@@ -91,9 +126,20 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
         threadId: String(run.threadId),
       }),
     );
+  const workerOfRun = (runId: string) => {
+    const run = runs.runs.find((entry) => entry.id === runId);
+    return run ? (runs.workers.get(String(run.agentId))?.name ?? null) : null;
+  };
   const subtitle = [project?.title, environment?.environmentLabel, connected ? null : gt("Offline")]
     .filter(Boolean)
     .join(" · ");
+  const statusChoices = !canEdit
+    ? []
+    : task.audience === "person"
+      ? [PERSON_OPEN_STATUS, PERSON_DONE_STATUS]
+      : workflow.version !== null
+        ? taskStatusChoices(workflow.version, task.status)
+        : [];
 
   return (
     <View className="flex-1 bg-screen">
@@ -101,18 +147,31 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
         title={task?.title ?? params.title ?? gt("Task")}
         subtitle={subtitle}
         onBack={layout.usesSplitView ? undefined : returnToList}
+        actions={
+          task && canEdit
+            ? [
+                {
+                  accessibilityLabel: archived ? gt("Unarchive task") : gt("Archive task"),
+                  icon: archived ? "tray.and.arrow.up" : "archivebox",
+                  disabled: busyField !== null,
+                  loading: busyField === "archive",
+                  onPress: () => void setArchived(!archived),
+                },
+              ]
+            : []
+        }
         menus={[
           {
             title: gt("Task actions"),
             icon: "ellipsis",
             items: [
-              ...(detail.latestRun
+              ...(latestRun
                 ? [
                     {
                       id: "transcript",
                       title: gt("Open worker transcript"),
                       icon: "text.bubble",
-                      onPress: () => openTranscript(detail.latestRun!),
+                      onPress: () => openTranscript(latestRun),
                     },
                   ]
                 : []),
@@ -120,7 +179,10 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
                 id: "refresh",
                 title: gt("Refresh"),
                 icon: "arrow.clockwise",
-                onPress: () => void detail.refresh(),
+                onPress: () => {
+                  void detail.refresh();
+                  runs.refresh();
+                },
               },
             ],
           },
@@ -128,13 +190,17 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
       />
       <ScreenContent>
         <NativeScrollView
+          ref={scrollRef}
           className="flex-1"
           contentInsetAdjustmentBehavior="automatic"
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => {
                 setRefreshing(true);
+                runs.refresh();
                 void detail.refresh().finally(() => setRefreshing(false));
               }}
             />
@@ -170,70 +236,33 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
               />
             )
           ) : (
-            <View className="gap-5">
-              <View className="gap-3">
-                <TaskStatusControl
-                  status={task.status}
-                  choices={
-                    !canEdit
-                      ? []
-                      : task.audience === "person"
-                        ? [PERSON_OPEN_STATUS, PERSON_DONE_STATUS]
-                        : workflow.version !== null
-                          ? taskStatusChoices(workflow.version, task.status)
-                          : []
-                  }
-                  busy={busy}
-                  onMove={(status) => void moveTo(status)}
-                />
-                {workflow.error && task.audience !== "person" ? (
-                  <Text selectable className="text-xs text-foreground-muted">
-                    {gt("Couldn't load this computer's task statuses: {error}", {
-                      error: workflow.error,
-                    })}
-                  </Text>
-                ) : null}
-                <Text selectable className="text-xl font-t3-bold leading-7">
-                  {task.title}
-                </Text>
-                <Text className="text-xs text-foreground-muted">
-                  {gt("Updated {time}", {
-                    time: relativeTime(task.updatedAt, undefined, messages),
-                  })}
-                </Text>
-                {task.tags.length > 0 ? (
-                  <View className="flex-row flex-wrap gap-1.5">
-                    {task.tags.map((tag) => (
-                      <Text
-                        key={tag}
-                        className="rounded-md bg-subtle px-2 py-0.5 text-xs text-foreground-muted"
-                      >
-                        {tag}
-                      </Text>
-                    ))}
-                  </View>
-                ) : null}
-                {mutationError ? (
-                  <Text selectable className="text-sm text-danger-foreground">
-                    {mutationError}
-                  </Text>
-                ) : null}
-              </View>
-              {task.audience === "person" ? null : (
-                <TaskWorkerSection
-                  run={detail.latestRun}
-                  worker={detail.worker}
-                  onOpenTranscript={openTranscript}
-                />
-              )}
+            <View className="gap-6">
               <View className="gap-2">
-                <PullRequestSectionHeading>{gt("Description")}</PullRequestSectionHeading>
-                <TaskMarkdown
-                  markdown={task.description}
-                  environmentId={environmentId}
-                  cwd={project?.workspaceRoot ?? null}
+                {archived ? (
+                  <Text className="self-start rounded-md bg-subtle px-2 py-0.5 text-xs text-foreground-muted">
+                    {gt("Archived", { $context: "status of an archived task" })}
+                  </Text>
+                ) : null}
+                <TaskTitleField
+                  key={`${task.id}:title`}
+                  value={task.title}
+                  canEdit={canEdit}
+                  onSave={(title) => updateTask("title", { title })}
                 />
+                {canEdit || connected ? null : (
+                  <Text className="text-xs text-foreground-muted">
+                    {gt("Reconnect to this computer to change this task.")}
+                  </Text>
+                )}
               </View>
+              <TaskDescriptionField
+                key={`${task.id}:description`}
+                value={task.description}
+                canEdit={canEdit}
+                environmentId={environmentId}
+                cwd={project?.workspaceRoot ?? null}
+                onSave={(description) => updateTask("description", { description })}
+              />
               {task.output !== null && task.output.trim() !== "" ? (
                 <View className="gap-2">
                   <PullRequestSectionHeading>{gt("Output")}</PullRequestSectionHeading>
@@ -245,13 +274,126 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
                 </View>
               ) : null}
               <View className="gap-2">
+                <PullRequestSectionHeading>{gt("Details")}</PullRequestSectionHeading>
+                <View className="overflow-hidden rounded-2xl bg-grouped-card">
+                  <TaskDetailRow label={gt("Status")} first>
+                    <TaskStatusControl
+                      status={task.status}
+                      choices={statusChoices}
+                      busy={busyField === "status"}
+                      onMove={(status) => {
+                        if (status !== task.status) void updateTask("status", { status });
+                      }}
+                    />
+                  </TaskDetailRow>
+                  <TaskDetailRow label={gt("Project")}>
+                    <TaskProjectBadge
+                      environmentId={environmentId}
+                      project={project ?? null}
+                      size={18}
+                    />
+                    <Text className="shrink text-base text-foreground-muted" numberOfLines={1}>
+                      {project?.title ?? gt("No project")}
+                    </Text>
+                  </TaskDetailRow>
+                  {/* A person task's tags stay hidden; the planner hands it to an agent. */}
+                  {task.audience === "person" ? null : (
+                    <TaskDetailRow
+                      label={gt("Tags")}
+                      accessibilityValue={
+                        task.tags.length > 0
+                          ? task.tags.join(", ")
+                          : gt("None", { $context: "a task has no tags" })
+                      }
+                      onPress={
+                        canEdit
+                          ? () =>
+                              navigation.dispatch(
+                                StackActions.push("TaskTags", {
+                                  environmentId: String(environmentId),
+                                  taskId: String(task.id),
+                                  title: task.title,
+                                }),
+                              )
+                          : undefined
+                      }
+                    >
+                      {task.tags.length > 0 ? (
+                        task.tags.map((tag) => (
+                          <Text
+                            key={tag}
+                            numberOfLines={1}
+                            className="rounded-md bg-subtle px-2 py-0.5 text-sm text-foreground-muted"
+                          >
+                            {tag}
+                          </Text>
+                        ))
+                      ) : (
+                        <Text className="text-base text-foreground-muted">
+                          {gt("None", { $context: "a task has no tags" })}
+                        </Text>
+                      )}
+                    </TaskDetailRow>
+                  )}
+                  <TaskDetailRow label={gt("Created", { $context: "date a task was created" })}>
+                    <Text className="text-base text-foreground-muted">
+                      {new Date(task.createdAt).toLocaleDateString()}
+                    </Text>
+                  </TaskDetailRow>
+                  <TaskDetailRow
+                    label={gt("Updated", { $context: "date a task was last updated" })}
+                  >
+                    <Text className="text-base text-foreground-muted">
+                      {relativeTime(task.updatedAt, undefined, messages)}
+                    </Text>
+                  </TaskDetailRow>
+                  {task.archivedAt ? (
+                    <TaskDetailRow label={gt("Archived", { $context: "date a task was archived" })}>
+                      <Text className="text-base text-foreground-muted">
+                        {new Date(task.archivedAt).toLocaleString()}
+                      </Text>
+                    </TaskDetailRow>
+                  ) : null}
+                  {task.notBefore ? (
+                    <TaskDetailRow label={gt("Not before")}>
+                      <Text className="text-base text-foreground-muted">
+                        {new Date(task.notBefore).toLocaleString()}
+                      </Text>
+                    </TaskDetailRow>
+                  ) : null}
+                </View>
+                {workflow.error && task.audience !== "person" ? (
+                  <Text selectable className="text-xs text-foreground-muted">
+                    {gt("Couldn't load this computer's task statuses: {error}", {
+                      error: workflow.error,
+                    })}
+                  </Text>
+                ) : null}
+              </View>
+              {task.audience === "person" ? null : (
+                <View
+                  onLayout={(event) => {
+                    // A run count opened the page: show its runs.
+                    if (scrolledToRuns.current) return;
+                    scrolledToRuns.current = true;
+                    const y = event.nativeEvent.layout.y;
+                    setTimeout(() => scrollRef.current?.scrollTo({ y, animated: true }), 0);
+                  }}
+                >
+                  <TaskRunsSection
+                    environmentId={environmentId}
+                    data={runs}
+                    filter={runFilter}
+                    onShowAll={() => setRunFilter(null)}
+                    canMutate={connected && access?.canMutateTasks === true}
+                  />
+                </View>
+              )}
+              <View className="gap-2">
                 <PullRequestSectionHeading>{gt("History")}</PullRequestSectionHeading>
                 <TaskHistoryList
                   records={detail.events === null ? null : taskHistoryRecords(detail.events)}
-                  worker={{
-                    runId: detail.latestRun?.id ?? null,
-                    name: detail.worker?.name ?? null,
-                  }}
+                  workerOfRun={workerOfRun}
                 />
               </View>
             </View>
@@ -260,6 +402,10 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
       </ScreenContent>
     </View>
   );
+}
+
+function errorText(cause: unknown) {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function TaskStatusControl(props: {
@@ -310,61 +456,6 @@ function TaskStatusControl(props: {
   );
 }
 
-function TaskWorkerSection(props: {
-  readonly run: TaskAgentRun | null;
-  readonly worker: TaskAgent | null;
-  readonly onOpenTranscript: (run: TaskAgentRun) => void;
-}) {
-  const gt = useGT();
-  const messages = useMessages();
-  const { run } = props;
-  const state = run ? taskRunPresentation(run.status, messages) : null;
-  return (
-    <View className="gap-2">
-      <PullRequestSectionHeading>{gt("Worker")}</PullRequestSectionHeading>
-      {run === null ? (
-        <Text className="text-sm text-foreground-muted">
-          {gt("No worker has run on this task yet.")}
-        </Text>
-      ) : (
-        <View className="gap-3 rounded-2xl bg-grouped-card p-4">
-          <View className="flex-row items-center gap-2">
-            {state ? (
-              <SymbolView name={state.icon} size={16} tintColorClassName={state.tint} />
-            ) : null}
-            <Text className={`text-sm font-t3-semibold ${state?.text ?? "text-foreground"}`}>
-              {state?.label ?? run.status}
-            </Text>
-            <Text
-              className="min-w-0 flex-1 text-right text-xs text-foreground-muted"
-              numberOfLines={1}
-            >
-              {props.worker?.name ??
-                gt("Worker", { $context: "a task agent whose name is unknown" })}
-            </Text>
-          </View>
-          <Text className="text-xs text-foreground-muted">
-            {run.completedAt
-              ? gt("Started {started}, ended {ended}", {
-                  started: relativeTime(run.startedAt, undefined, messages),
-                  ended: relativeTime(run.completedAt, undefined, messages),
-                })
-              : gt("Started {started}", {
-                  started: relativeTime(run.startedAt, undefined, messages),
-                })}
-          </Text>
-          <Button
-            label={gt("Open transcript")}
-            icon="text.bubble"
-            accessibilityHint={gt("Opens the worker's chat for this run")}
-            onPress={() => props.onOpenTranscript(run)}
-          />
-        </View>
-      )}
-    </View>
-  );
-}
-
 const ACTOR_LABELS = {
   person: msg("Person", { $context: "who changed a task: a person" }),
   "agent-run": msg("Worker run"),
@@ -372,21 +463,17 @@ const ACTOR_LABELS = {
   server: msg("Server", { $context: "who changed a task: the Up.computer server" }),
 } as const satisfies Record<TaskActor["type"], string>;
 
-/** Who made a change; a worker run is named only when it is the run this page shows. */
-function actorLabel(actor: TaskActor, latest: LatestWorker, resolve: MessageResolver) {
-  if (actor.type === "agent-run" && actor.agentRunId === latest.runId && latest.name !== null)
-    return latest.name;
-  return resolve(ACTOR_LABELS[actor.type]);
+/** Who made a change; a worker run is named by its worker once the page's runs list it. */
+function actorLabel(actor: TaskActor, workerOfRun: WorkerOfRun, resolve: MessageResolver) {
+  const worker = actor.type === "agent-run" ? workerOfRun(actor.agentRunId) : null;
+  return worker ?? resolve(ACTOR_LABELS[actor.type]);
 }
 
-interface LatestWorker {
-  readonly runId: string | null;
-  readonly name: string | null;
-}
+type WorkerOfRun = (runId: string) => string | null;
 
 function historyText(
   record: TaskHistoryRecord,
-  worker: LatestWorker,
+  worker: WorkerOfRun,
   gt: ReturnType<typeof useGT>,
   resolve: MessageResolver,
 ): { readonly title: string; readonly detail: string } {
@@ -421,7 +508,7 @@ function historyText(
 
 function TaskHistoryList(props: {
   readonly records: readonly TaskHistoryRecord[] | null;
-  readonly worker: LatestWorker;
+  readonly workerOfRun: WorkerOfRun;
 }) {
   const gt = useGT();
   const messages = useMessages();
@@ -438,7 +525,7 @@ function TaskHistoryList(props: {
   return (
     <View className="gap-3">
       {props.records.map((record) => {
-        const text = historyText(record, props.worker, gt, messages);
+        const text = historyText(record, props.workerOfRun, gt, messages);
         return (
           <View key={record.id} className="gap-0.5">
             <View className="flex-row items-baseline gap-3">

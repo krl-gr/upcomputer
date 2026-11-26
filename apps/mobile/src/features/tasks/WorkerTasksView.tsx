@@ -135,7 +135,7 @@ export function WorkerTasksView(props: {
 
   const selectDetail = useSelectWorkspaceDetail();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const selectTask = (task: ScopedTaskListItem) => {
+  const selectTask = (task: ScopedTaskListItem, runStatus?: string) => {
     Keyboard.dismiss();
     setSelectedKey(`t:${task.id}`);
     selectDetail({
@@ -144,6 +144,7 @@ export function WorkerTasksView(props: {
         environmentId: String(task.environmentId),
         taskId: String(task.id),
         title: task.title,
+        ...(runStatus === undefined ? {} : { runStatus }),
       },
     });
   };
