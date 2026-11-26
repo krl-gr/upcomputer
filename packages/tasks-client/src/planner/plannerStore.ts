@@ -1,14 +1,7 @@
 /**
- * One environment's planner data: person task lists, the schedule entries of
- * the dates on screen, schedule progress of list rows, and the schedules of
- * open detail windows. Live through the environment's task change stream
- * (batched like `TaskPageLoader`), never polled; optimistic through the
- * pending ops of `pendingOps.ts`.
- *
- * Stale reads: every fetch notes the local write sequence when it starts, and
- * a row merged from a write after that point wins over the fetched one.
- * Deleted ids stay deleted for the session (ids are never reused), so an
- * in-flight read cannot bring them back.
+ * One computer's planner data, live through its task change stream and optimistic through
+ * `pendingOps.ts`. Each fetch notes the local write sequence when it starts, so a row written
+ * after that point wins over the fetched one; deleted ids stay deleted for the session.
  */
 import {
   AGENT_RESTORED_STATUS,
@@ -29,18 +22,16 @@ import {
 } from "@t3tools/tasks-contracts/v1";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
 import type { ProjectId } from "@t3tools/contracts";
-import { msg } from "gt-react";
 
-import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
+import type { TasksWebRpcClient } from "../rpc/index.ts";
 import {
   isDisconnectError,
   TaskPageLoader,
   type TaskPageLoadState,
-} from "@t3tools/tasks-client/state/taskPageLoader";
-import { reuseRows, sameRow } from "@t3tools/tasks-client/state/recent";
-import type { TasksStateTarget } from "@t3tools/tasks-client/state/tasksState";
-import type { ScheduleProgressCount } from "../logic/progress.ts";
-import type { PlannerKind } from "./preferences.ts";
+} from "../state/taskPageLoader.ts";
+import { reuseRows, sameRow } from "../state/recent.ts";
+import type { TasksStateTarget } from "../state/tasksState.ts";
+import type { ScheduleProgressCount } from "./progress.ts";
 import {
   addEntries,
   moveEntries,
@@ -57,6 +48,28 @@ import {
 } from "./pendingOps.ts";
 
 export type PlannerListKey = "active" | "archive";
+/** Tasks or routines, the person's in both: agent tasks are the table's. */
+export type PlannerKind = "task" | "routine";
+/** Which planner write failed; each client words it. */
+export type PlannerWriteFailure =
+  | "createRoutine"
+  | "createTask"
+  | "updateTask"
+  | "archiveTask"
+  | "archiveTasks"
+  | "restoreTask"
+  | "restoreTasks"
+  | "deleteTask"
+  | "moveTask"
+  | "moveTasks"
+  | "scheduleTask"
+  | "moveEntry"
+  | "moveEntries"
+  | "updateEntry"
+  | "deleteEntry"
+  | "deleteEntries"
+  | "copyEntries"
+  | "rescheduleDay";
 /** Convex's paginated query states, which wande's list checks. */
 export type PaginationStatus = "LoadingFirstPage" | "CanLoadMore" | "LoadingMore" | "Exhausted";
 
@@ -96,8 +109,8 @@ export interface PlannerStoreOptions {
   readonly batchMs?: number;
   /** How long the store stays live after its last release. */
   readonly releaseMs?: number;
-  /** `title` is English, from `msg()`; the handler translates it. */
-  readonly onError?: (title: string, error: unknown) => void;
+  /** Each client words the failure in its own language. */
+  readonly onError?: (failure: PlannerWriteFailure, error: unknown) => void;
   readonly now?: () => string;
 }
 
@@ -251,7 +264,7 @@ export class PlannerStore {
   private readonly client: TasksWebRpcClient;
   private readonly batchMs: number;
   private readonly releaseMs: number;
-  private readonly onError: (title: string, error: unknown) => void;
+  private readonly onError: (failure: PlannerWriteFailure, error: unknown) => void;
   private readonly now: () => string;
 
   constructor(target: TasksStateTarget, options: PlannerStoreOptions = {}) {
@@ -745,7 +758,7 @@ export class PlannerStore {
    * reported. Resolves to whether the write succeeded.
    */
   private async write<T>(
-    title: string,
+    title: PlannerWriteFailure,
     apply: ((view: PlannerView) => PlannerView) | null,
     run: () => Promise<T>,
     merge: (result: T) => void | Promise<void>,
@@ -783,9 +796,7 @@ export class PlannerStore {
     readonly kind?: PlannerKind;
   }): Promise<boolean> {
     return this.write(
-      input.kind === "routine"
-        ? msg("Could not create the routine")
-        : msg("Could not create the task"),
+      input.kind === "routine" ? "createRoutine" : "createTask",
       null,
       () =>
         this.client.tasks.create({
@@ -807,7 +818,7 @@ export class PlannerStore {
 
   updateTask(id: string, patch: Omit<TaskPatch, "archivedAt">): Promise<boolean> {
     return this.write(
-      msg("Could not update the task"),
+      "updateTask",
       (view) => patchTask(view, id, patch),
       () =>
         this.client.tasks.update({
@@ -826,7 +837,7 @@ export class PlannerStore {
   archive(ids: readonly string[]): Promise<boolean> {
     const archivedAt = this.now();
     return this.write(
-      ids.length === 1 ? msg("Could not archive the task") : msg("Could not archive the tasks"),
+      ids.length === 1 ? "archiveTask" : "archiveTasks",
       (view) => ids.reduce((next, id) => patchTask(next, id, { archivedAt }), view),
       () => this.client.tasks.archive({ ids: ids as TaskId[] }),
       () => this.refetchTasks(ids),
@@ -834,11 +845,9 @@ export class PlannerStore {
   }
 
   /**
-   * Wande's Restore: back in the active list, unarchived. A Done person task
-   * is To Do again. An agent task becomes Restored, which starts no agent, and
-   * its status is written before the unarchive: an unarchived task in a start
-   * status would start its agents at once. A failed status write unarchives
-   * nothing.
+   * Back in the active list, unarchived: a Done person task is To Do again; an agent task
+   * becomes Restored, written before the unarchive, since an unarchived task in a start status
+   * would start its agents at once. A failed status write unarchives nothing.
    */
   async restore(ids: readonly string[]): Promise<boolean> {
     const view = this.getSnapshot().view;
@@ -859,7 +868,7 @@ export class PlannerStore {
       if (status !== null && status !== task.status) statuses.set(id, status);
     }
     return this.write(
-      ids.length === 1 ? msg("Could not restore the task") : msg("Could not restore the tasks"),
+      ids.length === 1 ? "restoreTask" : "restoreTasks",
       (current) =>
         ids.reduce((next, id) => {
           const status = statuses.get(id);
@@ -881,7 +890,7 @@ export class PlannerStore {
   async deleteTasks(ids: readonly string[]): Promise<void> {
     for (const id of ids) {
       await this.write(
-        msg("Could not delete the task"),
+        "deleteTask",
         null,
         () => this.client.tasks.delete({ id: id as TaskId }),
         () => {
@@ -912,7 +921,7 @@ export class PlannerStore {
       ...("afterTaskId" in anchor ? { afterTaskId: anchor.afterTaskId as TaskId } : {}),
     };
     return this.write(
-      ids.length === 1 ? msg("Could not move the task") : msg("Could not move the tasks"),
+      ids.length === 1 ? "moveTask" : "moveTasks",
       (view) => reorderTasks(view, ids, anchor),
       async () =>
         ids.length === 1
@@ -938,7 +947,7 @@ export class PlannerStore {
       updatedAt: timestamp,
     }));
     return this.write(
-      msg("Could not schedule the task"),
+      "scheduleTask",
       (view) => addEntries(view, input.date, temporary, input.placement),
       () => this.client.tasks.scheduleAdd(input),
       (result) => this.mergeWrittenEntries(result.entries),
@@ -951,7 +960,7 @@ export class PlannerStore {
       ...(input.durationMinutes !== undefined ? { durationMinutes: input.durationMinutes } : {}),
     };
     return this.write(
-      input.ids.length === 1 ? msg("Could not move the entry") : msg("Could not move the entries"),
+      input.ids.length === 1 ? "moveEntry" : "moveEntries",
       (view) => moveEntries(view, input.ids, input.date, input.placement, timing),
       () => this.client.tasks.scheduleMove(input),
       (result) => this.mergeWrittenEntries(result.entries),
@@ -965,7 +974,7 @@ export class PlannerStore {
       ...(input.durationMinutes !== undefined ? { durationMinutes: input.durationMinutes } : {}),
     };
     return this.write(
-      msg("Could not update the entry"),
+      "updateEntry",
       (view) => patchEntry(view, input.id, patch),
       () => this.client.tasks.scheduleUpdate(input),
       (result) => this.mergeWrittenEntries(result.entries),
@@ -974,7 +983,7 @@ export class PlannerStore {
 
   deleteEntries(ids: readonly string[]): Promise<boolean> {
     return this.write(
-      ids.length === 1 ? msg("Could not delete the entry") : msg("Could not delete the entries"),
+      ids.length === 1 ? "deleteEntry" : "deleteEntries",
       (view) => removeEntries(view, new Set(ids)),
       () => this.client.tasks.scheduleDelete({ ids: ids as TaskScheduleEntryId[] }),
       (result) => this.forgetEntries(result.entries.map((entry) => entry.id)),
@@ -983,7 +992,7 @@ export class PlannerStore {
 
   copyEntries(input: TaskScheduleCopyInput): Promise<boolean> {
     return this.write(
-      msg("Could not copy the entries"),
+      "copyEntries",
       null,
       () => this.client.tasks.scheduleCopy(input),
       (result) => this.mergeWrittenEntries(result.entries),
@@ -993,7 +1002,7 @@ export class PlannerStore {
   /** "Reschedule incomplete": every open entry of a day to the end of another. */
   moveOpen(fromDate: string, toDate: string): Promise<boolean> {
     return this.write(
-      msg("Could not reschedule the day"),
+      "rescheduleDay",
       null,
       () => this.client.tasks.scheduleMoveOpen({ fromDate, toDate }),
       (result) => this.mergeWrittenEntries(result.entries),

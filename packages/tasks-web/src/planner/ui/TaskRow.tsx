@@ -16,8 +16,8 @@ import { PERSON_DONE_STATUS, PERSON_OPEN_STATUS } from "@t3tools/tasks-contracts
 import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
 import { cn } from "../../../../../apps/web/src/lib/utils.ts";
 import { TablePill } from "../../ui/TablePill.tsx";
-import type { PlannerTask } from "../data/pendingOps.ts";
-import { progressLabel, type ScheduleProgressCount } from "../logic/progress.ts";
+import type { PlannerTask } from "@t3tools/tasks-client/planner/pendingOps";
+import { progressLabel, type ScheduleProgressCount } from "@t3tools/tasks-client/planner/progress";
 import { titleEditResult } from "../logic/titleEdit.ts";
 import { IconAction } from "./IconAction.tsx";
 import { ProjectChip } from "./ProjectChip.tsx";

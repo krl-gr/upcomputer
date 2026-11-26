@@ -1,13 +1,10 @@
 /**
- * The planner's optimistic layer. The store derives a view from what the
- * server said, then applies each pending write's `apply` in order; a write's
- * op is dropped when its response is merged (or it fails). The apply functions
- * are pure and are wande's own optimistic helpers (`dayQueueOptimistic`,
- * `entityListOptimistic`) rewritten for entries and ranked lists.
+ * The planner's optimistic layer: the store applies each pending write's pure `apply` to the
+ * server's view in order, and drops it once the response is merged or the write fails.
  */
 import type { TaskPageResult, TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
-import { insertionIndex, type PlannerPlacement } from "../logic/placement.ts";
+import { insertionIndex, type PlannerPlacement } from "./placement.ts";
 
 export type PlannerTask = TaskPageResult["tasks"][number];
 

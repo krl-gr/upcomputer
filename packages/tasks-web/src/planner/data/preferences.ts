@@ -11,7 +11,7 @@ import {
   setLocalStorageItem,
   useLocalStorage,
 } from "../../../../../apps/web/src/hooks/useLocalStorage.ts";
-import { DAY_COUNT_OPTIONS, todayKey } from "../logic/dates.ts";
+import { DAY_COUNT_OPTIONS, todayKey } from "@t3tools/tasks-client/planner/dates";
 import { MIN_LIST_WIDTH } from "../logic/plannerWidth.ts";
 
 const PlannerPreferencesSchema = Schema.Struct({

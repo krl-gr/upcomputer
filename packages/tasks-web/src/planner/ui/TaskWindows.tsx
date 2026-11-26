@@ -27,9 +27,9 @@ import {
 } from "../../../../../apps/web/src/components/ui/menu.tsx";
 import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
 import { useQueueInstancesByTaskId, useTaskById } from "../data/hooks.ts";
-import type { PlannerSnapshot } from "../data/plannerStore.ts";
-import { todayKey } from "../logic/dates.ts";
-import { countProgress, progressLabel, weekRangeOf } from "../logic/progress.ts";
+import type { PlannerSnapshot } from "@t3tools/tasks-client/planner/plannerStore";
+import { todayKey } from "@t3tools/tasks-client/planner/dates";
+import { countProgress, progressLabel, weekRangeOf } from "@t3tools/tasks-client/planner/progress";
 import { clearDraft, readDraft, useDraft } from "../windows/draftStore.ts";
 import type { PlannerWindow } from "../windows/windowStore.ts";
 import { handOffAgents, handOffPatch } from "../logic/handOff.ts";

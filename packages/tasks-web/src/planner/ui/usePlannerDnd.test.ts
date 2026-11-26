@@ -21,8 +21,8 @@ import {
   decodeTaskDragPayload,
   endComposerTaskDrag,
 } from "../../../../../apps/web/src/components/chat/composerTaskDrag.ts";
-import type { PlannerTask } from "../data/pendingOps.ts";
-import type { PlannerStore } from "../data/plannerStore.ts";
+import type { PlannerTask } from "@t3tools/tasks-client/planner/pendingOps";
+import type { PlannerStore } from "@t3tools/tasks-client/planner/plannerStore";
 import {
   makePlannerCollisionDetection,
   resolvePlannerComposerTasks,

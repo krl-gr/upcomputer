@@ -6,7 +6,7 @@ import { TableRunCounts } from "../../ui/RunCountNumbers.tsx";
 import { TablePill } from "../../ui/TablePill.tsx";
 import { TaskTagChips } from "../../ui/TaskTagChips.tsx";
 import { groupTaskRunCounts, taskRunPresentation } from "../../ui/taskRunPresentation.ts";
-import type { PlannerTask } from "../data/pendingOps.ts";
+import type { PlannerTask } from "@t3tools/tasks-client/planner/pendingOps";
 import { usePlanner } from "./plannerContext.ts";
 
 /**

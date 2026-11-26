@@ -58,6 +58,26 @@
     "./composerRecipients": {
       "types": "./src/composerRecipients.ts",
       "import": "./src/composerRecipients.ts"
+    },
+    "./planner/dates": {
+      "types": "./src/planner/dates.ts",
+      "import": "./src/planner/dates.ts"
+    },
+    "./planner/placement": {
+      "types": "./src/planner/placement.ts",
+      "import": "./src/planner/placement.ts"
+    },
+    "./planner/progress": {
+      "types": "./src/planner/progress.ts",
+      "import": "./src/planner/progress.ts"
+    },
+    "./planner/pendingOps": {
+      "types": "./src/planner/pendingOps.ts",
+      "import": "./src/planner/pendingOps.ts"
+    },
+    "./planner/plannerStore": {
+      "types": "./src/planner/plannerStore.ts",
+      "import": "./src/planner/plannerStore.ts"
     }
   },
   "scripts": {

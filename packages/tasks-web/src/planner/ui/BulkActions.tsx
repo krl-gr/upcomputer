@@ -17,7 +17,7 @@ import {
   MenuTrigger,
 } from "../../../../../apps/web/src/components/ui/menu.tsx";
 import { sameProjectGroup } from "../../ui/taskProjects.ts";
-import type { PlannerTask } from "../data/pendingOps.ts";
+import type { PlannerTask } from "@t3tools/tasks-client/planner/pendingOps";
 import { IconAction } from "./IconAction.tsx";
 import { ProjectChip } from "./ProjectChip.tsx";
 import { usePlanner } from "./plannerContext.ts";
