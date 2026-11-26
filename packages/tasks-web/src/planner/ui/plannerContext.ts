@@ -2,7 +2,7 @@ import { createContext, use } from "react";
 
 import type { PlannerKind, PlannerPreferences } from "../data/preferences.ts";
 import type { HandOffAgent } from "../logic/handOff.ts";
-import type { AutomationStore } from "../data/automationStore.ts";
+import type { AutomationStore } from "@t3tools/tasks-client/automations/automationStore";
 import type { PlannerStore } from "@t3tools/tasks-client/planner/plannerStore";
 import type { WindowStore } from "../windows/windowStore.ts";
 import type { PlannerProject } from "./ProjectChip.tsx";

@@ -78,6 +78,14 @@
     "./planner/plannerStore": {
       "types": "./src/planner/plannerStore.ts",
       "import": "./src/planner/plannerStore.ts"
+    },
+    "./automations/automationStore": {
+      "types": "./src/automations/automationStore.ts",
+      "import": "./src/automations/automationStore.ts"
+    },
+    "./automations/cronSchedule": {
+      "types": "./src/automations/cronSchedule.ts",
+      "import": "./src/automations/cronSchedule.ts"
     }
   },
   "scripts": {

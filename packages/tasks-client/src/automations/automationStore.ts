@@ -1,6 +1,6 @@
 /**
- * One environment's automations for the planner: the agents' routines in the
- * Routines list (Agents, All) and the automation windows. Automations have no
+ * One environment's automations: the desktop's Automations list and windows,
+ * and the iPhone app's Automations view. Automations have no
  * change stream of their own, so the list is read again when tasks change (a
  * fire creates one, a delete changes a count) and shortly after the earliest
  * enabled automation is due. Writes merge their answer at once; a reorder
@@ -15,10 +15,9 @@ import type {
   TaskChange,
 } from "@t3tools/tasks-contracts/v1";
 import { plainErrorSentence } from "@t3tools/client-runtime/errors";
-import { msg } from "gt-react";
 
-import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
-import { reuseRows } from "@t3tools/tasks-client/state/recent";
+import type { TasksWebRpcClient } from "../rpc/index.ts";
+import { reuseRows } from "../state/recent.ts";
 
 export interface AutomationSnapshot {
   /** In the person's order. */
@@ -34,12 +33,20 @@ export interface AutomationAnchor {
   readonly afterAutomationId?: string;
 }
 
+/** A write that failed; each client words it in its own language. */
+export type AutomationWriteFailure =
+  | "createAutomation"
+  | "saveAutomation"
+  | "enableAutomation"
+  | "pauseAutomation"
+  | "deleteAutomation"
+  | "moveAutomation";
+
 export interface AutomationStoreOptions {
   readonly batchMs?: number;
   /** How long the store stays live after its last release. */
   readonly releaseMs?: number;
-  /** `title` is English, from `msg()`; the handler translates it. */
-  readonly onError?: (title: string, error: unknown) => void;
+  readonly onError?: (failure: AutomationWriteFailure, error: unknown) => void;
   readonly now?: () => number;
   /** How long after a due run the list is read again (the scheduler ticks every 30 s). */
   readonly afterDueMs?: number;
@@ -54,7 +61,8 @@ export function orderAutomations<T extends Pick<TaskAutomation, "id" | "rank">>(
   rows: readonly T[],
 ): readonly T[] {
   if (rows.some((row) => row.rank === undefined)) return rows;
-  return rows.toSorted(
+  // Hermes, the iPhone app's engine, lacks toSorted.
+  return [...rows].sort(
     (left, right) => left.rank!.localeCompare(right.rank!) || left.id.localeCompare(right.id),
   );
 }
@@ -72,7 +80,7 @@ export function moveAutomationId(
   return [...rest.slice(0, index), id, ...rest.slice(index)];
 }
 
-export function errorText(error: unknown): string {
+function errorText(error: unknown): string {
   return plainErrorSentence(error);
 }
 
@@ -98,7 +106,7 @@ export class AutomationStore {
   private readonly client: TasksWebRpcClient;
   private readonly batchMs: number;
   private readonly releaseMs: number;
-  private readonly onError: (title: string, error: unknown) => void;
+  private readonly onError: (failure: AutomationWriteFailure, error: unknown) => void;
   private readonly now: () => number;
   private readonly afterDueMs: number;
 
@@ -270,7 +278,7 @@ export class AutomationStore {
   }
 
   private async write<T>(
-    title: string,
+    failure: AutomationWriteFailure,
     run: () => Promise<T>,
     merge: (result: T) => void,
   ): Promise<T | null> {
@@ -279,7 +287,7 @@ export class AutomationStore {
       merge(result);
       return result;
     } catch (error) {
-      this.onError(title, error);
+      this.onError(failure, error);
       return null;
     } finally {
       this.emit();
@@ -289,7 +297,7 @@ export class AutomationStore {
   /** Creates or saves an automation; resolves to the saved one, or null on failure. */
   upsert(input: TaskAutomationUpsertInput): Promise<TaskAutomation | null> {
     return this.write(
-      input.id ? msg("Could not save the automation") : msg("Could not create the automation"),
+      input.id ? "saveAutomation" : "createAutomation",
       () => this.client.automations.upsert(input),
       (automation) => this.merge(automation),
     );
@@ -297,9 +305,7 @@ export class AutomationStore {
 
   async setStatus(id: string, status: TaskAutomationStatus): Promise<boolean> {
     const saved = await this.write(
-      status === "enabled"
-        ? msg("Could not enable the automation")
-        : msg("Could not pause the automation"),
+      status === "enabled" ? "enableAutomation" : "pauseAutomation",
       () => this.client.automations.setStatus({ id: id as TaskAutomationId, status }),
       (automation) => this.merge(automation),
     );
@@ -308,7 +314,7 @@ export class AutomationStore {
 
   async remove(id: string): Promise<boolean> {
     const done = await this.write(
-      msg("Could not delete the automation"),
+      "deleteAutomation",
       () => this.client.automations.delete({ id: id as TaskAutomationId }).then(() => true),
       () => {
         this.rows = this.rows.filter((row) => row.id !== id);
@@ -329,7 +335,7 @@ export class AutomationStore {
     this.pendingOrder = { op, ids };
     this.emit();
     const saved = await this.write(
-      msg("Could not move the automation"),
+      "moveAutomation",
       () =>
         this.client.automations.reorder({
           id: id as TaskAutomationId,
