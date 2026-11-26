@@ -23,7 +23,7 @@ import {
 import { isElectron } from "../../../../../apps/web/src/env.ts";
 import { WorkspacePageHeader } from "../../../../../apps/web/src/extensionApi.ts";
 import { useFloatingActions } from "../../ui/FloatingActions.tsx";
-import type { PlannerTask } from "../data/pendingOps.ts";
+import type { PlannerTask } from "@t3tools/tasks-client/planner/pendingOps";
 import type { PlannerKind } from "../data/preferences.ts";
 import { BulkActions } from "./BulkActions.tsx";
 import { IconAction } from "./IconAction.tsx";

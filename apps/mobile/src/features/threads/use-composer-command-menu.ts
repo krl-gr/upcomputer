@@ -244,6 +244,8 @@ export function resolveComposerCommandSelection(input: {
     replacement = `/${item.command.name} `;
   } else if (item.type === "model") {
     replacement = `${formatComposerModelMention(item.option.selection.instanceId, item.option.selection.model)} `;
+  } else if (item.type === "bot") {
+    replacement = item.mention;
   }
   return replaceTextRange(draftMessage, trigger.rangeStart, trigger.rangeEnd, replacement);
 }
@@ -272,6 +274,7 @@ export function useComposerCommandMenu({
   modelProviders,
   onFreshSession,
   offersSideChat = false,
+  mentionItems,
 }: {
   readonly draftMessage: string;
   readonly ownerKey: string | null;
@@ -299,6 +302,8 @@ export function useComposerCommandMenu({
   /** Arms a fresh session for the next message; absent where `/clear` is unavailable. */
   readonly onFreshSession?: () => void;
   readonly offersSideChat?: boolean;
+  /** Up.computer's `@` recipients, such as bots, listed before threads. */
+  readonly mentionItems?: (query: string) => ReadonlyArray<ComposerCommandItem>;
 }) {
   const gt = useGT();
   const messages = useMessages();
@@ -542,6 +547,7 @@ export function useComposerCommandMenu({
           ? buildComposerModelItems(modelOptions, trigger.query, modelProviders)
           : [];
       return [
+        ...(mentionItems?.(trigger.query) ?? []),
         ...threadItems,
         ...environmentItems,
         ...modelItems,

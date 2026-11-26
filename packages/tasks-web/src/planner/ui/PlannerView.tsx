@@ -43,9 +43,9 @@ import {
   useStoredPlannerKind,
   type PlannerKind,
 } from "../data/preferences.ts";
-import { addDays, dateRange, todayKey, viewStartFor } from "../logic/dates.ts";
+import { addDays, dateRange, todayKey, viewStartFor } from "@t3tools/tasks-client/planner/dates";
 import { plannerIsWide } from "../logic/plannerWidth.ts";
-import { weekRangeOf } from "../logic/progress.ts";
+import { weekRangeOf } from "@t3tools/tasks-client/planner/progress";
 import { usePlannerWindows, windowStoreFor } from "../windows/windowStore.ts";
 import { EntryDragPreview, TaskDragPreview, type EntryCardHandlers } from "./EntryCard.tsx";
 import type { EntryMenuTarget } from "./EntryMenu.tsx";

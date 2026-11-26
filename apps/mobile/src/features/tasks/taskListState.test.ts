@@ -1,13 +1,16 @@
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import {
   CURRENT_TASK_WORKFLOW_VERSION,
+  DEFAULT_TASK_LIST_SETTINGS,
   LEGACY_TASK_WORKFLOW_VERSION,
 } from "@t3tools/tasks-contracts/v1";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  ALL_TASKS_FILTER,
   canCreateTask,
   chooseTasksEnvironment,
+  collapsedTaskStatuses,
   OPEN_TASKS_FILTER,
   parseTaskListFilter,
   taskListEmptyState,
@@ -50,6 +53,31 @@ describe("task list query", () => {
     expect(taskListPageInput({ kind: "status", status: "Needs You" })).toMatchObject({
       status: "Needs You",
     });
+    expect(taskListPageInput(ALL_TASKS_FILTER, ["done", "cancelled"])).toMatchObject({
+      excludeStatuses: ["done", "cancelled"],
+    });
+    expect(
+      taskListPageInput({ kind: "status", status: "Done" }, ["done"]).excludeStatuses,
+    ).toBeUndefined();
+  });
+
+  it("leaves collapsed groups out of the page: Done and Cancelled unless opened, and the user's", () => {
+    expect(collapsedTaskStatuses(ALL_TASKS_FILTER, DEFAULT_TASK_LIST_SETTINGS)).toEqual([
+      "cancelled",
+      "done",
+    ]);
+    expect(
+      collapsedTaskStatuses(ALL_TASKS_FILTER, {
+        groupByStatus: true,
+        statusGroupOpen: { done: true, "to do": false },
+      }),
+    ).toEqual(["cancelled", "to do"]);
+    expect(
+      collapsedTaskStatuses(ALL_TASKS_FILTER, { groupByStatus: false, statusGroupOpen: {} }),
+    ).toEqual([]);
+    expect(
+      collapsedTaskStatuses({ kind: "status", status: "Done" }, DEFAULT_TASK_LIST_SETTINGS),
+    ).toEqual([]);
   });
 
   it("round-trips a filter through its menu id and falls back to open tasks", () => {
@@ -61,7 +89,7 @@ describe("task list query", () => {
     ]) {
       expect(parseTaskListFilter(taskListFilterKey(filter), statuses)).toEqual(filter);
     }
-    expect(parseTaskListFilter("status:blocked", statuses)).toEqual(OPEN_TASKS_FILTER);
+    expect(parseTaskListFilter("status:blocked", statuses)).toEqual(ALL_TASKS_FILTER);
   });
 
   it("offers statuses with tasks in the desktop's group order and counts each filter", () => {
@@ -89,6 +117,7 @@ describe("task list sections", () => {
       workflowVersion: CURRENT_TASK_WORKFLOW_VERSION,
       query: "",
       projectName: () => "Website",
+      settings: DEFAULT_TASK_LIST_SETTINGS,
       ...input,
     }).map((section) => [section.title, section.count, section.tasks.map((task) => task.title)]);
 
@@ -108,13 +137,36 @@ describe("task list sections", () => {
     ]);
   });
 
-  it("keeps finished tasks out of the open list but not out of all tasks", () => {
+  it("keeps finished tasks out of the open list, and collapses Done in all tasks", () => {
     const tasks = [row("Ship it", "To Do"), row("Old", "Done")];
     expect(sections({ tasks })).toEqual([["To Do", 4, ["Ship it"]]]);
-    expect(sections({ tasks, filter: { kind: "all" } })).toEqual([
+    expect(sections({ tasks, filter: ALL_TASKS_FILTER })).toEqual([
+      ["To Do", 4, ["Ship it"]],
+      ["Done", 30, []],
+    ]);
+    expect(
+      sections({
+        tasks,
+        filter: ALL_TASKS_FILTER,
+        settings: { ...DEFAULT_TASK_LIST_SETTINGS, statusGroupOpen: { done: true } },
+      }),
+    ).toEqual([
       ["To Do", 4, ["Ship it"]],
       ["Done", 30, ["Old"]],
     ]);
+  });
+
+  it("follows the user's group order, and lists everything in one untitled section ungrouped", () => {
+    const tasks = [row("Ship it", "To Do"), row("Pick a font", "Needs You")];
+    expect(
+      sections({
+        tasks,
+        settings: { ...DEFAULT_TASK_LIST_SETTINGS, statusGroupOrder: ["to do"] },
+      }).map(([title]) => title),
+    ).toEqual(["To Do", "Needs You"]);
+    expect(
+      sections({ tasks, settings: { ...DEFAULT_TASK_LIST_SETTINGS, groupByStatus: false } }),
+    ).toEqual([["", 2, ["Ship it", "Pick a font"]]]);
   });
 
   it("narrows to loaded rows matching the search and counts the matches", () => {
@@ -126,6 +178,9 @@ describe("task list sections", () => {
     expect(sections({ tasks, query: "  IOS " })).toEqual([["To Do", 1, ["Write docs"]]]);
     expect(sections({ tasks, query: "website" })).toHaveLength(2);
     expect(sections({ tasks, query: "nothing" })).toEqual([]);
+    expect(sections({ tasks, query: "docs", filter: ALL_TASKS_FILTER })).toEqual([
+      ["To Do", 1, ["Write docs"]],
+    ]);
   });
 });
 

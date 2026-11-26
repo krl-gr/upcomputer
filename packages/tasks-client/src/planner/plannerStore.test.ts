@@ -9,7 +9,7 @@ import type {
   TaskScheduleEntry,
 } from "@t3tools/tasks-contracts/v1";
 
-import { TaskChangeStreamEnded } from "@t3tools/tasks-client/rpc";
+import { TaskChangeStreamEnded } from "../rpc/index.ts";
 import { PlannerStore } from "./plannerStore.ts";
 import type { PlannerTask } from "./pendingOps.ts";
 
@@ -330,7 +330,7 @@ describe("planner store: optimistic writes", () => {
     response.reject(new Error("offline"));
     NodeAssert.equal(await moved, false);
     NodeAssert.deepEqual(dayIds(h, "2026-10-07"), ["e1", "e2"]);
-    NodeAssert.deepEqual(h.errors, ["Could not move the entry"]);
+    NodeAssert.deepEqual(h.errors, ["moveEntry"]);
   });
 
   test("a done toggle hides the row at once and a stale page read cannot bring it back", async () => {
@@ -599,7 +599,7 @@ describe("planner store: restore", () => {
     NodeAssert.equal(await h.store.restore(["archived"]), false);
     NodeAssert.deepEqual(writes, []);
     NodeAssert.equal(h.count("unarchive"), 0);
-    NodeAssert.deepEqual(h.errors, ["Could not restore the task"]);
+    NodeAssert.deepEqual(h.errors, ["restoreTask"]);
     NodeAssert.equal(h.store.getSnapshot().view.tasks.get("archived")?.archivedAt, ARCHIVED_AT);
   });
 

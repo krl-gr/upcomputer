@@ -32,7 +32,12 @@ import {
   ToggleGroupItem,
 } from "../../../../../apps/web/src/components/ui/toggle-group.tsx";
 import type { PlannerPreferences } from "../data/preferences.ts";
-import { DAY_COUNT_OPTIONS, dateKeyOf, dateOfKey, type DayCount } from "../logic/dates.ts";
+import {
+  DAY_COUNT_OPTIONS,
+  dateKeyOf,
+  dateOfKey,
+  type DayCount,
+} from "@t3tools/tasks-client/planner/dates";
 import { formatDuration } from "../logic/time.ts";
 import { IconAction } from "./IconAction.tsx";
 import { usePlanner } from "./plannerContext.ts";

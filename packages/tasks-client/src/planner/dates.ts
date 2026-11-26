@@ -54,3 +54,17 @@ export function viewStartFor(key: DateKey, dayCount: number, weekStartDay: numbe
 
 export const DAY_COUNT_OPTIONS = [1, 2, 3, 7] as const;
 export type DayCount = (typeof DAY_COUNT_OPTIONS)[number];
+
+/** The locale's first day of the week where the engine knows it, else Monday. 0 is Sunday. */
+export function localeWeekStart(locale: string): number {
+  try {
+    const info = new Intl.Locale(locale) as Intl.Locale & {
+      getWeekInfo?: () => { firstDay: number };
+      weekInfo?: { firstDay: number };
+    };
+    const firstDay = info.getWeekInfo?.().firstDay ?? info.weekInfo?.firstDay;
+    return firstDay === undefined ? 1 : firstDay % 7;
+  } catch {
+    return 1;
+  }
+}

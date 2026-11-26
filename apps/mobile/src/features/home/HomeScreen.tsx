@@ -104,6 +104,8 @@ import { holdLaunchSplashForHomeRows, settleLaunchSplashHomeRows } from "./home-
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import { ThreadListFilters } from "./ThreadListFilters";
 import { deriveHomeEmptyState } from "./home-empty-state";
+import { BotsSection } from "../bots/BotsSection";
+import { useWithoutBotChats } from "../bots/botsData";
 
 interface HomeScreenProps {
   /** Whether this list is the one on screen; see `useHomeRouteVisible`. */
@@ -419,7 +421,7 @@ export function HomeScreen(props: HomeScreenProps) {
     contentOnlyThreadKeys,
     olderSettledShelf,
   } = useThreadListV2({
-    threads: props.threads,
+    threads: useWithoutBotChats(props.threads, searchEnvironmentIds),
     pendingTasks: props.pendingTasks,
     environmentId: props.selectedEnvironmentId,
     projectRefs: v2ScopedProjectGroup === null ? null : v2ScopedProjectGroup.projectRefs,
@@ -704,6 +706,12 @@ export function HomeScreen(props: HomeScreenProps) {
           onProjectChange={props.onProjectChange}
         />
       ) : null}
+      <BotsSection
+        environmentIds={searchEnvironmentIds}
+        projectRefs={v2ScopedProjectGroup?.projectRefs ?? null}
+        query={props.searchQuery}
+        sidebar={sidebarSurface}
+      />
     </>
   );
 

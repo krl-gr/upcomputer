@@ -1,6 +1,6 @@
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { EnvironmentId } from "@t3tools/contracts";
-import { DEFAULT_TASK_STATUS, LEGACY_TASK_WORKFLOW_VERSION } from "@t3tools/tasks-contracts/v1";
+import { EnvironmentId, type ProjectId } from "@t3tools/contracts";
+import { DEFAULT_TASK_STATUS } from "@t3tools/tasks-contracts/v1";
 import { useGT } from "gt-react-native";
 import { useRef, useState } from "react";
 import { Keyboard, Pressable, View } from "react-native";
@@ -14,12 +14,15 @@ import { useWorkspaceState } from "../../state/workspace";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import { PullRequestSheetContent } from "../pull-requests/PullRequestSheetContent";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { plannerStoreFor } from "./planner/plannerData";
 import { canCreateTask, taskStatusChoices } from "./taskListState";
 import { readTasksClient, useTasksAccess } from "./tasksRpc";
-import { useTaskWorkflowVersion } from "./useTasks";
+import { useTaskWorkflow } from "./useTasks";
 
 export type TaskCreateParams = {
   readonly environmentId: string;
+  /** Your own task or routine, for the planner; left out for a worker task. */
+  readonly plannerKind?: "task" | "routine";
 };
 
 /** A pick-one field: a chip that opens a native menu. */
@@ -75,8 +78,7 @@ export function TaskCreateScreen({ route }: StaticScreenProps<TaskCreateParams>)
   const environment = environments.find((entry) => entry.environmentId === environmentId);
   const connected = environment?.connectionState === "connected";
   const access = useTasksAccess(connected ? environmentId : null);
-  const workflowVersion =
-    useTaskWorkflowVersion(environmentId, access) ?? LEGACY_TASK_WORKFLOW_VERSION;
+  const workflow = useTaskWorkflow(environmentId, access);
   const projects = useProjects()
     .filter((project) => project.environmentId === environmentId && project.isScratch !== true)
     .sort((left, right) => left.title.localeCompare(right.title));
@@ -88,6 +90,8 @@ export function TaskCreateScreen({ route }: StaticScreenProps<TaskCreateParams>)
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
   const allowed = connected && access?.canMutateTasks === true;
+  const plannerKind = route.params.plannerKind;
+  const routine = plannerKind === "routine";
   const draft = { title, description, status };
   const project = projects.find((entry) => entry.id === projectId) ?? null;
 
@@ -96,6 +100,19 @@ export function TaskCreateScreen({ route }: StaticScreenProps<TaskCreateParams>)
     inFlight.current = true;
     setBusy(true);
     setError(null);
+    if (plannerKind !== undefined) {
+      // The planner shows it at once and words a failure itself.
+      const ok = await plannerStoreFor(environmentId).createTask({
+        title: title.trim(),
+        description: description.trim(),
+        kind: plannerKind,
+        ...(project === null ? {} : { projectId: project.id as ProjectId }),
+      });
+      inFlight.current = false;
+      setBusy(false);
+      if (ok) navigation.goBack();
+      return;
+    }
     const created = await readTasksClient(environmentId)
       .tasks.create({
         title: title.trim(),
@@ -129,13 +146,13 @@ export function TaskCreateScreen({ route }: StaticScreenProps<TaskCreateParams>)
   return (
     <PullRequestSheetContent
       busy={busy}
-      title={gt("New task")}
+      title={routine ? gt("New routine") : gt("New task")}
       subtitle={environment?.environmentLabel ?? ""}
       footer={
         <Button
           fullWidth
           tone="contrast"
-          label={busy ? gt("Creating…") : gt("Create task")}
+          label={busy ? gt("Creating…") : routine ? gt("Create routine") : gt("Create task")}
           loading={busy}
           disabled={!allowed || !canCreateTask(draft)}
           onPress={() => void create()}
@@ -145,7 +162,7 @@ export function TaskCreateScreen({ route }: StaticScreenProps<TaskCreateParams>)
       <TextInput
         autoFocus
         editable={!busy}
-        accessibilityLabel={gt("Task title")}
+        accessibilityLabel={routine ? gt("Routine title") : gt("Task title")}
         placeholder={gt("Title", { $context: "task title field" })}
         placeholderTextColorClassName="accent-foreground-muted"
         maxLength={1024}
@@ -155,17 +172,23 @@ export function TaskCreateScreen({ route }: StaticScreenProps<TaskCreateParams>)
         className="min-h-12 rounded-[20px] bg-grouped-card px-4 text-base text-foreground"
       />
       <View className="gap-3 rounded-[20px] bg-grouped-card px-4 py-3">
-        <MenuField
-          label={gt("Status")}
-          value={status}
-          selected={status}
-          options={taskStatusChoices(workflowVersion, null).map((choice) => ({
-            id: choice,
-            title: choice,
-          }))}
-          disabled={busy}
-          onSelect={setStatus}
-        />
+        {plannerKind !== undefined ? null : (
+          <MenuField
+            label={gt("Status")}
+            value={status}
+            selected={status}
+            options={
+              workflow.version === null
+                ? []
+                : taskStatusChoices(workflow.version, null).map((choice) => ({
+                    id: choice,
+                    title: choice,
+                  }))
+            }
+            disabled={busy || workflow.version === null}
+            onSelect={setStatus}
+          />
+        )}
         <MenuField
           label={gt("Project")}
           value={
@@ -200,6 +223,11 @@ export function TaskCreateScreen({ route }: StaticScreenProps<TaskCreateParams>)
           {connected
             ? gt("This computer doesn't let this device create tasks.")
             : gt("Reconnect to this computer to create a task.")}
+        </Text>
+      ) : null}
+      {workflow.error && plannerKind === undefined ? (
+        <Text selectable className="text-xs text-foreground-muted">
+          {gt("Couldn't load this computer's task statuses: {error}", { error: workflow.error })}
         </Text>
       ) : null}
       {error ? (

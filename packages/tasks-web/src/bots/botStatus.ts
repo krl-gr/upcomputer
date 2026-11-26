@@ -9,7 +9,15 @@ import {
   type ThreadStatusLabelEntry,
   type ThreadStatusLabelKind,
 } from "../../../../apps/web/src/sidebarThreadRow/ThreadStatusLabel.tsx";
-import type { SidebarThreadSummary } from "../../../../apps/web/src/types.ts";
+import {
+  botTaskRunRequest,
+  botTaskRunRequestStatus as sharedBotTaskRunRequestStatus,
+  botTaskStatus as sharedBotTaskStatus,
+  topBotStatus,
+  type BotStatusCandidate as SharedBotStatusCandidate,
+  type BotStatusDetail,
+  type BotTaskRunRequest,
+} from "@t3tools/tasks-client/bots/botStatus";
 import { msg } from "gt-react";
 
 export type { BotCharacterState };
@@ -39,19 +47,18 @@ const CHARACTER_STATE: { readonly [Kind in ThreadStatusLabelKind]: BotCharacterS
   limited: "limited",
 };
 
-// The order `resolveSidebarThreadStatus` checks a thread in: a request for the
-// user, then work in flight, then how the last turn ended.
-const PRIORITY: ReadonlyArray<ThreadStatusLabelKind> = [
-  "approval",
-  "input",
-  "request",
-  "preparing",
-  "working",
-  "waiting",
-  "failed",
-  "limited",
-  "done",
-];
+const DETAILS: { readonly [Detail in BotStatusDetail]: string } = {
+  planReview: msg("Plan ready for review"),
+  taskApproval: msg("Background task needs approval"),
+  taskQuestion: msg("Background task asks a question"),
+  taskWaiting: msg("Waiting for its background task"),
+  taskBlocked: msg("Background task is blocked"),
+  taskInterrupted: msg("Background task was interrupted"),
+  taskFailed: msg("Background task failed"),
+  taskLimited: msg("Background task hit a provider limit"),
+  chatTaskApproval: msg("A task from this chat needs approval"),
+  chatTaskQuestion: msg("A task from this chat asks a question"),
+};
 
 /**
  * The bot chat's status as its thread row would show it. `lastVisitedAt`
@@ -62,7 +69,7 @@ export function botChatStatus(chat: BotChatInput | null): BotStatusCandidate | n
   if (!chat) return null;
   const status = resolveSidebarThreadStatus(chat);
   if (status === "ready" && chat.interactionMode === "plan" && chat.hasActionableProposedPlan)
-    return { kind: "input", detail: msg("Plan ready for review") };
+    return { kind: "input", detail: DETAILS.planReview };
   const kind = resolveSidebarV2TopStatus({
     status,
     isUnread: hasUnseenCompletion(chat),
@@ -71,80 +78,27 @@ export function botChatStatus(chat: BotChatInput | null): BotStatusCandidate | n
   return kind === null || kind === "woke" ? null : { kind, detail: null };
 }
 
-/**
- * The bot's latest background task run, whose result returns to the bot chat. How a run
- * ended shows until the chat is opened after it ended, as a thread's own result does. A
- * running task's approval or question shows until it is answered: the run's own thread
- * holds it, and opening the bot chat does not answer it.
- */
-export function botTaskStatus(
-  runStatus: string | undefined,
-  taskThread: Pick<
-    SidebarThreadSummary,
-    "runtime" | "hasPendingApprovals" | "hasPendingUserInput"
-  > | null,
-  seen: {
-    readonly completedAt?: string | null | undefined;
-    readonly lastVisitedAt?: string | null | undefined;
-  } = {},
-): BotStatusCandidate | null {
-  if (runStatus === "running" || runStatus?.startsWith("finalizing:")) {
-    if (taskThread?.hasPendingApprovals)
-      return { kind: "approval", detail: msg("Background task needs approval") };
-    if (taskThread?.hasPendingUserInput)
-      return { kind: "input", detail: msg("Background task asks a question") };
-    return { kind: "waiting", detail: msg("Waiting for its background task") };
-  }
-  if (
-    seen.completedAt != null &&
-    seen.lastVisitedAt != null &&
-    Date.parse(seen.lastVisitedAt) >= Date.parse(seen.completedAt)
-  )
-    return null;
-  if (runStatus === "blocked") return { kind: "input", detail: msg("Background task is blocked") };
-  if (runStatus === "interrupted")
-    return { kind: "failed", detail: msg("Background task was interrupted") };
-  if (runStatus === "failed")
-    return taskThread?.runtime?.status === "failed" &&
-      taskThread.runtime.lastErrorClass === "usage_limit"
-      ? { kind: "limited", detail: msg("Background task hit a provider limit") }
-      : { kind: "failed", detail: msg("Background task failed") };
-  return null;
-}
+const worded = (candidate: SharedBotStatusCandidate | null): BotStatusCandidate | null =>
+  candidate && {
+    kind: candidate.kind,
+    detail: candidate.detail === null ? null : DETAILS[candidate.detail],
+  };
 
-export type BotTaskRunRequest = "approval" | "input" | null;
+/** The bot's latest background task run, worded; `@t3tools/tasks-client` decides it. */
+export const botTaskStatus = (...input: Parameters<typeof sharedBotTaskStatus>) =>
+  worded(sharedBotTaskStatus(...input));
 
-/**
- * Whether a run of a task from the bot's chat, the bot's own or another task agent's, waits
- * for the user. The run's thread holds the request, so opening the bot chat does not answer it.
- */
-export function botTaskRunRequest(
-  runThreads: ReadonlyArray<Pick<
-    SidebarThreadSummary,
-    "hasPendingApprovals" | "hasPendingUserInput"
-  > | null>,
-): BotTaskRunRequest {
-  if (runThreads.some((thread) => thread?.hasPendingApprovals)) return "approval";
-  if (runThreads.some((thread) => thread?.hasPendingUserInput)) return "input";
-  return null;
-}
+export { botTaskRunRequest, type BotTaskRunRequest };
 
-export function botTaskRunRequestStatus(request: BotTaskRunRequest): BotStatusCandidate | null {
-  if (request === "approval")
-    return { kind: "approval", detail: msg("A task from this chat needs approval") };
-  if (request === "input")
-    return { kind: "input", detail: msg("A task from this chat asks a question") };
-  return null;
-}
+export const botTaskRunRequestStatus = (request: BotTaskRunRequest) =>
+  worded(sharedBotTaskRunRequestStatus(request));
 
 /**
  * One status for the bot: whichever of its chat and its tasks comes first for a thread. On
  * a tie the earlier candidate's detail shows.
  */
 export function botStatus(...candidates: ReadonlyArray<BotStatusCandidate | null>): BotStatus {
-  const winner = candidates
-    .filter((candidate) => candidate !== null)
-    .toSorted((a, b) => PRIORITY.indexOf(a.kind) - PRIORITY.indexOf(b.kind))[0];
+  const winner = topBotStatus(...candidates);
   if (!winner) return { state: "idle", label: null, detail: null };
   return {
     state: CHARACTER_STATE[winner.kind],

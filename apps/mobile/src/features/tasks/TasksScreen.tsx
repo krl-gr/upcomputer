@@ -2,19 +2,21 @@ import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { ScopedTaskListItem } from "@t3tools/tasks-client/state/taskPages";
-import { LEGACY_TASK_WORKFLOW_VERSION } from "@t3tools/tasks-contracts/v1";
+import { CURRENT_TASK_WORKFLOW_VERSION } from "@t3tools/tasks-contracts/v1";
 import { useGT } from "gt-react-native";
-import { use, useRef, useState } from "react";
-import { Keyboard, Platform, ScrollView, View } from "react-native";
+import { use, useRef, useState, type ReactNode } from "react";
+import { Keyboard, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { Chip } from "../../components/ui/Chip";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { usePaneRole } from "../../components/ui/Pane";
 import { RefreshControl } from "../../components/ui/RefreshControl";
+import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { useContentTopInset } from "../../components/ui/useBarInset";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
@@ -27,9 +29,13 @@ import { useSearchScrollRestoration } from "../layout/workspace/useSearchScrollR
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { PlannerView } from "./planner/PlannerView";
+import type { TasksView } from "./planner/plannerState";
 import { TaskListRow } from "./TaskListRow";
 import {
+  ALL_TASKS_FILTER,
   chooseTasksEnvironment,
+  collapsedTaskStatuses,
   OPEN_TASKS_FILTER,
   parseTaskListFilter,
   taskListEmptyState,
@@ -41,7 +47,7 @@ import {
   type TaskListFilter,
 } from "./taskListState";
 import { useTasksAccess } from "./tasksRpc";
-import { useTaskList, useTaskWorkflowVersion } from "./useTasks";
+import { useTaskList, useTaskListSettings } from "./useTasks";
 
 // A 12dp inset keeps 16dp chips concentric with Android's 28dp ScreenContent corner.
 const FILTER_ROW_STYLE =
@@ -55,17 +61,119 @@ type TaskListEntry =
       readonly key: string;
       readonly title: string;
       readonly count: number;
+      readonly open: boolean;
     }
   | { readonly type: "task"; readonly key: string; readonly task: ScopedTaskListItem };
 
-/** The Tasks tab: one computer's tasks by status, as the desktop's task table groups them. */
+/**
+ * The Tasks tab: the desktop's Tasks views for one computer, switched on top. Worker tasks is
+ * the task table, My tasks and My routines the planner.
+ */
 export function TasksScreen(props: { readonly sidebar?: boolean } = {}) {
   const gt = useGT();
   const navigation = useNavigation();
   const primaryColumn = use(NativePrimaryColumnContext);
   const workspace = useWorkspaceTabs()!;
   const { environments } = useWorkspaceState();
+  const tab = workspace.state.tabs.tasks;
+  const debouncedQuery = useDebouncedValue(tab.query.trim(), 200);
+  const query = tab.searchMode === "resting" ? "" : debouncedQuery;
+  const [view, setView] = useState<TasksView>("workers");
+  const choices = tasksEnvironments(environments);
+  const [pickedEnvironment, setPickedEnvironment] = useState<EnvironmentId | null>(null);
+  const environmentId = chooseTasksEnvironment(choices, pickedEnvironment);
+  const environment = choices.find((choice) => choice.environmentId === environmentId) ?? null;
+  const connected = environment?.connectionState === "connected";
+  const paneRole = usePaneRole();
+  const sidebar = props.sidebar === true || (primaryColumn !== null && paneRole === "sidebar");
+
+  const viewSwitch = (
+    <View className="px-4 pb-2 pt-1">
+      <SegmentedControl
+        options={[
+          { value: "workers" as const, label: gt("Worker tasks") },
+          { value: "mine" as const, label: gt("My tasks") },
+          { value: "routines" as const, label: gt("My routines") },
+        ]}
+        selected={view}
+        onSelect={setView}
+        size="compact"
+        role="tab"
+      />
+    </View>
+  );
+  const computerMenu =
+    choices.length > 1 ? (
+      <ListFilterMenu
+        label={environment?.environmentLabel ?? gt("Computer")}
+        accessibilityLabel={gt("Choose a computer")}
+        actions={choices.map((choice) => ({
+          id: choice.environmentId,
+          title: choice.environmentLabel,
+          subtitle: choice.connectionState === "connected" ? undefined : gt("Offline"),
+          state: choice.environmentId === environmentId ? "on" : "off",
+        }))}
+        onSelect={(id) => setPickedEnvironment(id as EnvironmentId)}
+      />
+    ) : null;
+  const chips = (children: ReactNode) => (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={{ overflow: "visible" }}
+      contentContainerStyle={FILTER_ROW_STYLE}
+    >
+      {computerMenu}
+      {children}
+    </ScrollView>
+  );
+  if (view !== "workers")
+    return (
+      <PlannerView
+        view={view}
+        environmentId={environmentId}
+        connected={connected}
+        query={query}
+        sidebar={sidebar}
+        header={viewSwitch}
+        chips={chips}
+        onCreate={() =>
+          environmentId !== null &&
+          navigation.navigate("TaskCreate", {
+            environmentId: String(environmentId),
+            plannerKind: view === "routines" ? "routine" : "task",
+          })
+        }
+      />
+    );
+  return (
+    <WorkerTasksView
+      environmentId={environmentId}
+      environment={environment}
+      connected={connected}
+      query={query}
+      sidebar={sidebar}
+      header={viewSwitch}
+      chips={chips}
+    />
+  );
+}
+
+/** Worker tasks: one computer's worker tasks by status, as the desktop's task table groups them. */
+function WorkerTasksView(props: {
+  readonly environmentId: EnvironmentId | null;
+  readonly environment: ReturnType<typeof tasksEnvironments>[number] | null;
+  readonly connected: boolean;
+  readonly query: string;
+  readonly sidebar: boolean;
+  readonly header: ReactNode;
+  readonly chips: (children: ReactNode) => ReactNode;
+}) {
+  const gt = useGT();
+  const navigation = useNavigation();
+  const workspace = useWorkspaceTabs()!;
   const projects = useProjects();
+  const { environmentId, environment, connected, query, sidebar } = props;
   const insets = useSafeAreaInsets();
   const contentTopInset = useContentTopInset();
   const columnSafeBottom = useNativeColumnLayoutMetrics()?.safeArea.bottom;
@@ -81,19 +189,14 @@ export function TasksScreen(props: { readonly sidebar?: boolean } = {}) {
       animated: false,
     });
   });
-  const debouncedQuery = useDebouncedValue(tab.query.trim(), 200);
-  const query = tab.searchMode === "resting" ? "" : debouncedQuery;
-
-  const choices = tasksEnvironments(environments);
-  const [pickedEnvironment, setPickedEnvironment] = useState<EnvironmentId | null>(null);
-  const environmentId = chooseTasksEnvironment(choices, pickedEnvironment);
-  const environment = choices.find((choice) => choice.environmentId === environmentId) ?? null;
-  const connected = environment?.connectionState === "connected";
   const access = useTasksAccess(connected ? environmentId : null);
-  const workflowVersion =
-    useTaskWorkflowVersion(environmentId, access) ?? LEGACY_TASK_WORKFLOW_VERSION;
-  const [filter, setFilter] = useState<TaskListFilter>(OPEN_TASKS_FILTER);
-  const list = useTaskList(connected ? environmentId : null, access, filter);
+  const listSettings = useTaskListSettings(environmentId, access);
+  // Grouping only; the statuses themselves come from the page and its counts.
+  const workflowVersion = listSettings.workflowVersion ?? CURRENT_TASK_WORKFLOW_VERSION;
+  const [filter, setFilter] = useState<TaskListFilter>(ALL_TASKS_FILTER);
+  // Collapsed groups load nothing until opened; their counts still show.
+  const collapsed = collapsedTaskStatuses(filter, listSettings.settings);
+  const list = useTaskList(connected ? environmentId : null, access, filter, collapsed);
   const counts = list.counts?.counts ?? [];
   const page = list.page?.page;
 
@@ -111,14 +214,20 @@ export function TasksScreen(props: { readonly sidebar?: boolean } = {}) {
     workflowVersion,
     query,
     projectName,
+    settings: listSettings.settings,
   });
   const entries: TaskListEntry[] = sections.flatMap((section) => [
-    {
-      type: "section" as const,
-      key: `s:${section.key}`,
-      title: section.title,
-      count: section.count,
-    },
+    ...(section.title
+      ? [
+          {
+            type: "section" as const,
+            key: `s:${section.key}`,
+            title: section.title,
+            count: section.count,
+            open: section.open,
+          },
+        ]
+      : []),
     ...section.tasks.map((task) => ({ type: "task" as const, key: `t:${task.id}`, task })),
   ]);
   const statusOptions = taskStatusOptions(counts, workflowVersion);
@@ -131,8 +240,6 @@ export function TasksScreen(props: { readonly sidebar?: boolean } = {}) {
     searching: query !== "",
   });
 
-  const paneRole = usePaneRole();
-  const sidebar = props.sidebar === true || (primaryColumn !== null && paneRole === "sidebar");
   const selectDetail = useSelectWorkspaceDetail();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const selectTask = (task: ScopedTaskListItem) => {
@@ -201,10 +308,22 @@ export function TasksScreen(props: { readonly sidebar?: boolean } = {}) {
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) =>
           item.type === "section" ? (
-            <View className="flex-row items-baseline gap-2 px-4 pb-1 pt-4">
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: item.open }}
+              accessibilityLabel={`${item.title}, ${item.count}`}
+              accessibilityHint={item.open ? gt("Collapses the group") : gt("Expands the group")}
+              onPress={() => listSettings.setGroupOpen(item.key.slice(2), !item.open)}
+              className="flex-row items-center gap-2 px-4 pb-1 pt-4"
+            >
               <Text className="text-sm font-t3-bold text-foreground">{item.title}</Text>
               <Text className="text-xs tabular-nums text-foreground-muted">{item.count}</Text>
-            </View>
+              <SymbolView
+                name={item.open ? "chevron.down" : "chevron.right"}
+                size={11}
+                tintColorClassName="accent-icon-muted"
+              />
+            </Pressable>
           ) : (
             <TaskListRow
               task={item.task}
@@ -218,79 +337,62 @@ export function TasksScreen(props: { readonly sidebar?: boolean } = {}) {
         ListHeaderComponentStyle={{ zIndex: 1 }}
         ListHeaderComponent={
           <>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={{ overflow: "visible" }}
-              contentContainerStyle={FILTER_ROW_STYLE}
-            >
-              {choices.length > 1 ? (
+            {props.header}
+            {props.chips(
+              <>
                 <ListFilterMenu
-                  label={environment?.environmentLabel ?? gt("Computer")}
-                  accessibilityLabel={gt("Choose a computer")}
-                  actions={choices.map((choice) => ({
-                    id: choice.environmentId,
-                    title: choice.environmentLabel,
-                    subtitle: choice.connectionState === "connected" ? undefined : gt("Offline"),
-                    state: choice.environmentId === environmentId ? "on" : "off",
-                  }))}
+                  label={filterLabel}
+                  active={filter.kind !== "all"}
+                  accessibilityLabel={gt("Filter by status")}
+                  actions={[
+                    {
+                      id: "open",
+                      title:
+                        gt("Open", {
+                          $context: "task filter: tasks that are not done or cancelled",
+                        }) + countSuffix(taskListFilterCount(OPEN_TASKS_FILTER, counts)),
+                      state: filter.kind === "open" ? "on" : "off",
+                    },
+                    {
+                      id: "all",
+                      title:
+                        gt("All tasks") + countSuffix(taskListFilterCount({ kind: "all" }, counts)),
+                      state: filter.kind === "all" ? "on" : "off",
+                    },
+                    ...statusOptions.map((option) => {
+                      const id = taskListFilterKey({ kind: "status", status: option.status });
+                      return {
+                        id,
+                        title: `${option.status} (${option.count})`,
+                        state:
+                          taskListFilterKey(filter) === id ? ("on" as const) : ("off" as const),
+                      };
+                    }),
+                  ]}
                   onSelect={(id) => {
-                    setPickedEnvironment(id as EnvironmentId);
+                    setFilter(
+                      parseTaskListFilter(
+                        id,
+                        statusOptions.map((option) => option.status),
+                      ),
+                    );
                     scrollToTop();
                   }}
                 />
-              ) : null}
-              <ListFilterMenu
-                label={filterLabel}
-                active={filter.kind !== "open"}
-                accessibilityLabel={gt("Filter by status")}
-                actions={[
-                  {
-                    id: "open",
-                    title:
-                      gt("Open", {
-                        $context: "task filter: tasks that are not done or cancelled",
-                      }) + countSuffix(taskListFilterCount(OPEN_TASKS_FILTER, counts)),
-                    state: filter.kind === "open" ? "on" : "off",
-                  },
-                  {
-                    id: "all",
-                    title:
-                      gt("All tasks") + countSuffix(taskListFilterCount({ kind: "all" }, counts)),
-                    state: filter.kind === "all" ? "on" : "off",
-                  },
-                  ...statusOptions.map((option) => {
-                    const id = taskListFilterKey({ kind: "status", status: option.status });
-                    return {
-                      id,
-                      title: `${option.status} (${option.count})`,
-                      state: taskListFilterKey(filter) === id ? ("on" as const) : ("off" as const),
-                    };
-                  }),
-                ]}
-                onSelect={(id) => {
-                  setFilter(
-                    parseTaskListFilter(
-                      id,
-                      statusOptions.map((option) => option.status),
-                    ),
-                  );
-                  scrollToTop();
-                }}
-              />
-              <Chip
-                label={gt("New task")}
-                icon="plus"
-                glass
-                colorScheme={themeAppearance}
-                disabled={!canCreate}
-                accessibilityLabel={gt("New task")}
-                onPress={() =>
-                  environmentId !== null &&
-                  navigation.navigate("TaskCreate", { environmentId: String(environmentId) })
-                }
-              />
-            </ScrollView>
+                <Chip
+                  label={gt("New task")}
+                  icon="plus"
+                  glass
+                  colorScheme={themeAppearance}
+                  disabled={!canCreate}
+                  accessibilityLabel={gt("New task")}
+                  onPress={() =>
+                    environmentId !== null &&
+                    navigation.navigate("TaskCreate", { environmentId: String(environmentId) })
+                  }
+                />
+              </>,
+            )}
             {entries.length > 0 && error ? (
               <Text selectable className="px-4 py-1.5 text-sm text-foreground-muted">
                 {error}

@@ -1139,6 +1139,9 @@ importers:
       '@t3tools/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@t3tools/tasks-client':
+        specifier: workspace:*
+        version: link:../../packages/tasks-client
       '@t3tools/tasks-contracts':
         specifier: workspace:*
         version: link:../../packages/tasks-contracts

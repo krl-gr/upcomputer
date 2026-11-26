@@ -12,7 +12,7 @@ import {
   THREAD_LIST_V2_SIDEBAR_ROW_CONTAINER_STYLE,
   THREAD_LIST_V2_SIDEBAR_ROW_STYLE,
 } from "../threads/thread-list-v2-row-appearance";
-import { taskRunPresentation, taskStatusTone } from "./taskPresentation";
+import { taskRunCounts, taskRunPresentation, taskStatusTone } from "./taskPresentation";
 
 export const TaskListRow = memo(function TaskListRow(props: {
   readonly task: ScopedTaskListItem;
@@ -25,7 +25,9 @@ export const TaskListRow = memo(function TaskListRow(props: {
   const messages = useMessages();
   const { task } = props;
   const status = taskStatusTone(task.status);
-  const run = taskRunPresentation(task.latestRunStatus, messages);
+  // The desktop's Runs column: runs by state; an older server only names the latest run.
+  const runCounts = taskRunCounts(task.runCounts, messages);
+  const run = runCounts.length > 0 ? null : taskRunPresentation(task.latestRunStatus, messages);
   const foreground = props.selected
     ? selectedThreadRowColors.foregroundClassName
     : props.sidebar
@@ -46,6 +48,11 @@ export const TaskListRow = memo(function TaskListRow(props: {
           task.status,
           props.projectName,
           run ? gt("Worker: {state}", { state: run.label }) : null,
+          runCounts.length > 0
+            ? gt("Runs: {counts}", {
+                counts: runCounts.map((count) => `${count.label} ${count.count}`).join(", "),
+              })
+            : null,
           task.tags.length ? task.tags.join(", ") : null,
         ]
           .filter(Boolean)
@@ -94,6 +101,14 @@ export const TaskListRow = memo(function TaskListRow(props: {
                 <Text className={cn("text-2xs font-t3-medium", run.text)}>{run.label}</Text>
               </View>
             ) : null}
+            {runCounts.slice(0, 3).map((count) => (
+              <View key={count.label} className="shrink-0 flex-row items-center gap-0.5">
+                <SymbolView name={count.icon} size={11} tintColorClassName={count.tint} />
+                <Text className={cn("text-2xs font-t3-medium tabular-nums", count.text)}>
+                  {count.count}
+                </Text>
+              </View>
+            ))}
             <View className="min-w-0 flex-1 flex-row items-center gap-1">
               {task.tags.slice(0, 2).map((tag) => (
                 <Text

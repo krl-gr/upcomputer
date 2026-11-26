@@ -4,7 +4,7 @@ import { use } from "react";
 import { ComposerContextActionsContext } from "../components/composerContextActions";
 import { ContextChipShell } from "../components/contextChipParts";
 import { useProductComposerRecipients } from "./composerRecipients";
-import { findComposerRecipientChip } from "./composerRecipients.logic";
+import { findComposerRecipientChip } from "@t3tools/tasks-client/composerRecipients";
 
 /**
  * Reactive recipient chip node for the Tiptap mention view: subscribes to the active thread's

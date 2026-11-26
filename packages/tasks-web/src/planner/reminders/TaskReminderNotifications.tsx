@@ -21,7 +21,7 @@ import {
 } from "../../environmentApi.ts";
 import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
 import { useStoredPlannerEnvironment } from "../data/preferences.ts";
-import { dateOfKey, todayKey } from "../logic/dates.ts";
+import { dateOfKey, todayKey } from "@t3tools/tasks-client/planner/dates";
 import { formatTime } from "../logic/time.ts";
 import { windowStoreFor } from "../windows/windowStore.ts";
 

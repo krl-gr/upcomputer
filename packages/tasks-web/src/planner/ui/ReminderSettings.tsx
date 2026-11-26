@@ -16,7 +16,7 @@ import {
 import { Switch } from "../../../../../apps/web/src/components/ui/switch.tsx";
 import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
 import { readTasksWebClient } from "../../environmentApi.ts";
-import { errorMessage } from "../data/plannerStore.ts";
+import { errorMessage } from "@t3tools/tasks-client/planner/plannerStore";
 import { formatDuration } from "../logic/time.ts";
 import { usePlanner } from "./plannerContext.ts";
 

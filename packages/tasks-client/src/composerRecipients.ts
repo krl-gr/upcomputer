@@ -8,6 +8,9 @@ interface NamedRecipient {
 const fold = (text: string) => text.normalize("NFC").toLowerCase();
 const sameName = (left: string, right: string) => fold(left) === fold(right);
 
+/** Whether two recipients' names read the same to the mention parser. */
+export const sameComposerRecipientName = sameName;
+
 /**
  * The recipients an `@` query names, best first: names that start with it, then names with a
  * word that does, then names that contain it. Ties keep the given order.
@@ -23,14 +26,17 @@ export function matchComposerRecipients<R extends NamedRecipient>(
     if (lower.split(/\s+/u).some((word) => word.startsWith(needle))) return 1;
     return lower.includes(needle) ? 2 : null;
   };
-  return recipients
-    .flatMap((recipient, index) => {
-      const score = rank(recipient.name);
-      return score === null ? [] : [{ recipient, score, index }];
-    })
-    .toSorted((left, right) => left.score - right.score || left.index - right.index)
-    .slice(0, MAX_MENU_RECIPIENTS)
-    .map(({ recipient }) => recipient);
+  return (
+    recipients
+      .flatMap((recipient, index) => {
+        const score = rank(recipient.name);
+        return score === null ? [] : [{ recipient, score, index }];
+      })
+      // `flatMap` returned a new array; Hermes has no `toSorted`.
+      .sort((left, right) => left.score - right.score || left.index - right.index)
+      .slice(0, MAX_MENU_RECIPIENTS)
+      .map(({ recipient }) => recipient)
+  );
 }
 
 /**
@@ -133,7 +139,8 @@ function mentionAt<R extends NamedRecipient>(
       matches.push({ recipient: candidate, length: normalizedName.length, byId: false });
     }
   }
-  const best = matches.toSorted(
+  // The phone runs this too, and Hermes has no `toSorted`.
+  const best = matches.sort(
     (left, right) => right.length - left.length || Number(right.byId) - Number(left.byId),
   )[0];
   return best === undefined

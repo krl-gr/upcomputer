@@ -3,11 +3,13 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { ScopedTaskListItem } from "@t3tools/tasks-client/state/taskPages";
 import {
   defaultStatusGroupOrder,
+  isStatusGroupOpen,
   statusGroupKey,
   taskStatusGroups,
 } from "@t3tools/tasks-client/taskStatusGroups";
 import {
   taskStatusesFor,
+  type TaskListSettings,
   type TaskPageInput,
   type TaskStatusCount,
   type TaskStatusCountsInput,
@@ -27,6 +29,8 @@ export type TaskListFilter =
   | { readonly kind: "status"; readonly status: string };
 
 export const OPEN_TASKS_FILTER: TaskListFilter = { kind: "open" };
+/** Every status, as the desktop's table lists them, with Done and Cancelled collapsed. */
+export const ALL_TASKS_FILTER: TaskListFilter = { kind: "all" };
 
 export function taskListFilterKey(filter: TaskListFilter): string {
   return filter.kind === "status" ? `status:${statusGroupKey(filter.status)}` : filter.kind;
@@ -38,20 +42,45 @@ export function parseTaskListFilter(key: string, statuses: readonly string[]): T
     const status = statuses.find((candidate) => statusGroupKey(candidate) === key.slice(7));
     if (status !== undefined) return { kind: "status", status };
   }
-  return OPEN_TASKS_FILTER;
+  return key === "open" ? OPEN_TASKS_FILTER : ALL_TASKS_FILTER;
 }
 
 /** The workers' tasks, as the desktop's task table lists them; rows leave out their text. */
 export const TASK_LIST_COUNTS_INPUT: TaskStatusCountsInput = { audience: "agent" };
 
-export function taskListPageInput(filter: TaskListFilter): TaskPageInput {
+/**
+ * The page the list loads: a collapsed group's rows wait until it opens, as on the desktop,
+ * so they never take the page's places.
+ */
+export function taskListPageInput(
+  filter: TaskListFilter,
+  collapsed: readonly string[] = [],
+): TaskPageInput {
+  const excluded = [...(filter.kind === "open" ? CLOSED_TASK_STATUSES : []), ...collapsed];
   return {
     audience: "agent",
     omitText: true,
     limit: TASK_LIST_PAGE_SIZE,
-    ...(filter.kind === "open" ? { excludeStatuses: [...CLOSED_TASK_STATUSES] } : {}),
+    ...(filter.kind !== "status" && excluded.length > 0
+      ? { excludeStatuses: [...new Set(excluded)] }
+      : {}),
     ...(filter.kind === "status" ? { status: filter.status } : {}),
   };
+}
+
+type GroupSettings = Pick<TaskListSettings, "groupByStatus" | "statusGroupOpen">;
+
+/**
+ * The status keys whose groups are collapsed, the user's choice or the desktop's default (Done
+ * and Cancelled); none for one status. The server compares statuses without case.
+ */
+export function collapsedTaskStatuses(
+  filter: TaskListFilter,
+  settings: GroupSettings,
+): readonly string[] {
+  if (filter.kind === "status" || !settings.groupByStatus) return [];
+  const keys = new Set([...CLOSED_STATUS_KEYS, ...Object.keys(settings.statusGroupOpen)]);
+  return [...keys].filter((key) => !isStatusGroupOpen(settings.statusGroupOpen, key)).sort();
 }
 
 export interface TaskStatusOption {
@@ -96,10 +125,13 @@ export function taskListFilterCount(
 
 export interface TaskListSection<T> {
   readonly key: string;
+  /** Empty for the one section of an ungrouped list. */
   readonly title: string;
   /** The server's count for the section, or the matches when searching. */
   readonly count: number;
   readonly tasks: readonly T[];
+  /** A collapsed group shows its header and count only. */
+  readonly open: boolean;
 }
 
 function matchesQuery(
@@ -128,31 +160,39 @@ export function taskListSections<
   readonly workflowVersion: TaskWorkflowVersion;
   readonly query: string;
   readonly projectName: (task: T) => string | null;
+  readonly settings: GroupSettings & Pick<TaskListSettings, "statusGroupOrder">;
 }): readonly TaskListSection<T>[] {
   const query = input.query.trim();
   const tasks = query
     ? input.tasks.filter((task) => matchesQuery(task, input.projectName(task), query))
     : input.tasks;
+  if (!input.settings.groupByStatus)
+    return tasks.length === 0
+      ? []
+      : [{ key: "all", title: "", count: tasks.length, tasks, open: true }];
+  const oneStatus = input.filter.kind === "status";
   const { groups } = taskStatusGroups({
     tasks,
     counts: new Map(input.counts.map((count) => [statusGroupKey(count.status), count.count])),
     statuses: input.statuses,
-    statusFilter: input.filter.kind === "status" ? input.filter.status : null,
-    order: [],
-    open: {},
+    statusFilter: oneStatus ? input.filter.status : null,
+    order: input.settings.statusGroupOrder,
+    open: input.settings.statusGroupOpen,
     workflowVersion: input.workflowVersion,
   });
   return groups
+    .map((group) => ({ ...group, open: oneStatus || group.open }))
     .filter(
       (group) =>
-        group.tasks.length > 0 &&
-        (input.filter.kind !== "open" || !CLOSED_STATUS_KEYS.has(group.key)),
+        (input.filter.kind !== "open" || !CLOSED_STATUS_KEYS.has(group.key)) &&
+        (group.open ? group.tasks.length > 0 : !query && group.count > 0),
     )
     .map((group) => ({
       key: group.key,
       title: group.title,
       count: query ? group.tasks.length : Math.max(group.count, group.tasks.length),
-      tasks: group.tasks,
+      tasks: group.open ? group.tasks : [],
+      open: group.open,
     }));
 }
 
