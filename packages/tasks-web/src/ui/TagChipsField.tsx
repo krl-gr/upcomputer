@@ -4,7 +4,7 @@ import { useGT } from "gt-react";
 
 import { Button } from "../../../../apps/web/src/components/ui/button.tsx";
 import { Popover, PopoverPopup } from "../../../../apps/web/src/components/ui/popover.tsx";
-import { splitListInput } from "./shared.ts";
+import { tagsWithAdded } from "@t3tools/tasks-client/tags/tagSuggestions";
 import { TablePill } from "./TablePill.tsx";
 import type { TagSuggestion } from "./tagSuggestions.ts";
 
@@ -35,8 +35,8 @@ export function TagChipsField(props: {
   const add = (text: string) => {
     setQuery("");
     setActiveIndex(-1);
-    const added = splitListInput(text).filter((tag) => !props.tags.includes(tag));
-    if (added.length > 0) props.onChange([...props.tags, ...added]);
+    const next = tagsWithAdded(props.tags, text);
+    if (next !== null) props.onChange(next);
   };
   const close = () => {
     setAdding(false);
