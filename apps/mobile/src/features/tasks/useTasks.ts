@@ -22,12 +22,7 @@ import {
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { readTasksClient } from "./tasksRpc";
-import {
-  TASK_LIST_COUNTS_INPUT,
-  taskListFilterKey,
-  taskListPageInput,
-  type TaskListFilter,
-} from "./taskListState";
+import { taskListCountsInput, taskListPageInput, type WorkerTaskFilters } from "./taskListState";
 
 /** The kinds the detail's history shows: status and archive changes, and why no worker started. */
 const TASK_DETAIL_EVENT_KINDS = [
@@ -45,20 +40,23 @@ export interface TaskListData {
 }
 
 /**
- * One environment's task list for a filter, kept current by the environment's change stream:
- * the same page and count loaders the desktop's task table runs. The counts follow the computer,
- * so a group opened or a filter changed keeps them while its rows load.
+ * One environment's worker tasks for the filters, kept current by the environment's change
+ * stream: the same page and count loaders the desktop's task table runs. The counts leave the
+ * status out, so a group opened or a status chosen keeps them while its rows load.
  */
 export function useTaskList(
   environmentId: EnvironmentId | null,
   access: TasksWebAccess | null,
-  filter: TaskListFilter,
+  filters: WorkerTaskFilters,
   collapsed: readonly string[],
 ): TaskListData {
   const enabled = environmentId !== null && access?.availability === "enabled";
-  const collapsedKey = collapsed.join("\n");
-  const countsKey = enabled ? String(environmentId) : null;
-  const key = enabled ? `${environmentId}:${taskListFilterKey(filter)}:${collapsedKey}` : null;
+  const countsInput = taskListCountsInput(filters);
+  const countsInputKey = JSON.stringify(countsInput);
+  const pageInput = taskListPageInput(filters, collapsed);
+  const pageInputKey = JSON.stringify(pageInput);
+  const countsKey = enabled ? `${environmentId}:${countsInputKey}` : null;
+  const key = enabled ? `${environmentId}:${pageInputKey}` : null;
   const pagesLoader = useRef<{ key: string; loader: TaskPageLoader } | null>(null);
   const countsLoader = useRef<{ key: string; loader: TaskStatusCountsLoader } | null>(null);
   const [page, setPage] = useState<{ key: string; state: TaskPageLoadState } | null>(null);
@@ -69,8 +67,16 @@ export function useTaskList(
     const client = readTasksClient(environmentId);
     const loader = new TaskStatusCountsLoader(
       { environmentId, client, access },
-      TASK_LIST_COUNTS_INPUT,
-      (state) => setCounts({ key: countsKey, state }),
+      JSON.parse(countsInputKey) as typeof countsInput,
+      (state) =>
+        setCounts((previous) =>
+          state.counts === undefined &&
+          state.error === undefined &&
+          previous?.state.counts !== undefined &&
+          previous.key.startsWith(`${environmentId}:`)
+            ? { key: countsKey, state: { ...state, counts: previous.state.counts } }
+            : { key: countsKey, state },
+        ),
     );
     countsLoader.current = { key: countsKey, loader };
     const unsubscribe = client.tasks.subscribe(
@@ -82,14 +88,14 @@ export function useTaskList(
       loader.dispose();
       if (countsLoader.current?.loader === loader) countsLoader.current = null;
     };
-  }, [countsKey, environmentId, access]);
+  }, [countsKey, countsInputKey, environmentId, access]);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- owns the page loader and its change stream subscription for this lane
   useEffect(() => {
     if (key === null || environmentId === null || access === null) return;
     const client = readTasksClient(environmentId);
     const loader = new TaskPageLoader(
       { environmentId, client, access },
-      taskListPageInput(filter, collapsedKey ? collapsedKey.split("\n") : []),
+      JSON.parse(pageInputKey) as typeof pageInput,
       (state) =>
         setPage((previous) =>
           state.page === undefined &&
@@ -110,7 +116,7 @@ export function useTaskList(
       loader.dispose();
       if (pagesLoader.current?.loader === loader) pagesLoader.current = null;
     };
-  }, [key, environmentId, access, filter, collapsedKey]);
+  }, [key, pageInputKey, environmentId, access]);
   const pages = () => (pagesLoader.current?.key === key ? pagesLoader.current.loader : null);
   return {
     page: page !== null && page.key === key ? page.state : null,

@@ -157,7 +157,8 @@ export function WorkspaceToolbar(props: {
             (NATIVE_LIQUID_GLASS_SUPPORTED ||
               tab.searchMode !== "resting" ||
               workspace.settingsOpen) &&
-            searchVisible
+            searchVisible &&
+            selectedTab !== "tasks"
               ? {
                   ref: searchRef,
                   autoFocus: tab.searchMode === "active",
@@ -196,7 +197,7 @@ export function WorkspaceToolbar(props: {
           {searchButton}
           {createNativeHeaderMenu(settingsMenu)}
         </Toolbar>
-      ) : (
+      ) : selectedTab === "tasks" ? null /* TasksToolbar: + and the view menu */ : (
         <Toolbar placement="right">
           {searchButton}
           {nativeToolbarCompose && foldedSearch ? <Toolbar.Spacer width={8} /> : null}

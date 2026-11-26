@@ -41,7 +41,7 @@ function emptyTab(): WorkspaceTabState {
 /** The list a workspace page belongs to. */
 export function workspaceTabOf(routeName: string | undefined): WorkspaceTab {
   if (routeName === "Issue") return "issues";
-  if (routeName === "Task") return "tasks";
+  if (routeName === "Task" || routeName === "Automation") return "tasks";
   return routeName === "PullRequest" ? "pullRequests" : "threads";
 }
 

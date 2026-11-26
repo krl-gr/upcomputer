@@ -31,6 +31,7 @@ import { WorkspaceConnectionTitle } from "../../home/WorkspaceConnectionTitle";
 import { useAdaptiveWorkspaceLayout } from "../AdaptiveWorkspaceLayout";
 import { PullRequestsScreen } from "../../pull-requests/PullRequestsScreen";
 import { IssuesScreen } from "../../issues/IssuesScreen";
+import { renderTasksHeaderTitle } from "../../tasks/TasksHeader";
 import { TasksScreen } from "../../tasks/TasksScreen";
 import {
   WorkspaceTabsContext,
@@ -169,9 +170,11 @@ function WorkspaceRootContent() {
             // Beside a detail column the tab bar names the tab and the detail header the page,
             // so the sidebar keeps the brand.
             headerTitle:
-              sidebarNavigation || (!settingsOpen && state.selectedTab !== "usage")
-                ? renderHeaderTitle
-                : undefined,
+              !sidebarNavigation && !settingsOpen && state.selectedTab === "tasks"
+                ? renderTasksHeaderTitle
+                : sidebarNavigation || (!settingsOpen && state.selectedTab !== "usage")
+                  ? renderHeaderTitle
+                  : undefined,
           }}
         />
         <SafeAreaInsetsContext value={compactTabs ? { ...insets, bottom: 0 } : insets}>

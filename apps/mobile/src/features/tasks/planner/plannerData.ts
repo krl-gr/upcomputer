@@ -73,28 +73,33 @@ export function usePlannerAvailability(
 
 /**
  * The planner of one kind while it is on screen: the store follows the change stream, the
- * visible week (one day more on each side, as the desktop) and the list's progress counters.
+ * visible days (one more on each side, as the desktop) and the list's progress counters.
  */
 export function usePlanner(input: {
   readonly store: PlannerStore;
   readonly kind: PlannerKind;
+  /** Show archive: the list holds done and archived tasks instead. */
+  readonly archiveVisible: boolean;
   readonly weekFrom: string;
   readonly weekTo: string;
   /** The current week, for routines; tasks count every entry. */
   readonly progressWindow: { readonly from: string; readonly to: string } | null;
 }): PlannerSnapshot {
-  const { store, kind, weekFrom, weekTo } = input;
+  const { store, kind, archiveVisible, weekFrom, weekTo } = input;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the store on the computer's change stream while the planner is on screen
   useEffect(() => store.retain(), [store]);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the store, outside React, which list this screen shows
-  useEffect(() => store.setQuery({ projectIds: null, archiveVisible: false, kind }), [store, kind]);
+  useEffect(
+    () => store.setQuery({ projectIds: null, archiveVisible, kind }),
+    [store, kind, archiveVisible],
+  );
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the store which dates are on screen
   useEffect(
     () => store.setRange(addDays(weekFrom, -1), addDays(weekTo, 1)),
     [store, weekFrom, weekTo],
   );
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-  const progressKey = snapshot.active.ids.join(",");
+  const progressKey = (archiveVisible ? snapshot.archive : snapshot.active).ids.join(",");
   const from = input.progressWindow?.from;
   const to = input.progressWindow?.to;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the store which rows show a progress counter
