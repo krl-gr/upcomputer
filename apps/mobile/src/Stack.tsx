@@ -673,8 +673,8 @@ const RootStackConfig = createWorkspaceStackNavigator({
     AddProject: createNativeStackScreen({
       linking: "new/add-project",
       screen: AddProjectSourceRoute,
-
-      options: pageRoute(),
+      // Up.computer: a sheet over the Chats list, as the desktop's Add project dialog.
+      options: sheetRoute({ detent: "full", android: "card" }),
     }),
     AddProjectRepository: createNativeStackScreen({
       linking: "new/add-project/repository",

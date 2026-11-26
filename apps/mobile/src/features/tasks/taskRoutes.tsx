@@ -1,6 +1,8 @@
 import { createNativeStackScreen } from "@react-navigation/native-stack";
 
 import { BotMemoryScreen } from "../bots/BotMemoryScreen";
+import { BotModelScreen } from "../bots/BotModelScreen";
+import { BotSettingsScreen } from "../bots/BotSettingsScreen";
 import { pageRoute, sheetRoute } from "../layout/route-options";
 import { AutomationRouteScreen } from "./automations/AutomationRouteScreen";
 import { TaskCreateScreen } from "./TaskCreateScreen";
@@ -31,5 +33,14 @@ export const TASK_SCREENS = {
   BotMemory: createNativeStackScreen({
     screen: BotMemoryScreen,
     options: sheetRoute({ detent: 0.75, androidFit: true }),
+  }),
+  BotSettings: createNativeStackScreen({
+    screen: BotSettingsScreen,
+    options: sheetRoute({ detent: "full", android: "card" }),
+  }),
+  // As the thread settings sheet: its own stack reaches the sheet's top.
+  BotModel: createNativeStackScreen({
+    screen: BotModelScreen,
+    options: sheetRoute({ detent: "full", header: "none", android: "card", spansRail: true }),
   }),
 };

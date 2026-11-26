@@ -6,7 +6,6 @@ import { useGT, useMessages } from "gt-react-native";
 import { use } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 
-import * as Dialog from "../../components/ui/Dialog";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -37,6 +36,7 @@ export function BotsSection(props: {
   readonly query: string;
 }) {
   const gt = useGT();
+  const navigation = useNavigation();
   const open = useSidebarGroupsOpen().bots;
   const sections = useBotSections(props.environmentIds);
   const bots = shownBots(sections, { projectRefs: props.projectRefs, query: props.query });
@@ -64,8 +64,11 @@ export function BotsSection(props: {
         action={{
           icon: "plus",
           label: gt("New bot"),
-          // The phone's New bot sheet comes in a later part; until then bots start on the desktop.
-          onPress: () => Dialog.alert(gt("New bot"), gt("Create bots in the desktop app for now.")),
+          // A new bot goes to the first computer shown, as the desktop's goes to its own.
+          onPress: () =>
+            navigation.navigate("BotSettings", {
+              environmentId: String(sections[0]!.environmentId),
+            }),
         }}
       />
       {open ? (
@@ -142,12 +145,10 @@ function BotRow(props: {
       params: { environmentId: String(props.environmentId), threadId: String(bot.threadId) },
     });
   const openTasks = () => selectTab("tasks");
-  // The phone has no bot settings page yet; its memory is what it can show of them.
   const openSettings = () =>
-    navigation.navigate("BotMemory", {
+    navigation.navigate("BotSettings", {
       environmentId: String(props.environmentId),
       agentId: String(bot.agent.id),
-      name: bot.agent.name,
     });
 
   return (

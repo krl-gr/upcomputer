@@ -1324,6 +1324,8 @@ type ThreadSettingsPickerStackParams = {
 
 type ThreadSettingsPickerPresentation = {
   readonly onClose: () => void;
+  /** Defaults to "Thread settings"; a bot's model picker says "Model". */
+  readonly title?: string;
 };
 
 const ThreadSettingsPickerStack = createNativeStackNavigator<ThreadSettingsPickerStackParams>();
@@ -1372,7 +1374,7 @@ function ThreadSettingsModelsScreen() {
   return (
     <>
       <AppBar
-        title={gt("Thread settings")}
+        title={presentation.title ?? gt("Thread settings")}
         onClose={presentation.onClose}
         closeAccessibilityLabel={gt("Cancel thread settings")}
         search={search}
@@ -1460,6 +1462,7 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) 
   const gt = useGT();
   const presentation = {
     onClose: props.onClose,
+    ...(props.title === undefined ? {} : { title: props.title }),
   };
 
   return (
@@ -1471,7 +1474,7 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) 
         <ThreadSettingsPickerStack.Screen
           name="ThreadSettingsModels"
           component={ThreadSettingsModelsScreen}
-          options={{ headerBackVisible: false, title: gt("Thread settings") }}
+          options={{ headerBackVisible: false, title: props.title ?? gt("Thread settings") }}
         />
         <ThreadSettingsPickerStack.Screen
           name="ThreadSettingsChoice"
@@ -1484,11 +1487,14 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) 
 }
 
 export function ThreadSettingsPickerScreen(
-  props: ThreadSettingsSessionProps & { readonly onClose: () => void },
+  props: ThreadSettingsSessionProps & ThreadSettingsPickerPresentation,
 ) {
   return (
     <ThreadSettingsSessionProvider {...props}>
-      <ThreadSettingsPickerNavigator onClose={props.onClose} />
+      <ThreadSettingsPickerNavigator
+        onClose={props.onClose}
+        {...(props.title === undefined ? {} : { title: props.title })}
+      />
     </ThreadSettingsSessionProvider>
   );
 }

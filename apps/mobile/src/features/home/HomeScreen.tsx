@@ -104,6 +104,7 @@ import { deriveHomeEmptyState } from "./home-empty-state";
 import { useWithoutBotChats } from "../bots/botsData";
 import { ChatsSidebarGroups } from "./sidebar/ChatsSidebarGroups";
 import { SidebarGroupHeader } from "./sidebar/SidebarGroupHeader";
+import { useNewThreadWithoutProject } from "./sidebar/useNewThreadWithoutProject";
 import { SidebarThreadRow } from "./sidebar/SidebarThreadRow";
 import { toggleSidebarGroup, useSidebarGroupsOpen } from "./sidebar/sidebarGroupsOpen";
 import {
@@ -202,6 +203,10 @@ function renderHomeScrollView(props: ScrollViewProps) {
 
 export function HomeScreen(props: HomeScreenProps) {
   const gt = useGT();
+  const newThreadWithoutProject = useNewThreadWithoutProject(
+    props.selectedEnvironmentId,
+    props.onStartNewTask,
+  );
   const m = useMessages();
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const workspace = useWorkspaceTabs();
@@ -514,7 +519,7 @@ export function HomeScreen(props: HomeScreenProps) {
               ? {
                   icon: "square.and.pencil",
                   label: gt("New thread"),
-                  onPress: props.onStartNewTask,
+                  onPress: () => void newThreadWithoutProject(),
                 }
               : undefined
           }
