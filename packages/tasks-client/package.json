@@ -42,6 +42,22 @@
     "./taskHistory": {
       "types": "./src/taskHistory.ts",
       "import": "./src/taskHistory.ts"
+    },
+    "./bots/botList": {
+      "types": "./src/bots/botList.ts",
+      "import": "./src/bots/botList.ts"
+    },
+    "./bots/botStatus": {
+      "types": "./src/bots/botStatus.ts",
+      "import": "./src/bots/botStatus.ts"
+    },
+    "./bots/bots": {
+      "types": "./src/bots/bots.ts",
+      "import": "./src/bots/bots.ts"
+    },
+    "./composerRecipients": {
+      "types": "./src/composerRecipients.ts",
+      "import": "./src/composerRecipients.ts"
     }
   },
   "scripts": {

@@ -1,5 +1,6 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { BOTS_RPC_METHODS, type Bot } from "@t3tools/tasks-contracts/v1";
+import type { EnvironmentId } from "@t3tools/contracts";
+import { BOTS_RPC_METHODS } from "@t3tools/tasks-contracts/v1";
+import { addressableBots } from "@t3tools/tasks-client/bots/bots";
 import { msg } from "gt-react";
 import { BotIcon } from "lucide-react";
 import { m } from "../../../../apps/web/src/i18n/messages.ts";
@@ -19,11 +20,7 @@ import {
 } from "../environmentApi.ts";
 import { readShownBots, subscribeBots } from "./botData.tsx";
 
-/** The bots a chat's `@` offers: all of them but the chat's own bot, which is written to as is. */
-export const addressableBots = <B extends Pick<Bot, "threadId">>(
-  bots: ReadonlyArray<B>,
-  threadId: ThreadId | null,
-) => bots.filter((bot) => bot.threadId !== threadId);
+export { addressableBots };
 
 /**
  * Follows the environment's bot list and mention permission while a composer is open, so `@`

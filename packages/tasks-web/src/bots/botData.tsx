@@ -7,7 +7,6 @@ import {
   defaultBotAppearance,
   type Bot,
   type BotAppearance,
-  type TaskAgent,
   type TaskAgentId,
 } from "@t3tools/tasks-contracts/v1";
 import { useThreadShell } from "../../../../apps/web/src/state/entities.ts";
@@ -25,7 +24,8 @@ import {
   subscribeTasksWebAccess,
   useTasksWebAccess,
 } from "../environmentApi.ts";
-import { isDisconnectError } from "@t3tools/tasks-client/state/taskPageLoader";
+import { createBotLists, EMPTY_BOT_LIST } from "@t3tools/tasks-client/bots/botList";
+import { isBotAgent } from "@t3tools/tasks-client/bots/bots";
 import { useOmittedThreadShell } from "../ui/useOmittedThreadShell.ts";
 import {
   BOT_CHATS_STORAGE_KEY,
@@ -41,35 +41,6 @@ import {
   botTaskStatus,
   type BotCharacterState,
 } from "./botStatus.ts";
-
-interface BotList {
-  readonly bots: ReadonlyArray<Bot>;
-  readonly loaded: boolean;
-  /** The last load failed; Notifications says so. */
-  readonly failed: boolean;
-  /** The environment's server predates bots: it has no Bots section and no error. */
-  readonly unsupported: boolean;
-}
-
-/**
- * One list per environment, shared by every mounted view, so a change costs one request
- * however many sidebars, headers and pages show bots. The last list stays after the views
- * unmount, so a newly mounted header knows at once whether its thread is a bot chat.
- */
-interface BotListStore {
-  list: BotList;
-  readonly listeners: Set<() => void>;
-  /** Counts publishes, so a snapshot can tell a changed list by value. */
-  version: number;
-  fetching: boolean;
-  again: boolean;
-  stopChanges: (() => void) | undefined;
-  /** Holds the Notifications card while the list fails to load. */
-  releaseNotice: (() => void) | undefined;
-}
-
-const EMPTY: BotList = { bots: [], loaded: false, failed: false, unsupported: false };
-const stores = new Map<EnvironmentId, BotListStore>();
 
 function rememberBotChats(environmentId: EnvironmentId, bots: ReadonlyArray<Bot>) {
   const threadIds = bots.map((bot) => bot.threadId);
@@ -94,7 +65,7 @@ function rememberedWhileLoading(
   const loading = environmentIds.filter((environmentId) => {
     const access = readTasksWebAccess(environmentId);
     if (access.availability !== "loading" && !access.canReadAgents) return false;
-    const { list } = storeFor(environmentId);
+    const list = botLists.read(environmentId);
     return !list.loaded && !list.failed;
   });
   if (loading.length === 0) return [];
@@ -146,138 +117,60 @@ export const errorText = (error: unknown, gt: GT = gtFallback) => {
 export const errorReason = (error: unknown, gt: GT = gtFallback) =>
   describeError(error).reason ?? gt("something went wrong");
 
-/**
- * A server without the bots methods, such as another computer on an older version, rejects
- * the list as a defect naming the request tag it does not know.
- */
-const isUnknownMethodError = (error: unknown) =>
-  describeError(error).detail?.includes("Unknown request tag") === true;
-
 /** The server's code for a failed bot action, which picks its title and action. */
 export const errorCode = (error: unknown) =>
   typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
     ? error.code
     : undefined;
 
-function storeFor(environmentId: EnvironmentId) {
-  let store = stores.get(environmentId);
-  if (!store) {
-    store = {
-      list: EMPTY,
-      version: 0,
-      listeners: new Set(),
-      fetching: false,
-      again: false,
-      stopChanges: undefined,
-      releaseNotice: undefined,
-    };
-    stores.set(environmentId, store);
-  }
-  return store;
+/** Holds each computer's Notifications card while its list fails to load. */
+const releaseNotices = new Map<EnvironmentId, () => void>();
+
+function releaseNotice(environmentId: EnvironmentId) {
+  releaseNotices.get(environmentId)?.();
+  releaseNotices.delete(environmentId);
 }
 
-function releaseNotice(store: BotListStore) {
-  store.releaseNotice?.();
-  store.releaseNotice = undefined;
-}
-
-function publish(store: BotListStore, list: BotList) {
-  store.list = list;
-  store.version += 1;
-  for (const listener of store.listeners) listener();
-}
-
-async function refresh(environmentId: EnvironmentId, store: BotListStore) {
-  if (store.fetching) {
-    store.again = true;
-    return;
-  }
-  store.fetching = true;
-  try {
-    const bots = await readTasksWebClient(environmentId).bots.list({});
-    rememberBotChats(environmentId, bots);
-    releaseNotice(store);
-    publish(store, { bots, loaded: true, failed: false, unsupported: false });
-  } catch (cause) {
-    if (isUnknownMethodError(cause)) {
-      releaseNotice(store);
-      publish(store, { ...EMPTY, loaded: true, unsupported: true });
-    } else {
-      // A view that went away since the request no longer shows the list, and a computer that
-      // went away is its outage card; its reconnect loads the list again.
-      if (store.listeners.size > 0 && !isDisconnectError(cause)) {
-        const previous = store.releaseNotice;
-        store.releaseNotice = holdClientNotice(
-          {
-            id: "bots:list",
-            environmentId,
-            severity: "error",
-            title: msg("Bots didn't load on {computer}"),
-            message: msg("The list shows what it had before."),
-            detail: describeError(cause).detail ?? String(cause),
-          },
-          () => void refresh(environmentId, store),
-        );
-        previous?.();
-      }
-      publish(store, { ...store.list, failed: true });
-    }
-  } finally {
-    store.fetching = false;
-  }
-  if (store.again) {
-    store.again = false;
-    await refresh(environmentId, store);
-  }
-}
+/**
+ * One list per environment, shared by every mounted view, so a change costs one request
+ * however many sidebars, headers and pages show bots.
+ */
+const botLists = createBotLists({
+  client: readTasksWebClient,
+  onLoad: rememberBotChats,
+  onSettle: releaseNotice,
+  onFailure: (environmentId, cause, retry) => {
+    const previous = releaseNotices.get(environmentId);
+    releaseNotices.set(
+      environmentId,
+      holdClientNotice(
+        {
+          id: "bots:list",
+          environmentId,
+          severity: "error",
+          title: msg("Bots didn't load on {computer}"),
+          message: msg("The list shows what it had before."),
+          detail: describeError(cause).detail ?? String(cause),
+        },
+        retry,
+      ),
+    );
+    previous?.();
+  },
+});
 
 /** Refetches every shown bot list after a write from this client. */
-export function botsChanged() {
-  for (const [environmentId, store] of stores)
-    if (store.listeners.size > 0) void refresh(environmentId, store);
-}
+export const botsChanged = botLists.refreshShown;
 
 /** Whether the environment's server answered that it predates bots. */
 export function readBotsUnsupported(environmentId: EnvironmentId) {
-  return stores.get(environmentId)?.list.unsupported === true;
+  return botLists.read(environmentId).unsupported;
 }
 
 /** The environment's bots as last shown; null before a list has loaded. */
-export function readShownBots(environmentId: EnvironmentId) {
-  const list = stores.get(environmentId)?.list;
-  return list?.loaded ? list.bots : null;
-}
+export const readShownBots = botLists.readShown;
 
-export function subscribeBots(environmentId: EnvironmentId, listener: () => void) {
-  const store = storeFor(environmentId);
-  store.listeners.add(listener);
-  if (store.listeners.size === 1) {
-    // Bots change through this client's writes, which refresh on their own, or through agent and
-    // run changes; task edits never do. A dropped stream keeps the last list without an error:
-    // its reconnect resyncs, which also asks a server without bots again (it may have updated).
-    // A stream that never connected still asks for the list, which loads or says it couldn't.
-    store.stopChanges = readTasksWebClient(environmentId).tasks.subscribe(
-      (change) => {
-        if (
-          change.kind === "sync" ||
-          (!store.list.unsupported && (change.runsChanged || change.agentsChanged))
-        )
-          void refresh(environmentId, store);
-      },
-      () => {
-        if (!store.list.loaded) void refresh(environmentId, store);
-      },
-    );
-  }
-  return () => {
-    store.listeners.delete(listener);
-    if (store.listeners.size === 0) {
-      store.stopChanges?.();
-      store.stopChanges = undefined;
-      releaseNotice(store);
-    }
-  };
-}
+export const subscribeBots = botLists.subscribe;
 
 const noBots = () => () => {};
 
@@ -291,8 +184,8 @@ export function useBots(environmentId: EnvironmentId) {
   );
   const list = useSyncExternalStore(
     subscribe,
-    () => (enabled ? storeFor(environmentId).list : EMPTY),
-    () => EMPTY,
+    () => (enabled ? botLists.read(environmentId) : EMPTY_BOT_LIST),
+    () => EMPTY_BOT_LIST,
   );
   return { ...list, enabled: enabled && !list.unsupported };
 }
@@ -367,10 +260,9 @@ export function useBotSectionLists(
     environmentIds
       .flatMap((environmentId) => {
         if (!readTasksWebAccess(environmentId).canReadAgents) return [];
-        const store = storeFor(environmentId);
-        const { list } = store;
+        const list = botLists.read(environmentId);
         return !list.unsupported && (list.loaded || list.failed)
-          ? [`${environmentId}\t${store.version}`]
+          ? [`${environmentId}\t${botLists.version(environmentId)}`]
           : [];
       })
       .join("\n");
@@ -380,7 +272,7 @@ export function useBotSectionLists(
       shown
         ? shown.split("\n").map((entry) => {
             const environmentId = entry.slice(0, entry.lastIndexOf("\t")) as EnvironmentId;
-            const { bots, loaded } = storeFor(environmentId).list;
+            const { bots, loaded } = botLists.read(environmentId);
             return { environmentId, bots, loaded };
           })
         : [],
@@ -396,9 +288,7 @@ export function botPage(
   return { to: "/bots", search: { environment: environmentId, ...target } } as never;
 }
 
-/** A bot's own agent: its one trigger is the tag the bot was saved with. */
-export const isBotAgent = (agent: Pick<TaskAgent, "id" | "startTags">) =>
-  agent.startTags.length === 1 && agent.startTags[0] === `bot:${agent.id}`;
+export { isBotAgent };
 
 /**
  * The bot's shape character. Portraits are hidden for now, so every bot draws its character,

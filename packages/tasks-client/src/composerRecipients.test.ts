@@ -7,7 +7,7 @@ import {
   matchComposerRecipients,
   parseComposerRecipientMessage,
   withoutComposerRecipientChats,
-} from "./composerRecipients.logic";
+} from "./composerRecipients.ts";
 
 const release = { name: "Release helper" };
 const releaseNotes = { name: "Release" };

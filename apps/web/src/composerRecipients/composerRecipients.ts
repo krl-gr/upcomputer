@@ -20,7 +20,7 @@ import {
   matchComposerRecipients,
   parseComposerRecipientMessage,
   withoutComposerRecipientChats,
-} from "./composerRecipients.logic";
+} from "@t3tools/tasks-client/composerRecipients";
 
 const EMPTY_RECIPIENTS: ReadonlyArray<ExperimentalWebComposerRecipient> = [];
 
