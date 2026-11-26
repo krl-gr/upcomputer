@@ -92,6 +92,8 @@ const tasksAccess = createTasksEnvironmentAccess(
 );
 
 export const readTasksClient = tasksAccess.readClient;
+export const readTasksAccess = tasksAccess.readAccess;
+export const subscribeTasksAccess = tasksAccess.subscribe;
 
 // One object per availability, so effects that depend on access rerun only when it changes.
 const ACCESS_BY_AVAILABILITY: Readonly<Record<TasksWebAvailability, TasksWebAccess>> = {

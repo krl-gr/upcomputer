@@ -25,6 +25,7 @@ import type { MessageResolver } from "../../i18n/messages";
 import { cn } from "../../lib/cn";
 import type { ModelOption } from "../../lib/modelOptions";
 import { pullRequestStatus } from "../pull-requests/pullRequestStatus";
+import type { BotComposerItem } from "../bots/botComposer";
 export type ComposerCommandItem =
   | {
       readonly id: string;
@@ -83,7 +84,8 @@ export type ComposerCommandItem =
       readonly option: ModelOption;
       readonly label: string;
       readonly description: string;
-    };
+    }
+  | BotComposerItem;
 
 interface ComposerCommandPopoverProps {
   readonly items: ReadonlyArray<ComposerCommandItem>;
@@ -132,6 +134,8 @@ function itemIcon(item: ComposerCommandItem): AppSymbolName | null {
     case "path":
     case "model":
       return null;
+    case "bot":
+      return "person.crop.circle";
     case "thread":
       return "text.bubble";
     case "environment":
