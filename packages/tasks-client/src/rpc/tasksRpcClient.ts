@@ -92,6 +92,8 @@ export interface TasksWebRpcClient {
     readonly search: RpcUnaryMethod<typeof TASK_AGENTS_RPC_METHODS.search>;
     readonly delete: RpcUnaryMethod<typeof TASK_AGENTS_RPC_METHODS.delete>;
     readonly searchRuns: RpcUnaryMethod<typeof TASK_AGENTS_RPC_METHODS.searchRuns>;
+    readonly stopRun: RpcUnaryMethod<typeof TASK_AGENTS_RPC_METHODS.stopRun>;
+    readonly messageRun: RpcUnaryMethod<typeof TASK_AGENTS_RPC_METHODS.messageRun>;
   };
   readonly automations: {
     readonly upsert: RpcUnaryMethod<typeof TASK_AUTOMATIONS_RPC_METHODS.upsert>;
@@ -313,6 +315,10 @@ export function createTasksWebRpcClient(
         request("agents.delete", "canMutateAgents", TASK_AGENTS_RPC_METHODS.delete, input),
       searchRuns: (input) =>
         request("agents.searchRuns", "canReadAgents", TASK_AGENTS_RPC_METHODS.searchRuns, input),
+      stopRun: (input) =>
+        request("agents.stopRun", "canMutateTasks", TASK_AGENTS_RPC_METHODS.stopRun, input),
+      messageRun: (input) =>
+        request("agents.messageRun", "canMutateTasks", TASK_AGENTS_RPC_METHODS.messageRun, input),
     },
     automations: {
       upsert: (input) =>
