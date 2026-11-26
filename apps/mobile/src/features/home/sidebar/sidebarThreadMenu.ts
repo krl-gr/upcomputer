@@ -13,6 +13,8 @@ export interface SidebarThreadMenuInput {
   /** The project a filter would pick, or "all" while the list is filtered to it. */
   readonly filter: { readonly project: string } | "all" | null;
   readonly turnIntoProject: { readonly enabled: boolean } | null;
+  /** The chat may become a bot's chat (`canBecomeBotChat`); the desktop hides the item otherwise. */
+  readonly turnIntoBot: boolean;
   readonly path: boolean;
   readonly archivable: boolean;
 }
@@ -103,14 +105,10 @@ export function sidebarThreadMenuActions(
         ]
       : []),
   ];
-  // The desktop opens its New bot page from here; the phone gets that page in a later part.
-  const feature: MenuAction[] = [
-    {
-      id: "turn-into-bot",
-      title: resolve(msg("Turn into bot")),
-      attributes: { disabled: true },
-    },
-  ];
+  // As the desktop: opens the bot sheet, which adopts this chat as the new bot's chat.
+  const feature: MenuAction[] = input.turnIntoBot
+    ? [{ id: "turn-into-bot", title: resolve(msg("Turn into bot")), image: "face.smiling" }]
+    : [];
   const copy: MenuAction[] = [
     {
       id: "copy",
@@ -144,7 +142,7 @@ export function sidebarThreadMenuActions(
   return [
     ...(top.length > 0 ? [inline("top", top)] : []),
     inline("thread", thread),
-    inline("feature", feature),
+    ...(feature.length > 0 ? [inline("feature", feature)] : []),
     inline("copy", copy),
     inline("end", end),
   ];

@@ -3,6 +3,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   DEFAULT_RUNTIME_MODE,
   EnvironmentId,
+  ThreadId,
   type ModelSelection,
   type ProjectId,
   type RuntimeMode,
@@ -36,7 +37,7 @@ import { cn } from "../../lib/cn";
 import { buildModelOptions, resolveNewTaskModelSelection } from "../../lib/modelOptions";
 import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
 import { uuidv4 } from "../../lib/uuid";
-import { useEnvironmentServerConfig, useProjects } from "../../state/entities";
+import { useEnvironmentServerConfig, useProjects, useThreadShell } from "../../state/entities";
 import { useWorkspaceState } from "../../state/workspace";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import { readTasksClient, useTasksAccess } from "../tasks/tasksRpc";
@@ -61,6 +62,8 @@ export type BotSettingsParams = {
   readonly environmentId: string;
   /** A saved bot's settings; left out for New bot. */
   readonly agentId?: string;
+  /** Turn into bot: the chat the new bot adopts, as on the desktop. */
+  readonly threadId?: string;
 };
 
 const RUNTIME_MODE_ICONS: Record<RuntimeMode, SFSymbol> = {
@@ -71,6 +74,8 @@ const RUNTIME_MODE_ICONS: Record<RuntimeMode, SFSymbol> = {
 };
 
 const errorMessage = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+const errorCode = (cause: unknown) =>
+  typeof cause === "object" && cause !== null && "code" in cause ? cause.code : undefined;
 
 /** Saves a saved bot's settings as they change, as the desktop's bot page does. */
 function useAutosave(value: BotWriteInput | null, write: (value: BotWriteInput) => Promise<void>) {
@@ -104,34 +109,56 @@ export function BotSettingsScreen({ route }: StaticScreenProps<BotSettingsParams
   const connected = environment?.connectionState === "connected";
   const access = useTasksAccess(connected ? environmentId : null);
   const section = useBotSections([environmentId])[0];
+  const threadId =
+    route.params.threadId === undefined ? undefined : ThreadId.make(route.params.threadId);
+  const source = useThreadShell(threadId ? scopeThreadRef(environmentId, threadId) : null);
+  // A chat that already is a bot opens that bot's settings, as on the desktop.
   const bot =
-    route.params.agentId === undefined || section?.state !== "ready"
+    section?.state !== "ready"
       ? undefined
-      : section.bots.find((entry) => entry.agent.id === route.params.agentId);
+      : section.bots.find((entry) =>
+          route.params.agentId !== undefined
+            ? entry.agent.id === route.params.agentId
+            : threadId !== undefined && entry.threadId === threadId,
+        );
   const missing = route.params.agentId !== undefined && section?.state === "ready" && !bot;
+  // Turn into bot waits for the list, which may show the chat is a bot already.
+  const waitingForBots = threadId !== undefined && section?.state !== "ready";
   const client = readTasksClient(environmentId).bots;
-  const [id] = useState(() => TaskAgentId.make(route.params.agentId ?? `bot:${uuidv4()}`));
+  const [newId] = useState(() =>
+    TaskAgentId.make(route.params.agentId ?? `bot:${threadId ?? uuidv4()}`),
+  );
+  const id = bot?.agent.id ?? newId;
   const changes = useBotFormChanges(formKey);
   const change = (patch: Parameters<typeof changeBotForm>[1]) => changeBotForm(formKey, patch);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the form's changes live in a store the model picker shares; they go with the sheet
   useEffect(() => () => forgetBotForm(formKey), [formKey]);
 
+  // A chat without a project keeps its own: the server keeps a chat's worktree in its project.
   const projects = useProjects()
-    .filter((project) => project.environmentId === environmentId && project.isScratch !== true)
+    .filter(
+      (project) =>
+        project.environmentId === environmentId &&
+        (project.isScratch !== true || project.id === source?.projectId),
+    )
     .sort((left, right) => left.title.localeCompare(right.title));
+  const sourceProjectId = projects.some((entry) => entry.id === source?.projectId)
+    ? source?.projectId
+    : undefined;
   const projectId: ProjectId | null =
-    changes.projectId ?? bot?.projectId ?? projects[0]?.id ?? null;
+    changes.projectId ?? bot?.projectId ?? sourceProjectId ?? projects[0]?.id ?? null;
   const project = projects.find((entry) => entry.id === projectId) ?? null;
   const serverConfig = useEnvironmentServerConfig(environmentId);
   const modelOptions = buildModelOptions(
     serverConfig,
-    changes.selection ?? bot?.agent.config.modelSelection ?? null,
+    changes.selection ?? bot?.agent.config.modelSelection ?? source?.modelSelection ?? null,
     undefined,
     projectId,
   );
   const selection: ModelSelection | undefined =
     changes.selection ??
     bot?.agent.config.modelSelection ??
+    source?.modelSelection ??
     resolveNewTaskModelSelection({
       draftSelection: null,
       projectDefaultSelection: project?.defaultModelSelection ?? null,
@@ -148,13 +175,19 @@ export function BotSettingsScreen({ route }: StaticScreenProps<BotSettingsParams
     : undefined;
   const form = {
     id,
-    name: changes.name ?? bot?.agent.name ?? gt("New bot"),
+    ...(threadId && !bot ? { threadId } : {}),
+    name: changes.name ?? bot?.agent.name ?? source?.title ?? gt("New bot"),
     appearance: changes.appearance ?? bot?.appearance ?? defaultBotAppearance(id),
     instructions:
       changes.instructions ?? bot?.agent.config.instructions ?? DEFAULT_BOT_INSTRUCTIONS,
     projectId,
     selection,
-    runtimeMode: changes.runtimeMode ?? bot?.agent.config.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+    // A chat turned into a bot keeps its permissions; a new bot gets a new thread's.
+    runtimeMode:
+      changes.runtimeMode ??
+      bot?.agent.config.runtimeMode ??
+      source?.runtimeMode ??
+      DEFAULT_RUNTIME_MODE,
     memoryMode: changes.memoryMode ?? bot?.memoryMode ?? ("upcomputer" as BotMemoryMode),
   };
   const draft = botWriteInput(form, bot?.agent);
@@ -209,7 +242,9 @@ export function BotSettingsScreen({ route }: StaticScreenProps<BotSettingsParams
     setBusy(true);
     setError(null);
     const saved = await client.save(draft).catch((cause: unknown) => {
-      setError(errorMessage(cause));
+      if (errorCode(cause) === "bot_chat_unavailable")
+        Dialog.alert(gt("Can't use this chat"), errorMessage(cause));
+      else setError(errorMessage(cause));
       return null;
     });
     if (saved !== null) botLists.refreshShown();
@@ -306,7 +341,7 @@ export function BotSettingsScreen({ route }: StaticScreenProps<BotSettingsParams
       contentContainerClassName="gap-6"
       header={
         <SheetHeader
-          title={bot ? bot.agent.name : gt("New bot")}
+          title={bot ? bot.agent.name : threadId ? gt("Turn into bot") : gt("New bot")}
           subtitle={environment?.environmentLabel ?? ""}
           onClose={() => navigation.goBack()}
           dismissDisabled={busy}
@@ -316,7 +351,7 @@ export function BotSettingsScreen({ route }: StaticScreenProps<BotSettingsParams
                 confirm: {
                   label: busy ? gt("Creating…") : gt("Create bot"),
                   onPress: () => void create(),
-                  disabled: !editable || draft === null,
+                  disabled: !editable || draft === null || waitingForBots,
                   loading: busy,
                 },
               })}

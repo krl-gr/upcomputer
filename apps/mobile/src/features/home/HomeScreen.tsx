@@ -93,7 +93,6 @@ import {
   buildHomeProjectScopes,
   findHomeProjectScope,
   type HomeProjectSortOrder,
-  sortHomeProjectScopes,
 } from "./homeThreadList";
 import { createSwipeRowActivation } from "./swipe-row-activation";
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "./thread-swipe-actions";
@@ -102,16 +101,8 @@ import { holdLaunchSplashForHomeRows, settleLaunchSplashHomeRows } from "./home-
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import { deriveHomeEmptyState } from "./home-empty-state";
 import { useWithoutBotChats } from "../bots/botsData";
-import { ChatsSidebarGroups } from "./sidebar/ChatsSidebarGroups";
-import { SidebarGroupHeader } from "./sidebar/SidebarGroupHeader";
-import { useNewThreadWithoutProject } from "./sidebar/useNewThreadWithoutProject";
-import { SidebarThreadRow } from "./sidebar/SidebarThreadRow";
-import { toggleSidebarGroup, useSidebarGroupsOpen } from "./sidebar/sidebarGroupsOpen";
-import {
-  sidebarListItems,
-  sidebarListItemsAreEqual,
-  type SidebarListItem,
-} from "./sidebar/sidebarListItems";
+import { sidebarListItemsAreEqual, type SidebarListItem } from "./sidebar/sidebarListItems";
+import { useChatsSidebarList } from "./sidebar/useChatsSidebarList";
 
 interface HomeScreenProps {
   /** Whether this list is the one on screen; see `useHomeRouteVisible`. */
@@ -203,10 +194,6 @@ function renderHomeScrollView(props: ScrollViewProps) {
 
 export function HomeScreen(props: HomeScreenProps) {
   const gt = useGT();
-  const newThreadWithoutProject = useNewThreadWithoutProject(
-    props.selectedEnvironmentId,
-    props.onStartNewTask,
-  );
   const m = useMessages();
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const workspace = useWorkspaceTabs();
@@ -468,90 +455,29 @@ export function HomeScreen(props: HomeScreenProps) {
     onSelectThread(thread);
   };
   useThreadJumpShortcuts(threadListV2Items, selectThread);
-  const sidebarGroupsOpen = useSidebarGroupsOpen();
-  const sidebarItems = sidebarListItems(threadListV2Items, sidebarGroupsOpen);
-  const pickableProjects = pickableProjectGroups(
-    sortHomeProjectScopes({
-      scopes: projectScopes,
-      threads: props.threads,
-      pendingTasks: [],
-      projectSortOrder: "updated_at",
-    }),
-  );
-  const filterThreadProject = (thread: EnvironmentThreadShell | null) =>
-    props.onProjectChange(
-      thread === null
-        ? null
-        : (pickableProjects.find((scope) =>
-            scope.projectRefs.some(
-              (ref) =>
-                ref.environmentId === thread.environmentId && ref.projectId === thread.projectId,
-            ),
-          )?.key ?? null),
-    );
-  const sidebarRowActions = {
-    onSelect: selectThread,
-    onArchive: props.onArchiveThread,
-    onDelete: handleDeleteThread,
-    onRename: handleRenameThread,
-    onRegenerateTitle: handleRegenerateThreadTitle,
-    onPin: handlePinThread,
-    onUnpin: handleUnpinThread,
-    onSnooze: handleSnoozeThread,
-    onUnsnooze: handleUnsnoozeThread,
-    onNewThreadOnBranch: props.onNewThreadOnBranch,
-    onFilterProject: filterThreadProject,
-  };
+  const sidebar = useChatsSidebarList(props, {
+    items: threadListV2Items,
+    projectScopes,
+    projectByKey,
+    scopedProjectGroup: v2ScopedProjectGroup,
+    searchEnvironmentIds,
+    selectedThreadKey,
+    onSelectThread: selectThread,
+    swipe: {
+      fullSwipeWidth,
+      onSwipeableClose: handleSwipeableClose,
+      onSwipeableWillOpen: handleSwipeableWillOpen,
+      simultaneousSwipeGesture: homeScrollGesture,
+    },
+  });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the list's visible range after commit to enable swipe gestures on those rows
   useEffect(() => {
-    if (swipeEnabled) activateVisibleRows(threadListV2Items);
-  }, [activateVisibleRows, swipeEnabled, threadListV2Items]);
+    if (swipeEnabled) activateVisibleRows(sidebar.listData);
+  }, [activateVisibleRows, swipeEnabled, sidebar.listData]);
 
   const renderV2Item = ({ item }: { readonly item: SidebarListItem }) => {
-    if (item.type === "sidebar-group")
-      return (
-        <SidebarGroupHeader
-          title={item.group === "pinned" ? gt("Pinned") : gt("Threads")}
-          open={item.open}
-          onToggle={() => toggleSidebarGroup(item.group)}
-          action={
-            item.group === "threads"
-              ? {
-                  icon: "square.and.pencil",
-                  label: gt("New thread"),
-                  onPress: () => void newThreadWithoutProject(),
-                }
-              : undefined
-          }
-        />
-      );
-    if (Platform.OS === "ios" && item.type === "v2-thread") {
-      const thread = item.item.thread;
-      return (
-        <SidebarThreadRow
-          thread={thread}
-          project={
-            projectByKey.get(scopedProjectKey(thread.environmentId, thread.projectId)) ?? null
-          }
-          timeLabel={item.timeLabel}
-          snoozed={item.item.snoozed}
-          snoozeWakeLabel={item.snoozeWakeLabelText}
-          snoozePresetMinute={item.snoozePresetMinute ?? ""}
-          snoozePresets={snoozePresetsByEnvironmentId.get(thread.environmentId)}
-          snoozeSupported={snoozeEnvironmentIds.has(thread.environmentId)}
-          pinningSupported={pinningEnvironmentIds.has(thread.environmentId)}
-          titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
-          projectFiltered={v2ScopedProjectGroup !== null}
-          selected={scopedThreadKey(thread.environmentId, thread.id) === selectedThreadKey}
-          fullSwipeWidth={fullSwipeWidth}
-          actions={sidebarRowActions}
-          onSwipeableClose={handleSwipeableClose}
-          onSwipeableWillOpen={handleSwipeableWillOpen}
-          simultaneousSwipeGesture={homeScrollGesture}
-          activationKey={item.key}
-        />
-      );
-    }
+    const sidebarRow = sidebar.renderItem(item);
+    if (sidebarRow !== null || item.type === "sidebar-group") return sidebarRow;
     if (item.type === "v2-pending") {
       const pendingScopeKey = scopedProjectKey(
         item.pendingTask.environmentId,
@@ -776,34 +702,7 @@ export function HomeScreen(props: HomeScreenProps) {
   const v2ListHeader = (
     <>
       {listHeader}
-      {Platform.OS === "ios" ? (
-        <ChatsSidebarGroups
-          computers={props.environments.map((environment) => ({
-            environmentId: environment.environmentId,
-            label: environment.label,
-            connected: environment.connectionState === "connected",
-            machine: machineByEnvironmentId.get(environment.environmentId),
-          }))}
-          selectedEnvironmentId={props.selectedEnvironmentId}
-          onEnvironmentChange={props.onEnvironmentChange}
-          projects={pickableProjects.map((scope) => {
-            const ref = scope.projectRefs[0];
-            return {
-              key: scope.key,
-              label: scope.title,
-              project: ref
-                ? (projectByKey.get(scopedProjectKey(ref.environmentId, ref.projectId)) ?? null)
-                : null,
-            };
-          })}
-          selectedProjectKey={props.selectedProjectKey}
-          onProjectChange={props.onProjectChange}
-          onNewChat={props.onNewThreadInProject}
-          botEnvironmentIds={searchEnvironmentIds}
-          botProjectRefs={v2ScopedProjectGroup?.projectRefs ?? null}
-          query={props.searchQuery}
-        />
-      ) : null}
+      {sidebar.header}
     </>
   );
 
@@ -872,13 +771,13 @@ export function HomeScreen(props: HomeScreenProps) {
                 ref={listRef}
                 onLoad={() => {
                   settleLaunchSplashHomeRows();
-                  activateVisibleRows(threadListV2Items);
+                  activateVisibleRows(sidebar.listData);
                 }}
                 onTouchStart={(event) => trackListTouches(event, true)}
                 onTouchEnd={(event) => trackListTouches(event, false)}
                 onTouchCancel={(event) => trackListTouches(event, false)}
                 renderScrollComponent={Platform.OS === "ios" ? renderHomeScrollView : undefined}
-                data={Platform.OS === "ios" ? sidebarItems : threadListV2Items}
+                data={sidebar.listData}
                 renderItem={renderV2Item}
                 keyExtractor={v2KeyExtractor}
                 getItemType={(item) => item.type}

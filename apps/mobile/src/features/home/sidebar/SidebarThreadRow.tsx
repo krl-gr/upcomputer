@@ -71,6 +71,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   readonly snoozeSupported: boolean;
   readonly pinningSupported: boolean;
   readonly titleRegenerationSupported: boolean;
+  readonly turnIntoBotOffered: boolean;
   /** The list shows one project, so rows leave out its badge and the menu offers All projects. */
   readonly projectFiltered: boolean;
   readonly selected: boolean;
@@ -138,6 +139,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       turnIntoProject: canTurnThreadIntoProject(thread)
         ? { enabled: threadCanArchive(thread.runtime) }
         : null,
+      turnIntoBot: props.turnIntoBotOffered,
       path: workspacePath !== null,
       archivable: threadCanArchive(thread.runtime),
     },
@@ -161,6 +163,11 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     if (event === "filter-project") actions.onFilterProject(thread);
     if (event === "show-all-projects") actions.onFilterProject(null);
     if (event === "turn-into-project") void turnThreadIntoProject(thread);
+    if (event === "turn-into-bot")
+      navigation.navigate("BotSettings", {
+        environmentId: thread.environmentId,
+        threadId: thread.id,
+      });
     if (event === "copy-path" && workspacePath) copyTextWithHaptic(workspacePath);
     if (event === "copy-branch" && thread.branch) copyTextWithHaptic(thread.branch);
     if (event === "copy-thread") {
