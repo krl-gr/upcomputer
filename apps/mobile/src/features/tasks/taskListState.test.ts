@@ -7,20 +7,20 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  ALL_TASKS_FILTER,
+  appliedWorkerTaskFilterCount,
   canCreateTask,
   chooseTasksEnvironment,
   collapsedTaskStatuses,
-  OPEN_TASKS_FILTER,
-  parseTaskListFilter,
+  DEFAULT_WORKER_TASK_FILTERS,
+  taskListCountsInput,
   taskListEmptyState,
-  taskListFilterCount,
-  taskListFilterKey,
   taskListPageInput,
   taskListSections,
   tasksEnvironments,
   taskStatusChoices,
-  taskStatusOptions,
+  toggledTag,
+  workerStatusOptions,
+  workerTagOptions,
 } from "./taskListState";
 
 const project = ProjectId.make("project-app");
@@ -36,87 +36,84 @@ const counts = [
   { status: "Done", count: 30 },
   { status: "Waiting on vendor", count: 2 },
 ];
+const filters = DEFAULT_WORKER_TASK_FILTERS;
 
-describe("task list query", () => {
-  it("lists the workers' open tasks without their text, or one status", () => {
-    expect(taskListPageInput(OPEN_TASKS_FILTER)).toEqual({
+describe("worker task filters", () => {
+  it("sends the desktop's filters to the server; counts leave the status out", () => {
+    expect(taskListPageInput(filters)).toEqual({ audience: "agent", omitText: true, limit: 50 });
+    const narrowed = {
+      projectId: "project-app",
+      status: "Needs You",
+      lastRun: "none",
+      tags: ["ios"],
+      archive: "all" as const,
+    };
+    expect(taskListCountsInput(narrowed)).toEqual({
       audience: "agent",
+      projectId: "project-app",
+      tags: ["ios"],
+      archive: "all",
+      lastRun: "none",
+    });
+    expect(taskListPageInput(narrowed, ["done"])).toEqual({
+      ...taskListCountsInput(narrowed),
       omitText: true,
       limit: 50,
-      excludeStatuses: ["Done", "Cancelled"],
-    });
-    expect(taskListPageInput({ kind: "all" })).toEqual({
-      audience: "agent",
-      omitText: true,
-      limit: 50,
-    });
-    expect(taskListPageInput({ kind: "status", status: "Needs You" })).toMatchObject({
       status: "Needs You",
     });
-    expect(taskListPageInput(ALL_TASKS_FILTER, ["done", "cancelled"])).toMatchObject({
-      excludeStatuses: ["done", "cancelled"],
-    });
-    expect(
-      taskListPageInput({ kind: "status", status: "Done" }, ["done"]).excludeStatuses,
-    ).toBeUndefined();
+    expect(appliedWorkerTaskFilterCount(filters)).toBe(0);
+    expect(appliedWorkerTaskFilterCount(narrowed)).toBe(5);
   });
 
   it("leaves collapsed groups out of the page: Done and Cancelled unless opened, and the user's", () => {
-    expect(collapsedTaskStatuses(ALL_TASKS_FILTER, DEFAULT_TASK_LIST_SETTINGS)).toEqual([
+    expect(collapsedTaskStatuses(filters, DEFAULT_TASK_LIST_SETTINGS)).toEqual([
+      "cancelled",
+      "done",
+    ]);
+    expect(taskListPageInput(filters, ["cancelled", "done"]).excludeStatuses).toEqual([
       "cancelled",
       "done",
     ]);
     expect(
-      collapsedTaskStatuses(ALL_TASKS_FILTER, {
+      collapsedTaskStatuses(filters, {
         groupByStatus: true,
         statusGroupOpen: { done: true, "to do": false },
       }),
     ).toEqual(["cancelled", "to do"]);
-    expect(
-      collapsedTaskStatuses(ALL_TASKS_FILTER, { groupByStatus: false, statusGroupOpen: {} }),
-    ).toEqual([]);
-    expect(
-      collapsedTaskStatuses({ kind: "status", status: "Done" }, DEFAULT_TASK_LIST_SETTINGS),
-    ).toEqual([]);
+    expect(collapsedTaskStatuses(filters, { groupByStatus: false, statusGroupOpen: {} })).toEqual(
+      [],
+    );
+    expect(collapsedTaskStatuses({ status: "Done" }, DEFAULT_TASK_LIST_SETTINGS)).toEqual([]);
   });
 
-  it("round-trips a filter through its menu id and falls back to open tasks", () => {
-    const statuses = ["To Do", "Needs You"];
-    for (const filter of [
-      OPEN_TASKS_FILTER,
-      { kind: "all" } as const,
-      { kind: "status", status: "Needs You" } as const,
-    ]) {
-      expect(parseTaskListFilter(taskListFilterKey(filter), statuses)).toEqual(filter);
-    }
-    expect(parseTaskListFilter("status:blocked", statuses)).toEqual(ALL_TASKS_FILTER);
+  it("offers the workflow's statuses and any other with tasks, in the desktop's group order", () => {
+    const options = workerStatusOptions(counts, CURRENT_TASK_WORKFLOW_VERSION, "Backlog");
+    expect(options.slice(0, 2)).toEqual(["Needs You", "Failed"]);
+    expect(options).toContain("Waiting on vendor");
+    expect(options).toContain("Backlog");
+    expect(options.filter((status) => status.toLowerCase() === "to do")).toHaveLength(1);
   });
 
-  it("offers statuses with tasks in the desktop's group order and counts each filter", () => {
-    expect(
-      taskStatusOptions([...counts, { status: "Idea", count: 0 }], CURRENT_TASK_WORKFLOW_VERSION),
-    ).toEqual([
-      { status: "Needs You", count: 1 },
-      { status: "To Do", count: 4 },
-      { status: "Done", count: 30 },
-      { status: "Waiting on vendor", count: 2 },
+  it("offers loaded and chosen tags A to Z, and toggles one", () => {
+    expect(workerTagOptions([{ tags: ["web", "bug"] }, { tags: ["bug"] }], ["ops"])).toEqual([
+      "bug",
+      "ops",
+      "web",
     ]);
-    expect(taskListFilterCount(OPEN_TASKS_FILTER, counts)).toBe(7);
-    expect(taskListFilterCount({ kind: "all" }, counts)).toBe(37);
-    expect(taskListFilterCount({ kind: "status", status: "done" }, counts)).toBe(30);
+    expect(toggledTag(["bug"], "web")).toEqual(["bug", "web"]);
+    expect(toggledTag(["bug", "web"], "bug")).toEqual(["web"]);
   });
 });
 
 describe("task list sections", () => {
-  const sections = (input: Partial<Parameters<typeof taskListSections>[0]>) =>
-    taskListSections({
+  type Row = ReturnType<typeof row>;
+  const sections = (input: Partial<Parameters<typeof taskListSections<Row>>[0]>) =>
+    taskListSections<Row>({
       tasks: [],
       counts,
       statuses: counts.map((count) => count.status),
-      filter: OPEN_TASKS_FILTER,
+      status: null,
       workflowVersion: CURRENT_TASK_WORKFLOW_VERSION,
-      query: "",
-      projectName: () => "Website",
       settings: DEFAULT_TASK_LIST_SETTINGS,
       ...input,
     }).map((section) => [section.title, section.count, section.tasks.map((task) => task.title)]);
@@ -133,25 +130,27 @@ describe("task list sections", () => {
     ).toEqual([
       ["Needs You", 1, ["Pick a font"]],
       ["To Do", 4, ["Ship it"]],
+      ["Done", 30, []],
       ["Waiting on vendor", 2, ["Wait"]],
     ]);
   });
 
-  it("keeps finished tasks out of the open list, and collapses Done in all tasks", () => {
+  it("keeps Done collapsed with its count until opened, and shows one status open", () => {
     const tasks = [row("Ship it", "To Do"), row("Old", "Done")];
-    expect(sections({ tasks })).toEqual([["To Do", 4, ["Ship it"]]]);
-    expect(sections({ tasks, filter: ALL_TASKS_FILTER })).toEqual([
+    expect(sections({ tasks })).toEqual([
       ["To Do", 4, ["Ship it"]],
       ["Done", 30, []],
     ]);
     expect(
       sections({
         tasks,
-        filter: ALL_TASKS_FILTER,
         settings: { ...DEFAULT_TASK_LIST_SETTINGS, statusGroupOpen: { done: true } },
       }),
     ).toEqual([
       ["To Do", 4, ["Ship it"]],
+      ["Done", 30, ["Old"]],
+    ]);
+    expect(sections({ tasks: [row("Old", "Done")], status: "Done" })).toEqual([
       ["Done", 30, ["Old"]],
     ]);
   });
@@ -163,24 +162,10 @@ describe("task list sections", () => {
         tasks,
         settings: { ...DEFAULT_TASK_LIST_SETTINGS, statusGroupOrder: ["to do"] },
       }).map(([title]) => title),
-    ).toEqual(["To Do", "Needs You"]);
+    ).toEqual(["To Do", "Needs You", "Done"]);
     expect(
       sections({ tasks, settings: { ...DEFAULT_TASK_LIST_SETTINGS, groupByStatus: false } }),
     ).toEqual([["", 2, ["Ship it", "Pick a font"]]]);
-  });
-
-  it("narrows to loaded rows matching the search and counts the matches", () => {
-    const tasks = [
-      row("Ship the iPhone app", "To Do"),
-      row("Write docs", "To Do", ["ios-dev"]),
-      row("Pick a font", "Needs You"),
-    ];
-    expect(sections({ tasks, query: "  IOS " })).toEqual([["To Do", 1, ["Write docs"]]]);
-    expect(sections({ tasks, query: "website" })).toHaveLength(2);
-    expect(sections({ tasks, query: "nothing" })).toEqual([]);
-    expect(sections({ tasks, query: "docs", filter: ALL_TASKS_FILTER })).toEqual([
-      ["To Do", 1, ["Write docs"]],
-    ]);
   });
 });
 
@@ -225,7 +210,7 @@ describe("tasks environment", () => {
         availability: "enabled",
         initialLoading: false,
         error: undefined,
-        searching: false,
+        filtered: false,
         ...input,
       });
     expect(state({ environment: null })).toBe("noEnvironment");
@@ -236,7 +221,7 @@ describe("tasks environment", () => {
     expect(state({ availability: "loading", initialLoading: true })).toBe("checking");
     expect(state({ initialLoading: true, error: "Socket closed" })).toBe("error");
     expect(state({ initialLoading: true })).toBe("loading");
-    expect(state({ searching: true })).toBe("noResults");
+    expect(state({ filtered: true })).toBe("filtered");
     expect(state({})).toBe("empty");
   });
 });

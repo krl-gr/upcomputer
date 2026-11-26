@@ -4,6 +4,7 @@ import {
   resolveNavigationTabOrder,
   type NavigationTab,
 } from "./navigation-tab-order";
+import { isMorePageTab } from "./moreTab";
 
 export function resolveWorkspaceTabOrder(saved: readonly unknown[] | undefined) {
   return navigationCustomizationAvailable()
@@ -18,7 +19,7 @@ export type WorkspaceSearchMode = "resting" | "active" | "expanded";
 
 /** Settings, Chats, pull requests and issues pair a list with a detail column; Usage is one page. */
 export function workspaceUsesColumns(tab: WorkspaceTab, settingsOpen = false) {
-  return settingsOpen || tab !== "usage";
+  return settingsOpen || (tab !== "usage" && !isMorePageTab(tab));
 }
 
 export interface WorkspaceTabState {
@@ -41,7 +42,8 @@ function emptyTab(): WorkspaceTabState {
 /** The list a workspace page belongs to. */
 export function workspaceTabOf(routeName: string | undefined): WorkspaceTab {
   if (routeName === "Issue") return "issues";
-  if (routeName === "Task") return "tasks";
+  if (routeName === "Task" || routeName === "Automation") return "tasks";
+  if (routeName === "Workers") return "more";
   return routeName === "PullRequest" ? "pullRequests" : "threads";
 }
 
@@ -57,6 +59,8 @@ export function initialWorkspaceTabsState(
       pullRequests: emptyTab(),
       issues: emptyTab(),
       usage: emptyTab(),
+      notifications: emptyTab(),
+      more: emptyTab(),
       settings: emptyTab(),
     },
   };

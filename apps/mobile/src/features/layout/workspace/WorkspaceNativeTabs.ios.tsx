@@ -37,9 +37,9 @@ import {
 import { useControlTheme } from "../../../components/ui/useControlTheme";
 import { useDeviceType } from "../../../native/native-layout-metrics";
 import { WorkspaceSidebarTabs } from "./WorkspaceSidebarTabs";
+import { MORE_TAB } from "./moreTab";
 import { useAdaptiveWorkspaceLayout, useWorkspacePaneState } from "../AdaptiveWorkspaceLayout";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
-import { useWorkspaceCompose } from "./useWorkspaceCompose";
 
 const PULL_REQUEST_ICON = require("../../../../assets/icons/pull-request.png");
 const ISSUE_ICON = require("../../../../assets/icons/issue.png");
@@ -77,7 +77,8 @@ function RetainedWorkspaceTab(props: {
       source: workspace,
       workspace: {
         ...workspace,
-        settingsOpen: props.slot === "settings",
+        // Up.computer's fifth slot opens on More, not on the Settings list.
+        settingsOpen: props.slot === "settings" && props.tab !== MORE_TAB,
         state: { ...workspace.state, selectedTab: props.tab },
       },
       children: props.children,
@@ -299,15 +300,8 @@ export function WorkspaceNativeTabs(props: {
   );
 }
 
-/** The workspace tabs at the foot of the sidebar. */
+/** The workspace tabs at the foot of the sidebar. Up.computer's bar has no compose button. */
 export function WorkspaceSidebarTabsFooter() {
-  const compose = useWorkspaceCompose();
   const compact = useFloatingWorkspaceTabs();
-  return (
-    <WorkspaceSidebarTabs
-      compact={compact}
-      reserveComposeSpace={compact}
-      onNewTask={compact ? compose?.onPress : undefined}
-    />
-  );
+  return <WorkspaceSidebarTabs compact={compact} reserveComposeSpace={false} />;
 }

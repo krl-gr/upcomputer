@@ -24,6 +24,7 @@ import {
   ContentStatus,
   contentStatusContainerStyle,
 } from "../../components/ui/ContentBand";
+import { usePaneRole } from "../../components/ui/Pane";
 import { PaneListItem } from "../../components/ui/PaneListItem";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import { SheetPane } from "../../components/ui/SheetPane";
@@ -358,6 +359,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
   const reduceMotion = useReduceMotionEnabled();
   const { nativeReviewDiffStyle } = useAppearanceCodeSurface();
   const { panes } = useWorkspacePaneState();
+  const paneRole = usePaneRole();
   const navigation = useNavigation();
   const selectDetail = useSelectWorkspaceDetail();
   const insets = useSafeAreaInsets();
@@ -554,6 +556,8 @@ export function ReviewSheet(props: ReviewSheetProps) {
     .join(" · ");
 
   const showChangedFilesPane =
+    // In the side panel the review already sits in the inspector, which can't hold another.
+    paneRole !== "inspector" &&
     !showConnectionNotice &&
     selectedSection !== null &&
     parsedDiff.kind === "files" &&

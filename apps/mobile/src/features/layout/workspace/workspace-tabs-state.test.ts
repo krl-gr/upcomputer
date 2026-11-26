@@ -66,9 +66,11 @@ describe("workspace root navigation", () => {
     expect(resolveWorkspaceTabOrder(undefined)).toEqual([
       "threads",
       "tasks",
+      "usage",
+      "notifications",
+      "more",
       "pullRequests",
       "issues",
-      "usage",
     ]);
     expect(resolveWorkspaceTabOrder(["home", "usage", "issues", "threads"])).toEqual(
       resolveWorkspaceTabOrder(undefined),

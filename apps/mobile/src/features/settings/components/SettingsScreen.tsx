@@ -19,7 +19,7 @@ export { SettingsScreenContent };
 export function SettingsScreen(
   props: Pick<
     AppBarProps,
-    "title" | "actions" | "refresh" | "trailing" | "search" | "menus" | "guardBack"
+    "title" | "actions" | "refresh" | "trailing" | "search" | "menus" | "guardBack" | "onClose"
   > & {
     readonly children: ReactNode;
     readonly workspaceRoot?: boolean;
@@ -47,6 +47,7 @@ export function SettingsScreen(
         menus={props.menus}
         onBack={workspaceRoot ? undefined : back}
         guardBack={props.guardBack}
+        onClose={props.onClose}
         hideBottomBorder
       />
       <ScreenScrollViewBottomInset value={deviceType === "pad" || compactTabs ? 80 : 0}>

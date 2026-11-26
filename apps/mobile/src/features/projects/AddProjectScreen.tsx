@@ -169,12 +169,16 @@ function SectionTitle(props: { readonly children: string }) {
   );
 }
 
-function AddProjectShell(props: { readonly children: ReactNode; readonly title: string }) {
+function AddProjectShell(props: {
+  readonly children: ReactNode;
+  readonly title: string;
+  readonly onClose?: () => void;
+}) {
   const insets = useSafeAreaInsets();
 
   return (
     // A collapsible wrapper lets formSheet resizing mistake the full-height view for a header and collapse the ScrollView.
-    <SettingsScreen title={props.title}>
+    <SettingsScreen title={props.title} onClose={props.onClose}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentInsetAdjustmentBehavior="automatic"
@@ -621,7 +625,7 @@ export function AddProjectSourceScreen(props: { readonly environmentId?: string 
   const gt = useGT();
 
   return (
-    <AddProjectShell title={gt("Add project")}>
+    <AddProjectShell title={gt("Add project")} onClose={() => navigation.goBack()}>
       {selectedEnvironment === null ? <EmptyEnvironmentState /> : null}
 
       {environmentOptions.length > 1 || (selectedEnvironment !== null && !isConnected) ? (

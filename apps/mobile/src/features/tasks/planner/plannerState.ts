@@ -1,18 +1,44 @@
-import { addDays, dateRange, weekStartOf, type DateKey } from "@t3tools/tasks-client/planner/dates";
+import type { ProjectIconColor, ProjectIconOverride } from "@t3tools/contracts";
+import {
+  addDays,
+  dateRange,
+  viewStartFor,
+  type DateKey,
+} from "@t3tools/tasks-client/planner/dates";
 import type { PlannerTask } from "@t3tools/tasks-client/planner/pendingOps";
 import type { PlannerKind } from "@t3tools/tasks-client/planner/plannerStore";
-import type { TaskScheduleEntry, TaskScheduleEntryStatus } from "@t3tools/tasks-contracts/v1";
+import {
+  PERSON_DONE_STATUS,
+  type TaskScheduleEntry,
+  type TaskScheduleEntryStatus,
+} from "@t3tools/tasks-contracts/v1";
 
-/** The Tasks tab's views, as the desktop's Tasks launcher names them. */
-export type TasksView = "workers" | "mine" | "routines";
+import { projectAutoMonogram } from "../../../lib/projectIcon";
 
-export function plannerKindOf(view: Exclude<TasksView, "workers">): PlannerKind {
+export function plannerKindOf(view: "mine" | "routines"): PlannerKind {
   return view === "routines" ? "routine" : "task";
 }
 
-/** The seven days of the week that holds `date`. */
-export function weekOf(date: DateKey, weekStartDay: number): readonly DateKey[] {
-  return dateRange(weekStartOf(date, weekStartDay), 7);
+/** The days the week shows from its first one. */
+export function plannerDays(start: DateKey, dayCount: number): readonly DateKey[] {
+  return dateRange(start, dayCount);
+}
+
+/** The desktop's week buttons: back or forward a week or a day, or to today. */
+export type WeekStep = "previous-week" | "previous-day" | "today" | "next-day" | "next-week";
+
+const STEP_DAYS = { "previous-week": -7, "previous-day": -1, "next-day": 1, "next-week": 7 };
+
+export function steppedWeekStart(input: {
+  readonly start: DateKey;
+  readonly step: WeekStep;
+  readonly today: DateKey;
+  readonly dayCount: number;
+  readonly weekStartDay: number;
+}): DateKey {
+  return input.step === "today"
+    ? viewStartFor(input.today, input.dayCount, input.weekStartDay)
+    : addDays(input.start, STEP_DAYS[input.step]);
 }
 
 export interface DayEntry {
@@ -21,32 +47,14 @@ export interface DayEntry {
 }
 
 /**
- * A day's entries of one kind, in queue order. The desktop's week shows tasks and routines
- * together; the phone shows the view's own. An entry whose task is not loaded yet stays, so
- * the day never jumps when the task arrives.
+ * A day's entries in queue order, tasks and routines together as in the desktop's week. An
+ * entry whose task is not loaded yet stays, so the day never jumps when the task arrives.
  */
 export function dayEntries(
   entries: readonly TaskScheduleEntry[] | undefined,
   tasks: ReadonlyMap<string, PlannerTask>,
-  kind: PlannerKind,
 ): readonly DayEntry[] {
-  return (entries ?? []).flatMap((entry) => {
-    const task = tasks.get(entry.taskId);
-    return task === undefined || task.kind === kind ? [{ entry, task }] : [];
-  });
-}
-
-/** The days of the week strip that hold an open entry of the kind. */
-export function daysWithOpenEntries(
-  days: ReadonlyMap<string, readonly TaskScheduleEntry[]>,
-  tasks: ReadonlyMap<string, PlannerTask>,
-  kind: PlannerKind,
-): ReadonlySet<DateKey> {
-  const result = new Set<DateKey>();
-  for (const [date, entries] of days)
-    if (dayEntries(entries, tasks, kind).some(({ entry }) => entry.status === "open"))
-      result.add(date);
-  return result;
+  return (entries ?? []).map((entry) => ({ entry, task: tasks.get(entry.taskId) }));
 }
 
 /** What a check-off makes of an entry: done, or open again. A skipped entry counts as handled. */
@@ -54,26 +62,27 @@ export function toggledEntryStatus(status: TaskScheduleEntryStatus): TaskSchedul
   return status === "open" ? "done" : "open";
 }
 
+/** A task done or archived: its row offers Restore instead of Mark as done and Archive. */
+export function isFinishedTask(task: Pick<PlannerTask, "archivedAt" | "status">): boolean {
+  return task.archivedAt !== null || task.status === PERSON_DONE_STATUS;
+}
+
 /**
- * Where "Move to" can send an entry: the other days of its week, then the same weekday of the
- * next week.
+ * The color of a card's stripe and tint: the project's badge color, as the desktop picks it (the
+ * icon's color, else the one its monogram takes from the title). None without a project, for the
+ * scratch project, or while the entry is handled.
  */
-export function entryMoveTargets(date: DateKey, weekStartDay: number): readonly DateKey[] {
-  return [...weekOf(date, weekStartDay).filter((day) => day !== date), addDays(date, 7)];
-}
-
-/** The list rows a search keeps: titles that contain it, any case. */
-export function searchPlannerTasks(
-  tasks: readonly PlannerTask[],
-  query: string,
-): readonly PlannerTask[] {
-  const needle = query.trim().toLocaleLowerCase();
-  return needle ? tasks.filter((task) => task.title.toLocaleLowerCase().includes(needle)) : tasks;
-}
-
-/** Whether a task already has an entry on a day, so "Add to" would plan it twice. */
-export function plannedOn(entries: readonly DayEntry[], taskId: string): boolean {
-  return entries.some(({ entry }) => entry.taskId === taskId);
+export function plannerProjectColor(
+  project: {
+    readonly title: string;
+    readonly projectIcon?: ProjectIconOverride | null;
+  } | null,
+): ProjectIconColor | null {
+  if (project === null) return null;
+  const icon = project.projectIcon;
+  if (icon && icon.kind !== "emoji") return icon.color;
+  const monogram = projectAutoMonogram(project.title);
+  return monogram?.kind === "monogram" ? monogram.color : null;
 }
 
 /** What the planner says when it has nothing to show yet. */

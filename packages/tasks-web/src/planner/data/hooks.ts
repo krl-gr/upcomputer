@@ -10,7 +10,11 @@ import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
 import { readTasksWebAccess, readTasksWebClient } from "../../environmentApi.ts";
 import { addDays } from "@t3tools/tasks-client/planner/dates";
-import { AutomationStore, type AutomationSnapshot } from "./automationStore.ts";
+import {
+  AutomationStore,
+  type AutomationSnapshot,
+  type AutomationWriteFailure,
+} from "@t3tools/tasks-client/automations/automationStore";
 import type { PlannerTask } from "@t3tools/tasks-client/planner/pendingOps";
 import {
   errorMessage,
@@ -76,6 +80,16 @@ export function plannerStoreFor(environmentId: EnvironmentId): PlannerStore {
   return store;
 }
 
+/** The automation store's failures, worded for its toasts. */
+const AUTOMATION_FAILURE_TITLES: Record<AutomationWriteFailure, string> = {
+  createAutomation: msg("Could not create the automation"),
+  saveAutomation: msg("Could not save the automation"),
+  enableAutomation: msg("Could not enable the automation"),
+  pauseAutomation: msg("Could not pause the automation"),
+  deleteAutomation: msg("Could not delete the automation"),
+  moveAutomation: msg("Could not move the automation"),
+};
+
 const automationStores = new Map<EnvironmentId, AutomationStore>();
 
 /** One automation store per environment for the session, shared by the list and its windows. */
@@ -83,10 +97,10 @@ export function automationStoreFor(environmentId: EnvironmentId): AutomationStor
   let store = automationStores.get(environmentId);
   if (!store) {
     store = new AutomationStore(readTasksWebClient(environmentId), {
-      onError: (title, error) =>
+      onError: (failure, error) =>
         toastManager.add({
           type: "error",
-          title: messages(title),
+          title: messages(AUTOMATION_FAILURE_TITLES[failure]),
           description: errorMessage(error),
         }),
     });

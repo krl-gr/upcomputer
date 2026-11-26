@@ -113,6 +113,7 @@ import {
   useWorkspacePaneState,
 } from "../layout/AdaptiveWorkspaceLayout";
 import { ThreadFileNavigatorPane } from "../files/thread-file-navigator-pane";
+import { ThreadSidePanel } from "../side-panel/ThreadSidePanel";
 import { InspectorSheetContext } from "../layout/workspace-inspector-sheet";
 import type { InspectorContent } from "../layout/inspector-panes";
 import {
@@ -608,6 +609,11 @@ function ThreadRouteContent(
     setChosenInspectorMode(props.renderInspector === undefined ? "files" : "route");
     showInspector();
   };
+  const handleOpenSidePanel = () => {
+    navigation.setParams({ inspector: undefined });
+    setChosenInspectorMode("panel");
+    showInspector();
+  };
   const handleSelectInspectorFile = (path: string) => {
     if (selectedThread === null) {
       return;
@@ -643,6 +649,30 @@ function ThreadRouteContent(
         )}
       </InspectorSheetContext.Consumer>
     ) : null;
+  const renderSidePanel = () =>
+    selectedThread === null ? null : (
+      <ThreadSidePanel
+        thread={selectedThread}
+        cwd={selectedThreadCwd}
+        projectTitle={selectedThreadProject?.title ?? gt("Files")}
+        canOpenTerminal={threadGitControlProps.canOpenTerminal}
+        isRepo={gitStatus.data?.isRepo ?? true}
+        onMergeBack={threadGitControlProps.onMergeBack}
+        onSelectFile={handleSelectInspectorFile}
+        renderSideChat={(sideChatId) => (
+          <ThreadInspectorPreview
+            target={{
+              type: "thread",
+              environmentId: String(selectedThread.environmentId),
+              threadId: sideChatId,
+            }}
+            renderThread={(screen) => <ThreadRouteScreen {...screen} />}
+            onClose={toggleAuxiliaryPane}
+            onOpen={(inspector) => navigation.setParams({ inspector })}
+          />
+        )}
+      />
+    );
   const renderPreviewInspector = () =>
     previewTarget ? (
       <ThreadInspectorPreviewWhileVisible
@@ -677,6 +707,7 @@ function ThreadRouteContent(
                   },
                 ]
               : []),
+            { key: "panel", render: renderSidePanel },
             { key: "files", render: renderFilesInspector, prewarm: true },
             { key: "git", render: renderGitInspector, prewarm: true },
             ...(props.renderInspector ? [{ key: "route", render: props.renderInspector }] : []),
@@ -1041,6 +1072,7 @@ function ThreadRouteContent(
                 hasThreadCwd={selectedThreadCwd !== null}
                 inspectorMode={inspectorMode}
                 onOpenFilesInspector={handleOpenFilesInspector}
+                onOpenSidePanel={handleOpenSidePanel}
                 onReturnToThread={props.onReturnToThread}
               />
             )

@@ -31,6 +31,7 @@ import { WorkspaceConnectionTitle } from "../../home/WorkspaceConnectionTitle";
 import { useAdaptiveWorkspaceLayout } from "../AdaptiveWorkspaceLayout";
 import { PullRequestsScreen } from "../../pull-requests/PullRequestsScreen";
 import { IssuesScreen } from "../../issues/IssuesScreen";
+import { renderTasksHeaderTitle } from "../../tasks/TasksHeader";
 import { TasksScreen } from "../../tasks/TasksScreen";
 import {
   WorkspaceTabsContext,
@@ -38,7 +39,13 @@ import {
   useWorkspaceTabs,
 } from "./WorkspaceTabsContext";
 import { WorkspaceToolbar } from "./WorkspaceToolbar";
-import { WORKSPACE_DOCK, workspaceDockBottomClearance } from "./workspace-tabs-state";
+import {
+  WORKSPACE_DOCK,
+  workspaceDockBottomClearance,
+  workspaceUsesColumns,
+} from "./workspace-tabs-state";
+import { MoreScreen, useBackToMoreHeaderItems } from "./MoreScreen";
+import { NotificationsScreen } from "../../notifications/NotificationsScreen";
 import { WorkspaceSidebarTabs } from "./WorkspaceSidebarTabs";
 import {
   useCompactWorkspaceTabs,
@@ -136,6 +143,7 @@ function WorkspaceRootContent() {
                 : 16
               : WORKSPACE_DOCK.height + WORKSPACE_DOCK.bottomGap + 16);
   const context = { ...workspace, bottomClearance };
+  const backToMore = useBackToMoreHeaderItems(state.selectedTab, settingsOpen);
 
   return (
     <WorkspaceTabsContext value={context}>
@@ -149,13 +157,17 @@ function WorkspaceRootContent() {
             enabled.length,
           ]}
           options={{
-            title: settingsOpen
-              ? gt("Settings")
-              : enabled.length
-                ? m(TAB_TITLES[state.selectedTab])
-                : gt("Navigation", {
-                    $context: "screen title when every navigation tab is hidden",
-                  }),
+            // The phone's Chats shows no title: its groups name themselves.
+            title:
+              !sidebarNavigation && !settingsOpen && state.selectedTab === "threads"
+                ? ""
+                : settingsOpen
+                  ? gt("Settings")
+                  : enabled.length
+                    ? m(TAB_TITLES[state.selectedTab])
+                    : gt("Navigation", {
+                        $context: "screen title when every navigation tab is hidden",
+                      }),
             headerShown: true,
             headerTransparent: NATIVE_LIQUID_GLASS_SUPPORTED,
             headerStyle: NATIVE_LIQUID_GLASS_SUPPORTED
@@ -165,13 +177,15 @@ function WorkspaceRootContent() {
             ...(enabled.length === 0
               ? { headerSearchBarOptions: undefined, unstable_headerRightItems: () => [] }
               : {}),
-            unstable_headerLeftItems: () => [],
+            unstable_headerLeftItems: () => backToMore,
             // Beside a detail column the tab bar names the tab and the detail header the page,
             // so the sidebar keeps the brand.
             headerTitle:
-              sidebarNavigation || (!settingsOpen && state.selectedTab !== "usage")
-                ? renderHeaderTitle
-                : undefined,
+              !sidebarNavigation && !settingsOpen && state.selectedTab === "tasks"
+                ? renderTasksHeaderTitle
+                : sidebarNavigation
+                  ? renderHeaderTitle
+                  : undefined,
           }}
         />
         <SafeAreaInsetsContext value={compactTabs ? { ...insets, bottom: 0 } : insets}>
@@ -188,6 +202,10 @@ function WorkspaceRootContent() {
             <TasksScreen />
           ) : state.selectedTab === "issues" ? (
             <IssuesScreen />
+          ) : state.selectedTab === "notifications" ? (
+            <NotificationsScreen />
+          ) : state.selectedTab === "more" ? (
+            <MoreScreen />
           ) : (
             <WorkspaceExtraTab tab={state.selectedTab} />
           )}
@@ -195,8 +213,10 @@ function WorkspaceRootContent() {
         {deviceType !== "pad" && deviceType !== "phone" && sidebarPicker ? (
           <WorkspaceSidebarTabs />
         ) : null}
-        {enabled.length === 0 && !settingsOpen ? null : settingsOpen ||
-          state.selectedTab !== "usage" ? (
+        {enabled.length === 0 && !settingsOpen ? null : workspaceUsesColumns(
+            state.selectedTab,
+            settingsOpen,
+          ) ? (
           <WorkspaceToolbar sidebar={sidebarNavigation} onNewTask={startNewTask} />
         ) : (
           <WorkspaceSectionToolbar onNewTask={startNewTask} showCompose={false} />

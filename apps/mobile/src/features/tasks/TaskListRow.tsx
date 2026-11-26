@@ -1,22 +1,21 @@
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { ScopedTaskListItem } from "@t3tools/tasks-client/state/taskPages";
 import { useGT, useMessages } from "gt-react-native";
 import { memo } from "react";
 import { Pressable, View } from "react-native";
 
-import { RelativeTime } from "../../components/RelativeTime";
-import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { cn } from "../../lib/cn";
-import {
-  selectedThreadRowColors,
-  THREAD_LIST_V2_SIDEBAR_ROW_CONTAINER_STYLE,
-  THREAD_LIST_V2_SIDEBAR_ROW_STYLE,
-} from "../threads/thread-list-v2-row-appearance";
-import { taskRunCounts, taskRunPresentation, taskStatusTone } from "./taskPresentation";
+import { TaskProjectBadge } from "./TaskProjectBadge";
+import { taskRunCounts, taskRunPresentation } from "./taskPresentation";
 
+/**
+ * A worker task in the desktop's narrow table: project badge, title, tags under it, and the
+ * run counts at the end. The status group above names the status.
+ */
 export const TaskListRow = memo(function TaskListRow(props: {
   readonly task: ScopedTaskListItem;
-  readonly projectName: string | null;
+  readonly project: EnvironmentProject | null;
   readonly onSelect: (task: ScopedTaskListItem) => void;
   readonly selected: boolean;
   readonly sidebar: boolean;
@@ -24,108 +23,91 @@ export const TaskListRow = memo(function TaskListRow(props: {
   const gt = useGT();
   const messages = useMessages();
   const { task } = props;
-  const status = taskStatusTone(task.status);
-  // The desktop's Runs column: runs by state; an older server only names the latest run.
   const runCounts = taskRunCounts(task.runCounts, messages);
+  // An older server only names the latest run.
   const run = runCounts.length > 0 ? null : taskRunPresentation(task.latestRunStatus, messages);
-  const foreground = props.selected
-    ? selectedThreadRowColors.foregroundClassName
-    : props.sidebar
-      ? "text-drawer-foreground"
-      : "text-foreground";
-  const muted = props.selected
-    ? selectedThreadRowColors.mutedForegroundClassName
-    : props.sidebar
-      ? "text-drawer-foreground-muted"
-      : "text-foreground-muted";
+  const archived = task.archivedAt !== null;
   return (
-    <View style={props.sidebar ? THREAD_LIST_V2_SIDEBAR_ROW_CONTAINER_STYLE : undefined}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ selected: props.selected }}
-        accessibilityLabel={[
-          task.title,
-          task.status,
-          props.projectName,
-          run ? gt("Worker: {state}", { state: run.label }) : null,
-          runCounts.length > 0
-            ? gt("Runs: {counts}", {
-                counts: runCounts.map((count) => `${count.label} ${count.count}`).join(", "),
-              })
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: props.selected }}
+      accessibilityLabel={[
+        task.title,
+        props.project?.title ?? gt("Unknown project"),
+        archived ? gt("Archived", { $context: "status of an archived task" }) : null,
+        runCounts.length > 0
+          ? gt("Runs: {counts}", {
+              counts: runCounts.map((count) => `${count.label} ${count.count}`).join(", "),
+            })
+          : run
+            ? gt("Worker: {state}", { state: run.label })
             : null,
-          task.tags.length ? task.tags.join(", ") : null,
-        ]
-          .filter(Boolean)
-          .join(", ")}
-        onPress={() => props.onSelect(task)}
-        style={props.sidebar ? THREAD_LIST_V2_SIDEBAR_ROW_STYLE : undefined}
-        className={cn(
-          "flex-row gap-3 overflow-hidden",
-          !props.sidebar && "px-4 active:bg-row-hover",
-          props.sidebar && "bg-drawer",
-          props.sidebar && !props.selected && "active:bg-thread-hover",
-          props.selected && "bg-thread-selected",
-        )}
-      >
-        <View className={cn("self-start", props.sidebar ? "pt-0.5" : "pt-2.5")}>
-          <SymbolView name={status.icon} size={20} tintColorClassName={status.tint} />
-        </View>
-        <View
+        task.tags.length ? task.tags.join(", ") : null,
+      ]
+        .filter(Boolean)
+        .join(", ")}
+      onPress={() => props.onSelect(task)}
+      className={cn(
+        "flex-row items-start gap-3 px-4 py-2.5",
+        props.selected
+          ? "bg-thread-selected"
+          : props.sidebar
+            ? "active:bg-thread-hover"
+            : "active:bg-row-hover",
+      )}
+    >
+      <View className="pt-px">
+        <TaskProjectBadge environmentId={task.environmentId} project={props.project} size={22} />
+      </View>
+      <View className="min-w-0 flex-1 gap-1.5">
+        <Text
           className={cn(
-            "min-w-0 flex-1 gap-1",
-            !props.sidebar && "border-b border-border-subtle py-2.5",
+            "text-base leading-5",
+            archived
+              ? "text-foreground-muted"
+              : props.sidebar
+                ? "text-drawer-foreground"
+                : "text-foreground",
           )}
+          numberOfLines={3}
         >
-          <View className="flex-row items-center gap-1.5">
-            <Text className={cn("min-w-0 flex-1 text-xs", muted)} numberOfLines={1}>
-              {props.projectName ?? gt("Unknown project")}
-            </Text>
-            <Text className={cn("text-2xs tabular-nums", muted)}>
-              <RelativeTime timestamp={task.updatedAt} />
-            </Text>
-          </View>
-          <Text
-            className={cn("text-base leading-5 font-t3-medium", foreground)}
-            numberOfLines={2}
-            ellipsizeMode="tail"
-          >
-            {task.title}
-          </Text>
-          <View className="flex-row items-center gap-2">
-            <Text className={cn("shrink-0 text-2xs font-t3-medium", status.text)}>
-              {task.status}
-            </Text>
-            {run ? (
-              <View className="shrink-0 flex-row items-center gap-1">
-                <SymbolView name={run.icon} size={11} tintColorClassName={run.tint} />
-                <Text className={cn("text-2xs font-t3-medium", run.text)}>{run.label}</Text>
-              </View>
+          {task.title}
+        </Text>
+        {task.tags.length > 0 || archived ? (
+          <View className="flex-row flex-wrap items-center gap-1.5">
+            {archived ? (
+              <Text className="text-xs text-foreground-muted">
+                {gt("Archived", { $context: "status of an archived task" })}
+              </Text>
             ) : null}
-            {runCounts.slice(0, 3).map((count) => (
-              <View key={count.label} className="shrink-0 flex-row items-center gap-0.5">
-                <SymbolView name={count.icon} size={11} tintColorClassName={count.tint} />
-                <Text className={cn("text-2xs font-t3-medium tabular-nums", count.text)}>
-                  {count.count}
-                </Text>
-              </View>
+            {task.tags.map((tag) => (
+              <Text
+                key={tag}
+                numberOfLines={1}
+                className="rounded-md bg-subtle px-1.5 py-px text-xs text-foreground-muted"
+              >
+                {tag}
+              </Text>
             ))}
-            <View className="min-w-0 flex-1 flex-row items-center gap-1">
-              {task.tags.slice(0, 2).map((tag) => (
-                <Text
-                  key={tag}
-                  numberOfLines={1}
-                  className={cn("shrink rounded-md bg-subtle px-1.5 py-px text-2xs", muted)}
-                >
-                  {tag}
-                </Text>
-              ))}
-              {task.tags.length > 2 ? (
-                <Text className={cn("shrink-0 text-2xs", muted)}>+{task.tags.length - 2}</Text>
-              ) : null}
-            </View>
           </View>
+        ) : null}
+      </View>
+      {runCounts.length > 0 || run ? (
+        <View className="flex-row items-center gap-2 rounded-lg border border-border px-2 py-1">
+          {runCounts.length > 0 ? (
+            runCounts.map((count) => (
+              <Text
+                key={count.label}
+                className={cn("text-sm font-t3-medium tabular-nums", count.text)}
+              >
+                {count.count}
+              </Text>
+            ))
+          ) : run ? (
+            <Text className={cn("text-xs font-t3-medium", run.text)}>{run.label}</Text>
+          ) : null}
         </View>
-      </Pressable>
-    </View>
+      ) : null}
+    </Pressable>
   );
 });

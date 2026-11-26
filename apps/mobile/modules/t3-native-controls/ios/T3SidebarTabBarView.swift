@@ -61,6 +61,10 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
       tabBar.setNeedsLayout()
     }
   }
+  /// Titles shown under the icons; a tab without one shows its icon alone.
+  var itemTitles: [String: String] = [:] { didSet { if itemTitles != oldValue { applyItemOverrides() } } }
+  var itemSymbols: [String: String] = [:] { didSet { if itemSymbols != oldValue { applyItemOverrides() } } }
+  var badgedTabs: [String] = [] { didSet { if badgedTabs != oldValue { applyItemOverrides() } } }
   var appearance = "light" {
     didSet { overrideUserInterfaceStyle = appearance == "dark" ? .dark : .light }
   }
@@ -109,9 +113,9 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
   private func prepareItems() {
     let iconBundle = Bundle(for: Self.self).url(forResource: "T3NativeControlIcons", withExtension: "bundle").flatMap(Bundle.init(url:))
     let pullRequestIcon = UIImage(named: "pull-request", in: iconBundle, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate)
-    let labels = ["threads": "Chats", "tasks": "Tasks", "pullRequests": "PRs", "issues": "Issues", "usage": "Usage", "settings": "Settings"]
+    let labels = ["threads": "Chats", "tasks": "Tasks", "pullRequests": "PRs", "issues": "Issues", "usage": "Usage", "notifications": "Notifications", "settings": "Settings"]
     let issueIcon = UIImage(named: "issue", in: iconBundle, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate)
-    let symbols = ["threads": "text.bubble", "tasks": "checkmark.circle", "usage": "chart.bar.xaxis", "settings": "gearshape"]
+    let symbols = ["threads": "text.bubble", "tasks": "checkmark.circle", "usage": "chart.bar.xaxis", "notifications": "bell", "settings": "gearshape"]
     for (tab, label) in labels {
       let icon = tab == "pullRequests" ? pullRequestIcon : tab == "issues" ? issueIcon : UIImage(systemName: symbols[tab] ?? "circle")
       let item = UITabBarItem(title: nil, image: tabIcon(icon), tag: 0)
@@ -119,6 +123,18 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
       item.accessibilityIdentifier = "workspace-tab-\(tab)"
       if tab == "threads" { item.selectedImage = tabIcon(UIImage(systemName: "text.bubble.fill")) }
       itemsByTab[tab] = item
+    }
+  }
+
+  private func applyItemOverrides() {
+    for (tab, item) in itemsByTab {
+      item.title = itemTitles[tab]
+      if let title = itemTitles[tab] { item.accessibilityLabel = title }
+      if let symbol = itemSymbols[tab], let image = UIImage(systemName: symbol) {
+        item.image = tabIcon(image)
+        item.selectedImage = tab == "threads" ? tabIcon(UIImage(systemName: "\(symbol).fill")) : nil
+      }
+      item.badgeValue = badgedTabs.contains(tab) ? "" : nil
     }
   }
 

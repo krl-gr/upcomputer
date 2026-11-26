@@ -4,13 +4,10 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   dayEntries,
-  daysWithOpenEntries,
-  entryMoveTargets,
-  plannedOn,
   plannerGate,
-  searchPlannerTasks,
+  plannerProjectColor,
+  steppedWeekStart,
   toggledEntryStatus,
-  weekOf,
 } from "./plannerState";
 
 const task = (id: string, kind: "task" | "routine", title = id) =>
@@ -23,50 +20,35 @@ const tasks = new Map([
 ]);
 
 describe("planner week", () => {
-  it("takes the seven days of the week that holds the date, from the locale's first day", () => {
+  it("steps by the desktop's buttons; Today starts a seven-day week on its first day", () => {
     // 2026-11-26 is a Thursday.
-    expect(weekOf("2026-11-26", 1)).toEqual([
-      "2026-11-23",
-      "2026-11-24",
-      "2026-11-25",
-      "2026-11-26",
-      "2026-11-27",
-      "2026-11-28",
-      "2026-11-29",
+    const step = (input: Partial<Parameters<typeof steppedWeekStart>[0]>) =>
+      steppedWeekStart({
+        start: "2026-11-26",
+        step: "next-day",
+        today: "2026-11-26",
+        dayCount: 2,
+        weekStartDay: 1,
+        ...input,
+      });
+    expect(step({})).toBe("2026-11-27");
+    expect(step({ step: "previous-week" })).toBe("2026-11-19");
+    expect(step({ step: "today", start: "2026-12-10" })).toBe("2026-11-26");
+    expect(step({ step: "today", dayCount: 7 })).toBe("2026-11-23");
+  });
+
+  it("keeps tasks and routines together in queue order, and entries whose task is loading", () => {
+    const day = [
+      entry("e1", "pay", "2026-11-26"),
+      entry("e2", "run", "2026-11-26", "done"),
+      entry("e3", "unknown", "2026-11-26"),
+    ];
+    expect(dayEntries(day, tasks).map((item) => [item.entry.id, item.task?.title])).toEqual([
+      ["e1", "Pay rent"],
+      ["e2", "Morning run"],
+      ["e3", undefined],
     ]);
-    expect(weekOf("2026-11-26", 0)[0]).toBe("2026-11-22");
-  });
-
-  it("moves an entry to its week's other days or the same day next week", () => {
-    const targets = entryMoveTargets("2026-11-29", 1);
-    expect(targets).toHaveLength(7);
-    expect(targets).not.toContain("2026-11-29");
-    expect(targets.at(-1)).toBe("2026-12-06");
-  });
-});
-
-describe("planner days", () => {
-  const day = [
-    entry("e1", "pay", "2026-11-26"),
-    entry("e2", "run", "2026-11-26", "done"),
-    entry("e3", "unknown", "2026-11-26"),
-  ];
-
-  it("shows the view's own kind and keeps entries whose task is still loading", () => {
-    expect(dayEntries(day, tasks, "task").map((item) => item.entry.id)).toEqual(["e1", "e3"]);
-    expect(dayEntries(day, tasks, "routine").map((item) => item.entry.id)).toEqual(["e2", "e3"]);
-    expect(dayEntries(undefined, tasks, "task")).toEqual([]);
-    expect(plannedOn(dayEntries(day, tasks, "task"), "pay")).toBe(true);
-    expect(plannedOn(dayEntries(day, tasks, "task"), "run")).toBe(false);
-  });
-
-  it("marks days with something open of the kind", () => {
-    const days = new Map([
-      ["2026-11-26", [entry("e2", "run", "2026-11-26", "done")]],
-      ["2026-11-27", [entry("e4", "run", "2026-11-27")]],
-      ["2026-11-28", [entry("e5", "pay", "2026-11-28")]],
-    ]);
-    expect([...daysWithOpenEntries(days, tasks, "routine")]).toEqual(["2026-11-27"]);
+    expect(dayEntries(undefined, tasks)).toEqual([]);
   });
 
   it("checks an entry off and back; a skipped one reopens", () => {
@@ -74,16 +56,24 @@ describe("planner days", () => {
     expect(toggledEntryStatus("done")).toBe("open");
     expect(toggledEntryStatus("skipped")).toBe("open");
   });
+
+  it("colors a card by its project's badge: the icon's color, else the monogram's", () => {
+    expect(
+      plannerProjectColor({
+        title: "Website",
+        projectIcon: { kind: "monogram", text: "WS", color: "violet" },
+      }),
+    ).toBe("violet");
+    const derived = plannerProjectColor({ title: "Website" });
+    expect(derived).not.toBeNull();
+    expect(
+      plannerProjectColor({ title: "Website", projectIcon: { kind: "emoji", emoji: "🌐" } }),
+    ).toBe(derived);
+    expect(plannerProjectColor(null)).toBeNull();
+  });
 });
 
-describe("planner list", () => {
-  it("searches titles without case", () => {
-    expect(searchPlannerTasks([...tasks.values()], " RENT ").map((item) => item.id)).toEqual([
-      "pay",
-    ]);
-    expect(searchPlannerTasks([...tasks.values()], "")).toHaveLength(2);
-  });
-
+describe("planner gate", () => {
   it("explains the planner's absence by the first thing in the way", () => {
     const gate = (input: Partial<Parameters<typeof plannerGate>[0]>) =>
       plannerGate({

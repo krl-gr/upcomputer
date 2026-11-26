@@ -1,6 +1,5 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import type { Bot } from "@t3tools/tasks-contracts/v1";
+import { canBecomeBotChat } from "@t3tools/tasks-client/bots/bots";
 import { msg } from "gt-react";
 import { readThreadShell } from "../../../../apps/web/src/state/entities.ts";
 import type {
@@ -9,27 +8,6 @@ import type {
 } from "../../../../apps/web/src/product/WebFeature.ts";
 import { readTasksWebAccess } from "../environmentApi.ts";
 import { botPage, readShownBots } from "./botData.tsx";
-
-/**
- * Whether a thread may be offered as a bot's chat. This leaves out what the server always
- * refuses: hidden threads such as task runs, subagents, archived chats and chats a bot
- * already owns. A busy chat is offered, and the bot page explains why it must wait.
- */
-export function canBecomeBotChat(
-  thread: Pick<
-    EnvironmentThreadShell,
-    "id" | "sidebarHidden" | "archivedAt" | "deletedAt" | "lineage"
-  >,
-  bots: ReadonlyArray<Pick<Bot, "threadId" | "latestTaskRun">>,
-) {
-  return (
-    thread.sidebarHidden !== true &&
-    thread.archivedAt === null &&
-    thread.deletedAt === null &&
-    thread.lineage.relationshipToParent !== "subagent" &&
-    !bots.some((bot) => bot.threadId === thread.id || bot.latestTaskRun?.threadId === thread.id)
-  );
-}
 
 /** Whether the thread is a bot's own chat, by the bot list as last shown. */
 export function isBotChat({ environmentId, threadId }: ExperimentalWebThreadAccessoryProps) {

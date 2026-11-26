@@ -1,5 +1,5 @@
 import type { EnvironmentConnectionSummary } from "@t3tools/client-runtime/state/presentation";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { ProjectId, type EnvironmentId } from "@t3tools/contracts";
 import type { ScopedTaskListItem } from "@t3tools/tasks-client/state/taskPages";
 import {
   defaultStatusGroupOrder,
@@ -8,6 +8,8 @@ import {
   taskStatusGroups,
 } from "@t3tools/tasks-client/taskStatusGroups";
 import {
+  TASK_LAST_RUN_NONE,
+  TaskArchiveFilter,
   taskStatusesFor,
   type TaskListSettings,
   type TaskPageInput,
@@ -15,56 +17,106 @@ import {
   type TaskStatusCountsInput,
   type TaskWorkflowVersion,
 } from "@t3tools/tasks-contracts/v1";
+import * as Schema from "effect/Schema";
+import { msg } from "gt-react-native";
 
-/** Statuses of finished tasks: the default list leaves them out. */
-const CLOSED_TASK_STATUSES = ["Done", "Cancelled"] as const;
-const CLOSED_STATUS_KEYS: ReadonlySet<string> = new Set(CLOSED_TASK_STATUSES.map(statusGroupKey));
+/** Statuses whose groups start collapsed, as on the desktop. */
+const CLOSED_STATUS_KEYS: ReadonlySet<string> = new Set(["done", "cancelled"]);
 
 export const TASK_LIST_PAGE_SIZE = 50;
 
-/** Which tasks the list shows: open ones (the default), every one, or one status. */
-export type TaskListFilter =
-  | { readonly kind: "open" }
-  | { readonly kind: "all" }
-  | { readonly kind: "status"; readonly status: string };
+/** The Last run filter's value for tasks that never ran. */
+export const NO_RUNS_FILTER = TASK_LAST_RUN_NONE;
 
-export const OPEN_TASKS_FILTER: TaskListFilter = { kind: "open" };
-/** Every status, as the desktop's table lists them, with Done and Cancelled collapsed. */
-export const ALL_TASKS_FILTER: TaskListFilter = { kind: "all" };
+/** The Last run filter's choices: the task system's raw run statuses, as on the desktop. */
+export const LAST_RUN_OPTIONS = [
+  { value: "running", label: msg("Working") },
+  { value: "completed", label: msg("Completed") },
+  { value: "failed", label: msg("Failed") },
+  { value: "stopped", label: msg("Stopped") },
+  { value: "blocked", label: msg("Blocked") },
+  { value: "interrupted", label: msg("Interrupted") },
+  { value: NO_RUNS_FILTER, label: msg("No runs") },
+] as const;
 
-export function taskListFilterKey(filter: TaskListFilter): string {
-  return filter.kind === "status" ? `status:${statusGroupKey(filter.status)}` : filter.kind;
-}
-
-export function parseTaskListFilter(key: string, statuses: readonly string[]): TaskListFilter {
-  if (key === "all") return { kind: "all" };
-  if (key.startsWith("status:")) {
-    const status = statuses.find((candidate) => statusGroupKey(candidate) === key.slice(7));
-    if (status !== undefined) return { kind: "status", status };
-  }
-  return key === "open" ? OPEN_TASKS_FILTER : ALL_TASKS_FILTER;
-}
-
-/** The workers' tasks, as the desktop's task table lists them; rows leave out their text. */
-export const TASK_LIST_COUNTS_INPUT: TaskStatusCountsInput = { audience: "agent" };
+/** The Show filter's choices; archived tasks stay hidden unless chosen here. */
+export const ARCHIVE_OPTIONS: ReadonlyArray<{
+  readonly value: TaskArchiveFilter;
+  readonly label: string;
+}> = [
+  { value: "active", label: msg("Active") },
+  { value: "archived", label: msg("Archived") },
+  { value: "all", label: msg("Active and archived") },
+];
 
 /**
- * The page the list loads: a collapsed group's rows wait until it opens, as on the desktop,
- * so they never take the page's places.
+ * The desktop's Worker tasks filters for one computer: project, status, last run, tags and
+ * archive. Null means no restriction (All projects, All statuses, Any last run).
  */
-export function taskListPageInput(
-  filter: TaskListFilter,
-  collapsed: readonly string[] = [],
-): TaskPageInput {
-  const excluded = [...(filter.kind === "open" ? CLOSED_TASK_STATUSES : []), ...collapsed];
+export const WorkerTaskFilters = Schema.Struct({
+  projectId: Schema.NullOr(Schema.String),
+  status: Schema.NullOr(Schema.String),
+  lastRun: Schema.NullOr(Schema.String),
+  tags: Schema.Array(Schema.String),
+  archive: TaskArchiveFilter,
+});
+export type WorkerTaskFilters = typeof WorkerTaskFilters.Type;
+
+export const DEFAULT_WORKER_TASK_FILTERS: WorkerTaskFilters = {
+  projectId: null,
+  status: null,
+  lastRun: null,
+  tags: [],
+  archive: "active",
+};
+
+/** How many filters differ from their defaults, as the desktop's Filters button counts them. */
+export function appliedWorkerTaskFilterCount(filters: WorkerTaskFilters): number {
+  return [
+    filters.projectId !== null,
+    filters.status !== null,
+    filters.lastRun !== null,
+    filters.tags.length > 0,
+    filters.archive !== "active",
+  ].filter(Boolean).length;
+}
+
+/** A tag turned on or off in the Tags filter. */
+export function toggledTag(tags: readonly string[], tag: string): readonly string[] {
+  return tags.includes(tag) ? tags.filter((candidate) => candidate !== tag) : [...tags, tag];
+}
+
+/**
+ * The workers' tasks the counts cover: the filters without the status, which the counts
+ * choose from, as on the desktop.
+ */
+export function taskListCountsInput(filters: WorkerTaskFilters): TaskStatusCountsInput {
   return {
     audience: "agent",
+    ...(filters.projectId === null ? {} : { projectId: ProjectId.make(filters.projectId) }),
+    ...(filters.tags.length > 0 ? { tags: [...filters.tags] } : {}),
+    ...(filters.archive === "active" ? {} : { archive: filters.archive }),
+    ...(filters.lastRun === null ? {} : { lastRun: filters.lastRun }),
+  };
+}
+
+/**
+ * The page the list loads; rows leave out their text. A collapsed group's rows wait until it
+ * opens, as on the desktop, so they never take the page's places.
+ */
+export function taskListPageInput(
+  filters: WorkerTaskFilters,
+  collapsed: readonly string[] = [],
+): TaskPageInput {
+  return {
+    ...taskListCountsInput(filters),
     omitText: true,
     limit: TASK_LIST_PAGE_SIZE,
-    ...(filter.kind !== "status" && excluded.length > 0
-      ? { excludeStatuses: [...new Set(excluded)] }
-      : {}),
-    ...(filter.kind === "status" ? { status: filter.status } : {}),
+    ...(filters.status === null
+      ? collapsed.length > 0
+        ? { excludeStatuses: [...new Set(collapsed)] }
+        : {}
+      : { status: filters.status }),
   };
 }
 
@@ -75,122 +127,96 @@ type GroupSettings = Pick<TaskListSettings, "groupByStatus" | "statusGroupOpen">
  * and Cancelled); none for one status. The server compares statuses without case.
  */
 export function collapsedTaskStatuses(
-  filter: TaskListFilter,
+  filters: Pick<WorkerTaskFilters, "status">,
   settings: GroupSettings,
 ): readonly string[] {
-  if (filter.kind === "status" || !settings.groupByStatus) return [];
+  if (filters.status !== null || !settings.groupByStatus) return [];
   const keys = new Set([...CLOSED_STATUS_KEYS, ...Object.keys(settings.statusGroupOpen)]);
   return [...keys].filter((key) => !isStatusGroupOpen(settings.statusGroupOpen, key)).sort();
 }
 
-export interface TaskStatusOption {
-  readonly status: string;
-  readonly count: number;
-}
-
-/** Statuses with tasks, in the desktop's group order, for the status filter. */
-export function taskStatusOptions(
+/**
+ * The Status filter's choices: the workflow's statuses, then any other status with tasks or the
+ * one chosen, in the desktop's group order.
+ */
+export function workerStatusOptions(
   counts: readonly TaskStatusCount[],
   workflowVersion: TaskWorkflowVersion,
-): readonly TaskStatusOption[] {
+  chosen: string | null,
+): readonly string[] {
   const order = defaultStatusGroupOrder(workflowVersion).map(statusGroupKey);
   const rank = (status: string) => {
     const index = order.indexOf(statusGroupKey(status));
     return index < 0 ? order.length : index;
   };
-  return counts
-    .filter((count) => count.count > 0)
-    .map(({ status, count }) => ({ status, count }))
-    .sort(
-      (left, right) =>
-        rank(left.status) - rank(right.status) || left.status.localeCompare(right.status),
-    );
+  const byKey = new Map<string, string>();
+  for (const status of [
+    ...taskStatusesFor(workflowVersion),
+    ...counts.filter((count) => count.count > 0).map((count) => count.status),
+    ...(chosen === null ? [] : [chosen]),
+  ])
+    if (!byKey.has(statusGroupKey(status))) byKey.set(statusGroupKey(status), status);
+  return [...byKey.values()].sort(
+    (left, right) => rank(left) - rank(right) || left.localeCompare(right),
+  );
 }
 
-/** How many tasks a filter holds, from the counts per status. */
-export function taskListFilterCount(
-  filter: TaskListFilter,
-  counts: readonly TaskStatusCount[],
-): number {
-  return counts
-    .filter((count) =>
-      filter.kind === "all"
-        ? true
-        : filter.kind === "open"
-          ? !CLOSED_STATUS_KEYS.has(statusGroupKey(count.status))
-          : statusGroupKey(count.status) === statusGroupKey(filter.status),
-    )
-    .reduce((sum, count) => sum + count.count, 0);
+/** The Tags filter's choices: the loaded tasks' tags and the chosen ones, A to Z. */
+export function workerTagOptions(
+  tasks: readonly Pick<ScopedTaskListItem, "tags">[],
+  chosen: readonly string[],
+): readonly string[] {
+  return [...new Set([...tasks.flatMap((task) => task.tags), ...chosen])].sort((left, right) =>
+    left.localeCompare(right),
+  );
 }
 
 export interface TaskListSection<T> {
   readonly key: string;
   /** Empty for the one section of an ungrouped list. */
   readonly title: string;
-  /** The server's count for the section, or the matches when searching. */
+  /** The server's count for the section. */
   readonly count: number;
   readonly tasks: readonly T[];
   /** A collapsed group shows its header and count only. */
   readonly open: boolean;
 }
 
-function matchesQuery(
-  task: Pick<ScopedTaskListItem, "title" | "tags" | "status">,
-  projectName: string | null,
-  query: string,
-): boolean {
-  const needle = query.toLocaleLowerCase();
-  return [task.title, task.status, projectName ?? "", ...task.tags].some((text) =>
-    text.toLocaleLowerCase().includes(needle),
-  );
-}
-
 /**
  * The loaded tasks in one section per status, in the desktop's group order. A status the
  * server counts but no loaded task has yet keeps no section, so the list never shows an empty
- * group. A search narrows the loaded rows by title, status, project or tag.
+ * group.
  */
-export function taskListSections<
-  T extends Pick<ScopedTaskListItem, "title" | "tags" | "status" | "projectId">,
->(input: {
+export function taskListSections<T extends Pick<ScopedTaskListItem, "status">>(input: {
   readonly tasks: readonly T[];
   readonly counts: readonly TaskStatusCount[];
   readonly statuses: readonly string[];
-  readonly filter: TaskListFilter;
+  readonly status: string | null;
   readonly workflowVersion: TaskWorkflowVersion;
-  readonly query: string;
-  readonly projectName: (task: T) => string | null;
   readonly settings: GroupSettings & Pick<TaskListSettings, "statusGroupOrder">;
 }): readonly TaskListSection<T>[] {
-  const query = input.query.trim();
-  const tasks = query
-    ? input.tasks.filter((task) => matchesQuery(task, input.projectName(task), query))
-    : input.tasks;
+  const { tasks } = input;
   if (!input.settings.groupByStatus)
     return tasks.length === 0
       ? []
       : [{ key: "all", title: "", count: tasks.length, tasks, open: true }];
-  const oneStatus = input.filter.kind === "status";
+  const oneStatus = input.status !== null;
   const { groups } = taskStatusGroups({
     tasks,
     counts: new Map(input.counts.map((count) => [statusGroupKey(count.status), count.count])),
     statuses: input.statuses,
-    statusFilter: oneStatus ? input.filter.status : null,
+    statusFilter: input.status,
     order: input.settings.statusGroupOrder,
     open: input.settings.statusGroupOpen,
     workflowVersion: input.workflowVersion,
   });
   return groups
     .map((group) => ({ ...group, open: oneStatus || group.open }))
-    .filter(
-      (group) =>
-        (input.filter.kind !== "open" || !CLOSED_STATUS_KEYS.has(group.key)) &&
-        (group.open ? group.tasks.length > 0 : !query && group.count > 0),
-    )
+    .filter((group) => (group.open ? group.tasks.length > 0 : group.count > 0))
     .map((group) => ({
       key: group.key,
       title: group.title,
-      count: query ? group.tasks.length : Math.max(group.count, group.tasks.length),
+      count: Math.max(group.count, group.tasks.length),
       tasks: group.open ? group.tasks : [],
       open: group.open,
     }));
@@ -245,7 +271,7 @@ export type TaskListEmptyState =
   | "unavailable"
   | "loading"
   | "error"
-  | "noResults"
+  | "filtered"
   | "empty";
 
 export function taskListEmptyState(input: {
@@ -253,7 +279,8 @@ export function taskListEmptyState(input: {
   readonly availability: "loading" | "unavailable" | "enabled" | null;
   readonly initialLoading: boolean;
   readonly error: string | undefined;
-  readonly searching: boolean;
+  /** Filters differ from their defaults. */
+  readonly filtered: boolean;
 }): TaskListEmptyState {
   if (input.environment === null) return "noEnvironment";
   if (input.environment.connectionState !== "connected") return "offline";
@@ -261,7 +288,7 @@ export function taskListEmptyState(input: {
   if (input.availability !== "enabled") return "checking";
   if (input.error !== undefined) return "error";
   if (input.initialLoading) return "loading";
-  return input.searching ? "noResults" : "empty";
+  return input.filtered ? "filtered" : "empty";
 }
 
 export interface NewTaskDraft {

@@ -82,7 +82,7 @@ function harness(rows: TaskAutomationListItem[]) {
   const store = new AutomationStore(client as never, {
     batchMs: 5,
     releaseMs: 20,
-    onError: (title) => errors.push(title),
+    onError: (failure) => errors.push(failure),
   });
   return {
     store,
@@ -179,7 +179,7 @@ describe("automation store", () => {
     };
     NodeAssert.equal(await h.store.reorder("b", {}), false);
     NodeAssert.deepEqual(h.ids(), ["a", "c", "b"]);
-    NodeAssert.deepEqual(h.errors, ["Could not move the automation"]);
+    NodeAssert.deepEqual(h.errors, ["moveAutomation"]);
     release();
   });
 

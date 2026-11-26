@@ -3,6 +3,7 @@ import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { DraftEnvironmentControl } from "./DraftEnvironmentControl";
 import { NativeScrollEdgeEffectsContext } from "../../native/NativeScrollViewMarker";
 import { DraftThreadHeader } from "./DraftThreadHeader";
+import { DRAFT_SHOWS_HERO } from "./draftLayout";
 import { useComposerAttachmentActions } from "../../state/use-composer-attachment-actions";
 import { useWorkspaceBackNavigation } from "../layout/workspace/useAndroidWorkspaceNavigation";
 import { submittedThreadParams } from "./thread-route-state";
@@ -975,7 +976,8 @@ export function NewTaskDraftScreen(props: {
           />
         </View>
       ) : null}
-      {viewportHeight < SHORT_DRAFT_VIEWPORT_HEIGHT ? contextControls : null}
+      {DRAFT_SHOWS_HERO ? null : shareUnavailableNotice}
+      {viewportHeight < SHORT_DRAFT_VIEWPORT_HEIGHT || !DRAFT_SHOWS_HERO ? contextControls : null}
       {flow.canChooseWorkspace ? workspaceControls : null}
     </View>
   );
@@ -1022,10 +1024,15 @@ export function NewTaskDraftScreen(props: {
       <ThreadScreenBinding
         environmentId={selectedProject.environmentId}
         header={
-          <DraftThreadHeader thread={thread} project={selectedProject} cwd={flow.workspaceCwd} />
+          <DraftThreadHeader
+            thread={thread}
+            project={selectedProject}
+            cwd={flow.workspaceCwd}
+            subtitle={`${contextProjectLabel} · ${selectedEnvironmentLabel}`}
+          />
         }
         draftMode={{
-          content: heroViewport,
+          content: DRAFT_SHOWS_HERO ? heroViewport : () => null,
           controls: draftControls,
           editorRef: promptInputRef,
           sendBlockedReason: setupBlockReason,

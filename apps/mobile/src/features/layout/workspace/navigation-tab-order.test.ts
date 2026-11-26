@@ -25,7 +25,7 @@ describe("navigation tab order", () => {
   it("fills missing sections and drops removed placeholders, duplicates, and Settings", () => {
     expect(
       resolveNavigationTabOrder(["usage", "home", "inbox", "settings", "usage", null]),
-    ).toEqual(["usage", "threads", "tasks", "pullRequests", "issues"]);
+    ).toEqual(["usage", "threads", "tasks", "notifications", "more", "pullRequests", "issues"]);
     expect(resolveNavigationTabOrder()).toEqual(NAVIGATION_TAB_ORDER);
   });
 
@@ -48,16 +48,19 @@ describe("navigation tab order", () => {
     }
   });
 
-  it("shows every real section without overflow and keeps Settings selected during editing", () => {
-    // Pull requests and issues share a slot, so the bar holds every other section.
+  it("puts four sections in the bar and More, with what it opens, in the fifth slot", () => {
     const shared = [sharedSlotAbsentee("threads", undefined)];
-    expect(visibleNavigationTabs(undefined, shared)).toEqual(
-      NAVIGATION_TAB_ORDER.filter((tab) => tab !== shared[0]),
-    );
-    expect(overflowNavigationTabs(undefined, shared)).toEqual([]);
+    expect(visibleNavigationTabs(undefined, shared)).toEqual([
+      "threads",
+      "tasks",
+      "usage",
+      "notifications",
+    ]);
+    expect(overflowNavigationTabs(undefined, shared)).toEqual(["more", "pullRequests"]);
     expect(selectedNavigationTab(undefined, "threads", true)).toBe("settings");
     expect(selectedNavigationTab(undefined, "usage", false, shared)).toBe("usage");
-    expect(selectedNavigationTab(undefined, "usage", false, [], 2)).toBe("settings");
+    expect(selectedNavigationTab(undefined, "more", false, shared)).toBe("settings");
+    expect(selectedNavigationTab(undefined, "pullRequests", false, shared)).toBe("settings");
   });
 
   it("removes hidden sections from navigation and restores their saved positions", () => {
@@ -66,11 +69,13 @@ describe("navigation tab order", () => {
     expect(enabledNavigationTabs(order, hidden)).toEqual([
       "threads",
       "tasks",
+      "notifications",
+      "more",
       "pullRequests",
       "issues",
     ]);
     expect(toggleNavigationTabVisibility(hidden, "usage")).toEqual([]);
-    expect(visibleNavigationTabs(order, [], 5)).toEqual(order);
+    expect(visibleNavigationTabs(order, [], 5)).toEqual(order.slice(0, 5));
     expect(enabledNavigationTabs(undefined, ["home", "inbox", "settings"])).toEqual(
       NAVIGATION_TAB_ORDER,
     );

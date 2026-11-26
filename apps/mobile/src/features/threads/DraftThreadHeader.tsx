@@ -21,6 +21,7 @@ export function DraftThreadHeader(props: {
   readonly thread: EnvironmentThreadShell;
   readonly project: EnvironmentProject;
   readonly cwd: string | null;
+  readonly subtitle?: string;
 }) {
   const gt = useGT();
   const messages = useMessages();
@@ -51,7 +52,7 @@ export function DraftThreadHeader(props: {
     <ThreadHeader
       draft
       title={gt("New thread")}
-      subtitle=""
+      subtitle={props.subtitle ?? ""}
       hasThreadCwd={props.cwd !== null}
       inspectorMode={null}
       onOpenFilesInspector={openFiles}
