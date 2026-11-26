@@ -15,23 +15,6 @@ export function weekOf(date: DateKey, weekStartDay: number): readonly DateKey[] 
   return dateRange(weekStartOf(date, weekStartDay), 7);
 }
 
-/**
- * The locale's first day of the week where the engine knows it, else Monday, as the desktop.
- * 0 is Sunday.
- */
-export function localeWeekStart(locale: string): number {
-  try {
-    const info = new Intl.Locale(locale) as Intl.Locale & {
-      getWeekInfo?: () => { firstDay: number };
-      weekInfo?: { firstDay: number };
-    };
-    const firstDay = info.getWeekInfo?.().firstDay ?? info.weekInfo?.firstDay;
-    return firstDay === undefined ? 1 : firstDay % 7;
-  } catch {
-    return 1;
-  }
-}
-
 export interface DayEntry {
   readonly entry: TaskScheduleEntry;
   readonly task: PlannerTask | undefined;

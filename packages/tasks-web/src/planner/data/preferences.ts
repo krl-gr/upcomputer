@@ -11,7 +11,7 @@ import {
   setLocalStorageItem,
   useLocalStorage,
 } from "../../../../../apps/web/src/hooks/useLocalStorage.ts";
-import { DAY_COUNT_OPTIONS, todayKey } from "@t3tools/tasks-client/planner/dates";
+import { DAY_COUNT_OPTIONS, localeWeekStart, todayKey } from "@t3tools/tasks-client/planner/dates";
 import { MIN_LIST_WIDTH } from "../logic/plannerWidth.ts";
 
 const PlannerPreferencesSchema = Schema.Struct({
@@ -50,20 +50,6 @@ export interface PlannerViewState {
   readonly rightPaneHidden: boolean;
 }
 
-/** The locale's first day of the week where the browser knows it, else Monday. */
-function localeWeekStart(): number {
-  try {
-    const locale = new Intl.Locale(navigator.language) as Intl.Locale & {
-      getWeekInfo?: () => { firstDay: number };
-      weekInfo?: { firstDay: number };
-    };
-    const firstDay = locale.getWeekInfo?.().firstDay ?? locale.weekInfo?.firstDay;
-    return firstDay === undefined ? 1 : firstDay % 7;
-  } catch {
-    return 1;
-  }
-}
-
 export const DEFAULT_LIST_WIDTH = 464;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
@@ -84,7 +70,7 @@ export function usePlannerPreferences() {
   const preferences = useMemo<PlannerPreferences>(
     () => ({
       weekViewMode: stored.weekViewMode ?? "queue",
-      weekStartDay: clamp(stored.weekStartDay ?? localeWeekStart(), 0, 6),
+      weekStartDay: clamp(stored.weekStartDay ?? localeWeekStart(navigator.language), 0, 6),
       defaultTaskDuration: clamp(stored.defaultTaskDuration ?? 30, 1, 1440),
       defaultRoutineDuration: clamp(stored.defaultRoutineDuration ?? 60, 1, 1440),
       cardStyle: stored.cardStyle ?? "modern",

@@ -1,6 +1,12 @@
 import { LegendList } from "@legendapp/list/react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { addDays, dateOfKey, todayKey, type DateKey } from "@t3tools/tasks-client/planner/dates";
+import {
+  addDays,
+  dateOfKey,
+  localeWeekStart,
+  todayKey,
+  type DateKey,
+} from "@t3tools/tasks-client/planner/dates";
 import type { PlannerTask } from "@t3tools/tasks-client/planner/pendingOps";
 import { progressLabel, weekRangeOf } from "@t3tools/tasks-client/planner/progress";
 import {
@@ -33,7 +39,6 @@ import {
   dayEntries,
   daysWithOpenEntries,
   entryMoveTargets,
-  localeWeekStart,
   plannedOn,
   plannerGate,
   plannerKindOf,
@@ -562,6 +567,8 @@ const PlannerEntryRow = memo(function PlannerEntryRow(props: {
   const gt = useGT();
   const { entry, task } = props.item;
   const handled = entry.status !== "open";
+  // An entry just added has no server id until the add returns, so nothing can change it yet.
+  const editable = props.canEdit && !entry.id.startsWith("pending-entry-");
   const title = task?.title ?? gt("Loading…");
   const dayName = (date: DateKey) =>
     dateOfKey(date).toLocaleDateString(props.locale, {
@@ -584,12 +591,24 @@ const PlannerEntryRow = memo(function PlannerEntryRow(props: {
       status: "skipped" as const,
     },
   ];
+  // The native menu opens on tap whatever its child says, so a read-only row gets none.
+  const moreButton = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={gt("More options")}
+      disabled={!editable}
+      hitSlop={8}
+      className={cn("h-7 w-7 items-center justify-center", !editable && "opacity-40")}
+    >
+      <SymbolView name="ellipsis" size={16} tintColorClassName="accent-icon-muted" />
+    </Pressable>
+  );
   return (
     <View className="flex-row items-start gap-3 px-4">
       <CheckButton
         state={entry.status}
         label={entry.status === "done" ? gt("Mark as not done") : gt("Mark as done")}
-        disabled={!props.canEdit}
+        disabled={!editable}
         onPress={props.onToggle}
       />
       <View className="min-w-0 flex-1 flex-row items-center gap-2 border-b border-border-subtle pb-2.5">
@@ -612,51 +631,47 @@ const PlannerEntryRow = memo(function PlannerEntryRow(props: {
             <Text className="text-xs tabular-nums text-foreground-muted">{entry.startTime}</Text>
           ) : null}
         </Pressable>
-        <Menu
-          title={title}
-          actions={[
-            ...statusItems.map((item) => ({
-              id: item.id,
-              title: item.title,
-              image: item.image,
-              state: entry.status === item.status ? ("on" as const) : ("off" as const),
-            })),
-            { id: "next", title: gt("Move to next day"), image: "arrow.right" },
-            {
-              id: "move",
-              title: gt("Move to another day"),
-              image: "calendar",
-              subactions: props.moveTargets.map((date) => ({
-                id: `move:${date}`,
-                title: dayName(date),
+        {editable ? (
+          <Menu
+            title={title}
+            actions={[
+              ...statusItems.map((item) => ({
+                id: item.id,
+                title: item.title,
+                image: item.image,
+                state: entry.status === item.status ? ("on" as const) : ("off" as const),
               })),
-            },
-            {
-              id: "delete",
-              title: gt("Remove from this day"),
-              image: "trash",
-              attributes: { destructive: true },
-            },
-          ]}
-          onPressAction={({ nativeEvent }) => {
-            const id = nativeEvent.event;
-            const status = statusItems.find((item) => item.id === id)?.status;
-            if (status) props.onStatus(status);
-            else if (id === "next") props.onMove(addDays(entry.date, 1));
-            else if (id.startsWith("move:")) props.onMove(id.slice(5));
-            else if (id === "delete") props.onDelete();
-          }}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={gt("More options")}
-            disabled={!props.canEdit}
-            hitSlop={8}
-            className={cn("h-7 w-7 items-center justify-center", !props.canEdit && "opacity-40")}
+              { id: "next", title: gt("Move to next day"), image: "arrow.right" },
+              {
+                id: "move",
+                title: gt("Move to another day"),
+                image: "calendar",
+                subactions: props.moveTargets.map((date) => ({
+                  id: `move:${date}`,
+                  title: dayName(date),
+                })),
+              },
+              {
+                id: "delete",
+                title: gt("Remove from this day"),
+                image: "trash",
+                attributes: { destructive: true },
+              },
+            ]}
+            onPressAction={({ nativeEvent }) => {
+              const id = nativeEvent.event;
+              const status = statusItems.find((item) => item.id === id)?.status;
+              if (status) props.onStatus(status);
+              else if (id === "next") props.onMove(addDays(entry.date, 1));
+              else if (id.startsWith("move:")) props.onMove(id.slice(5));
+              else if (id === "delete") props.onDelete();
+            }}
           >
-            <SymbolView name="ellipsis" size={16} tintColorClassName="accent-icon-muted" />
-          </Pressable>
-        </Menu>
+            {moreButton}
+          </Menu>
+        ) : (
+          moreButton
+        )}
       </View>
     </View>
   );
