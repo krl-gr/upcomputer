@@ -422,15 +422,16 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     undefined,
     props.selectedThread.projectId,
   );
-  const botMentionItems = useBotComposerItems(
+  const botMentions = useBotComposerItems(
     props.environmentId,
     props.isDraft ? null : props.selectedThread.id,
+    useVisibleThreadShells(),
   );
   const composerMenu = useComposerCommandMenu({
     draftMessage: draftMessage,
     ownerKey: composerDraftKey,
     environmentId: props.environmentId,
-    threadShells: useVisibleThreadShells(),
+    threadShells: botMentions.threadShells,
     environments: offersLinkedEnvironments(props.serverConfig)
       ? mentionableEnvironments
       : NO_MACHINES,
@@ -452,7 +453,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     modelProviders: props.serverConfig?.providers,
     ...(props.onFreshSession === undefined ? {} : { onFreshSession: props.onFreshSession }),
     offersSideChat: props.offersSideChat === true,
-    mentionItems: botMentionItems,
+    mentionItems: botMentions.items,
   });
   const voiceInput = useVoiceInputController({
     ownerKey: composerDraftKey,
@@ -567,7 +568,8 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         blocked: props.isDraft === true || queuedEdit !== null || props.redirectsApproval,
         environmentId: props.environmentId,
         threadId: props.selectedThread.id,
-        draft: draftMessage,
+        draftKey: composerDraftKey,
+        flushInput: () => inputRef.current?.flushPendingInput(),
         hasAttachments: draftAttachments.length > 0 || draftContext !== undefined,
         navigation,
         onSent: () => onChangeDraftMessage(""),

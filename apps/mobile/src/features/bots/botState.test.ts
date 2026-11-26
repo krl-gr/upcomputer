@@ -6,6 +6,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   botMentionMessage,
+  botMentionText,
   botSectionOf,
   botStatusOf,
   matchMentionBots,
@@ -156,5 +157,27 @@ describe("bot mentions", () => {
     expect(route("@Nova look at this", true)).toEqual({ kind: "attachments", bot: nova });
     // In the bot's own chat its name is ordinary text.
     expect(route("@Nova hello", false, nova.threadId)).toBeNull();
+  });
+
+  it("picks a bot that shares its name by id, and refuses the typed name", () => {
+    const twin = bot("Nova", {
+      agent: { id: TaskAgentId.make("bot-nova-site"), name: "Nova" },
+      threadId: ThreadId.make("chat-nova-site"),
+      projectId: site,
+    } as Partial<Bot>);
+    const bots = [nova, twin, release];
+    const draft = `${botMentionText(twin, bots, thread)}deploy the site`;
+    expect(draft).toBe("@bot-nova-site deploy the site");
+    expect(botMentionMessage({ draft, hasAttachments: false, bots, threadId: thread })).toEqual({
+      kind: "send",
+      bot: twin,
+      text: "deploy the site",
+    });
+    expect(
+      botMentionMessage({ draft: "@Nova deploy", hasAttachments: false, bots, threadId: thread }),
+    ).toEqual({ kind: "ambiguous", bot: nova });
+    expect(botMentionText(release, bots, thread)).toBe('@"Release helper" ');
+    // In the twin's own chat only one Nova is addressable, so the name is enough.
+    expect(botMentionText(nova, bots, twin.threadId)).toBe("@Nova ");
   });
 });

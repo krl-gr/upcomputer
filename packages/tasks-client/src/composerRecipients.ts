@@ -8,6 +8,9 @@ interface NamedRecipient {
 const fold = (text: string) => text.normalize("NFC").toLowerCase();
 const sameName = (left: string, right: string) => fold(left) === fold(right);
 
+/** Whether two recipients' names read the same to the mention parser. */
+export const sameComposerRecipientName = sameName;
+
 /**
  * The recipients an `@` query names, best first: names that start with it, then names with a
  * word that does, then names that contain it. Ties keep the given order.

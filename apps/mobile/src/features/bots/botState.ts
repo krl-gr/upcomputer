@@ -13,6 +13,7 @@ import {
   composerRecipientMention,
   matchComposerRecipients,
   parseComposerRecipientMessage,
+  sameComposerRecipientName,
 } from "@t3tools/tasks-client/composerRecipients";
 import { botMemoryContext, type Bot, type BotMemory } from "@t3tools/tasks-contracts/v1";
 
@@ -140,14 +141,35 @@ export function matchMentionBots(
   return matchComposerRecipients(mentionable(bots, threadId), query).map(({ bot }) => bot);
 }
 
-/** What the composer writes for a bot picked from the `@` menu. */
-export const botMentionText = (bot: Bot) => composerRecipientMention(bot.agent.name);
+/** The other bots this thread's `@Name` could mean, since bot names need not be unique. */
+export const botsSharingName = (bot: Bot, bots: ReadonlyArray<Bot>, threadId: ThreadId) =>
+  addressableBots(bots, threadId).filter(
+    (other) =>
+      other.agent.id !== bot.agent.id &&
+      sameComposerRecipientName(other.agent.name, bot.agent.name),
+  );
+
+/**
+ * What the composer writes for a bot picked from the `@` menu: its name, or its id when another
+ * bot here shares the name, so the message reaches the bot that was picked.
+ */
+export const botMentionText = (bot: Bot, bots: ReadonlyArray<Bot>, threadId: ThreadId) =>
+  composerRecipientMention(
+    botsSharingName(bot, bots, threadId).length > 0 ? bot.agent.id : bot.agent.name,
+  );
+
+const mentionsById = (draft: string, bot: Bot) => {
+  const text = draft.normalize("NFC");
+  return [bot.agent.id, `"${bot.agent.id}"`].some((key) => text.includes(`@${key}`));
+};
 
 export type BotMentionMessage =
   | { readonly kind: "send"; readonly bot: Bot; readonly text: string }
   | { readonly kind: "empty"; readonly bot: Bot }
   | { readonly kind: "attachments"; readonly bot: Bot }
-  | { readonly kind: "several"; readonly bots: ReadonlyArray<Bot> };
+  | { readonly kind: "several"; readonly bots: ReadonlyArray<Bot> }
+  /** A typed `@Name` that more than one bot answers to. */
+  | { readonly kind: "ambiguous"; readonly bot: Bot };
 
 /**
  * Where a draft goes: to the bot whose `@Name` opens it, as on the desktop, or to this thread
@@ -167,6 +189,11 @@ export function botMentionMessage(input: {
   if ("recipients" in message)
     return { kind: "several", bots: message.recipients.map(({ bot }) => bot) };
   const { bot } = message.recipient;
+  if (
+    botsSharingName(bot, input.bots, input.threadId).length > 0 &&
+    !mentionsById(input.draft, bot)
+  )
+    return { kind: "ambiguous", bot };
   if (input.hasAttachments) return { kind: "attachments", bot };
   if (message.text === "") return { kind: "empty", bot };
   return { kind: "send", bot, text: message.text };

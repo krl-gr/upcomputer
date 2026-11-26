@@ -6,6 +6,7 @@ import { msg } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
 import { m } from "../../i18n/messages";
 import { uuidv4 } from "../../lib/uuid";
+import { getComposerDraftSnapshot } from "../../state/use-composer-drafts";
 import { readTasksClient } from "../tasks/tasksRpc";
 import { botLists } from "./botsData";
 import { botMentionMessage } from "./botState";
@@ -45,6 +46,13 @@ export async function sendBotMention(input: {
     return "refused";
   }
   const mention = `@${message.bot.agent.name}`;
+  if (message.kind === "ambiguous") {
+    Dialog.alert(
+      m(msg("More than one bot is named {mention}", { mention })),
+      m(msg("Pick the bot from the @ menu, then send it again.")),
+    );
+    return "refused";
+  }
   if (message.kind === "attachments") {
     Dialog.alert(
       m(msg("Messages to {mention} take text only", { mention })),
@@ -91,16 +99,21 @@ export async function routeBotMention(input: {
   readonly blocked: boolean;
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
-  readonly draft: string;
+  readonly draftKey: string;
+  /** Lets an autocorrection the send tap accepted reach the draft before it is read. */
+  readonly flushInput: () => Promise<void> | undefined;
   readonly hasAttachments: boolean;
   readonly navigation: {
     readonly dispatch: (action: ReturnType<typeof StackActions.push>) => void;
   };
   readonly onSent: () => void;
 }): Promise<boolean> {
-  if (input.blocked) return false;
+  if (input.blocked || !getComposerDraftSnapshot(input.draftKey).text.includes("@")) return false;
+  await input.flushInput();
+  const draft = getComposerDraftSnapshot(input.draftKey).text;
   const result = await sendBotMention({
     ...input,
+    draft,
     openChat: (bot) =>
       input.navigation.dispatch(
         StackActions.push("Thread", {
@@ -109,6 +122,7 @@ export async function routeBotMention(input: {
         }),
       ),
   });
-  if (result === "sent") input.onSent();
+  // Text typed while the message was on its way stays in the composer.
+  if (result === "sent" && getComposerDraftSnapshot(input.draftKey).text === draft) input.onSent();
   return result !== null;
 }
