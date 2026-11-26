@@ -2,7 +2,7 @@ import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { ScopedTaskListItem } from "@t3tools/tasks-client/state/taskPages";
-import { LEGACY_TASK_WORKFLOW_VERSION } from "@t3tools/tasks-contracts/v1";
+import { CURRENT_TASK_WORKFLOW_VERSION } from "@t3tools/tasks-contracts/v1";
 import { useGT } from "gt-react-native";
 import { use, useRef, useState } from "react";
 import { Keyboard, Platform, ScrollView, View } from "react-native";
@@ -41,7 +41,7 @@ import {
   type TaskListFilter,
 } from "./taskListState";
 import { useTasksAccess } from "./tasksRpc";
-import { useTaskList, useTaskWorkflowVersion } from "./useTasks";
+import { useTaskList, useTaskWorkflow } from "./useTasks";
 
 // A 12dp inset keeps 16dp chips concentric with Android's 28dp ScreenContent corner.
 const FILTER_ROW_STYLE =
@@ -90,8 +90,9 @@ export function TasksScreen(props: { readonly sidebar?: boolean } = {}) {
   const environment = choices.find((choice) => choice.environmentId === environmentId) ?? null;
   const connected = environment?.connectionState === "connected";
   const access = useTasksAccess(connected ? environmentId : null);
+  // Grouping only; the statuses themselves come from the page and its counts.
   const workflowVersion =
-    useTaskWorkflowVersion(environmentId, access) ?? LEGACY_TASK_WORKFLOW_VERSION;
+    useTaskWorkflow(environmentId, access).version ?? CURRENT_TASK_WORKFLOW_VERSION;
   const [filter, setFilter] = useState<TaskListFilter>(OPEN_TASKS_FILTER);
   const list = useTaskList(connected ? environmentId : null, access, filter);
   const counts = list.counts?.counts ?? [];

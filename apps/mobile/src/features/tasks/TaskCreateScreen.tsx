@@ -1,6 +1,6 @@
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId } from "@t3tools/contracts";
-import { DEFAULT_TASK_STATUS, LEGACY_TASK_WORKFLOW_VERSION } from "@t3tools/tasks-contracts/v1";
+import { DEFAULT_TASK_STATUS } from "@t3tools/tasks-contracts/v1";
 import { useGT } from "gt-react-native";
 import { useRef, useState } from "react";
 import { Keyboard, Pressable, View } from "react-native";
@@ -16,7 +16,7 @@ import { PullRequestSheetContent } from "../pull-requests/PullRequestSheetConten
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { canCreateTask, taskStatusChoices } from "./taskListState";
 import { readTasksClient, useTasksAccess } from "./tasksRpc";
-import { useTaskWorkflowVersion } from "./useTasks";
+import { useTaskWorkflow } from "./useTasks";
 
 export type TaskCreateParams = {
   readonly environmentId: string;
@@ -75,8 +75,7 @@ export function TaskCreateScreen({ route }: StaticScreenProps<TaskCreateParams>)
   const environment = environments.find((entry) => entry.environmentId === environmentId);
   const connected = environment?.connectionState === "connected";
   const access = useTasksAccess(connected ? environmentId : null);
-  const workflowVersion =
-    useTaskWorkflowVersion(environmentId, access) ?? LEGACY_TASK_WORKFLOW_VERSION;
+  const workflow = useTaskWorkflow(environmentId, access);
   const projects = useProjects()
     .filter((project) => project.environmentId === environmentId && project.isScratch !== true)
     .sort((left, right) => left.title.localeCompare(right.title));
@@ -159,11 +158,15 @@ export function TaskCreateScreen({ route }: StaticScreenProps<TaskCreateParams>)
           label={gt("Status")}
           value={status}
           selected={status}
-          options={taskStatusChoices(workflowVersion, null).map((choice) => ({
-            id: choice,
-            title: choice,
-          }))}
-          disabled={busy}
+          options={
+            workflow.version === null
+              ? []
+              : taskStatusChoices(workflow.version, null).map((choice) => ({
+                  id: choice,
+                  title: choice,
+                }))
+          }
+          disabled={busy || workflow.version === null}
           onSelect={setStatus}
         />
         <MenuField
@@ -200,6 +203,11 @@ export function TaskCreateScreen({ route }: StaticScreenProps<TaskCreateParams>)
           {connected
             ? gt("This computer doesn't let this device create tasks.")
             : gt("Reconnect to this computer to create a task.")}
+        </Text>
+      ) : null}
+      {workflow.error ? (
+        <Text selectable className="text-xs text-foreground-muted">
+          {gt("Couldn't load this computer's task statuses: {error}", { error: workflow.error })}
         </Text>
       ) : null}
       {error ? (

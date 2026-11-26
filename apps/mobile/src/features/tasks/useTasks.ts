@@ -1,11 +1,13 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { TasksWebAccess, TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
 import { TaskPageLoader, type TaskPageLoadState } from "@t3tools/tasks-client/state/taskPageLoader";
+import { TaskPageRequests } from "@t3tools/tasks-client/state/taskPages";
 import {
   TaskStatusCountsLoader,
   type TaskStatusCountsState,
 } from "@t3tools/tasks-client/state/taskStatusCounts";
 import {
+  CURRENT_TASK_WORKFLOW_VERSION,
   TASK_HISTORY_EVENT_KINDS,
   taskWorkflowVersionOf,
   type Task,
@@ -100,15 +102,23 @@ export function useTaskList(
   };
 }
 
+export interface TaskWorkflow {
+  /** Null until the computer answers; after a failed read, the current workflow. */
+  readonly version: TaskWorkflowVersion | null;
+  readonly error: string | null;
+}
+
+const UNKNOWN_WORKFLOW: TaskWorkflow = { version: null, error: null };
+
 /** The install's task workflow, which decides the statuses and their order. */
-export function useTaskWorkflowVersion(
+export function useTaskWorkflow(
   environmentId: EnvironmentId | null,
   access: TasksWebAccess | null,
-): TaskWorkflowVersion | null {
+): TaskWorkflow {
   const enabled = environmentId !== null && access?.availability === "enabled";
   const [known, setKnown] = useState<{
     environmentId: EnvironmentId;
-    version: TaskWorkflowVersion;
+    workflow: TaskWorkflow;
   } | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the environment's list settings once it serves tasks
   useEffect(() => {
@@ -117,16 +127,22 @@ export function useTaskWorkflowVersion(
     readTasksClient(environmentId)
       .tasks.getListSettings({})
       .then(
-        (settings) => {
-          if (!cancelled) setKnown({ environmentId, version: taskWorkflowVersionOf(settings) });
-        },
-        () => {},
-      );
+        (settings) => ({ version: taskWorkflowVersionOf(settings), error: null }),
+        (cause: unknown) => ({
+          version: CURRENT_TASK_WORKFLOW_VERSION,
+          error: cause instanceof Error ? cause.message : String(cause),
+        }),
+      )
+      .then((workflow) => {
+        if (!cancelled) setKnown({ environmentId, workflow });
+      });
     return () => {
       cancelled = true;
     };
   }, [enabled, environmentId]);
-  return known !== null && known.environmentId === environmentId ? known.version : null;
+  return known !== null && known.environmentId === environmentId
+    ? known.workflow
+    : UNKNOWN_WORKFLOW;
 }
 
 export interface TaskDetailData {
@@ -179,18 +195,28 @@ export function useTaskDetail(
   const enabled = access?.availability === "enabled";
   const key = `${environmentId}:${taskId}`;
   const [snapshot, setSnapshot] = useState<DetailSnapshot | null>(null);
-  const load = () =>
-    loadDetail(readTasksClient(environmentId), taskId, key).then(setSnapshot, (cause: unknown) => {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      setSnapshot((current) => ({
-        key,
-        task: current?.key === key ? current.task : null,
-        events: current?.key === key ? current.events : null,
-        latestRun: current?.key === key ? current.latestRun : null,
-        worker: current?.key === key ? current.worker : null,
-        error: message,
-      }));
-    });
+  // A slower, older reload must not land over a newer one.
+  const [requests] = useState(() => new TaskPageRequests());
+  const load = () => {
+    const current = requests.begin();
+    return loadDetail(readTasksClient(environmentId), taskId, key).then(
+      (loaded) => {
+        if (current()) setSnapshot(loaded);
+      },
+      (cause: unknown) => {
+        if (!current()) return;
+        const message = cause instanceof Error ? cause.message : String(cause);
+        setSnapshot((previous) => ({
+          key,
+          task: previous?.key === key ? previous.task : null,
+          events: previous?.key === key ? previous.events : null,
+          latestRun: previous?.key === key ? previous.latestRun : null,
+          worker: previous?.key === key ? previous.worker : null,
+          error: message,
+        }));
+      },
+    );
+  };
   const reload = useEffectEvent(() => void load());
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- follows the environment's change stream for this task
   useEffect(() => {
@@ -223,9 +249,12 @@ export function useTaskDetail(
     latestRun: current?.latestRun ?? null,
     worker: current?.worker ?? null,
     refresh: load,
-    applyLocal: (task) =>
+    applyLocal: (task) => {
+      // A reload already in flight may predate this change; the change stream reloads after it.
+      requests.invalidate();
       setSnapshot((previous) =>
         previous !== null && previous.key === key ? { ...previous, task } : previous,
-      ),
+      );
+    },
   };
 }

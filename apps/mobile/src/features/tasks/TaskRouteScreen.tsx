@@ -2,7 +2,6 @@ import { StackActions, useNavigation, type StaticScreenProps } from "@react-navi
 import { EnvironmentId } from "@t3tools/contracts";
 import { taskHistoryRecords, type TaskHistoryRecord } from "@t3tools/tasks-client/taskHistory";
 import {
-  LEGACY_TASK_WORKFLOW_VERSION,
   TaskId,
   type TaskActor,
   type TaskAgent,
@@ -33,7 +32,7 @@ import { TaskMarkdown } from "./TaskMarkdown";
 import { taskStatusChoices } from "./taskListState";
 import { taskRunPresentation, taskStatusTone } from "./taskPresentation";
 import { readTasksClient, useTasksAccess } from "./tasksRpc";
-import { useTaskDetail, useTaskWorkflowVersion } from "./useTasks";
+import { useTaskDetail, useTaskWorkflow } from "./useTasks";
 
 export type TaskRouteParams = {
   readonly environmentId: string;
@@ -61,8 +60,7 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
   const environment = environments.find((entry) => entry.environmentId === environmentId);
   const connected = environment?.connectionState === "connected";
   const access = useTasksAccess(connected ? environmentId : null);
-  const workflowVersion =
-    useTaskWorkflowVersion(environmentId, access) ?? LEGACY_TASK_WORKFLOW_VERSION;
+  const workflow = useTaskWorkflow(environmentId, access);
   const detail = useTaskDetail(environmentId, taskId, access);
   const task = detail.task;
   const project = useProjects().find(
@@ -174,10 +172,21 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
               <View className="gap-3">
                 <TaskStatusControl
                   status={task.status}
-                  choices={canEdit ? taskStatusChoices(workflowVersion, task.status) : []}
+                  choices={
+                    canEdit && workflow.version !== null
+                      ? taskStatusChoices(workflow.version, task.status)
+                      : []
+                  }
                   busy={busy}
                   onMove={(status) => void moveTo(status)}
                 />
+                {workflow.error ? (
+                  <Text selectable className="text-xs text-foreground-muted">
+                    {gt("Couldn't load this computer's task statuses: {error}", {
+                      error: workflow.error,
+                    })}
+                  </Text>
+                ) : null}
                 <Text selectable className="text-xl font-t3-bold leading-7">
                   {task.title}
                 </Text>
