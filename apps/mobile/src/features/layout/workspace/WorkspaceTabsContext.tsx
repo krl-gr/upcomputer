@@ -68,6 +68,8 @@ function createWorkspaceTabsModel(selectedTab?: WorkspaceTab) {
     pullRequests: 0,
     issues: 0,
     usage: 0,
+    notifications: 0,
+    more: 0,
     settings: 0,
   };
   return {

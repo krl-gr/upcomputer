@@ -22,6 +22,7 @@ import { shouldRestoreNativeSearch } from "./workspace-tabs-state";
 import { useFloatingWorkspaceTabs, useSidebarWorkspaceTabs } from "./useSystemWorkspaceTabBar";
 import { WorkspaceTabToolbarButtons } from "./WorkspaceSectionToolbar";
 import { useWorkspaceCompose } from "./useWorkspaceCompose";
+import { isMorePageTab } from "./moreTab";
 
 const SEARCH_LABELS = {
   threads: msg("Search threads"),
@@ -57,7 +58,9 @@ export function WorkspaceToolbar(props: {
   // The Settings list takes the selected tab's place, so search follows it.
   const selectedTab = workspace.settingsOpen ? "settings" : workspace.state.selectedTab;
   const tab = workspace.state.tabs[selectedTab];
-  const searchLabel = m(SEARCH_LABELS[selectedTab === "usage" ? "threads" : selectedTab]);
+  const searchLabel = m(
+    SEARCH_LABELS[selectedTab === "usage" || isMorePageTab(selectedTab) ? "threads" : selectedTab],
+  );
   const { isTabActive: isListTabActive } = workspace;
   // A retained tab slot stays mounted while another is shown.
   const isTabActive = (tab: typeof selectedTab) =>

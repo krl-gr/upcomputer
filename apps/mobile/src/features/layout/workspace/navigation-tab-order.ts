@@ -1,11 +1,14 @@
 import { msg } from "gt-react-native";
 
+// Up.computer's bar: the first four, then More (the fifth slot), which opens the rest.
 export const NAVIGATION_TAB_ORDER = [
   "threads",
   "tasks",
+  "usage",
+  "notifications",
+  "more",
   "pullRequests",
   "issues",
-  "usage",
 ] as const;
 export type NavigationTab = (typeof NAVIGATION_TAB_ORDER)[number];
 
@@ -26,7 +29,8 @@ export function sharedSlotAbsentee(selected: NavigationTab, last: unknown): Shar
 }
 
 export function navigationCustomizationAvailable(
-  registeredSections: number = NAVIGATION_TAB_ORDER.length - 1,
+  // Up.computer's bar is fixed; More holds the sections it leaves out.
+  registeredSections = 4,
 ) {
   return registeredSections > 4;
 }
@@ -37,6 +41,8 @@ export const NAVIGATION_TAB_LABELS: Readonly<Record<NavigationTab, string>> = {
   pullRequests: msg("Pulls", { $context: "navigation tab, pull requests" }),
   issues: msg("Issues", { $context: "navigation tab, issues from an issue tracker" }),
   usage: msg("Usage", { $context: "navigation tab, provider usage limits" }),
+  notifications: msg("Notifications", { $context: "navigation tab, updates and alerts" }),
+  more: msg("More", { $context: "navigation tab, list of further sections" }),
 };
 
 function isNavigationTab(value: unknown): value is NavigationTab {

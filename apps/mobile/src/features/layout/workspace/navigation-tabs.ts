@@ -21,7 +21,8 @@ export const WORKSPACE_TAB_LABELS = {
   ...(Platform.OS === "ios"
     ? {
         threads: msg("Chats", { $context: "navigation tab, list of chat threads" }),
-        pullRequests: msg("PRs", { $context: "navigation tab, pull requests" }),
+        pullRequests: msg("Pull requests", { $context: "navigation tab, pull requests" }),
+        usage: msg("Limits", { $context: "navigation tab, provider usage limits" }),
       }
     : {}),
 };
@@ -32,6 +33,8 @@ export const NAVIGATION_TAB_ICONS = {
   pullRequests: PullRequestGlyph.pullRequest,
   issues: "git.issue",
   usage: "chart.bar.xaxis",
+  notifications: "bell",
+  more: "ellipsis",
 } as const satisfies Readonly<Record<NavigationTab, AppSymbolName>>;
 
 export function useNavigationTabOrder() {
