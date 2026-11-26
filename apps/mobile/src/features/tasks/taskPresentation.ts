@@ -124,3 +124,43 @@ export function taskRunPresentation(
   if (state.kind === "other") return { ...NEUTRAL, icon: "hammer", label: state.label };
   return { ...RUN_TONES[state.kind], label: resolve(RUN_LABELS[state.kind]) };
 }
+
+/** The desktop's run badge order: active and actionable runs before finished ones. */
+const RUN_COUNT_ORDER: readonly TaskRunKind[] = [
+  "working",
+  "approval",
+  "awaitingInput",
+  "finalizing",
+  "failed",
+  "interrupted",
+  "stopped",
+  "blocked",
+  "completed",
+];
+
+export interface TaskRunCount extends TaskRunPresentation {
+  readonly count: number;
+}
+
+/** A task's runs by state, as the desktop's Runs column counts them. */
+export function taskRunCounts(
+  counts: ReadonlyArray<{ readonly status: string; readonly count: number }>,
+  resolve: MessageResolver,
+): readonly TaskRunCount[] {
+  const byState = new Map<string, TaskRunCount & { readonly rank: number }>();
+  for (const { status, count } of counts) {
+    const state = taskRunState(status, false);
+    if (state === null || count <= 0) continue;
+    const key = state.kind === "other" ? `other:${state.label}` : state.kind;
+    const previous = byState.get(key);
+    const presentation = taskRunPresentation(status, resolve)!;
+    byState.set(key, {
+      ...presentation,
+      count: (previous?.count ?? 0) + count,
+      rank: state.kind === "other" ? RUN_COUNT_ORDER.length : RUN_COUNT_ORDER.indexOf(state.kind),
+    });
+  }
+  return [...byState.values()]
+    .sort((left, right) => left.rank - right.rank || left.label.localeCompare(right.label))
+    .map(({ rank: _rank, ...count }) => count);
+}

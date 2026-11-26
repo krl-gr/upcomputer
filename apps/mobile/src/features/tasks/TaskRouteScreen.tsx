@@ -2,6 +2,8 @@ import { StackActions, useNavigation, type StaticScreenProps } from "@react-navi
 import { EnvironmentId } from "@t3tools/contracts";
 import { taskHistoryRecords, type TaskHistoryRecord } from "@t3tools/tasks-client/taskHistory";
 import {
+  PERSON_DONE_STATUS,
+  PERSON_OPEN_STATUS,
   TaskId,
   type TaskActor,
   type TaskAgent,
@@ -173,14 +175,18 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
                 <TaskStatusControl
                   status={task.status}
                   choices={
-                    canEdit && workflow.version !== null
-                      ? taskStatusChoices(workflow.version, task.status)
-                      : []
+                    !canEdit
+                      ? []
+                      : task.audience === "person"
+                        ? [PERSON_OPEN_STATUS, PERSON_DONE_STATUS]
+                        : workflow.version !== null
+                          ? taskStatusChoices(workflow.version, task.status)
+                          : []
                   }
                   busy={busy}
                   onMove={(status) => void moveTo(status)}
                 />
-                {workflow.error ? (
+                {workflow.error && task.audience !== "person" ? (
                   <Text selectable className="text-xs text-foreground-muted">
                     {gt("Couldn't load this computer's task statuses: {error}", {
                       error: workflow.error,
@@ -213,11 +219,13 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
                   </Text>
                 ) : null}
               </View>
-              <TaskWorkerSection
-                run={detail.latestRun}
-                worker={detail.worker}
-                onOpenTranscript={openTranscript}
-              />
+              {task.audience === "person" ? null : (
+                <TaskWorkerSection
+                  run={detail.latestRun}
+                  worker={detail.worker}
+                  onOpenTranscript={openTranscript}
+                />
+              )}
               <View className="gap-2">
                 <PullRequestSectionHeading>{gt("Description")}</PullRequestSectionHeading>
                 <TaskMarkdown
