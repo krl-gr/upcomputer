@@ -67,7 +67,8 @@ export function WorkerTasksView(props: {
   const gt = useGT();
   const messages = useMessages();
   const navigation = useNavigation();
-  const workspace = useWorkspaceTabs()!;
+  // Absent in the chat's side panel, which shows these views outside the workspace tabs.
+  const workspace = useWorkspaceTabs();
   const allProjects = useProjects();
   const { environmentId, environment, connected, sidebar } = props;
   const insets = useSafeAreaInsets();
@@ -76,7 +77,7 @@ export function WorkerTasksView(props: {
   const bottomSafeArea =
     Platform.OS === "ios" ? (columnSafeBottom ?? insets.bottom) : insets.bottom;
   const listRef = useRef<LegendListRef>(null);
-  const [initialScrollOffset] = useState(() => workspace.getScrollOffset("tasks"));
+  const [initialScrollOffset] = useState(() => workspace?.getScrollOffset("tasks") ?? 0);
   const access = useTasksAccess(connected ? environmentId : null);
   const listSettings = useTaskListSettings(environmentId, access);
   // Grouping only; the statuses themselves come from the page and its counts.
@@ -292,10 +293,10 @@ export function WorkerTasksView(props: {
           initialScrollOffset > 0 ? initialScrollOffset - contentTopInset : undefined
         }
         contentContainerStyle={{
-          paddingBottom: Math.max(bottomSafeArea, workspace.bottomClearance),
+          paddingBottom: Math.max(bottomSafeArea, workspace?.bottomClearance ?? 0),
         }}
         onScroll={(event) => {
-          workspace.recordScrollOffset(
+          workspace?.recordScrollOffset(
             "tasks",
             Math.max(0, event.nativeEvent.contentOffset.y + contentTopInset),
           );

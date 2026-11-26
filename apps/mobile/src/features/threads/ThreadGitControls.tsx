@@ -1,4 +1,5 @@
 import { msg, useGT, useMessages } from "gt-react-native";
+import { createContext, use } from "react";
 
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
@@ -348,9 +349,13 @@ export function threadTerminalMenu(
   };
 }
 
+/** Merge back for Review inside the chat's side panel, where the chat's bar has no git menu. */
+export const ThreadMergeBackContext = createContext<(() => void) | undefined>(undefined);
+
 /** The thread's git menu, shared by the thread bar and Review. */
 export function useThreadGitMenuDefinition(props: ThreadGitMenuProps): AppBarMenu | null {
   const model = useThreadGitControlModel(props);
+  const onMergeBack = props.onMergeBack ?? use(ThreadMergeBackContext);
   const gt = useGT();
   const messages = useMessages();
   return {
@@ -387,14 +392,14 @@ export function useThreadGitMenuDefinition(props: ThreadGitMenuProps): AppBarMen
             : gt("Turn diffs and worktree changes"),
         onPress: model.openReview,
       },
-      ...(props.onMergeBack
+      ...(onMergeBack
         ? [
             {
               id: "git-merge-back",
               title: gt("Merge back to source"),
               icon: PullRequestGlyph.merged,
               subtitle: gt("Bring this thread's latest turn into its source"),
-              onPress: props.onMergeBack,
+              onPress: onMergeBack,
             },
           ]
         : []),

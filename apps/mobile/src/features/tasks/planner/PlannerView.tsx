@@ -202,7 +202,8 @@ function PlannerBody(props: {
 }) {
   const gt = useGT();
   const selectDetail = useSelectWorkspaceDetail();
-  const workspace = useWorkspaceTabs()!;
+  // Absent in the chat's side panel, which shows these views outside the workspace tabs.
+  const workspace = useWorkspaceTabs();
   const insets = useSafeAreaInsets();
   const contentTopInset = useContentTopInset();
   const columnSafeBottom = useNativeColumnLayoutMetrics()?.safeArea.bottom;
@@ -431,7 +432,7 @@ function PlannerBody(props: {
         style={{ flex: 1 }}
         contentContainerStyle={{
           paddingTop: 4,
-          paddingBottom: Math.max(bottomSafeArea, workspace.bottomClearance),
+          paddingBottom: Math.max(bottomSafeArea, workspace?.bottomClearance ?? 0),
         }}
         onEndReached={() => {
           if (list.status === "CanLoadMore")

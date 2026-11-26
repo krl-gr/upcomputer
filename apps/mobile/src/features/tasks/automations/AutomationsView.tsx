@@ -168,7 +168,8 @@ function AutomationsShell(props: {
   readonly renderRow?: (automation: TaskAutomationListItem) => ReactNode;
   readonly children: ReactNode;
 }) {
-  const workspace = useWorkspaceTabs()!;
+  // Absent in the chat's side panel, which shows these views outside the workspace tabs.
+  const workspace = useWorkspaceTabs();
   const insets = useSafeAreaInsets();
   const contentTopInset = useContentTopInset();
   const columnSafeBottom = useNativeColumnLayoutMetrics()?.safeArea.bottom;
@@ -190,7 +191,7 @@ function AutomationsShell(props: {
         contentInset={Platform.OS === "ios" ? { top: contentTopInset } : undefined}
         contentContainerStyle={{
           paddingTop: 4,
-          paddingBottom: Math.max(bottomSafeArea, workspace.bottomClearance),
+          paddingBottom: Math.max(bottomSafeArea, workspace?.bottomClearance ?? 0),
         }}
         renderItem={({ item }) => <>{props.renderRow?.(item)}</>}
         ListEmptyComponent={<>{props.children}</>}
