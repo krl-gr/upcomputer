@@ -55,6 +55,14 @@
       "types": "./src/bots/bots.ts",
       "import": "./src/bots/bots.ts"
     },
+    "./bots/botAutosave": {
+      "types": "./src/bots/botAutosave.ts",
+      "import": "./src/bots/botAutosave.ts"
+    },
+    "./bots/botForm": {
+      "types": "./src/bots/botForm.ts",
+      "import": "./src/bots/botForm.ts"
+    },
     "./composerRecipients": {
       "types": "./src/composerRecipients.ts",
       "import": "./src/composerRecipients.ts"

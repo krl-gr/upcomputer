@@ -26,6 +26,7 @@ const setup = (write: (value: Form) => Promise<void>) => {
 
 describe("bot settings autosave", () => {
   it("stopping waits for a save already sent, and sends nothing more", async () => {
+    vi.useFakeTimers();
     let finish = () => {};
     const { autosave, saves, change } = setup(
       () =>
@@ -34,7 +35,7 @@ describe("bot settings autosave", () => {
         }),
     );
     change({ ...start, name: "Sent" }, 0);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.runAllTimersAsync();
     expect(saves).toHaveLength(1);
     change({ ...start, name: "Queued" }, 0);
     let stopped = false;
@@ -45,7 +46,7 @@ describe("bot settings autosave", () => {
     expect(stopped).toBe(false);
     finish();
     await stopping;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.runAllTimersAsync();
     expect(saves.map((form) => form.name)).toEqual(["Sent"]);
   });
 
