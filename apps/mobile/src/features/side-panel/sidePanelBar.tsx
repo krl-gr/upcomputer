@@ -236,7 +236,6 @@ const BAR_ICON_NAMES = [
   "more-horizontal",
   "panel-bottom",
   "plus",
-  "sidebar-right",
   "sliders",
 ] as const;
 

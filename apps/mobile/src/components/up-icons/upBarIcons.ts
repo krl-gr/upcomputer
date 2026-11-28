@@ -13,7 +13,6 @@ const UP_BAR_ICONS = {
   "more-horizontal": require("../../../assets/up-icons/more-horizontal.png"),
   "panel-bottom": require("../../../assets/up-icons/panel-bottom.png"),
   plus: require("../../../assets/up-icons/plus.png"),
-  "sidebar-right": require("../../../assets/up-icons/sidebar-right.png"),
   sliders: require("../../../assets/up-icons/sliders.png"),
 } satisfies Partial<Record<UpIconName, ImageSourcePropType>>;
 

@@ -24,7 +24,6 @@ import { TasksScreen } from "../tasks/TasksScreen";
 import { ThreadTerminalRouteScreen } from "../terminal/ThreadTerminalRouteScreen";
 import { ThreadMergeBackContext } from "../threads/ThreadGitControls";
 import { ThreadPullRequestsSheet } from "../threads/ThreadPullRequestsSheet";
-import { InspectorSheetSizeContext } from "./inspectorSheetSize";
 import { createSidePanelBarStore, SidePanelBarSlot, SidePanelHeaderRow } from "./sidePanelBar";
 import { sidePanelNavigation } from "./sidePanelNavigation";
 import { useSidePanelEntries, type SurfaceEntry } from "./useSidePanelEntries";
@@ -64,7 +63,6 @@ export function ThreadSidePanel(props: {
   const navigation = use(NavigationContext);
   const closePanel = use(InspectorCloseContext);
   const closeSheet = use(InspectorSheetContext);
-  const size = use(InspectorSheetSizeContext);
   const insets = useSafeAreaInsets();
   const leave = (then: () => void) => {
     if (!closeSheet) return then();
@@ -189,7 +187,7 @@ export function ThreadSidePanel(props: {
       <SidePanelHeaderRow
         store={barStore}
         viewKey={current?.id ?? null}
-        style={{ paddingTop: size ? 14 : insets.top + 8 }}
+        style={{ paddingTop: closeSheet ? 14 : insets.top + 8 }}
         leading={
           <Menu
             accessible

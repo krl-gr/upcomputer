@@ -445,12 +445,6 @@ export const UP_ICONS = {
       { kind: "line", x1: 2.75, y1: 2.75, x2: 13.25, y2: 13.25 },
     ],
   },
-  "sidebar-right": {
-    elements: [
-      { kind: "rect", x: 2.25, y: 2.75, width: 11.5, height: 10.5, rx: 2 },
-      { kind: "line", x1: 10, y1: 2.75, x2: 10, y2: 13.25 },
-    ],
-  },
   sliders: {
     elements: [
       { kind: "line", x1: 2.25, y1: 4.75, x2: 7.75, y2: 4.75 },
