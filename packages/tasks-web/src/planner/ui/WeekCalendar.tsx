@@ -5,10 +5,10 @@ import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
 import { cn } from "../../../../../apps/web/src/lib/utils.ts";
 import type { DayEntries } from "../data/hooks.ts";
-import type { PlannerTask } from "../data/pendingOps.ts";
+import type { PlannerTask } from "@t3tools/tasks-client/planner/pendingOps";
 import { scrollMemory } from "../data/preferences.ts";
 import { layoutDay } from "../logic/calendarLayout.ts";
-import { todayKey } from "../logic/dates.ts";
+import { todayKey } from "@t3tools/tasks-client/planner/dates";
 import {
   SLOTS_IN_DAY,
   formatHourLabel,

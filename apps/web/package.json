@@ -41,6 +41,7 @@
     "@t3tools/secret-provider-definitions": "workspace:*",
     "@t3tools/secret-provider-onepassword": "workspace:*",
     "@t3tools/shared": "workspace:*",
+    "@t3tools/tasks-client": "workspace:*",
     "@t3tools/tasks-contracts": "workspace:*",
     "@t3tools/tasks-web": "workspace:*",
     "@tanstack/react-pacer": "^0.19.4",

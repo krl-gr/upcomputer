@@ -112,6 +112,9 @@ const PROPER_NOUNS = [
   "T3 Code",
   "T3 Connect",
   "T3 Chat",
+  // Up.computer's names for the same products (docs/branding.md).
+  "Up.computer",
+  "UpComputer Connect",
   "GitHub",
   "GitLab",
   "Bitbucket",

@@ -6,9 +6,9 @@ import {
   type TaskStatusCount,
 } from "@t3tools/tasks-contracts/v1";
 
-import type { TasksStateTarget } from "../state/tasksState.ts";
+import type { TasksStateTarget } from "@t3tools/tasks-client/state/tasksState";
 import { ALL_FILTER, NO_RUNS_FILTER } from "./pageFilters.ts";
-import { statusGroupKey } from "./taskStatusGroups.ts";
+import { statusGroupKey } from "@t3tools/tasks-client/taskStatusGroups";
 
 /**
  * The logical project chosen in the Tasks, Agents and Automations headers

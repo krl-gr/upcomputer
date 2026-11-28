@@ -1,4 +1,4 @@
-export * from "./rpc/index.ts";
+export * from "@t3tools/tasks-client/rpc";
 export * from "./state/index.ts";
 export * from "./feature.tsx";
 export * from "./ui/AgentsView.tsx";

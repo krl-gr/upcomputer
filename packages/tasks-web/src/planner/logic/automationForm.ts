@@ -155,20 +155,4 @@ export function automationUpsertOf(
   };
 }
 
-/** A time today, else a short date (and the year when it is not this year), in `locale`. */
-export function shortDateTime(value: string, locale?: string, now = new Date()): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "";
-  const sameDay =
-    parsed.getFullYear() === now.getFullYear() &&
-    parsed.getMonth() === now.getMonth() &&
-    parsed.getDate() === now.getDate();
-  const time = parsed.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
-  if (sameDay) return time;
-  const date = parsed.toLocaleDateString(locale, {
-    day: "numeric",
-    month: "short",
-    ...(parsed.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
-  });
-  return `${date} ${time}`;
-}
+export { shortDateTime } from "@t3tools/tasks-client/automations/cronSchedule";

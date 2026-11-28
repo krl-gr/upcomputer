@@ -22,9 +22,11 @@ import { shouldRestoreNativeSearch } from "./workspace-tabs-state";
 import { useFloatingWorkspaceTabs, useSidebarWorkspaceTabs } from "./useSystemWorkspaceTabBar";
 import { WorkspaceTabToolbarButtons } from "./WorkspaceSectionToolbar";
 import { useWorkspaceCompose } from "./useWorkspaceCompose";
+import { isMorePageTab } from "./moreTab";
 
 const SEARCH_LABELS = {
   threads: msg("Search threads"),
+  tasks: msg("Search tasks"),
   pullRequests: msg("Search pull requests"),
   issues: msg("Search issues"),
   settings: msg("Search settings"),
@@ -56,7 +58,9 @@ export function WorkspaceToolbar(props: {
   // The Settings list takes the selected tab's place, so search follows it.
   const selectedTab = workspace.settingsOpen ? "settings" : workspace.state.selectedTab;
   const tab = workspace.state.tabs[selectedTab];
-  const searchLabel = m(SEARCH_LABELS[selectedTab === "usage" ? "threads" : selectedTab]);
+  const searchLabel = m(
+    SEARCH_LABELS[selectedTab === "usage" || isMorePageTab(selectedTab) ? "threads" : selectedTab],
+  );
   const { isTabActive: isListTabActive } = workspace;
   // A retained tab slot stays mounted while another is shown.
   const isTabActive = (tab: typeof selectedTab) =>
@@ -156,7 +160,8 @@ export function WorkspaceToolbar(props: {
             (NATIVE_LIQUID_GLASS_SUPPORTED ||
               tab.searchMode !== "resting" ||
               workspace.settingsOpen) &&
-            searchVisible
+            searchVisible &&
+            selectedTab !== "tasks"
               ? {
                   ref: searchRef,
                   autoFocus: tab.searchMode === "active",
@@ -195,7 +200,7 @@ export function WorkspaceToolbar(props: {
           {searchButton}
           {createNativeHeaderMenu(settingsMenu)}
         </Toolbar>
-      ) : (
+      ) : selectedTab === "tasks" ? null /* TasksToolbar: + and the view menu */ : (
         <Toolbar placement="right">
           {searchButton}
           {nativeToolbarCompose && foldedSearch ? <Toolbar.Spacer width={8} /> : null}

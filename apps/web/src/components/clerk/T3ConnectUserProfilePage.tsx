@@ -276,7 +276,6 @@ export function T3ConnectUserProfilePage() {
 
   return (
     <ClerkUserProfilePage
-      // oxlint-disable-next-line t3code/no-untranslated-copy -- product name
       title="UpComputer Connect"
       description={gt(
         "Environments registered to your account. Connections on this device are managed in Settings.",

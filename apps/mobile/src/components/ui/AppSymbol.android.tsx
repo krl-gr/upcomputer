@@ -54,6 +54,7 @@ import IconDeviceDesktop from "@tabler/icons-react-native/IconDeviceDesktop";
 import IconDeviceLaptop from "@tabler/icons-react-native/IconDeviceLaptop";
 import IconDeviceMobile from "@tabler/icons-react-native/IconDeviceMobile";
 import IconDots from "@tabler/icons-react-native/IconDots";
+import IconBell from "@tabler/icons-react-native/IconBell";
 import IconPlusMinus from "@tabler/icons-react-native/IconPlusMinus";
 import IconDotsVertical from "@tabler/icons-react-native/IconDotsVertical";
 import IconDotsCircleHorizontal from "@tabler/icons-react-native/IconDotsCircleHorizontal";
@@ -144,6 +145,8 @@ import IconX from "@tabler/icons-react-native/IconX";
 import type { AndroidSymbol, SFSymbol, SymbolViewProps } from "expo-symbols";
 import { StyleSheet, View } from "react-native";
 import { withUniwind } from "uniwind";
+import { UpIconView, upIconProps } from "../up-icons/UpIcon";
+import { upIconOfSymbol, type UpSymbolName } from "../up-icons/upSymbol";
 
 const ANDROID_ICON_BY_SF_SYMBOL = {
   plusminus: IconPlusMinus,
@@ -174,6 +177,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "arrow.uturn.forward": IconArrowForwardUp,
   archivebox: IconArchive,
   "archivebox.fill": IconArchive,
+  bell: IconBell,
   "bell.badge": IconBellRinging,
   "bolt.circle": IconBolt,
   "bolt.horizontal.circle": IconBolt,
@@ -357,6 +361,7 @@ const ANDROID_ICON_BY_MATERIAL_NAME = {
 export type { SFSymbol } from "expo-symbols";
 export type AppSymbolName =
   | keyof typeof ANDROID_ICON_BY_SF_SYMBOL
+  | UpSymbolName
   | {
       ios: SFSymbol;
       android: keyof typeof ANDROID_ICON_BY_MATERIAL_NAME;
@@ -371,9 +376,11 @@ export function isAppSymbolName(name: string): name is Extract<AppSymbolName, st
 function AppSymbolView(props: AppSymbolViewProps) {
   const materialName = typeof props.name === "string" ? undefined : props.name.android;
   const sfSymbol = typeof props.name === "string" ? props.name : props.name.ios;
+  const upIcon = upIconOfSymbol(sfSymbol);
+  if (upIcon) return <UpIconView {...upIconProps(props)} name={upIcon} />;
   const AndroidIcon =
     (materialName ? ANDROID_ICON_BY_MATERIAL_NAME[materialName] : undefined) ??
-    (sfSymbol ? SF_ICON_LOOKUP[sfSymbol] : undefined);
+    (sfSymbol ? SF_ICON_LOOKUP[sfSymbol as keyof typeof SF_ICON_LOOKUP] : undefined);
 
   if (!AndroidIcon) {
     return props.fallback ?? null;

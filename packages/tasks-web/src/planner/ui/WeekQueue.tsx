@@ -16,8 +16,8 @@ import {
 } from "../../../../../apps/web/src/components/ui/table.tsx";
 import { cn } from "../../../../../apps/web/src/lib/utils.ts";
 import type { DayEntries } from "../data/hooks.ts";
-import type { PlannerTask } from "../data/pendingOps.ts";
-import { addDays, dateOfKey, todayKey } from "../logic/dates.ts";
+import type { PlannerTask } from "@t3tools/tasks-client/planner/pendingOps";
+import { addDays, dateOfKey, todayKey } from "@t3tools/tasks-client/planner/dates";
 import { QueueEntryCard, type EntryCardHandlers } from "./EntryCard.tsx";
 import { EntryMenuHost, type EntryMenuTarget } from "./EntryMenu.tsx";
 import { FloatingWindow } from "./FloatingWindow.tsx";

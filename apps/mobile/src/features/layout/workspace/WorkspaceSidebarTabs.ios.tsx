@@ -6,6 +6,8 @@ import { useNavigationTabOrder, useHiddenNavigationTabs } from "./navigation-tab
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 import { useAdaptiveWorkspaceLayout } from "../adaptive-workspace-context";
+import { MORE_TAB } from "./moreTab";
+import { useBottomBarItems } from "./useBottomBarItems";
 
 const NativeSidebarTabBar = requireNativeView<
   ViewProps & {
@@ -15,6 +17,9 @@ const NativeSidebarTabBar = requireNativeView<
     appearance: string;
     showsCompose: boolean;
     compact?: boolean;
+    itemLabels?: Readonly<Record<string, string>>;
+    itemSymbols?: Readonly<Record<string, string>>;
+    badgedTabs?: readonly string[];
     onSelectionChange: (event: NativeSyntheticEvent<{ tab: string }>) => void;
     onCompose: () => void;
   }
@@ -32,6 +37,7 @@ export function WorkspaceSidebarTabs(props: {
   const tabs = [...visibleNavigationTabs(order, hidden), "settings" as const];
   const selectTab = useSelectWorkspaceTab();
   const { colors, colorScheme } = useControlTheme();
+  const items = useBottomBarItems(tabs);
   // UIKit loses accessible names when updating nil-titled items in place.
   const tabBarKey = tabs.join(":");
   return (
@@ -44,14 +50,15 @@ export function WorkspaceSidebarTabs(props: {
         workspace.settingsOpen,
         hidden,
       )}
-      selectedColor={colors["--color-primary"]}
+      selectedColor={colors["--color-foreground"]}
       appearance={colorScheme}
       showsCompose={Boolean(props.onNewTask)}
+      {...items}
       compact={props.compact}
       onCompose={() => props.onNewTask?.()}
       onSelectionChange={({ nativeEvent }) => {
         const tab = tabs.find((candidate) => candidate === nativeEvent.tab);
-        if (tab === "settings") selectTab("settings");
+        if (tab === "settings") selectTab(MORE_TAB);
         else if (tab) selectTab(tab);
       }}
       // Keep the host stable while UIKit updates the bars' intrinsic size and safe area together.

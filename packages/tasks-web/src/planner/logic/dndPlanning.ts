@@ -5,7 +5,7 @@
  * queue drag hooks, except that a calendar drop leaves untimed entries where
  * the person put them (the server inserts by time).
  */
-import type { PlannerPlacement } from "./placement.ts";
+import type { PlannerPlacement } from "@t3tools/tasks-client/planner/placement";
 import { slotAtOffset, slotToTime } from "./time.ts";
 
 export type DragSource =

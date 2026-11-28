@@ -9,7 +9,7 @@ import { useLocalStorage } from "../../../../apps/web/src/hooks/useLocalStorage.
 import { usePrimaryEnvironmentId } from "../../../../apps/web/src/state/environments.ts";
 import { useStoredPlannerEnvironment } from "../planner/data/preferences.ts";
 import { pickEnvironment } from "../planner/ui/PlannerView.tsx";
-import type { TasksStateTarget } from "../state/tasksState.ts";
+import type { TasksStateTarget } from "@t3tools/tasks-client/state/tasksState";
 
 /** This device's copy of the list settings: shown at once, and kept for a server without them. */
 export const TASK_LIST_SETTINGS_STORAGE_KEY = "upcomputer:tasks:list-settings";

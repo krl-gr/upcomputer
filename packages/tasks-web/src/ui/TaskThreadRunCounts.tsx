@@ -36,8 +36,11 @@ import {
   readTasksWebClient,
   useTasksWebAccessRevision,
 } from "../environmentApi.ts";
-import type { TasksWebRpcClient } from "../rpc/index.ts";
-import { threadRunCountsStore, type ThreadRunCountsStore } from "../state/threadRunCounts.ts";
+import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
+import {
+  threadRunCountsStore,
+  type ThreadRunCountsStore,
+} from "@t3tools/tasks-client/state/threadRunCounts";
 import { taskKey } from "./shared.ts";
 import {
   onLightRunCountGroup,

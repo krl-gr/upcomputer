@@ -7,7 +7,10 @@ import {
 import { gtFallback } from "gt-react";
 import { assert, describe, test } from "vite-plus/test";
 
-import { DEFAULT_STATUS_GROUP_ORDER, LEGACY_STATUS_GROUP_ORDER } from "../ui/taskStatusGroups.ts";
+import {
+  DEFAULT_STATUS_GROUP_ORDER,
+  LEGACY_STATUS_GROUP_ORDER,
+} from "@t3tools/tasks-client/taskStatusGroups";
 import { beforeAfterListLines } from "./BeforeAfterText.tsx";
 import { instructionUpdateCopy, instructionUpdatesNoticeDetail } from "./instructionUpdateCopy.ts";
 import { instructionUpdatesView, withInstructionUpdates } from "./workflowUpdates.ts";

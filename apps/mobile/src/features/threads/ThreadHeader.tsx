@@ -1,7 +1,7 @@
 import { useGT, useMessages } from "gt-react-native";
 
 import { AppBar } from "../../components/ui/AppBar";
-import type { AppBarAction, AppBarMenu } from "../../components/ui/AppBar.types";
+import type { AppBarAction, AppBarMenu, AppBarTitlePill } from "../../components/ui/AppBar.types";
 import {
   useAdaptiveWorkspaceLayout,
   useWorkspacePaneState,
@@ -23,6 +23,11 @@ export function ThreadHeader(props: {
   readonly hasThreadCwd: boolean;
   readonly inspectorMode: ThreadInspectorMode | null;
   readonly onOpenFilesInspector: () => void;
+  /** A chat's bar has one button, the desktop's side panel, in place of files, git and terminal. */
+  readonly onOpenSidePanel?: () => void;
+  /** Up.computer: a bot chat's pill and the panel's views menu (side-panel/ChatThreadHeader). */
+  readonly bot?: AppBarTitlePill;
+  readonly panelMenu?: AppBarMenu;
 }) {
   const gt = useGT();
   const m = useMessages();
@@ -32,24 +37,39 @@ export function ThreadHeader(props: {
   const gitMenu = useThreadGitMenuDefinition(props.gitControls);
   const terminalMenu = threadTerminalMenu(props.gitControls, m);
   const filesVisible = props.inspectorMode === "files" && panes.auxiliaryPaneVisible;
-  const actions: AppBarAction[] = props.hasThreadCwd
+  const panelVisible = props.inspectorMode === "panel" && panes.auxiliaryPaneVisible;
+  const panelMenu = panelVisible ? undefined : props.panelMenu;
+  const actions: AppBarAction[] = props.onOpenSidePanel
     ? [
         {
-          accessibilityLabel: filesVisible ? gt("Close files") : gt("Open files"),
-          icon: "folder",
-          selected: filesVisible,
-          disabled: !props.gitControls.canOpenFiles,
-          separateBackground: false,
-          onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
+          accessibilityLabel: gt("Toggle right panel"),
+          icon: "up.panel-bottom",
+          selected: panelVisible,
+          onPress: panelVisible ? toggleAuxiliaryPane : props.onOpenSidePanel,
         },
       ]
-    : [];
-  const menus = [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
+    : props.hasThreadCwd
+      ? [
+          {
+            accessibilityLabel: filesVisible ? gt("Close files") : gt("Open files"),
+            icon: "folder",
+            selected: filesVisible,
+            disabled: !props.gitControls.canOpenFiles,
+            separateBackground: false,
+            onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
+          },
+        ]
+      : [];
+  const menus = props.onOpenSidePanel
+    ? []
+    : [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
 
   return (
     <AppBar
       title={props.title}
-      subtitle={props.subtitle}
+      titleContent={props.bot?.icon}
+      titlePill={props.bot}
+      subtitle={props.bot ? null : props.subtitle}
       onBackToList={goBack}
       onCompose={props.draft ? undefined : startNewTask}
       backInSplitView={
@@ -61,8 +81,8 @@ export function ThreadHeader(props: {
             }
           : undefined
       }
-      actions={actions}
-      menus={menus}
+      actions={panelMenu ? [] : actions}
+      menus={panelMenu ? [panelMenu] : menus}
       hideBottomBorder
     />
   );

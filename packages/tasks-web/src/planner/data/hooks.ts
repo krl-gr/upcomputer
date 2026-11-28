@@ -2,30 +2,57 @@
  * React access to an environment's planner store, under wande's hook names
  * where a ported component reads them. Writes are store methods.
  */
-import { mFallback, useMessages } from "gt-react";
+import { mFallback, msg, useMessages } from "gt-react";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
 import { toastManager } from "../../../../../apps/web/src/components/ui/toast.tsx";
 import { readTasksWebAccess, readTasksWebClient } from "../../environmentApi.ts";
-import { addDays } from "../logic/dates.ts";
-import { AutomationStore, type AutomationSnapshot } from "./automationStore.ts";
-import type { PlannerTask } from "./pendingOps.ts";
+import { addDays } from "@t3tools/tasks-client/planner/dates";
+import {
+  AutomationStore,
+  type AutomationSnapshot,
+  type AutomationWriteFailure,
+} from "@t3tools/tasks-client/automations/automationStore";
+import type { PlannerTask } from "@t3tools/tasks-client/planner/pendingOps";
 import {
   errorMessage,
   PlannerStore,
   type PaginationStatus,
   type PlannerListState,
   type PlannerSnapshot,
+  type PlannerWriteFailure,
   type ProgressWindow,
-} from "./plannerStore.ts";
+} from "@t3tools/tasks-client/planner/plannerStore";
 
 /**
  * The UI's `useMessages()`, kept current by `usePlannerLive`, so the stores'
  * failure toasts (titles from `msg()`) show in the UI's language.
  */
 let messages: ReturnType<typeof useMessages> = mFallback;
+
+/** The planner store's failures, worded for its toasts. */
+const PLANNER_FAILURE_TITLES: Record<PlannerWriteFailure, string> = {
+  createRoutine: msg("Could not create the routine"),
+  createTask: msg("Could not create the task"),
+  updateTask: msg("Could not update the task"),
+  archiveTask: msg("Could not archive the task"),
+  archiveTasks: msg("Could not archive the tasks"),
+  restoreTask: msg("Could not restore the task"),
+  restoreTasks: msg("Could not restore the tasks"),
+  deleteTask: msg("Could not delete the task"),
+  moveTask: msg("Could not move the task"),
+  moveTasks: msg("Could not move the tasks"),
+  scheduleTask: msg("Could not schedule the task"),
+  moveEntry: msg("Could not move the entry"),
+  moveEntries: msg("Could not move the entries"),
+  updateEntry: msg("Could not update the entry"),
+  deleteEntry: msg("Could not delete the entry"),
+  deleteEntries: msg("Could not delete the entries"),
+  copyEntries: msg("Could not copy the entries"),
+  rescheduleDay: msg("Could not reschedule the day"),
+};
 
 const stores = new Map<EnvironmentId, PlannerStore>();
 
@@ -40,10 +67,10 @@ export function plannerStoreFor(environmentId: EnvironmentId): PlannerStore {
         access: readTasksWebAccess(environmentId),
       },
       {
-        onError: (title, error) =>
+        onError: (failure, error) =>
           toastManager.add({
             type: "error",
-            title: messages(title),
+            title: messages(PLANNER_FAILURE_TITLES[failure]),
             description: errorMessage(error),
           }),
       },
@@ -53,6 +80,16 @@ export function plannerStoreFor(environmentId: EnvironmentId): PlannerStore {
   return store;
 }
 
+/** The automation store's failures, worded for its toasts. */
+const AUTOMATION_FAILURE_TITLES: Record<AutomationWriteFailure, string> = {
+  createAutomation: msg("Could not create the automation"),
+  saveAutomation: msg("Could not save the automation"),
+  enableAutomation: msg("Could not enable the automation"),
+  pauseAutomation: msg("Could not pause the automation"),
+  deleteAutomation: msg("Could not delete the automation"),
+  moveAutomation: msg("Could not move the automation"),
+};
+
 const automationStores = new Map<EnvironmentId, AutomationStore>();
 
 /** One automation store per environment for the session, shared by the list and its windows. */
@@ -60,10 +97,10 @@ export function automationStoreFor(environmentId: EnvironmentId): AutomationStor
   let store = automationStores.get(environmentId);
   if (!store) {
     store = new AutomationStore(readTasksWebClient(environmentId), {
-      onError: (title, error) =>
+      onError: (failure, error) =>
         toastManager.add({
           type: "error",
-          title: messages(title),
+          title: messages(AUTOMATION_FAILURE_TITLES[failure]),
           description: errorMessage(error),
         }),
     });

@@ -2,7 +2,7 @@ import * as NodeAssert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
-import type { TasksStateTarget } from "../state/tasksState.ts";
+import type { TasksStateTarget } from "@t3tools/tasks-client/state/tasksState";
 import {
   filterByProjectFilter,
   orderedProjectFilterKeys,

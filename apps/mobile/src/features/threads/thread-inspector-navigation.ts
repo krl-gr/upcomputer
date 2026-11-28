@@ -4,7 +4,7 @@ import { Platform } from "react-native";
 
 import { useWorkspacePaneState } from "../layout/AdaptiveWorkspaceLayout";
 
-export type ThreadInspectorMode = "route" | "git" | "files" | "preview";
+export type ThreadInspectorMode = "route" | "git" | "files" | "preview" | "panel";
 
 export type ThreadInspectorTarget = {
   readonly type: "thread" | "device" | "localPreview";

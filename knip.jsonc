@@ -144,6 +144,9 @@
         "src/features/devices/device-stream.browser.ts!",
         "src/features/browser/preview-stream.browser.ts!",
       ],
+      // Upstream's chat filters, kept for upstream syncs; Up.computer's Chats list picks with
+      // its sidebar groups instead.
+      "ignore": ["src/features/home/ThreadListFilters.tsx"],
       // Fonts are configured as asset paths; Expo autolinks the native packages.
       "ignoreDependencies": [
         "@expo-google-fonts/dm-sans",
@@ -157,15 +160,7 @@
     },
     "apps/mobile/modules/t3-source-text": {
       // React Native codegen discovers component specifications by filename.
-      // Up.computer keeps apps/mobile outside the pnpm workspace, so the
-      // mobile package scripts that would reach these files are not analyzed:
-      // the React Native CLI reads react-native.config.js, and the icon sync
-      // script runs by hand (`sync:pierre-icons`).
-      "entry": [
-        "src/*NativeComponent.ts!",
-        "react-native.config.js",
-        "scripts/sync-pierre-file-icons.mjs",
-      ],
+      "entry": ["src/*NativeComponent.ts!"],
     },
     "infra/task-cache": {
       "ignore": ["vendor/**"],

@@ -3,7 +3,7 @@ import { createElement, act } from "react";
 import { afterEach, test, vi } from "vite-plus/test";
 import type { TaskChange, TaskPageInput, TaskPageResult } from "@t3tools/tasks-contracts/v1";
 
-import { RecentMap } from "../state/recent.ts";
+import { RecentMap } from "@t3tools/tasks-client/state/recent";
 import {
   readableAgentsState,
   reuseAgentsState,
@@ -39,8 +39,8 @@ async function tableHarness() {
   vi.stubGlobal("document", Object.assign(new EventTarget(), { visibilityState: "visible" }));
   const { create } = await import("react-test-renderer");
   const { useTaskPages } = await import("./useTaskPages.ts");
-  const { recentTaskPages } = await import("../state/taskPages.ts");
-  const { createTaskChangeSubscription } = await import("../rpc/taskChanges.ts");
+  const { recentTaskPages } = await import("@t3tools/tasks-client/state/taskPages");
+  const { createTaskChangeSubscription } = await import("@t3tools/tasks-client/rpc");
 
   const requests: TaskPageInput[] = [];
   let changed: number | undefined;

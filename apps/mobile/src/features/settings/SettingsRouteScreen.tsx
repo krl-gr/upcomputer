@@ -8,6 +8,7 @@ import {
   useNavigationTabOrder,
   useHiddenNavigationTabs,
 } from "../layout/workspace/navigation-tabs";
+import { listedInMore } from "../layout/workspace/moreTab";
 import { currentWorkspaceSelections } from "../layout/workspace/workspace-selection-store";
 import { rememberedSettingsPage } from "../layout/workspace/workspace-tab-navigation";
 import { useSelectWorkspaceTab } from "../layout/workspace/useSelectWorkspaceTab";
@@ -127,7 +128,7 @@ function ConfiguredSettingsRouteScreen() {
         {
           id: "account",
           icon: "person.crop.circle",
-          label: gt("T3 Account"),
+          label: gt("Up.computer Account"),
           value: accountLabel,
           disabled: !isLoaded,
           onPress: () => navigation.navigate("SettingsAuth"),
@@ -309,7 +310,9 @@ function useOverflowRows(): SettingsListRow[] {
   const hidden = useHiddenNavigationTabs();
   const { layout } = useAdaptiveWorkspaceLayout();
   const tabs =
-    Platform.OS === "android" && layout.usesSplitView ? [] : overflowNavigationTabs(order, hidden);
+    Platform.OS === "android" && layout.usesSplitView
+      ? []
+      : overflowNavigationTabs(order, hidden).filter((tab) => !listedInMore(tab));
   const selectTab = useSelectWorkspaceTab();
   return tabs.map((tab) => ({
     id: tab,

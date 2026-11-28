@@ -22,11 +22,13 @@ import {
   type TaskArchiveFilter,
   type TaskEvent,
 } from "@t3tools/tasks-contracts/v1";
-import { taskRunPresentation, groupTaskRunCounts, runSearchStatus } from "./taskRunPresentation.ts";
-import type { ScopedTaskListItem } from "../state/taskPages.ts";
+import { taskRunPresentation, groupTaskRunCounts } from "./taskRunPresentation.ts";
+import type { ScopedTaskListItem } from "@t3tools/tasks-client/state/taskPages";
 import type { EnvironmentId, ProjectId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 
-import type { TasksWebRpcClient } from "../rpc/index.ts";
+import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
+import { fetchTaskRuns, mergeTaskRuns } from "@t3tools/tasks-client/runs/taskRuns";
+import { descriptionToSave, singleLineTitle, titleToSave } from "@t3tools/tasks-client/taskEdits";
 import {
   scopedTaskWithText,
   type ScopedTask,
@@ -94,7 +96,7 @@ import {
   taskStatusGroups,
   tasksOfGroup,
   type TaskStatusGroup,
-} from "./taskStatusGroups.ts";
+} from "@t3tools/tasks-client/taskStatusGroups";
 import type { TasksViewGrouping } from "./useTaskList.ts";
 import { taskListLayout, type TaskListLayout } from "./taskListLayout.ts";
 import { LIST_CLASS, LIST_SCROLL_CLASS } from "../planner/ui/rowShell.ts";
@@ -278,8 +280,8 @@ function DetailTitleHeading(props: {
       setDraft(null);
       return;
     }
-    const title = raw.trim();
-    if (!title || title === props.value) {
+    const title = titleToSave(raw, props.value);
+    if (title === null) {
       setDraft(null);
       return;
     }
@@ -309,7 +311,7 @@ function DetailTitleHeading(props: {
         setDraft({ kind: "editing", text: value, dirty: false });
       }}
       onChange={(event) => {
-        const text = event.currentTarget.value.replace(/[\r\n]+/g, " ");
+        const text = singleLineTitle(event.currentTarget.value);
         setDraft({ kind: "editing", text, dirty: true });
       }}
       onBlur={(event) => {
@@ -401,8 +403,9 @@ function DetailDescriptionEditor(props: {
         setDraft({ base: props.value, text: next });
       }}
       onBlur={() => {
-        const description = textRef.current?.trim();
-        if (description !== undefined && description !== props.value) props.onSave(description);
+        const description =
+          textRef.current === undefined ? null : descriptionToSave(textRef.current, props.value);
+        if (description !== null) props.onSave(description);
       }}
     />
   );
@@ -846,36 +849,19 @@ export function TasksView(props: TasksViewProps) {
         pendingDetailRefresh.current = null;
         if (refresh) queueMicrotask(refresh);
       };
-      const fetchHistory = async () => {
-        const runs: ScopedTaskAgentRun[] = [];
-        let cursor = last ? { startedAt: last.startedAt, id: last.id } : undefined;
-        let hasMore = false;
-        const pages = append ? 1 : detailPagesRef.current;
-        for (let index = 0; index < pages; index += 1) {
-          const result = await client.agents.searchRuns({
-            taskId: task.id,
-            limit: 100,
-            ...(runFilter === ALL_FILTER ? {} : { status: runSearchStatus(runFilter) }),
-            ...(cursor ? { cursor } : {}),
-          });
-          if (detailRequestRef.current !== requestId) break;
-          runs.push(...result.runs.map((run) => ({ ...run, environmentId: task.environmentId })));
-          hasMore = result.runs.length === 100;
-          const tail = result.runs.at(-1);
-          if (!hasMore || !tail) break;
-          cursor = { startedAt: tail.startedAt, id: tail.id };
-        }
-        return { runs, hasMore };
-      };
+      const fetchHistory = () =>
+        fetchTaskRuns(client, {
+          taskId: task.id,
+          status: runFilter === ALL_FILTER ? null : runFilter,
+          after: last,
+          pages: append ? 1 : detailPagesRef.current,
+          isCurrent: () => detailRequestRef.current === requestId,
+        });
       void fetchHistory().then(
         (result) => {
           if (detailRequestRef.current !== requestId) return;
           const scoped = result.runs.map((run) => ({ ...run, environmentId: task.environmentId }));
-          setDetailRuns((previous) => [
-            ...new Map(
-              (append ? [...previous, ...scoped] : scoped).map((run) => [run.id, run]),
-            ).values(),
-          ]);
+          setDetailRuns((previous) => mergeTaskRuns(previous, scoped, append));
           setMoreRuns(result.hasMore);
           if (append) detailPagesRef.current += 1;
           finished();

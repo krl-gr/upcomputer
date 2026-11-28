@@ -25,9 +25,9 @@ import {
   moveComposerTaskDrag,
   type ComposerTaskDragData,
 } from "../../../../../apps/web/src/components/chat/composerTaskDrag.ts";
-import type { AutomationAnchor } from "../data/automationStore.ts";
-import type { PlannerTask } from "../data/pendingOps.ts";
-import type { PlannerStore } from "../data/plannerStore.ts";
+import type { AutomationAnchor } from "@t3tools/tasks-client/automations/automationStore";
+import type { PlannerTask } from "@t3tools/tasks-client/planner/pendingOps";
+import type { PlannerStore } from "@t3tools/tasks-client/planner/plannerStore";
 import {
   calendarDropTime,
   dropReturnsToSource,

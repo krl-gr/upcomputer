@@ -468,7 +468,7 @@ export default defineConfig({
           "packages/tasks-web/src/markdown/MarkdownEditor.tsx",
           "packages/tasks-web/src/markdown/markdownEditorCore.ts",
           "packages/tasks-web/src/markdown/markdownFormat.ts",
-          "packages/tasks-web/src/planner/data/automationStore.ts",
+          "packages/tasks-client/src/automations/automationStore.ts",
           "packages/tasks-web/src/planner/data/pendingOps.ts",
           "packages/tasks-web/src/planner/data/plannerStore.ts",
           "packages/tasks-web/src/planner/logic/dndPlanning.ts",
@@ -518,15 +518,14 @@ export default defineConfig({
           "apps/web/src/sidebarThreadRow/ThreadStatusLabel.test.tsx",
           "apps/web/src/sidebarVibrancy/sidebarVibrancy.test.tsx",
           "packages/computer-use-server/src/computerUse/ComputerUseNativeContract.test.ts",
+          "packages/tasks-client/src/planner/plannerStore.test.ts",
+          "packages/tasks-client/src/state/taskLiveUpdates.test.ts",
           "packages/tasks-server/src/agents/TaskAgentService.v2.integration.test.ts",
           "packages/tasks-server/src/agents/TaskTriggerSemantics.test.ts",
           "packages/tasks-server/src/tools/InstructionsTools.test.ts",
-          "packages/tasks-web/src/bots/botAutosave.test.ts",
           "packages/tasks-web/src/environmentApi.test.ts",
-          "packages/tasks-web/src/planner/data/automationStore.test.ts",
-          "packages/tasks-web/src/planner/data/plannerStore.test.ts",
+          "packages/tasks-client/src/automations/automationStore.test.ts",
           "packages/tasks-web/src/ui/environmentRunCounts.test.ts",
-          "packages/tasks-web/src/ui/taskLiveUpdates.test.ts",
           "packages/tasks-web/src/ui/tasksPanelCache.test.ts",
           "packages/tasks-web/src/ui/threadRunCounts.test.ts",
         ],
@@ -570,7 +569,7 @@ export default defineConfig({
       {
         // Product feature RPC groups are not core methods; the server authorizes them by the
         // scopes each feature declares (`rpcContributionScopes`).
-        files: ["apps/web/src/product/FeatureRpc.ts"],
+        files: ["apps/web/src/product/FeatureRpc.ts", "apps/mobile/src/features/tasks/tasksRpc.ts"],
         rules: { "t3code/no-rpc-permission-bypass": ["error", { allowRawClientAccess: true }] },
       },
       {

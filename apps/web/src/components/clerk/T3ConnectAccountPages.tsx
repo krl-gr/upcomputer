@@ -17,7 +17,6 @@ const ACCOUNT_PAGES = [
     content: <MobileClientsUserProfilePage />,
   },
   {
-    // oxlint-disable-next-line t3code/no-untranslated-copy -- product name
     label: "UpComputer Connect",
     url: "t3-connect",
     icon: <ServerIcon className="size-4" />,

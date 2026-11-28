@@ -142,7 +142,6 @@ function UpdateEverythingDialogContent({
         <AlertDialogDescription>
           {version !== null ? (
             <>
-              {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product name and version */}
               Up.computer <span className="font-mono text-xs">{version}</span>
             </>
           ) : null}
@@ -177,7 +176,6 @@ function UpdateEverythingDialogContent({
               <span role="columnheader">
                 <T>Machine</T>
               </span>
-              {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product name */}
               <span role="columnheader">Up.computer</span>
               <span role="columnheader">
                 <T>Providers</T>

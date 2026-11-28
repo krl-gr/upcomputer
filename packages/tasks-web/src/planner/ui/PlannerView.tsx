@@ -20,7 +20,7 @@ import {
   usePrimaryEnvironmentId,
 } from "../../../../../apps/web/src/state/environments.ts";
 import { usePlannerAvailability } from "../../environmentApi.ts";
-import type { TasksStateTarget } from "../../state/tasksState.ts";
+import type { TasksStateTarget } from "@t3tools/tasks-client/state/tasksState";
 import { FloatingActions } from "../../ui/FloatingActions.tsx";
 import { agentTriggerTags } from "../../ui/pageFilters.ts";
 import type { HandOffAgent } from "../logic/handOff.ts";
@@ -43,9 +43,9 @@ import {
   useStoredPlannerKind,
   type PlannerKind,
 } from "../data/preferences.ts";
-import { addDays, dateRange, todayKey, viewStartFor } from "../logic/dates.ts";
+import { addDays, dateRange, todayKey, viewStartFor } from "@t3tools/tasks-client/planner/dates";
 import { plannerIsWide } from "../logic/plannerWidth.ts";
-import { weekRangeOf } from "../logic/progress.ts";
+import { weekRangeOf } from "@t3tools/tasks-client/planner/progress";
 import { usePlannerWindows, windowStoreFor } from "../windows/windowStore.ts";
 import { EntryDragPreview, TaskDragPreview, type EntryCardHandlers } from "./EntryCard.tsx";
 import type { EntryMenuTarget } from "./EntryMenu.tsx";

@@ -35,7 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from "../../../../../apps/web/src/components/ui/table.tsx";
-import { dateKeyOf, dateOfKey } from "../logic/dates.ts";
+import { dateKeyOf, dateOfKey } from "@t3tools/tasks-client/planner/dates";
 import { formatDuration, formatTime } from "../logic/time.ts";
 import { usePlanner } from "./plannerContext.ts";
 import { ConfirmDeleteDialog } from "./TaskDialogs.tsx";

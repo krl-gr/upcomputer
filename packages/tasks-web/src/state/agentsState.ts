@@ -6,9 +6,9 @@ import type {
 } from "@t3tools/tasks-contracts/v1";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
-import type { TasksWebAccess, TasksWebRpcClient } from "../rpc/index.ts";
-import { reuseRows, sameEnvironmentStatuses } from "./recent.ts";
-import { isDisconnectError } from "./taskPageLoader.ts";
+import type { TasksWebAccess, TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
+import { reuseRows, sameEnvironmentStatuses } from "@t3tools/tasks-client/state/recent";
+import { isDisconnectError } from "@t3tools/tasks-client/state/taskPageLoader";
 
 export type ScopedTaskAgent = TaskAgent & {
   readonly environmentId: EnvironmentId;

@@ -55,7 +55,7 @@ import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
 import { formatComposerModelMention } from "@t3tools/client-runtime/composer-model-mentions";
-import { composerRecipientMention } from "../../composerRecipients/composerRecipients.logic";
+import { composerRecipientMention } from "@t3tools/tasks-client/composerRecipients";
 import { useComposerRecipientBanner } from "../../composerRecipients/composerRecipients";
 import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";

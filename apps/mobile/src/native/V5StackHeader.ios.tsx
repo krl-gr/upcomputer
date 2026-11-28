@@ -319,12 +319,15 @@ export function V5StackHeader(props: {
     );
   const titleStyle = StyleSheet.flatten(options.headerTitleStyle);
   const headerStyle = StyleSheet.flatten(options.headerStyle);
+  // No bar draws a background or hairline. Transparent bars leave legibility to the scroll view's
+  // soft top edge effect; opaque ones (content laid out below them) take the content's color.
   const appearance = {
-    // Clear colors remove UIKit material; let translucent bars supply their own blur background.
     backgroundColor: options.headerTransparent
-      ? undefined
-      : (headerStyle?.backgroundColor ?? theme.colors.card),
-    shadowColor: options.headerShadowVisible === false ? "transparent" : undefined,
+      ? "transparent"
+      : (headerStyle?.backgroundColor ??
+        StyleSheet.flatten(options.contentStyle)?.backgroundColor ??
+        (options.presentation === "formSheet" ? theme.colors.card : theme.colors.background)),
+    shadowColor: "transparent",
     titleFontSize: titleStyle?.fontSize,
     titleFontFamily: titleStyle?.fontFamily,
     titleFontWeight: titleStyle?.fontWeight,

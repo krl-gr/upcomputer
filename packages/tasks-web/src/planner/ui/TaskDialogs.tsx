@@ -26,7 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../../../apps/web/src/components/ui/select.tsx";
-import type { PlannerTask } from "../data/pendingOps.ts";
+import type { PlannerTask } from "@t3tools/tasks-client/planner/pendingOps";
 
 /** Confirms deleting tasks or entries; deleting a task also deletes its entries. */
 export function ConfirmDeleteDialog(props: {

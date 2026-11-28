@@ -30,7 +30,7 @@ test("grouped, an open group pages by itself and a collapsed group loads only it
   vi.stubGlobal("document", Object.assign(new EventTarget(), { visibilityState: "visible" }));
   const { create } = await import("react-test-renderer");
   const { useTaskPages } = await import("./useTaskPages.ts");
-  const { createTaskChangeSubscription } = await import("../rpc/taskChanges.ts");
+  const { createTaskChangeSubscription } = await import("@t3tools/tasks-client/rpc");
 
   const pages: TaskPageInput[] = [];
   const counts: TaskStatusCountsInput[] = [];

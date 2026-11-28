@@ -8,6 +8,7 @@ import { use, useId, useLayoutEffect, useRef, useSyncExternalStore } from "react
 import { View } from "react-native";
 import { createNativeHeaderMenu } from "./nativeHeaderMenu.ios";
 import { ScreenHeaderButton } from "./ScreenHeaderButton";
+import { HeaderTitlePill } from "./HeaderTitlePill";
 import { NativeStackScreenOptions, useScreenOptionsWriter } from "../../native/StackHeader";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import { useDeviceType } from "../../native/native-layout-metrics";
@@ -24,6 +25,9 @@ import type { AppBarMenu, AppBarMenuItem, AppBarProps } from "./AppBar.types";
 import type { AppSymbolName } from "./AppSymbol";
 import { useNativeMailSearchToolbar } from "../../native/use-native-mail-search-toolbar";
 import { useControlTheme } from "./useControlTheme";
+
+// Fabric flattens a bare <View /> away, leaving no title view, and UIKit then draws the title.
+const renderNoTitle = () => <View collapsable={false} />;
 
 function iosIcon(icon: AppSymbolName) {
   return typeof icon === "string" ? icon : icon.ios;
@@ -167,7 +171,9 @@ export function AppBar(props: AppBarProps) {
             !(props.guardBack && props.onBack),
           ...(props.guardBack ? { gestureEnabled: false } : undefined),
           title: props.title,
-          unstable_headerSubtitle: props.subtitle || undefined,
+          // The pill names the page, so the bar draws no title; `title` still names it for Back's menu.
+          ...(props.titlePill || props.hideTitle ? { headerTitle: renderNoTitle } : undefined),
+          unstable_headerSubtitle: props.hideTitle ? undefined : props.subtitle || undefined,
           ...(props.matchSearchSurface
             ? { contentStyle: { backgroundColor: themeVariables["--color-sheet-solid"] } }
             : undefined),
@@ -224,7 +230,7 @@ export function AppBar(props: AppBarProps) {
             onPress={props.onClose}
           />
         </Toolbar>
-      ) : rootBack || splitBack || sidebarToggle || compose ? (
+      ) : rootBack || splitBack || sidebarToggle || compose || props.titlePill ? (
         <Toolbar placement="left">
           {rootBack ? (
             <ScreenHeaderButton
@@ -243,6 +249,11 @@ export function AppBar(props: AppBarProps) {
               onPress={sidebarToggle.onPress}
               separateBackground={splitBack ? splitBack.separateBackground : true}
             />
+          ) : null}
+          {props.titlePill ? (
+            <Toolbar.Custom>
+              <HeaderTitlePill {...props.titlePill} />
+            </Toolbar.Custom>
           ) : null}
           {compose ? (
             <ScreenHeaderButton
@@ -330,4 +341,5 @@ export type {
   AppBarMenuItem,
   AppBarProps,
   AppBarSearch,
+  AppBarTitlePill,
 } from "./AppBar.types";

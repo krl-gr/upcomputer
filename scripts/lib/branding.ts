@@ -62,6 +62,22 @@ const CLI_ENV_ALIAS_RULE: CopyRule = {
 const isCliFile = (path: string): boolean =>
   path.startsWith("apps/server/src/cli/") && !path.endsWith(".test.ts");
 
+/** T3 standing alone for the app in the iPhone app's copy ("Open T3", "T3 Account"); T3 Chat is another product. */
+const MOBILE_PRODUCT_RULE: CopyRule = {
+  pattern: /(?<![\w./@$'`-]|"(?=T3"))T3(?=[\s,;:!?"`]|'s\b|\.(?!\w)|$)(?! Chat\b)/g,
+  replacement: "Up.computer",
+};
+
+/** The app's name as a message argument (`msg("Open {app}", { app: "T3" })`), as in the widgets. */
+const MOBILE_APP_ARGUMENT_RULE: CopyRule = {
+  pattern: /\bapp: "T3"/g,
+  replacement: 'app: "Up.computer"',
+};
+
+// Catalogs also carry shared packages' copy, which the app rule does not rebrand at its source.
+const isMobileFile = (path: string): boolean =>
+  path.startsWith("apps/mobile/") && !TRANSLATION_FILE.test(path);
+
 export const COPY_RULES: ReadonlyArray<CopyRule> = [
   REMOTE_COMMAND_RULE,
   CLI_COMMAND_RULE,
@@ -96,6 +112,8 @@ const COPY_ROOTS = [
   "apps/desktop/scripts/",
   "apps/server/src/",
   "packages/",
+  // The mobile app, iOS and Android.
+  "apps/mobile/src/",
   // Push notification and Live Activity text from the Connect relay. The rest
   // of infra/relay runs as upstream ships it.
   "infra/relay/src/agentActivity/",
@@ -103,8 +121,8 @@ const COPY_ROOTS = [
 
 const COPY_EXTENSIONS = /\.(ts|tsx|mjs|cjs|js|html|md)$/;
 
-/** The web app's UI translations (gt-react catalogs), in every language. */
-const TRANSLATION_FILE = /^apps\/web\/src\/i18n\/translations\/[\w-]+\.json$/;
+/** The web and iPhone apps' UI translations (gt catalogs), in every language. */
+const TRANSLATION_FILE = /^apps\/(web|mobile)\/src\/i18n\/translations\/[\w-]+\.json$/;
 
 /**
  * User docs, on top of the copy rules: the home directory, the hosted app, the
@@ -227,6 +245,7 @@ export function rebrandLine(line: string, path = ""): string {
   return [
     ...COPY_RULES,
     ...(isCliFile(path) ? [CLI_PROSE_RULE, CLI_PRODUCT_RULE, CLI_ENV_ALIAS_RULE] : []),
+    ...(isMobileFile(path) ? [MOBILE_PRODUCT_RULE, MOBILE_APP_ARGUMENT_RULE] : []),
   ].reduce((text, rule) => text.replace(rule.pattern, rule.replacement), line);
 }
 
@@ -515,6 +534,38 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   {
     path: "apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx",
     forbids: ["t3.codes"],
+  },
+  // The mobile app: identity in its own config layer, artwork and the thread-link host.
+  {
+    path: "apps/mobile/app.config.ts",
+    requires: ["export default applyUpcomputerAppConfig(config, APP_VARIANT, repoEnv);"],
+  },
+  {
+    path: "apps/mobile/src/features/agent-awareness/capabilities.ts",
+    requires: ["agentAwarenessPushEnabled !== false"],
+  },
+  { path: "apps/mobile/src/components/T3Wordmark.tsx", forbids: ["M33.4509"] },
+  {
+    path: "apps/mobile/modules/t3-agent-notifications/android/src/main/res/drawable/agent_activity_mark.xml",
+    forbids: ["M33.4509"],
+  },
+  { path: "apps/mobile/src/components/brandAssets.ts", forbids: ["black-ios-1024", "nightly-ios"] },
+  {
+    path: "apps/mobile/src/components/CompactBrandTitle.tsx",
+    requires: ['const WORDMARK_SUFFIX = "Up.computer";'],
+  },
+  { path: "apps/mobile/plugins/withWidgetLogoAsset.cjs", requires: ['"UpcomputerMark.svg"'] },
+  {
+    path: "apps/mobile/src/features/settings/lib/legal-document-url.ts",
+    forbids: ['"https://t3.codes"'],
+  },
+  {
+    path: "apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorModule.swift",
+    forbids: ["app.t3.codes"],
+  },
+  {
+    path: "apps/mobile/modules/t3-composer-editor/android/src/main/java/expo/modules/t3composereditor/T3ComposerEditorModule.kt",
+    forbids: ["app.t3.codes"],
   },
   // Release and Connect workflows.
   {

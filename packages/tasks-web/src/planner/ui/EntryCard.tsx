@@ -20,7 +20,7 @@ import type { TaskScheduleEntry } from "@t3tools/tasks-contracts/v1";
 
 import { COMPOSER_TASK_DRAG_OVERLAY_ATTRIBUTE } from "../../../../../apps/web/src/components/chat/composerTaskDrag.ts";
 import { cn } from "../../../../../apps/web/src/lib/utils.ts";
-import type { PlannerTask } from "../data/pendingOps.ts";
+import type { PlannerTask } from "@t3tools/tasks-client/planner/pendingOps";
 import type { CalendarPosition } from "../logic/calendarLayout.ts";
 import { entryTimingLabel, minutesToPixels, resizedDuration } from "../logic/time.ts";
 import { IconAction } from "./IconAction.tsx";

@@ -25,6 +25,7 @@ import {
 } from "@t3tools/shared/usageFormat";
 import { formatUsageContractMismatch, usageSourceMessages } from "@t3tools/shared/usageFormatCopy";
 import { msg, T, useGT, useLocale, useMessages, Var } from "gt-react-native";
+import { WORKSPACE_TAB_LABELS } from "../layout/workspace/navigation-tabs";
 import { use, useRef, useState, type ReactNode } from "react";
 import { View } from "react-native";
 import { RefreshControl } from "../../components/ui/RefreshControl";
@@ -245,7 +246,9 @@ function UsageScreen(props: {
 
   return (
     <SettingsScreen
-      title={gt("Usage", { $context: "screen title" })}
+      title={
+        props.workspace ? m(WORKSPACE_TAB_LABELS.usage) : gt("Usage", { $context: "screen title" })
+      }
       menus={showEnvironmentFilter ? [environmentMenu] : undefined}
       workspaceRoot={props.workspace}
     >

@@ -14,7 +14,9 @@ type RootParams = ReactNavigation.RootParamList;
 export type WorkspaceDetail =
   | { readonly name: "Thread"; readonly params: RootParams["Thread"] }
   | { readonly name: "PullRequest"; readonly params: RootParams["PullRequest"] }
-  | { readonly name: "Issue"; readonly params: RootParams["Issue"] };
+  | { readonly name: "Issue"; readonly params: RootParams["Issue"] }
+  | { readonly name: "Task"; readonly params: RootParams["Task"] }
+  | { readonly name: "Automation"; readonly params: RootParams["Automation"] };
 
 /** Android opens the reviewers sheet over the pull request in the same step. */
 export type WorkspaceDetailSheet = {
@@ -44,6 +46,8 @@ const IDENTITY = {
   Thread: ["environmentId", "threadId"],
   PullRequest: ["environmentId", "projectId", "repository", "number", "host"],
   Issue: ["environmentId", "projectId", "tracker", "host", "scope", "issueKey"],
+  Task: ["environmentId", "taskId"],
+  Automation: ["environmentId", "automationId"],
 } as const;
 
 type RouteLike = { readonly name: string; readonly key?: string; readonly params?: object };

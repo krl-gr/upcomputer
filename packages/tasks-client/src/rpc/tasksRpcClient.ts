@@ -1,0 +1,368 @@
+import {
+  TASK_AGENTS_RPC_METHODS,
+  BOTS_RPC_METHODS,
+  TASK_AUTOMATIONS_RPC_METHODS,
+  TASKS_RPC_METHODS,
+} from "@t3tools/tasks-contracts/v1";
+import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
+import { createTaskChangeSubscription, type SubscribeTaskChanges } from "./taskChanges.ts";
+
+import { TasksWebCapabilityUnavailableError, type TasksWebAccess } from "./capabilityGate.ts";
+import type { TasksWsRpcProtocolClient } from "./tasksRpcGroup.ts";
+
+type RpcTag = keyof TasksWsRpcProtocolClient & string;
+type RpcMethod<Tag extends RpcTag> = TasksWsRpcProtocolClient[Tag];
+type RpcInput<Tag extends RpcTag> = Parameters<RpcMethod<Tag>>[0];
+type RpcSuccess<Tag extends RpcTag> =
+  RpcMethod<Tag> extends (input: any, options?: any) => Effect.Effect<infer Success, any, any>
+    ? Success
+    : never;
+type RpcFailure<Tag extends RpcTag> =
+  RpcMethod<Tag> extends (input: any, options?: any) => Effect.Effect<any, infer Failure, any>
+    ? Failure
+    : never;
+type RpcUnaryMethod<Tag extends RpcTag> =
+  RpcMethod<Tag> extends (input: any, options?: any) => Effect.Effect<infer Success, any, any>
+    ? (input: RpcInput<Tag>) => Promise<Success>
+    : never;
+
+export interface TasksWebRpcClient {
+  readonly bots: {
+    readonly extract: RpcUnaryMethod<typeof BOTS_RPC_METHODS.extract>;
+    readonly list: RpcUnaryMethod<typeof BOTS_RPC_METHODS.list>;
+    readonly save: RpcUnaryMethod<typeof BOTS_RPC_METHODS.save>;
+    readonly remove: RpcUnaryMethod<typeof BOTS_RPC_METHODS.remove>;
+    readonly memory: RpcUnaryMethod<typeof BOTS_RPC_METHODS.memory>;
+    readonly remember: RpcUnaryMethod<typeof BOTS_RPC_METHODS.remember>;
+    readonly forget: RpcUnaryMethod<typeof BOTS_RPC_METHODS.forget>;
+    readonly proposals: RpcUnaryMethod<typeof BOTS_RPC_METHODS.proposals>;
+    readonly acceptProposal: RpcUnaryMethod<typeof BOTS_RPC_METHODS.acceptProposal>;
+    readonly rejectProposal: RpcUnaryMethod<typeof BOTS_RPC_METHODS.rejectProposal>;
+    readonly assign: RpcUnaryMethod<typeof BOTS_RPC_METHODS.assign>;
+    readonly mention: RpcUnaryMethod<typeof BOTS_RPC_METHODS.mention>;
+  };
+
+  readonly tasks: {
+    readonly create: RpcUnaryMethod<typeof TASKS_RPC_METHODS.create>;
+    readonly search: RpcUnaryMethod<typeof TASKS_RPC_METHODS.search>;
+    readonly page: RpcUnaryMethod<typeof TASKS_RPC_METHODS.page>;
+    readonly statusCounts: RpcUnaryMethod<typeof TASKS_RPC_METHODS.statusCounts>;
+    readonly runCounts: RpcUnaryMethod<typeof TASKS_RPC_METHODS.runCounts>;
+    readonly threadRunCounts: RpcUnaryMethod<typeof TASKS_RPC_METHODS.threadRunCounts>;
+    readonly markThreadsSeen: RpcUnaryMethod<typeof TASKS_RPC_METHODS.markThreadsSeen>;
+    readonly threadTasks: RpcUnaryMethod<typeof TASKS_RPC_METHODS.threadTasks>;
+    readonly items: RpcUnaryMethod<typeof TASKS_RPC_METHODS.items>;
+    readonly subscribe: SubscribeTaskChanges;
+    readonly get: RpcUnaryMethod<typeof TASKS_RPC_METHODS.get>;
+    readonly update: RpcUnaryMethod<typeof TASKS_RPC_METHODS.update>;
+    readonly reorder: RpcUnaryMethod<typeof TASKS_RPC_METHODS.reorder>;
+    readonly reorderMany: RpcUnaryMethod<typeof TASKS_RPC_METHODS.reorderMany>;
+    readonly delete: RpcUnaryMethod<typeof TASKS_RPC_METHODS.delete>;
+    readonly addTag: RpcUnaryMethod<typeof TASKS_RPC_METHODS.addTag>;
+    readonly removeTag: RpcUnaryMethod<typeof TASKS_RPC_METHODS.removeTag>;
+    readonly appendEvent: RpcUnaryMethod<typeof TASKS_RPC_METHODS.appendEvent>;
+    readonly events: RpcUnaryMethod<typeof TASKS_RPC_METHODS.events>;
+    readonly archive: RpcUnaryMethod<typeof TASKS_RPC_METHODS.archive>;
+    readonly unarchive: RpcUnaryMethod<typeof TASKS_RPC_METHODS.unarchive>;
+    readonly getPromptSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.getPromptSettings>;
+    readonly updatePromptSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.updatePromptSettings>;
+    readonly scheduleRange: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleRange>;
+    readonly scheduleForTask: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleForTask>;
+    readonly scheduleProgress: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleProgress>;
+    readonly scheduleAdd: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleAdd>;
+    readonly scheduleUpdate: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleUpdate>;
+    readonly scheduleMove: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleMove>;
+    readonly scheduleCopy: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleCopy>;
+    readonly scheduleDelete: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleDelete>;
+    readonly scheduleMoveOpen: RpcUnaryMethod<typeof TASKS_RPC_METHODS.scheduleMoveOpen>;
+    readonly getScheduleSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.getScheduleSettings>;
+    readonly updateScheduleSettings: RpcUnaryMethod<
+      typeof TASKS_RPC_METHODS.updateScheduleSettings
+    >;
+    readonly getListSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.getListSettings>;
+    readonly updateListSettings: RpcUnaryMethod<typeof TASKS_RPC_METHODS.updateListSettings>;
+    readonly getInstructionUpdates: RpcUnaryMethod<typeof TASKS_RPC_METHODS.getInstructionUpdates>;
+    readonly updateInstructionUpdates: RpcUnaryMethod<
+      typeof TASKS_RPC_METHODS.updateInstructionUpdates
+    >;
+  };
+  readonly agents: {
+    readonly upsert: RpcUnaryMethod<typeof TASK_AGENTS_RPC_METHODS.upsert>;
+    readonly search: RpcUnaryMethod<typeof TASK_AGENTS_RPC_METHODS.search>;
+    readonly delete: RpcUnaryMethod<typeof TASK_AGENTS_RPC_METHODS.delete>;
+    readonly searchRuns: RpcUnaryMethod<typeof TASK_AGENTS_RPC_METHODS.searchRuns>;
+    readonly stopRun: RpcUnaryMethod<typeof TASK_AGENTS_RPC_METHODS.stopRun>;
+    readonly messageRun: RpcUnaryMethod<typeof TASK_AGENTS_RPC_METHODS.messageRun>;
+  };
+  readonly automations: {
+    readonly upsert: RpcUnaryMethod<typeof TASK_AUTOMATIONS_RPC_METHODS.upsert>;
+    readonly search: RpcUnaryMethod<typeof TASK_AUTOMATIONS_RPC_METHODS.search>;
+    readonly setStatus: RpcUnaryMethod<typeof TASK_AUTOMATIONS_RPC_METHODS.setStatus>;
+    readonly delete: RpcUnaryMethod<typeof TASK_AUTOMATIONS_RPC_METHODS.delete>;
+    readonly searchRuns: RpcUnaryMethod<typeof TASK_AUTOMATIONS_RPC_METHODS.searchRuns>;
+    readonly reorder: RpcUnaryMethod<typeof TASK_AUTOMATIONS_RPC_METHODS.reorder>;
+  };
+}
+
+export interface CreateTasksWebRpcClientOptions {
+  readonly getAccess: () => TasksWebAccess;
+}
+
+type AccessFlag =
+  | "canReadTasks"
+  | "canMutateTasks"
+  | "canReadAgents"
+  | "canMutateAgents"
+  | "canReadAutomations"
+  | "canMutateAutomations";
+
+/** Runs one call against an environment's current session client. */
+export type TasksWebRpcRequest = <A, E>(
+  execute: (client: TasksWsRpcProtocolClient) => Effect.Effect<A, E>,
+  authorization?: { readonly method: string; readonly input: unknown },
+) => Promise<A>;
+
+export function createTasksWebRpcClient(
+  requestRpc: TasksWebRpcRequest,
+  options: CreateTasksWebRpcClientOptions,
+): TasksWebRpcClient {
+  const request = <Tag extends RpcTag>(
+    operation: string,
+    required: AccessFlag,
+    tag: Tag,
+    input: RpcInput<Tag>,
+  ): Promise<RpcSuccess<Tag>> => {
+    const access = options.getAccess();
+    if (!access[required]) {
+      return Promise.reject(
+        new TasksWebCapabilityUnavailableError({ operation, reason: access.reason }),
+      );
+    }
+    return requestRpc(
+      (client) => {
+        const method = client[tag] as unknown as (
+          payload: RpcInput<Tag>,
+        ) => Effect.Effect<RpcSuccess<Tag>, RpcFailure<Tag>, never>;
+        return method(input);
+      },
+      { method: tag, input },
+    );
+  };
+
+  const subscribe = createTaskChangeSubscription((signal, listener) => {
+    if (!options.getAccess().canReadTasks)
+      return Promise.reject(
+        new TasksWebCapabilityUnavailableError({
+          operation: "tasks.subscribe",
+          reason: options.getAccess().reason,
+        }),
+      );
+    return requestRpc((client) => {
+      const aborted = Effect.callback<void>((resume) => {
+        const stop = () => resume(Effect.void);
+        if (signal.aborted) stop();
+        else signal.addEventListener("abort", stop, { once: true });
+        return Effect.sync(() => signal.removeEventListener("abort", stop));
+      });
+      return client[TASKS_RPC_METHODS.subscribe]({}).pipe(
+        Stream.runForEach((event) => Effect.sync(() => listener(event))),
+        Effect.raceFirst(aborted),
+      );
+    });
+  });
+
+  return {
+    bots: {
+      extract: (input) =>
+        request("bots.extract", "canMutateAgents", BOTS_RPC_METHODS.extract, input),
+      list: (input) => request("bots.list", "canReadAgents", BOTS_RPC_METHODS.list, input),
+      save: (input) => request("bots.save", "canMutateAgents", BOTS_RPC_METHODS.save, input),
+      remove: (input) => request("bots.remove", "canMutateAgents", BOTS_RPC_METHODS.remove, input),
+      memory: (input) => request("bots.memory", "canReadAgents", BOTS_RPC_METHODS.memory, input),
+      remember: (input) =>
+        request("bots.remember", "canMutateAgents", BOTS_RPC_METHODS.remember, input),
+      forget: (input) => request("bots.forget", "canMutateAgents", BOTS_RPC_METHODS.forget, input),
+      proposals: (input) =>
+        request("bots.proposals", "canReadAgents", BOTS_RPC_METHODS.proposals, input),
+      acceptProposal: (input) =>
+        request("bots.acceptProposal", "canMutateAgents", BOTS_RPC_METHODS.acceptProposal, input),
+      rejectProposal: (input) =>
+        request("bots.rejectProposal", "canMutateAgents", BOTS_RPC_METHODS.rejectProposal, input),
+      assign: (input) => request("bots.assign", "canMutateAgents", BOTS_RPC_METHODS.assign, input),
+      mention: (input) =>
+        request("bots.mention", "canMutateAgents", BOTS_RPC_METHODS.mention, input),
+    },
+    tasks: {
+      create: (input) => request("tasks.create", "canMutateTasks", TASKS_RPC_METHODS.create, input),
+      search: (input) => request("tasks.search", "canReadTasks", TASKS_RPC_METHODS.search, input),
+      page: (input) => request("tasks.page", "canReadTasks", TASKS_RPC_METHODS.page, input),
+      statusCounts: (input) =>
+        request("tasks.statusCounts", "canReadTasks", TASKS_RPC_METHODS.statusCounts, input),
+      items: (input) => request("tasks.items", "canReadTasks", TASKS_RPC_METHODS.items, input),
+      runCounts: (input) =>
+        request("tasks.runCounts", "canReadTasks", TASKS_RPC_METHODS.runCounts, input),
+      threadRunCounts: (input) =>
+        request("tasks.threadRunCounts", "canReadTasks", TASKS_RPC_METHODS.threadRunCounts, input),
+      markThreadsSeen: (input) =>
+        request("tasks.markThreadsSeen", "canReadTasks", TASKS_RPC_METHODS.markThreadsSeen, input),
+      threadTasks: (input) =>
+        request("tasks.threadTasks", "canReadTasks", TASKS_RPC_METHODS.threadTasks, input),
+      subscribe,
+      get: (input) => request("tasks.get", "canReadTasks", TASKS_RPC_METHODS.get, input),
+      update: (input) => request("tasks.update", "canMutateTasks", TASKS_RPC_METHODS.update, input),
+      reorder: (input) =>
+        request("tasks.reorder", "canMutateTasks", TASKS_RPC_METHODS.reorder, input),
+      reorderMany: (input) =>
+        request("tasks.reorderMany", "canMutateTasks", TASKS_RPC_METHODS.reorderMany, input),
+      delete: (input) => request("tasks.delete", "canMutateTasks", TASKS_RPC_METHODS.delete, input),
+      addTag: (input) => request("tasks.addTag", "canMutateTasks", TASKS_RPC_METHODS.addTag, input),
+      removeTag: (input) =>
+        request("tasks.removeTag", "canMutateTasks", TASKS_RPC_METHODS.removeTag, input),
+      appendEvent: (input) =>
+        request("tasks.appendEvent", "canMutateTasks", TASKS_RPC_METHODS.appendEvent, input),
+      events: (input) => request("tasks.events", "canReadTasks", TASKS_RPC_METHODS.events, input),
+      archive: (input) =>
+        request("tasks.archive", "canMutateTasks", TASKS_RPC_METHODS.archive, input),
+      unarchive: (input) =>
+        request("tasks.unarchive", "canMutateTasks", TASKS_RPC_METHODS.unarchive, input),
+      getPromptSettings: (input) =>
+        request(
+          "tasks.getPromptSettings",
+          "canReadTasks",
+          TASKS_RPC_METHODS.getPromptSettings,
+          input,
+        ),
+      updatePromptSettings: (input) =>
+        request(
+          "tasks.updatePromptSettings",
+          "canMutateTasks",
+          TASKS_RPC_METHODS.updatePromptSettings,
+          input,
+        ),
+      scheduleRange: (input) =>
+        request("tasks.scheduleRange", "canReadTasks", TASKS_RPC_METHODS.scheduleRange, input),
+      scheduleForTask: (input) =>
+        request("tasks.scheduleForTask", "canReadTasks", TASKS_RPC_METHODS.scheduleForTask, input),
+      scheduleProgress: (input) =>
+        request(
+          "tasks.scheduleProgress",
+          "canReadTasks",
+          TASKS_RPC_METHODS.scheduleProgress,
+          input,
+        ),
+      scheduleAdd: (input) =>
+        request("tasks.scheduleAdd", "canMutateTasks", TASKS_RPC_METHODS.scheduleAdd, input),
+      scheduleUpdate: (input) =>
+        request("tasks.scheduleUpdate", "canMutateTasks", TASKS_RPC_METHODS.scheduleUpdate, input),
+      scheduleMove: (input) =>
+        request("tasks.scheduleMove", "canMutateTasks", TASKS_RPC_METHODS.scheduleMove, input),
+      scheduleCopy: (input) =>
+        request("tasks.scheduleCopy", "canMutateTasks", TASKS_RPC_METHODS.scheduleCopy, input),
+      scheduleDelete: (input) =>
+        request("tasks.scheduleDelete", "canMutateTasks", TASKS_RPC_METHODS.scheduleDelete, input),
+      scheduleMoveOpen: (input) =>
+        request(
+          "tasks.scheduleMoveOpen",
+          "canMutateTasks",
+          TASKS_RPC_METHODS.scheduleMoveOpen,
+          input,
+        ),
+      getScheduleSettings: (input) =>
+        request(
+          "tasks.getScheduleSettings",
+          "canReadTasks",
+          TASKS_RPC_METHODS.getScheduleSettings,
+          input,
+        ),
+      updateScheduleSettings: (input) =>
+        request(
+          "tasks.updateScheduleSettings",
+          "canMutateTasks",
+          TASKS_RPC_METHODS.updateScheduleSettings,
+          input,
+        ),
+      getListSettings: (input) =>
+        request("tasks.getListSettings", "canReadTasks", TASKS_RPC_METHODS.getListSettings, input),
+      updateListSettings: (input) =>
+        request(
+          "tasks.updateListSettings",
+          "canMutateTasks",
+          TASKS_RPC_METHODS.updateListSettings,
+          input,
+        ),
+      getInstructionUpdates: (input) =>
+        request(
+          "tasks.getInstructionUpdates",
+          "canReadTasks",
+          TASKS_RPC_METHODS.getInstructionUpdates,
+          input,
+        ),
+      updateInstructionUpdates: (input) =>
+        request(
+          "tasks.updateInstructionUpdates",
+          "canMutateTasks",
+          TASKS_RPC_METHODS.updateInstructionUpdates,
+          input,
+        ),
+    },
+    agents: {
+      upsert: (input) =>
+        request("agents.upsert", "canMutateAgents", TASK_AGENTS_RPC_METHODS.upsert, input),
+      search: (input) =>
+        request("agents.search", "canReadAgents", TASK_AGENTS_RPC_METHODS.search, input),
+      delete: (input) =>
+        request("agents.delete", "canMutateAgents", TASK_AGENTS_RPC_METHODS.delete, input),
+      searchRuns: (input) =>
+        request("agents.searchRuns", "canReadAgents", TASK_AGENTS_RPC_METHODS.searchRuns, input),
+      stopRun: (input) =>
+        request("agents.stopRun", "canMutateTasks", TASK_AGENTS_RPC_METHODS.stopRun, input),
+      messageRun: (input) =>
+        request("agents.messageRun", "canMutateTasks", TASK_AGENTS_RPC_METHODS.messageRun, input),
+    },
+    automations: {
+      upsert: (input) =>
+        request(
+          "automations.upsert",
+          "canMutateAutomations",
+          TASK_AUTOMATIONS_RPC_METHODS.upsert,
+          input,
+        ),
+      search: (input) =>
+        request(
+          "automations.search",
+          "canReadAutomations",
+          TASK_AUTOMATIONS_RPC_METHODS.search,
+          input,
+        ),
+      setStatus: (input) =>
+        request(
+          "automations.setStatus",
+          "canMutateAutomations",
+          TASK_AUTOMATIONS_RPC_METHODS.setStatus,
+          input,
+        ),
+      delete: (input) =>
+        request(
+          "automations.delete",
+          "canMutateAutomations",
+          TASK_AUTOMATIONS_RPC_METHODS.delete,
+          input,
+        ),
+      searchRuns: (input) =>
+        request(
+          "automations.searchRuns",
+          "canReadAutomations",
+          TASK_AUTOMATIONS_RPC_METHODS.searchRuns,
+          input,
+        ),
+      reorder: (input) =>
+        request(
+          "automations.reorder",
+          "canMutateAutomations",
+          TASK_AUTOMATIONS_RPC_METHODS.reorder,
+          input,
+        ),
+    },
+  };
+}

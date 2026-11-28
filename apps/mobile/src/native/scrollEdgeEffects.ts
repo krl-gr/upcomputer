@@ -16,8 +16,8 @@ function nativeTopScrollEdgeEffect(
     return "automatic";
   }
 
-  // On iOS 27, soft uses a local overlay rather than sampling edge-to-edge app content.
-  return "automatic";
+  // Headers draw no background, so content fades softly under the glass items, never a hard bar.
+  return "soft";
 }
 
 export function nativeHeaderScrollEdgeEffects(

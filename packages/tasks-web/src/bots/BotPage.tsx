@@ -28,7 +28,6 @@ import {
   type BotAppearance,
   type BotMemory,
   type BotMemoryMode,
-  type BotWriteInput,
   defaultBotAppearance,
 } from "@t3tools/tasks-contracts/v1";
 import {
@@ -102,6 +101,11 @@ import type { TasksWebProject } from "../ui/shared.ts";
 import { pickerProjectFor, pickerProjects, taskProjectsOf } from "../ui/taskProjects.ts";
 import { useSidebarProjectSnapshots } from "../ui/useWorkspaceData.ts";
 import { WorkspaceViewLayout } from "../ui/WorkspaceViewLayout.tsx";
+import {
+  botWriteInput,
+  DEFAULT_BOT_INSTRUCTIONS,
+  randomBotAppearance,
+} from "@t3tools/tasks-client/bots/botForm";
 import { useAutosave } from "./botAutosave.ts";
 import {
   botsChanged,
@@ -221,8 +225,7 @@ function BotForm({
     () => bot?.appearance ?? defaultBotAppearance(id),
   );
   const [instructions, setInstructions] = useState(
-    bot?.agent.config.instructions ??
-      "Help the user, remember useful facts, and keep them informed about your work.",
+    bot?.agent.config.instructions ?? DEFAULT_BOT_INSTRUCTIONS,
   );
   const initialProject = bot?.projectId ?? source?.projectId ?? projectOptions[0]?.id ?? null;
   const [projectId, setProjectId] = useState<ProjectId | null>(initialProject);
@@ -286,30 +289,20 @@ function BotForm({
   );
   const editable = canWrite && !busy;
   const PermissionIcon = runtimeModeConfig[runtimeMode].icon;
-  const draft: BotWriteInput | null =
-    name.trim() !== "" &&
-    instructions.trim() !== "" &&
-    selection !== undefined &&
-    projectId !== null
-      ? {
-          id,
-          ...(threadId ? { threadId } : {}),
-          projectId,
-          // The bot lives in one project; its memory is global or that project's.
-          allowedProjectIds: [projectId],
-          name,
-          appearance,
-          memoryMode,
-          config: {
-            ...bot?.agent.config,
-            // Task agents require a role; bots describe themselves through instructions.
-            role: bot?.agent.config.role ?? "Personal assistant",
-            instructions,
-            modelSelection: selection,
-            runtimeMode,
-          },
-        }
-      : null;
+  const draft = botWriteInput(
+    {
+      id,
+      ...(threadId ? { threadId } : {}),
+      name,
+      appearance,
+      instructions,
+      projectId,
+      selection,
+      runtimeMode,
+      memoryMode,
+    },
+    bot?.agent,
+  );
   // The failure toast's Retry runs after render, once `autosave` exists.
   const retrySave = useRef(() => {});
   // An existing bot saves as it changes; a new one waits for Create.
@@ -469,14 +462,7 @@ function BotForm({
                     className="absolute top-3 right-3"
                     aria-label={gt("Randomize appearance")}
                     disabled={!editable}
-                    onClick={() => {
-                      const { shapes, colors, accessories } = botAppearanceCatalog;
-                      setAppearance({
-                        shape: shapes[Math.floor(Math.random() * shapes.length)]!.id,
-                        color: colors[Math.floor(Math.random() * colors.length)]!.id,
-                        accessory: accessories[Math.floor(Math.random() * accessories.length)]!.id,
-                      });
-                    }}
+                    onClick={() => setAppearance(randomBotAppearance())}
                   >
                     <DicesIcon />
                   </Button>

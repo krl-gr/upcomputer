@@ -80,7 +80,8 @@ import type { SidebarCompactThreadRowProps } from "./SidebarCompactThreadRow";
 
 const { SidebarCompactThreadRow } = await import("./SidebarCompactThreadRow");
 const { useUiStateStore } = await import("../uiStateStore");
-const { resolveThreadProjectIconStack } = await import("./threadProjectIcons.logic");
+const { resolveThreadProjectIconStack } =
+  await import("@t3tools/client-runtime/thread-project-icons");
 
 function rowProps(
   projectId: string,

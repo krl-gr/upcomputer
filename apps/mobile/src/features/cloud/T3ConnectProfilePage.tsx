@@ -48,7 +48,7 @@ function confirmDeregister(environment: RelayClientEnvironmentRecord, onConfirm:
   const message = m(
     msg(
       "“{environment}” will be removed from this account. {product} access will be revoked, any managed tunnel will be removed, and a host space will become available. Local connections on your devices are not changed.",
-      { environment: environment.label, product: "T3 Connect" },
+      { environment: environment.label, product: "UpComputer Connect" },
     ),
   );
   Dialog.confirm({
@@ -168,7 +168,7 @@ export function T3ConnectProfilePage() {
       {environmentsState.error ? (
         <>
           <ClerkRow
-            title={gt("Could not load {product} environments", { product: "T3 Connect" })}
+            title={gt("Could not load {product} environments", { product: "UpComputer Connect" })}
             subtitle={environmentsState.error}
           />
           {errorTraceId ? (
@@ -233,7 +233,7 @@ export function T3ConnectProfilePage() {
         <ClerkRow
           title={gt("No servers registered")}
           subtitle={gt("Link a server from its local Settings to reach it through {product}.", {
-            product: "T3 Connect",
+            product: "UpComputer Connect",
           })}
         />
       )}

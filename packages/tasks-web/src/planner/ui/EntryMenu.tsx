@@ -16,7 +16,7 @@ import {
   MenuShortcut,
 } from "../../../../../apps/web/src/components/ui/menu.tsx";
 import { Popover, PopoverPopup } from "../../../../../apps/web/src/components/ui/popover.tsx";
-import { addDays } from "../logic/dates.ts";
+import { addDays } from "@t3tools/tasks-client/planner/dates";
 import { entryTimingLabel } from "../logic/time.ts";
 import { usePlanner } from "./plannerContext.ts";
 import { PointMenu, type MenuPoint } from "./PointMenu.tsx";

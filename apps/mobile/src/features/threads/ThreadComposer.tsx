@@ -109,6 +109,9 @@ import { ComposerCommandPopover } from "./ComposerCommandPopover";
 import { ComposerPopoverAnchor } from "./ComposerPopoverAnchor";
 import { ComposerQueuedEditAttachments } from "./ComposerQueuedEdit";
 import { useComposerCommandMenu } from "./use-composer-command-menu";
+import { routeBotMention } from "../bots/botMention";
+import { useBotComposerItems } from "../bots/botComposer";
+import { useThreadBot } from "../bots/botsData";
 import type { ComposerEnvironmentCandidate } from "@t3tools/client-runtime/composerThreadItems";
 import { offersLinkedEnvironments } from "@t3tools/client-runtime/link-request";
 import {
@@ -420,11 +423,16 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     undefined,
     props.selectedThread.projectId,
   );
+  const botMentions = useBotComposerItems(
+    props.environmentId,
+    props.isDraft ? null : props.selectedThread.id,
+    useVisibleThreadShells(),
+  );
   const composerMenu = useComposerCommandMenu({
     draftMessage: draftMessage,
     ownerKey: composerDraftKey,
     environmentId: props.environmentId,
-    threadShells: useVisibleThreadShells(),
+    threadShells: botMentions.threadShells,
     environments: offersLinkedEnvironments(props.serverConfig)
       ? mentionableEnvironments
       : NO_MACHINES,
@@ -446,6 +454,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     modelProviders: props.serverConfig?.providers,
     ...(props.onFreshSession === undefined ? {} : { onFreshSession: props.onFreshSession }),
     offersSideChat: props.offersSideChat === true,
+    mentionItems: botMentions.items,
   });
   const voiceInput = useVoiceInputController({
     ownerKey: composerDraftKey,
@@ -555,6 +564,19 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       if (openUsageLimits()) onChangeDraftMessage("");
       return;
     }
+    if (
+      await routeBotMention({
+        blocked: props.isDraft === true || queuedEdit !== null || props.redirectsApproval,
+        environmentId: props.environmentId,
+        threadId: props.selectedThread.id,
+        draftKey: composerDraftKey,
+        flushInput: () => inputRef.current?.flushPendingInput(),
+        hasAttachments: draftAttachments.length > 0 || draftContext !== undefined,
+        navigation,
+        onSent: () => onChangeDraftMessage(""),
+      })
+    )
+      return;
     const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
     if (inFlightThreadIdsRef.current.has(threadKey)) return;
     inFlightThreadIdsRef.current.add(threadKey);
@@ -583,7 +605,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     armAgentAwarenessLiveActivityForLocalWork({
       environmentId: props.environmentId,
       threadTitle: props.selectedThread.title,
-      projectTitle: props.environmentLabel ?? "T3 Code",
+      projectTitle: props.environmentLabel ?? "Up.computer",
     });
   };
 
@@ -680,7 +702,9 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     </>
   ) : null;
 
-  const modelControl = (
+  // A bot's model is set in its settings, so its chat has no model picker.
+  const isBotChat = useThreadBot(props.environmentId, props.selectedThread.id) !== null;
+  const modelControl = isBotChat ? null : (
     // Only the expanded label can truncate; shrinking the icon-only control clips the icon.
     <View className={compactEditor.isExpanded ? "min-w-0 shrink" : "shrink-0"}>
       <ComposerModelControl

@@ -61,6 +61,10 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
       tabBar.setNeedsLayout()
     }
   }
+  /// Accessible names; the bar shows icons alone.
+  var itemLabels: [String: String] = [:] { didSet { if itemLabels != oldValue { applyItemOverrides() } } }
+  var itemSymbols: [String: String] = [:] { didSet { if itemSymbols != oldValue { applyItemOverrides() } } }
+  var badgedTabs: [String] = [] { didSet { if badgedTabs != oldValue { applyItemOverrides() } } }
   var appearance = "light" {
     didSet { overrideUserInterfaceStyle = appearance == "dark" ? .dark : .light }
   }
@@ -109,9 +113,9 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
   private func prepareItems() {
     let iconBundle = Bundle(for: Self.self).url(forResource: "T3NativeControlIcons", withExtension: "bundle").flatMap(Bundle.init(url:))
     let pullRequestIcon = UIImage(named: "pull-request", in: iconBundle, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate)
-    let labels = ["threads": "Chats", "pullRequests": "PRs", "issues": "Issues", "usage": "Usage", "settings": "Settings"]
+    let labels = ["threads": "Chats", "tasks": "Tasks", "pullRequests": "PRs", "issues": "Issues", "usage": "Usage", "notifications": "Notifications", "settings": "Settings"]
     let issueIcon = UIImage(named: "issue", in: iconBundle, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate)
-    let symbols = ["threads": "text.bubble", "usage": "chart.bar.xaxis", "settings": "gearshape"]
+    let symbols = ["threads": "text.bubble", "tasks": "checkmark.circle", "usage": "chart.bar.xaxis", "notifications": "bell", "settings": "gearshape"]
     for (tab, label) in labels {
       let icon = tab == "pullRequests" ? pullRequestIcon : tab == "issues" ? issueIcon : UIImage(systemName: symbols[tab] ?? "circle")
       let item = UITabBarItem(title: nil, image: tabIcon(icon), tag: 0)
@@ -120,6 +124,25 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
       if tab == "threads" { item.selectedImage = tabIcon(UIImage(systemName: "text.bubble.fill")) }
       itemsByTab[tab] = item
     }
+  }
+
+  private func applyItemOverrides() {
+    for (tab, item) in itemsByTab {
+      if let label = itemLabels[tab] { item.accessibilityLabel = label }
+      if let symbol = itemSymbols[tab], let image = bundledIcon(symbol) ?? UIImage(systemName: symbol) {
+        // Like the desktop's bell: a small dot cut into the icon, not UIKit's red badge.
+        item.image = badgedTabs.contains(tab) ? dottedIcon(tabIcon(image)) : tabIcon(image)
+        // Outline icons stay the same when selected; only the tint changes.
+        item.selectedImage = nil
+      }
+      item.badgeValue = nil
+    }
+  }
+
+  /// A template icon from the T3NativeControlIcons bundle, such as "chats".
+  private func bundledIcon(_ name: String) -> UIImage? {
+    let iconBundle = Bundle(for: Self.self).url(forResource: "T3NativeControlIcons", withExtension: "bundle").flatMap(Bundle.init(url:))
+    return UIImage(named: name, in: iconBundle, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate)
   }
 
   private func updateItems() {
@@ -148,6 +171,21 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
   override func didMoveToWindow() {
     super.didMoveToWindow()
     updateSelection()
+  }
+
+  /// The icon with a dot at its top right and a clear ring around the dot, as the desktop draws it.
+  private func dottedIcon(_ image: UIImage?) -> UIImage? {
+    guard let image else { return nil }
+    let canvas = image.size
+    let dot = CGRect(x: canvas.width - 11, y: 2, width: 8, height: 8)
+    return UIGraphicsImageRenderer(size: canvas).image { context in
+      image.draw(at: .zero)
+      context.cgContext.setBlendMode(.clear)
+      context.cgContext.fillEllipse(in: dot.insetBy(dx: -2, dy: -2))
+      context.cgContext.setBlendMode(.normal)
+      UIColor.black.setFill()
+      context.cgContext.fillEllipse(in: dot)
+    }.withRenderingMode(.alwaysTemplate)
   }
 
   // Give symbols and bitmap assets the same image box; UIKit otherwise scales symbols independently.

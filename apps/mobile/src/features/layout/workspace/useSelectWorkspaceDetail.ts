@@ -1,5 +1,7 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { useNavigation } from "@react-navigation/native";
+import { StackActions, useNavigation } from "@react-navigation/native";
+import { createContext, use } from "react";
+import { Platform } from "react-native";
 import { useAdaptiveWorkspaceLayout } from "../adaptive-workspace-context";
 import { startOpeningEnvironmentThread } from "../../../state/threads";
 import {
@@ -10,6 +12,12 @@ import {
 
 const first = (value: string | readonly string[] | undefined) =>
   typeof value === "string" ? value : value?.[0];
+
+/**
+ * True inside a page's own panel, such as a chat's side panel: a row there opens its page over
+ * that page on iOS, so Back returns to it instead of the workspace's list.
+ */
+export const SelectsDetailOverPageContext = createContext(false);
 
 /** Starts loading a selected thread before navigation commits; see `startOpeningEnvironmentThread`. */
 export function startOpeningDetail(detail: WorkspaceDetail) {
@@ -28,6 +36,13 @@ export function startOpeningDetail(detail: WorkspaceDetail) {
 export function useSelectWorkspaceDetail() {
   const navigation = useNavigation();
   const { selectDetail } = useAdaptiveWorkspaceLayout();
+  const overPage = use(SelectsDetailOverPageContext) && Platform.OS === "ios";
+  if (overPage)
+    return (detail: WorkspaceDetail, sheet?: WorkspaceDetailSheet) => {
+      startOpeningDetail(detail);
+      if (sheet) navigation.navigate(sheet.name, sheet.params);
+      else navigation.dispatch(StackActions.push(detail.name, detail.params));
+    };
   return (
     selectDetail ??
     ((detail: WorkspaceDetail, sheet?: WorkspaceDetailSheet) => {

@@ -6,7 +6,7 @@ import type { TaskAutomationListItem } from "@t3tools/tasks-contracts/v1";
 import { MenuItem, MenuSeparator } from "../../../../../apps/web/src/components/ui/menu.tsx";
 import { cn } from "../../../../../apps/web/src/lib/utils.ts";
 import { ListEmptyState } from "../../ui/ListEmptyState.tsx";
-import type { AutomationSnapshot } from "../data/automationStore.ts";
+import type { AutomationSnapshot } from "@t3tools/tasks-client/automations/automationStore";
 import { AutomationRow } from "./AutomationRow.tsx";
 import { usePlanner } from "./plannerContext.ts";
 import { PointMenu, type MenuPoint } from "./PointMenu.tsx";

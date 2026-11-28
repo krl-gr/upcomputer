@@ -71,7 +71,7 @@ function BrowserUnavailableScreen({ onClose }: { readonly onClose: () => void })
   );
 }
 
-function BrowserPreviewScreen({
+export function BrowserPreviewScreen({
   environmentId,
   threadId,
   initialTabId,

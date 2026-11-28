@@ -169,6 +169,14 @@ export const AgentRunMessageInput = Schema.Struct({
 });
 export type AgentRunMessageInput = typeof AgentRunMessageInput.Type;
 
+/** What a message to a run did: reached the active run, or continued an ended one as `run`. */
+export const AgentRunMessageResult = Schema.Struct({
+  /** The messaged run when it was active, else the run that continues it. */
+  run: TaskAgentRun,
+  continued: Schema.Boolean,
+});
+export type AgentRunMessageResult = typeof AgentRunMessageResult.Type;
+
 export const TaskAgentRunSearchInput = Schema.Struct({
   cursor: Schema.optional(Schema.Struct({ startedAt: IsoDateTime, id: TaskAgentRunId })),
   activeOnly: Schema.optional(Schema.Boolean),

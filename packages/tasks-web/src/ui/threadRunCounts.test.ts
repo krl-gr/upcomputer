@@ -3,8 +3,8 @@ import { test } from "vite-plus/test";
 import * as NodeTimersPromises from "node:timers/promises";
 import { ThreadId } from "@t3tools/contracts";
 import type { TaskChange, TaskThreadRunCountsResult } from "@t3tools/tasks-contracts/v1";
-import type { TasksWebRpcClient } from "../rpc/tasksRpcClient.ts";
-import { ThreadRunCountsStore } from "../state/threadRunCounts.ts";
+import type { TasksWebRpcClient } from "@t3tools/tasks-client/rpc";
+import { ThreadRunCountsStore } from "@t3tools/tasks-client/state/threadRunCounts";
 
 const thread = (id: string) => ThreadId.make(id);
 const result = (ids: readonly ThreadId[], count = 1): TaskThreadRunCountsResult => ({

@@ -11,12 +11,7 @@ export function BootSplash() {
   return (
     <div id="boot-shell">
       <div id="boot-shell-card" aria-label={gt("Up.computer splash screen")}>
-        <img
-          id="boot-shell-logo"
-          src="/apple-touch-icon.png"
-          // oxlint-disable-next-line t3code/no-untranslated-copy -- product name
-          alt="Up.computer"
-        />
+        <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="Up.computer" />
       </div>
     </div>
   );
