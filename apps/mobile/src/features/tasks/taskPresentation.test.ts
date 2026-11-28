@@ -15,11 +15,11 @@ describe("task run counts", () => {
           { status: "failed", count: 0 },
         ],
         m,
-      ).map((count) => [count.label, count.count]),
+      ).map((count) => [count.label, count.count, count.status]),
     ).toEqual([
-      ["Working", 1],
-      ["Finalizing", 3],
-      ["Completed", 3],
+      ["Working", 1, "running"],
+      ["Finalizing", 3, "finalizing:result"],
+      ["Completed", 3, "completed"],
     ]);
   });
 });

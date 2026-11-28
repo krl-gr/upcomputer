@@ -23,12 +23,13 @@ const STATUS_PREFIX = "status:";
 /**
  * A worker task in the desktop's narrow table: project badge, title, tags under it, and the
  * run counts at the end, on an inset rounded card. A long press opens the status choices of
- * the desktop's status select and the task page's Copy task ID.
+ * the desktop's status select and the task page's Copy task ID. A tap on the run counts opens the
+ * task on the runs in that state, as a click on one does there.
  */
 export const TaskListRow = memo(function TaskListRow(props: {
   readonly task: ScopedTaskListItem;
   readonly project: EnvironmentProject | null;
-  readonly onSelect: (task: ScopedTaskListItem) => void;
+  readonly onSelect: (task: ScopedTaskListItem, runStatus?: string) => void;
   /** The statuses a long press offers, in the workflow's order; empty when the task can't move. */
   readonly statusChoices: readonly string[];
   readonly onMoveStatus: (task: ScopedTaskListItem, status: string) => void;
@@ -42,6 +43,9 @@ export const TaskListRow = memo(function TaskListRow(props: {
   // An older server only names the latest run.
   const run = runCounts.length > 0 ? null : taskRunPresentation(task.latestRunStatus, messages);
   const archived = task.archivedAt !== null;
+  const countsLabel = gt("Runs: {counts}", {
+    counts: runCounts.map((count) => `${count.label} ${count.count}`).join(", "),
+  });
   const row = (
     <Pressable
       accessibilityRole="button"
@@ -52,9 +56,7 @@ export const TaskListRow = memo(function TaskListRow(props: {
         task.status,
         archived ? gt("Archived", { $context: "status of an archived task" }) : null,
         runCounts.length > 0
-          ? gt("Runs: {counts}", {
-              counts: runCounts.map((count) => `${count.label} ${count.count}`).join(", "),
-            })
+          ? countsLabel
           : run
             ? gt("Worker: {state}", { state: run.label })
             : null,
@@ -89,14 +91,23 @@ export const TaskListRow = memo(function TaskListRow(props: {
           {task.title}
         </Text>
         {runCounts.length > 0 ? (
-          <TaskRunCountBox counts={runCounts} />
+          <TaskRunCountButton
+            counts={runCounts}
+            label={countsLabel}
+            onSelect={(runStatus) => props.onSelect(task, runStatus)}
+          />
         ) : run ? (
-          <View
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={gt("Worker: {state}", { state: run.label })}
+            accessibilityHint={gt("Shows this task's runs")}
+            hitSlop={10}
+            onPress={() => props.onSelect(task)}
             style={{ height: ROW_MARK_SIZE }}
-            className="justify-center rounded-full border border-border px-2"
+            className="justify-center rounded-full border border-border px-2 active:opacity-60"
           >
             <Text className={cn("text-xs font-t3-medium", run.text)}>{run.label}</Text>
-          </View>
+          </Pressable>
         ) : null}
       </View>
       {task.tags.length > 0 || archived ? (
@@ -156,12 +167,26 @@ export const TaskListRow = memo(function TaskListRow(props: {
   );
 });
 
-/** The desktop's Runs column: each state's count in its colour, in one hairline capsule. */
-function TaskRunCountBox(props: { readonly counts: readonly TaskRunCount[] }) {
-  return (
-    <View
+/**
+ * The desktop's Runs column: each state's count in its colour, in one hairline capsule. A tap
+ * opens the task on that state's runs; with several states a menu asks which.
+ */
+function TaskRunCountButton(props: {
+  readonly counts: readonly TaskRunCount[];
+  readonly label: string;
+  readonly onSelect: (runStatus: string | undefined) => void;
+}) {
+  const gt = useGT();
+  const [only] = props.counts;
+  const box = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={props.label}
+      accessibilityHint={gt("Shows this task's runs")}
+      hitSlop={10}
+      onPress={props.counts.length === 1 ? () => props.onSelect(only?.status) : undefined}
       style={{ height: ROW_MARK_SIZE, minWidth: ROW_MARK_SIZE }}
-      className="flex-row items-center justify-center gap-2 rounded-full border border-border px-2"
+      className="flex-row items-center justify-center gap-2 rounded-full border border-border px-2 active:opacity-60"
     >
       {props.counts.map((count) => (
         <Text
@@ -171,6 +196,25 @@ function TaskRunCountBox(props: { readonly counts: readonly TaskRunCount[] }) {
           {count.count}
         </Text>
       ))}
-    </View>
+    </Pressable>
+  );
+  if (props.counts.length === 1) return box;
+  return (
+    <Menu
+      title={gt("Runs", { $context: "noun: a task's worker runs" })}
+      actions={[
+        ...props.counts.map((count) => ({
+          id: count.status,
+          title: count.label,
+          subtitle: String(count.count),
+        })),
+        { id: "", title: gt("Show all runs") },
+      ]}
+      onPressAction={({ nativeEvent }) =>
+        props.onSelect(nativeEvent.event === "" ? undefined : nativeEvent.event)
+      }
+    >
+      {box}
+    </Menu>
   );
 }

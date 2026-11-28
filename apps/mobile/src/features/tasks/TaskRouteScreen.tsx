@@ -7,21 +7,22 @@ import {
   PERSON_OPEN_STATUS,
   TaskId,
   type TaskActor,
-  type TaskAgentRun,
+  type TaskUpdateInput,
 } from "@t3tools/tasks-contracts/v1";
 import { msg, useGT, useMessages } from "gt-react-native";
-import { Children, Fragment, isValidElement, useState, type ReactNode } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { useRef, useState } from "react";
+import { Pressable, View, type ScrollViewInstance } from "react-native";
 
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppBar } from "../../components/ui/AppBar";
-import { UpIcon } from "../../components/up-icons/UpIcon";
 import { AppText as Text } from "../../components/ui/AppText";
+import * as Dialog from "../../components/ui/Dialog";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Menu } from "../../components/ui/Menu";
 import { RefreshControl } from "../../components/ui/RefreshControl";
 import { ScreenContent } from "../../components/ui/ScreenContent";
+import { UpIcon } from "../../components/up-icons/UpIcon";
 import type { MessageResolver } from "../../i18n/messages";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
@@ -31,24 +32,39 @@ import { useProjects, useQuietThreadShell } from "../../state/entities";
 import { useWorkspaceState } from "../../state/workspace";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useAndroidWorkspaceBack } from "../layout/workspace/useAndroidWorkspaceNavigation";
+import {
+  DetailRow,
+  DetailValue,
+  GroupedCard,
+  TaskDescriptionField,
+  TaskPageSection,
+  TaskTitleField,
+} from "./TaskDetailFields";
 import { TaskMarkdown } from "./TaskMarkdown";
+import { TaskRunsSection } from "./TaskRunsSection";
 import { taskStatusChoices } from "./taskListState";
-import { taskRunPresentation, taskStatusTone } from "./taskPresentation";
+import { taskStatusTone } from "./taskPresentation";
 import { TaskTagChip } from "./TaskTagChip";
 import { readTasksClient, useTasksAccess } from "./tasksRpc";
-import { useTaskDetail, useTaskWorkflow, type TaskDetailRun } from "./useTasks";
+import { useTaskRuns } from "./useTaskRuns";
+import { useTaskDetail, useTaskWorkflow } from "./useTasks";
 
 export type TaskRouteParams = {
   readonly environmentId: string;
   readonly taskId: string;
   /** The row's title, shown while the task loads. */
   readonly title?: string;
+  /** A run count's status: the page opens on the runs in it. */
+  readonly runStatus?: string;
 };
 
 // Selecting another task reuses this route, so its busy state and errors are keyed.
 export function TaskRouteScreen({ route }: StaticScreenProps<TaskRouteParams>) {
   return (
-    <TaskRoute key={`${route.params.environmentId}:${route.params.taskId}`} params={route.params} />
+    <TaskRoute
+      key={`${route.params.environmentId}:${route.params.taskId}:${route.params.runStatus ?? ""}`}
+      params={route.params}
+    />
   );
 }
 
@@ -70,6 +86,10 @@ function formatDateTime(iso: string) {
   });
 }
 
+function errorText(cause: unknown) {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
 /**
  * The desktop's task page (`TasksView` detail) stacked for the phone, in its order: the title,
  * Description and Output, then the Details column's Details, Runs and History sections.
@@ -87,25 +107,54 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
   const access = useTasksAccess(connected ? environmentId : null);
   const workflow = useTaskWorkflow(environmentId, access);
   const detail = useTaskDetail(environmentId, taskId, access);
+  const [runFilter, setRunFilter] = useState<string | null>(params.runStatus ?? null);
+  const runs = useTaskRuns(environmentId, taskId, access, runFilter);
   const task = detail.task;
   const project = useProjects().find(
     (entry) => entry.environmentId === environmentId && entry.id === task?.projectId,
   );
   const [refreshing, setRefreshing] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [busyField, setBusyField] = useState<string | null>(null);
   const canEdit = connected && access?.canMutateTasks === true && task !== null;
+  const archived = task?.archivedAt != null;
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const scrolledToRuns = useRef(params.runStatus === undefined);
 
-  const moveTo = async (status: string) => {
-    if (!task || busy || status === task.status) return;
-    setBusy(true);
-    setMutationError(null);
-    await readTasksClient(environmentId)
-      .tasks.update({ id: task.id, status })
-      .then(detail.applyLocal, (cause: unknown) =>
-        setMutationError(cause instanceof Error ? cause.message : String(cause)),
+  const updateTask = async (field: string, update: Omit<TaskUpdateInput, "id">) => {
+    if (!task) return false;
+    setBusyField(field);
+    const saved = await readTasksClient(environmentId)
+      .tasks.update({ id: task.id, ...update })
+      .then(
+        (updated) => {
+          detail.applyLocal(updated);
+          return true;
+        },
+        (cause: unknown) => {
+          Dialog.alert(gt("Couldn't save the task"), errorText(cause));
+          return false;
+        },
       );
-    setBusy(false);
+    setBusyField(null);
+    return saved;
+  };
+  const setArchived = async (archive: boolean) => {
+    if (!task || busyField !== null) return;
+    setBusyField("archive");
+    const client = readTasksClient(environmentId);
+    await (archive ? client.tasks.archive : client.tasks.unarchive)({ ids: [task.id] }).then(
+      () => detail.refresh(),
+      (cause: unknown) =>
+        Dialog.alert(
+          archive ? gt("Failed to archive task") : gt("Failed to unarchive task"),
+          errorText(cause),
+        ),
+    );
+    setBusyField(null);
+  };
+  const refresh = () => {
+    runs.refresh();
+    return detail.refresh();
   };
   const openThread = (threadId: ThreadId) =>
     navigation.dispatch(
@@ -114,10 +163,21 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
         threadId: String(threadId),
       }),
     );
-  const openTranscript = (run: TaskAgentRun) => openThread(run.threadId);
+  const latestRun = runFilter === null ? (runs.runs[0] ?? null) : null;
+  const workerOfRun = (runId: string) => {
+    const run = runs.runs.find((entry) => entry.id === runId);
+    return run ? (runs.workers.get(String(run.agentId))?.name ?? null) : null;
+  };
   const output =
     task !== null && task.output !== null && task.output.trim() !== "" ? task.output : null;
   const cwd = project?.workspaceRoot ?? null;
+  const statusChoices = !canEdit
+    ? []
+    : task.audience === "person"
+      ? [PERSON_OPEN_STATUS, PERSON_DONE_STATUS]
+      : workflow.version !== null
+        ? taskStatusChoices(workflow.version, task.status)
+        : [];
 
   return (
     <View className="flex-1 bg-screen">
@@ -130,13 +190,27 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
             title: gt("More actions"),
             icon: "up.more-horizontal",
             items: [
-              ...(detail.latestRun
+              ...(latestRun
                 ? [
                     {
                       id: "transcript",
                       title: gt("Open worker transcript"),
                       icon: "text.bubble",
-                      onPress: () => openTranscript(detail.latestRun!),
+                      onPress: () => openThread(latestRun.threadId),
+                    },
+                  ]
+                : []),
+              // The desktop's header action: Archive, or Unarchive for an archived task.
+              ...(canEdit
+                ? [
+                    {
+                      id: "archive",
+                      title: archived
+                        ? gt("Unarchive", { $context: "button that unarchives a task" })
+                        : gt("Archive", { $context: "button that archives a task" }),
+                      icon: archived ? "tray.and.arrow.up" : "archivebox",
+                      disabled: busyField !== null,
+                      onPress: () => void setArchived(!archived),
                     },
                   ]
                 : []),
@@ -150,7 +224,7 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
                 id: "refresh",
                 title: gt("Refresh"),
                 icon: "arrow.clockwise",
-                onPress: () => void detail.refresh(),
+                onPress: () => void refresh(),
               },
             ],
           },
@@ -158,14 +232,17 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
       />
       <ScreenContent>
         <NativeScrollView
+          ref={scrollRef}
           className="flex-1"
           contentInsetAdjustmentBehavior="automatic"
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => {
                 setRefreshing(true);
-                void detail.refresh().finally(() => setRefreshing(false));
+                void refresh().finally(() => setRefreshing(false));
               }}
             />
           }
@@ -202,32 +279,34 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
           ) : (
             <View className="gap-2">
               <View className="gap-1.5 px-1 pb-2">
-                <Text selectable className="text-[22px] font-t3-bold leading-7 text-foreground">
-                  {task.title}
-                </Text>
-                {task.archivedAt ? (
+                <TaskTitleField
+                  key={`${task.id}:title`}
+                  value={task.title}
+                  canEdit={canEdit}
+                  onSave={(title) => updateTask("title", { title })}
+                />
+                {archived ? (
                   <Text className="text-sm text-foreground-muted">
                     {gt("Archived", { $context: "status of an archived task" })}
                   </Text>
                 ) : null}
+                {canEdit || connected ? null : (
+                  <Text className="text-sm text-foreground-muted">
+                    {gt("Reconnect to this computer to change this task.")}
+                  </Text>
+                )}
               </View>
 
               {/* As on the desktop: collapsed when the task has output. */}
-              <TaskPageSection title={gt("Description")} defaultOpen={output === null}>
-                {task.description.trim() === "" ? (
-                  <Text className="px-1 text-base text-foreground-muted">
-                    {gt("No description", { $context: "a task has no description" })}
-                  </Text>
-                ) : (
-                  <View className="px-1">
-                    <TaskMarkdown
-                      markdown={task.description}
-                      environmentId={environmentId}
-                      cwd={cwd}
-                    />
-                  </View>
-                )}
-              </TaskPageSection>
+              <TaskDescriptionField
+                key={`${task.id}:description`}
+                value={task.description}
+                canEdit={canEdit}
+                defaultOpen={output === null}
+                environmentId={environmentId}
+                cwd={cwd}
+                onSave={(description) => updateTask("description", { description })}
+              />
 
               {output !== null ? (
                 <TaskPageSection title={gt("Output")}>
@@ -241,17 +320,11 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
                 <GroupedCard>
                   <TaskStatusRow
                     status={task.status}
-                    choices={
-                      !canEdit
-                        ? []
-                        : task.audience === "person"
-                          ? [PERSON_OPEN_STATUS, PERSON_DONE_STATUS]
-                          : workflow.version !== null
-                            ? taskStatusChoices(workflow.version, task.status)
-                            : []
-                    }
-                    busy={busy}
-                    onMove={(status) => void moveTo(status)}
+                    choices={statusChoices}
+                    busy={busyField === "status"}
+                    onMove={(status) => {
+                      if (status !== task.status) void updateTask("status", { status });
+                    }}
                   />
                   <DetailRow label={gt("Project")}>
                     <View className="min-w-0 shrink flex-row items-center justify-end gap-2">
@@ -270,7 +343,27 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
                   </DetailRow>
                   {/* A person task's tags stay hidden, as on the desktop. */}
                   {task.audience === "person" ? null : (
-                    <DetailRow label={gt("Tags")}>
+                    <DetailRow
+                      label={gt("Tags")}
+                      accessibilityValue={
+                        task.tags.length > 0
+                          ? task.tags.join(", ")
+                          : gt("None", { $context: "a task has no tags" })
+                      }
+                      chevron={canEdit}
+                      onPress={
+                        canEdit
+                          ? () =>
+                              navigation.dispatch(
+                                StackActions.push("TaskTags", {
+                                  environmentId: String(environmentId),
+                                  taskId: String(task.id),
+                                  title: task.title,
+                                }),
+                              )
+                          : undefined
+                      }
+                    >
                       {task.tags.length > 0 ? (
                         <View className="min-w-0 shrink flex-row flex-wrap justify-end gap-1.5">
                           {task.tags.map((tag) => (
@@ -306,11 +399,6 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
                     </DetailRow>
                   ) : null}
                 </GroupedCard>
-                {mutationError ? (
-                  <Text selectable className="px-4 pt-2 text-sm text-danger-foreground">
-                    {mutationError}
-                  </Text>
-                ) : null}
                 {workflow.error && task.audience !== "person" ? (
                   <Text selectable className="px-4 pt-2 text-xs text-foreground-muted">
                     {gt("Couldn't load this computer's task statuses: {error}", {
@@ -320,123 +408,33 @@ function TaskRoute({ params }: { readonly params: TaskRouteParams }) {
                 ) : null}
               </TaskPageSection>
 
-              <TaskPageSection
-                title={gt("Runs", { $context: "noun: a task's worker runs" })}
-                count={detail.runs.length}
+              <View
+                onLayout={(event) => {
+                  // A run count opened the page: show its runs.
+                  if (scrolledToRuns.current) return;
+                  scrolledToRuns.current = true;
+                  const y = event.nativeEvent.layout.y;
+                  setTimeout(() => scrollRef.current?.scrollTo({ y, animated: true }), 0);
+                }}
               >
-                <TaskRunList runs={detail.runs} onOpen={openTranscript} />
-              </TaskPageSection>
+                <TaskRunsSection
+                  environmentId={environmentId}
+                  data={runs}
+                  filter={runFilter}
+                  onShowAll={() => setRunFilter(null)}
+                  canMutate={connected && access?.canMutateTasks === true}
+                />
+              </View>
 
               <TaskHistorySection
                 records={detail.events === null ? null : taskHistoryRecords(detail.events)}
-                worker={{
-                  runId: detail.latestRun?.id ?? null,
-                  name: detail.worker?.name ?? null,
-                }}
+                workerOfRun={workerOfRun}
               />
             </View>
           )}
         </NativeScrollView>
       </ScreenContent>
     </View>
-  );
-}
-
-/**
- * The desktop's collapsible detail section in the Tasks list's group header type: the name, a
- * chevron, and the count at the end.
- */
-function TaskPageSection(props: {
-  readonly title: string;
-  readonly count?: number;
-  readonly defaultOpen?: boolean;
-  readonly children: ReactNode;
-}) {
-  const gt = useGT();
-  const [open, setOpen] = useState(props.defaultOpen ?? true);
-  return (
-    <View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        accessibilityLabel={
-          props.count === undefined ? props.title : `${props.title}, ${props.count}`
-        }
-        accessibilityHint={open ? gt("Hides the section") : gt("Shows the section")}
-        onPress={() => setOpen(!open)}
-        className="min-h-11 flex-row items-center gap-2 px-1 active:opacity-60"
-      >
-        <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
-          <Text
-            className="shrink text-base font-t3-medium text-foreground-tertiary"
-            numberOfLines={1}
-          >
-            {props.title}
-          </Text>
-          <UpIcon
-            name={open ? "chevron-down" : "chevron-right"}
-            size={17}
-            tintColorClassName="accent-icon-muted"
-          />
-        </View>
-        {props.count === undefined ? null : (
-          <Text className="text-base tabular-nums text-foreground-tertiary">{props.count}</Text>
-        )}
-      </Pressable>
-      {open ? <View className="pb-3 pt-1">{props.children}</View> : null}
-    </View>
-  );
-}
-
-/** An iOS inset grouped card whose rows are split by hairlines. */
-function GroupedCard(props: { readonly children: ReactNode }) {
-  return (
-    <View className="overflow-hidden rounded-[14px] border-continuous bg-grouped-card">
-      {Children.toArray(props.children).map((row, index) => (
-        <Fragment key={isValidElement(row) && row.key !== null ? row.key : index}>
-          {index > 0 ? (
-            <View className="ml-4 bg-separator" style={{ height: StyleSheet.hairlineWidth }} />
-          ) : null}
-          {row}
-        </Fragment>
-      ))}
-    </View>
-  );
-}
-
-function DetailRow(props: {
-  readonly label: string;
-  readonly children: ReactNode;
-  readonly onPress?: () => void;
-}) {
-  const content = (
-    <View className="min-h-11 flex-row items-center gap-3 px-4 py-2.5">
-      <Text className="shrink-0 text-base text-foreground" numberOfLines={1}>
-        {props.label}
-      </Text>
-      <View className="min-w-0 flex-1 flex-row items-center justify-end">{props.children}</View>
-    </View>
-  );
-  if (!props.onPress) return content;
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={props.onPress}
-      className="active:bg-foreground/5"
-    >
-      {content}
-    </Pressable>
-  );
-}
-
-function DetailValue(props: { readonly children: ReactNode; readonly className?: string }) {
-  return (
-    <Text
-      numberOfLines={1}
-      className={cn("shrink text-right text-base text-foreground-secondary", props.className)}
-    >
-      {props.children}
-    </Text>
   );
 }
 
@@ -500,69 +498,11 @@ function SourceThreadRow(props: {
   // The shell may leave the thread out; the chat route opens it either way.
   const thread = useQuietThreadShell(scopeThreadRef(props.environmentId, props.threadId));
   return (
-    <DetailRow label={gt("Source thread")} onPress={() => props.onOpen(props.threadId)}>
-      <View className="min-w-0 shrink flex-row items-center gap-1">
-        <DetailValue className="text-primary-text">
-          {thread?.title || gt("Source thread")}
-        </DetailValue>
-        <UpIcon name="chevron-right" size={15} tintColorClassName="accent-icon-muted" />
-      </View>
+    <DetailRow label={gt("Source thread")} onPress={() => props.onOpen(props.threadId)} chevron>
+      <DetailValue className="text-primary-text">
+        {thread?.title || gt("Source thread")}
+      </DetailValue>
     </DetailRow>
-  );
-}
-
-/** The desktop's Runs section: each run's state and worker, newest first; a tap opens its chat. */
-function TaskRunList(props: {
-  readonly runs: readonly TaskDetailRun[];
-  readonly onOpen: (run: TaskAgentRun) => void;
-}) {
-  const gt = useGT();
-  const messages = useMessages();
-  if (props.runs.length === 0) {
-    return (
-      <Text className="px-1 text-base text-foreground-muted">
-        {gt("No worker has worked on this task yet.")}
-      </Text>
-    );
-  }
-  return (
-    <GroupedCard>
-      {props.runs.map(({ run, worker }) => {
-        const state = taskRunPresentation(run.status, messages);
-        const name = worker?.name ?? gt("Worker run");
-        return (
-          <Pressable
-            key={run.id}
-            accessibilityRole="button"
-            accessibilityLabel={[state?.label ?? run.status, name].join(", ")}
-            accessibilityHint={gt("Opens the worker's chat for this run")}
-            onPress={() => props.onOpen(run)}
-            className="min-h-14 flex-row items-center gap-3 px-4 py-2.5 active:bg-foreground/5"
-          >
-            <UpIcon
-              name={state?.icon ?? "hammer"}
-              size={19}
-              tintColorClassName={state?.tint ?? "accent-icon-muted"}
-            />
-            <View className="min-w-0 flex-1 gap-0.5">
-              <Text numberOfLines={1} className="text-base text-foreground">
-                {name}
-              </Text>
-              <Text
-                numberOfLines={1}
-                className={cn("text-sm", state?.text ?? "text-foreground-muted")}
-              >
-                {state?.label ?? run.status}
-              </Text>
-            </View>
-            <Text className="shrink-0 text-sm text-foreground-tertiary">
-              {relativeTime(run.startedAt, undefined, messages)}
-            </Text>
-            <UpIcon name="chevron-right" size={15} tintColorClassName="accent-icon-muted" />
-          </Pressable>
-        );
-      })}
-    </GroupedCard>
   );
 }
 
@@ -573,21 +513,17 @@ const ACTOR_LABELS = {
   server: msg("Server", { $context: "who changed a task: the Up.computer server" }),
 } as const satisfies Record<TaskActor["type"], string>;
 
-/** Who made a change; a worker run is named only when it is the run this page shows. */
-function actorLabel(actor: TaskActor, latest: LatestWorker, resolve: MessageResolver) {
-  if (actor.type === "agent-run" && actor.agentRunId === latest.runId && latest.name !== null)
-    return latest.name;
-  return resolve(ACTOR_LABELS[actor.type]);
-}
+type WorkerOfRun = (runId: string) => string | null;
 
-interface LatestWorker {
-  readonly runId: string | null;
-  readonly name: string | null;
+/** Who made a change; a worker run is named by its worker once the page's runs list it. */
+function actorLabel(actor: TaskActor, workerOfRun: WorkerOfRun, resolve: MessageResolver) {
+  const worker = actor.type === "agent-run" ? workerOfRun(actor.agentRunId) : null;
+  return worker ?? resolve(ACTOR_LABELS[actor.type]);
 }
 
 function historyText(
   record: TaskHistoryRecord,
-  worker: LatestWorker,
+  worker: WorkerOfRun,
   gt: ReturnType<typeof useGT>,
   resolve: MessageResolver,
 ): { readonly title: string; readonly detail: string } {
@@ -622,7 +558,7 @@ function historyText(
 
 function TaskHistorySection(props: {
   readonly records: readonly TaskHistoryRecord[] | null;
-  readonly worker: LatestWorker;
+  readonly workerOfRun: WorkerOfRun;
 }) {
   const gt = useGT();
   const messages = useMessages();
@@ -639,7 +575,7 @@ function TaskHistorySection(props: {
       ) : (
         <GroupedCard>
           {props.records.map((record) => {
-            const text = historyText(record, props.worker, gt, messages);
+            const text = historyText(record, props.workerOfRun, gt, messages);
             return (
               <View key={record.id} className="gap-0.5 px-4 py-2.5">
                 <View className="flex-row items-baseline gap-3">

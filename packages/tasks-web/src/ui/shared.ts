@@ -62,12 +62,7 @@ export function tasksEnvironmentIds(
   return [...ids];
 }
 
-export function splitListInput(value: string): string[] {
-  return value
-    .split(/[,\n]/)
-    .map((part) => part.trim())
-    .filter((part, index, parts) => part.length > 0 && parts.indexOf(part) === index);
-}
+export { splitListInput } from "@t3tools/tasks-client/tags/tagSuggestions";
 
 /** Identifies a task across environments; the Tasks route's `task` search param. */
 export function taskKey(task: {

@@ -1,9 +1,5 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import {
-  PROVIDER_DISPLAY_NAMES,
-  type EnvironmentId,
-  type ServerProvider,
-} from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { isBotAgent } from "@t3tools/tasks-client/bots/bots";
 import type { TaskAgent } from "@t3tools/tasks-contracts/v1";
 import { useGT } from "gt-react-native";
@@ -26,21 +22,12 @@ import { ListFilterMenu } from "../layout/workspace/ListFilterMenu";
 import { useAndroidWorkspaceBack } from "../layout/workspace/useAndroidWorkspaceNavigation";
 import { TaskProjectBadge } from "../tasks/TaskProjectBadge";
 import { readTasksClient, useTasksAccess } from "../tasks/tasksRpc";
+import { modelSelectionLabel } from "./modelLabel";
 
 type WorkersState =
   | { readonly status: "loading" }
   | { readonly status: "failed"; readonly message: string }
   | { readonly status: "ready"; readonly agents: ReadonlyArray<TaskAgent> };
-
-/** "Claude Code · Claude Sonnet 5.5", as the desktop's Workers table names a worker's model. */
-function modelLabel(providers: ReadonlyArray<ServerProvider>, agent: TaskAgent) {
-  const selection = agent.config.modelSelection;
-  const provider = providers.find((entry) => entry.instanceId === selection.instanceId);
-  if (!provider) return selection.model;
-  const name = PROVIDER_DISPLAY_NAMES[provider.driver] ?? provider.displayName ?? provider.driver;
-  const model = provider.models.find((entry) => entry.slug === selection.model);
-  return `${provider.displayName ?? name} · ${model?.name ?? selection.model}`;
-}
 
 /** The desktop's Workers list: each worker's project, name, model and triggers, and its switch. */
 export function WorkersScreen() {
@@ -215,7 +202,7 @@ export function WorkersScreen() {
                   }
                   label={agent.name}
                   description={[
-                    modelLabel(providers, agent),
+                    modelSelectionLabel(providers, agent.config.modelSelection),
                     agent.startStatuses.length > 0
                       ? agent.startStatuses.join(", ")
                       : gt("Any status"),
