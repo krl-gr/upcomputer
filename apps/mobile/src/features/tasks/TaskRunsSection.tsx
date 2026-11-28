@@ -38,6 +38,7 @@ export function TaskRunsSection(props: {
   const gt = useGT();
   const messages = useMessages();
   const { data } = props;
+  if (data.status === "unavailable") return null;
   const filterLabel =
     props.filter === null ? null : (taskRunPresentation(props.filter, messages)?.label ?? null);
   const note = (text: string) => (

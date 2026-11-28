@@ -8,7 +8,8 @@ import { readTasksClient } from "./tasksRpc";
 
 export interface TaskRunsData {
   readonly runs: readonly TaskAgentRun[];
-  readonly status: "loading" | "ready" | "error";
+  /** unavailable: this computer's grant (or an older server) can't read worker runs. */
+  readonly status: "loading" | "ready" | "error" | "unavailable";
   readonly hasMore: boolean;
   /** The task's workers by id, archived ones too, to name each run's worker. */
   readonly workers: ReadonlyMap<string, TaskAgent>;
@@ -119,9 +120,10 @@ export function useTaskRuns(
   }, [enabled, environmentId]);
 
   const current = snapshot !== null && snapshot.key === key ? snapshot : null;
+  const unavailable = !enabled && access !== null && access.availability !== "loading";
   return {
     runs: current?.runs ?? [],
-    status: current?.status ?? "loading",
+    status: unavailable ? "unavailable" : (current?.status ?? "loading"),
     hasMore: current?.hasMore ?? false,
     workers:
       workers !== null && workers.environmentId === environmentId ? workers.byId : NO_WORKERS,
