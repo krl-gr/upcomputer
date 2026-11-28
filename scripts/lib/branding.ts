@@ -112,7 +112,7 @@ const COPY_ROOTS = [
   "apps/desktop/scripts/",
   "apps/server/src/",
   "packages/",
-  // The iPhone app (iOS only for now, so Android-only files stay upstream's).
+  // The mobile app, iOS and Android.
   "apps/mobile/src/",
   // Push notification and Live Activity text from the Connect relay. The rest
   // of infra/relay runs as upstream ships it.
@@ -157,7 +157,6 @@ const COPY_EXCLUDED = [
   /^packages\/contracts\/src\/relay\.ts$/,
   /\/fixtures\//,
   /\/node_modules\//,
-  /^apps\/mobile\/.*\.android\.tsx?$/,
 ] as const;
 
 export function isCopyFile(path: string): boolean {
@@ -536,7 +535,7 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
     path: "apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx",
     forbids: ["t3.codes"],
   },
-  // The iPhone app: identity in its own config layer, artwork and the thread-link host.
+  // The mobile app: identity in its own config layer, artwork and the thread-link host.
   {
     path: "apps/mobile/app.config.ts",
     requires: ["export default applyUpcomputerAppConfig(config, APP_VARIANT, repoEnv);"],
@@ -546,6 +545,10 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
     requires: ["agentAwarenessPushEnabled !== false"],
   },
   { path: "apps/mobile/src/components/T3Wordmark.tsx", forbids: ["M33.4509"] },
+  {
+    path: "apps/mobile/modules/t3-agent-notifications/android/src/main/res/drawable/agent_activity_mark.xml",
+    forbids: ["M33.4509"],
+  },
   { path: "apps/mobile/src/components/brandAssets.ts", forbids: ["black-ios-1024", "nightly-ios"] },
   {
     path: "apps/mobile/src/components/CompactBrandTitle.tsx",
@@ -558,6 +561,10 @@ export const BRANDING_REGISTRY: ReadonlyArray<BrandingRegistryEntry> = [
   },
   {
     path: "apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorModule.swift",
+    forbids: ["app.t3.codes"],
+  },
+  {
+    path: "apps/mobile/modules/t3-composer-editor/android/src/main/java/expo/modules/t3composereditor/T3ComposerEditorModule.kt",
     forbids: ["app.t3.codes"],
   },
   // Release and Connect workflows.
