@@ -49,10 +49,12 @@ import { SwipeRowActivationContext, type SwipeRowActivation } from "./swipe-row-
 import { registerThreadDismissal } from "./thread-dismissal";
 
 const ACTION_ITEM_WIDTH = 58;
-const ACTION_CIRCLE_SIZE = 36;
-const ACTION_ICON_SIZE = 15;
-const COMPACT_ACTION_CIRCLE_SIZE = 28;
-const COMPACT_ACTION_ICON_SIZE = 13;
+// Up.computer: icons only, at the size of the list's bare header glyphs (SidebarGroupHeader's "+").
+const SHOW_ACTION_LABELS = false;
+const ACTION_CIRCLE_SIZE = 40;
+const ACTION_ICON_SIZE = 21;
+const COMPACT_ACTION_CIRCLE_SIZE = 34;
+const COMPACT_ACTION_ICON_SIZE = 21;
 // At the default app text size, "Unarchive", the longest label, fills its slot at about 1.12x.
 const ACTION_LABEL_MAX_FONT_SCALE = 1.1;
 const ACTION_LABEL_MIN_HEIGHT = 14;
@@ -88,6 +90,7 @@ function swipeActionsWidth(hasSecondaryAction: boolean) {
 }
 
 function fullActionStackHeight(labelLineHeight: number, fontScale: number) {
+  if (!SHOW_ACTION_LABELS) return ACTION_CIRCLE_SIZE + 8;
   const labelHeight = labelLineHeight * Math.min(fontScale, ACTION_LABEL_MAX_FONT_SCALE);
   // The offset shifts the label after centering, so it needs room on both sides.
   return (
@@ -107,7 +110,7 @@ function resolveSecondaryAction(input: {
     return {
       accessibilityLabel: input.resolve(msg("Delete {title}", { title: input.threadTitle })),
       tone: "danger",
-      icon: "trash",
+      icon: "up.trash",
       label: input.resolve(msg("Delete", { $context: "verb, swipe action that deletes a thread" })),
       onPress: () => {
         input.close();
@@ -754,6 +757,7 @@ function SwipeActionButton(props: {
       <Animated.View
         style={[
           {
+            display: SHOW_ACTION_LABELS ? "flex" : "none",
             justifyContent: "center",
             minHeight: ACTION_LABEL_MIN_HEIGHT,
             top: props.compact ? 0 : ACTION_LABEL_OFFSET,
