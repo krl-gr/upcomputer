@@ -121,7 +121,7 @@ import {
   threadRouteIsHydrating,
   threadRouteOpensDraft,
 } from "./thread-route-hydration";
-import { ThreadHeader } from "./ThreadHeader";
+import { ChatThreadHeader } from "../side-panel/ChatThreadHeader";
 import { resumeThread } from "./resume-thread";
 import {
   useAndroidWorkspaceBack,
@@ -139,8 +139,7 @@ import { useThreadStatusAnnouncements } from "./useThreadStatusAnnouncements";
 import type { ThreadInspectorMode, ThreadInspectorTarget } from "./thread-inspector-navigation";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import { ThreadRunsSeen } from "../tasks/ThreadRunCounts";
-import { useThreadBot } from "../bots/botsData";
-import { BotCharacter } from "../bots/character/BotCharacter";
+import { useReopenSidePanelOnReturn } from "../side-panel/useReopenSidePanelOnReturn";
 
 function firstRouteParam(value: string | string[] | undefined): string | null {
   const first = Array.isArray(value) ? value[0] : value;
@@ -612,20 +611,12 @@ function ThreadRouteContent(
     setChosenInspectorMode(props.renderInspector === undefined ? "files" : "route");
     showInspector();
   };
-  // A page opened from the side panel sheet closes the sheet first, so Back to the chat reopens it
-  // on the view it was showing.
-  const reopenSidePanelOnFocus = useRef(false);
   const handleOpenSidePanel = () => {
-    reopenSidePanelOnFocus.current = false;
     navigation.setParams({ inspector: undefined });
     setChosenInspectorMode("panel");
     showInspector();
   };
-  const reopenSidePanel = useEffectEvent(() => {
-    if (reopenSidePanelOnFocus.current) handleOpenSidePanel();
-  });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- listens for the chat route regaining focus after a page the side panel opened over it
-  useEffect(() => navigation.addListener("focus", () => reopenSidePanel()), [navigation]);
+  const reopenSidePanelOnReturn = useReopenSidePanelOnReturn(handleOpenSidePanel);
   const handleSelectInspectorFile = (path: string) => {
     if (selectedThread === null) {
       return;
@@ -671,9 +662,7 @@ function ThreadRouteContent(
         isRepo={gitStatus.data?.isRepo ?? true}
         onMergeBack={threadGitControlProps.onMergeBack}
         onSelectFile={handleSelectInspectorFile}
-        onLeaveSheet={() => {
-          reopenSidePanelOnFocus.current = true;
-        }}
+        onLeaveSheet={reopenSidePanelOnReturn}
         renderSideChat={(sideChatId) => (
           <ThreadInspectorPreview
             target={{
@@ -1051,7 +1040,6 @@ function ThreadRouteContent(
     selectedThread === null ? "" : scopedThreadKey(selectedThread.environmentId, selectedThread.id),
     connectionStatusLabel !== null ? connectionStatusLabel : threadSyncLabel,
   );
-  const threadBot = useThreadBot(environmentId, selectedThread?.id ?? null);
   const inspectorHeader = props.inspectorPresentation ? (
     <ThreadInspectorHeader
       title={selectedThread?.title ?? gt("Thread")}
@@ -1081,30 +1069,8 @@ function ThreadRouteContent(
         <ThreadScreenBinding
           header={
             props.inspectorPresentation ? null : (
-              <ThreadHeader
+              <ChatThreadHeader
                 title={selectedThread.title}
-                bot={
-                  threadBot
-                    ? {
-                        icon: (
-                          <BotCharacter
-                            id={threadBot.agent.id}
-                            appearance={threadBot.appearance}
-                            size={22}
-                          />
-                        ),
-                        label: threadBot.agent.name,
-                        accessibilityLabel: gt("Settings for {name}", {
-                          name: threadBot.agent.name,
-                        }),
-                        onPress: () =>
-                          navigation.navigate("BotSettings", {
-                            environmentId: String(selectedThread.environmentId),
-                            agentId: String(threadBot.agent.id),
-                          }),
-                      }
-                    : undefined
-                }
                 subtitle={threadStatusLabel ?? headerSubtitle}
                 gitControls={threadGitControlProps}
                 hasThreadCwd={selectedThreadCwd !== null}
