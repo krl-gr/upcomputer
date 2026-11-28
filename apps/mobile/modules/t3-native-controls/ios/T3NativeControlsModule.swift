@@ -46,7 +46,7 @@ public final class T3NativeControlsModule: Module {
       Prop("showsCompose") { (view: T3SidebarTabBarView, value: Bool) in view.showsCompose = value }
       Prop("compact") { (view: T3SidebarTabBarView, value: Bool) in view.compact = value }
       Prop("appearance") { (view: T3SidebarTabBarView, value: String) in view.appearance = value }
-      Prop("itemTitles") { (view: T3SidebarTabBarView, value: [String: String]) in view.itemTitles = value }
+      Prop("itemLabels") { (view: T3SidebarTabBarView, value: [String: String]) in view.itemLabels = value }
       Prop("itemSymbols") { (view: T3SidebarTabBarView, value: [String: String]) in view.itemSymbols = value }
       Prop("badgedTabs") { (view: T3SidebarTabBarView, value: [String]) in view.badgedTabs = value }
     }

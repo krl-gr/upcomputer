@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 import { Pressable, type PressableProps } from "react-native";
 
-import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
+import { UpIcon, type UpIconName } from "../../components/up-icons/UpIcon";
 import { cn } from "../../lib/cn";
 
 /**
- * A row's small action in iOS's gray capsule style: an SF Symbol, and a label or a leading
+ * A row's small action in iOS's gray capsule style: an icon, and a label or a leading
  * badge where the desktop's button carries one. Menus wrap it as their trigger.
  */
 export function RowControl({
@@ -18,7 +18,7 @@ export function RowControl({
   ...props
 }: Omit<PressableProps, "children"> & {
   readonly accessibilityLabel: string;
-  readonly icon?: AppSymbolName;
+  readonly icon?: UpIconName;
   readonly label?: string;
   readonly leading?: ReactNode;
   /** A chevron after the label, for a control that opens a picker. */
@@ -38,7 +38,7 @@ export function RowControl({
     >
       {leading}
       {icon ? (
-        <SymbolView name={icon} size={15} tintColorClassName={tintClassName ?? "accent-icon"} />
+        <UpIcon name={icon} size={18} tintColorClassName={tintClassName ?? "accent-icon"} />
       ) : null}
       {label !== undefined ? (
         <Text
@@ -49,7 +49,7 @@ export function RowControl({
         </Text>
       ) : null}
       {picker ? (
-        <SymbolView name="chevron.down" size={10} tintColorClassName="accent-icon-muted" />
+        <UpIcon name="chevron-down" size={14} tintColorClassName="accent-icon-muted" />
       ) : null}
     </Pressable>
   );

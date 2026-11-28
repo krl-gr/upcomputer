@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 
 import { EnvironmentMachineSymbol } from "../../../components/EnvironmentMachineSymbol";
-import { SymbolView } from "../../../components/ui/AppSymbol";
+import { UpIcon } from "../../../components/up-icons/UpIcon";
 import { AppText as Text } from "../../../components/ui/AppText";
 import { Menu } from "../../../components/ui/Menu";
 import { useControlTheme } from "../../../components/ui/useControlTheme";
@@ -14,6 +14,7 @@ import { cn } from "../../../lib/cn";
 import { copyTextWithHaptic } from "../../../lib/copyTextWithHaptic";
 import { openSettings } from "../../settings/settings-navigation";
 import { TaskProjectBadge } from "../../tasks/TaskProjectBadge";
+import { NoProjectIcon } from "./NoProjectIcon";
 import { ThreadSwipeable } from "../thread-swipe-actions";
 import { SidebarGroupHeader } from "./SidebarGroupHeader";
 import { toggleSidebarGroup, useSidebarGroupsOpen } from "./sidebarGroupsOpen";
@@ -60,7 +61,7 @@ function PickRow(props: {
 }
 
 function AllIcon() {
-  return <SymbolView name="square.grid.2x2" size={18} tintColorClassName="accent-icon-muted" />;
+  return <UpIcon name="grid-2x2" size={22} tintColorClassName="accent-icon-muted" />;
 }
 
 /** The desktop sidebar's Computers group, shown from a second computer on. */
@@ -102,11 +103,7 @@ export function SidebarComputersGroup(props: {
                     tintColorClassName="accent-icon-muted"
                   />
                 ) : (
-                  <SymbolView
-                    name="desktopcomputer"
-                    size={18}
-                    tintColorClassName="accent-icon-muted"
-                  />
+                  <UpIcon name="monitor" size={22} tintColorClassName="accent-icon-muted" />
                 )
               }
               label={computer.label}
@@ -190,7 +187,9 @@ export function SidebarProjectsGroup(props: {
             const row = (
               <PickRow
                 leading={
-                  project ? (
+                  project?.isScratch ? (
+                    <NoProjectIcon size={22} />
+                  ) : project ? (
                     <TaskProjectBadge
                       environmentId={project.environmentId}
                       project={project}
@@ -216,13 +215,13 @@ export function SidebarProjectsGroup(props: {
                 onDelete={() => undefined}
                 primaryAction={{
                   accessibilityLabel: gt("New chat in {project}", { project: label }),
-                  icon: "square.and.pencil",
+                  icon: "up.compose-note",
                   label: gt("New chat"),
                   onPress: () => props.onNewChat(project),
                 }}
                 secondaryAction={{
                   accessibilityLabel: gt("Project actions"),
-                  icon: "ellipsis",
+                  icon: "up.more-horizontal",
                   label: gt("More"),
                   menu: {
                     actions: menuFor(project).slice(1),
@@ -253,7 +252,7 @@ export function SidebarProjectsGroup(props: {
             >
               <PickRow
                 leading={
-                  <SymbolView name="ellipsis" size={16} tintColorClassName="accent-icon-muted" />
+                  <UpIcon name="more-horizontal" size={20} tintColorClassName="accent-icon-muted" />
                 }
                 label={gt("More", { $context: "row that lists the other projects" })}
                 selected={false}

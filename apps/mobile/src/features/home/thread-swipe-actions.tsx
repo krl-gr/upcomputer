@@ -23,7 +23,7 @@ import type {
   StyleProp,
   ViewStyle,
 } from "react-native";
-import { Platform, Pressable, View, useWindowDimensions } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -42,21 +42,15 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-import { AppText as Text } from "../../components/ui/AppText";
 import type { MessageResolver } from "../../i18n/messages";
-import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import { SwipeRowActivationContext, type SwipeRowActivation } from "./swipe-row-activation";
 import { registerThreadDismissal } from "./thread-dismissal";
 
 const ACTION_ITEM_WIDTH = 58;
-const ACTION_CIRCLE_SIZE = 36;
-const ACTION_ICON_SIZE = 15;
-const COMPACT_ACTION_CIRCLE_SIZE = 28;
-const COMPACT_ACTION_ICON_SIZE = 13;
-// At the default app text size, "Unarchive", the longest label, fills its slot at about 1.12x.
-const ACTION_LABEL_MAX_FONT_SCALE = 1.1;
-const ACTION_LABEL_MIN_HEIGHT = 14;
-const ACTION_LABEL_OFFSET = 2;
+const ACTION_CIRCLE_SIZE = 40;
+const COMPACT_ACTION_CIRCLE_SIZE = 34;
+// Icons only, at the size of the list's bare header glyphs (SidebarGroupHeader's "+").
+const ACTION_ICON_SIZE = 21;
 
 const THREAD_SWIPE_ACTIONS_WIDTH = ACTION_ITEM_WIDTH * 2;
 const THREAD_SWIPE_SPRING = {
@@ -69,6 +63,7 @@ const THREAD_SWIPE_SPRING = {
 interface ThreadSwipeAction {
   readonly accessibilityLabel: string;
   readonly icon: ComponentProps<typeof SymbolView>["name"];
+  /** Not drawn: the actions show their icon only. */
   readonly label: string;
   readonly destructive?: boolean;
   readonly menu?: {
@@ -87,14 +82,6 @@ function swipeActionsWidth(hasSecondaryAction: boolean) {
   return hasSecondaryAction ? THREAD_SWIPE_ACTIONS_WIDTH : ACTION_ITEM_WIDTH;
 }
 
-function fullActionStackHeight(labelLineHeight: number, fontScale: number) {
-  const labelHeight = labelLineHeight * Math.min(fontScale, ACTION_LABEL_MAX_FONT_SCALE);
-  // The offset shifts the label after centering, so it needs room on both sides.
-  return (
-    ACTION_CIRCLE_SIZE + ACTION_LABEL_OFFSET * 2 + Math.max(ACTION_LABEL_MIN_HEIGHT, labelHeight)
-  );
-}
-
 function resolveSecondaryAction(input: {
   readonly close: () => void;
   readonly onDelete: () => void;
@@ -107,7 +94,7 @@ function resolveSecondaryAction(input: {
     return {
       accessibilityLabel: input.resolve(msg("Delete {title}", { title: input.threadTitle })),
       tone: "danger",
-      icon: "trash",
+      icon: "up.trash",
       label: input.resolve(msg("Delete", { $context: "verb, swipe action that deletes a thread" })),
       onPress: () => {
         input.close();
@@ -466,12 +453,10 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
   const handleSwipeableClose = useCallback(() => {
     if (swipeableRef.current) onSwipeableClose?.(swipeableRef.current);
   }, [onSwipeableClose]);
-  const { fontScale } = useWindowDimensions();
-  const fullActionsHeight = fullActionStackHeight(useScaledTextRole("micro").lineHeight, fontScale);
   const [measuredRowHeight, setMeasuredRowHeight] = useState(0);
   const compactActions =
     props.compactActions === true ||
-    (measuredRowHeight > 0 && measuredRowHeight < fullActionsHeight);
+    (measuredRowHeight > 0 && measuredRowHeight < ACTION_CIRCLE_SIZE + 8);
   const { secondaryAction, threadTitle } = props;
   // Swipeable calls this on every render; returning the previous element while nothing it shows
   // changed keeps a selection change from re-rendering the hidden actions.
@@ -488,7 +473,6 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
       actionStyle,
       backgroundColor,
       compactActions,
-      measuredRowHeight,
       fullSwipeAction,
       fullSwipeThreshold,
       handleFullSwipeArmedChange,
@@ -512,7 +496,6 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
         <ThreadSwipeActions
           backgroundColor={backgroundColor}
           compact={compactActions}
-          rowHeight={measuredRowHeight}
           fullSwipeAction={fullSwipeAction}
           fullSwipeThreshold={fullSwipeThreshold}
           onFullSwipeArmedChange={handleFullSwipeArmedChange}
@@ -590,10 +573,8 @@ function SwipeActionButton(props: {
   readonly entryRange: readonly [number, number];
   readonly fullSwipeThreshold: number;
   readonly icon: ComponentProps<typeof SymbolView>["name"];
-  readonly label: string;
   readonly menu?: ThreadSwipeAction["menu"];
   readonly onPress: () => void;
-  readonly rowHeight: number;
   readonly stretchesOnFullSwipe: boolean;
   readonly translation: SharedValue<number>;
 }) {
@@ -605,22 +586,6 @@ function SwipeActionButton(props: {
     translation,
   } = props;
   const circleSize = props.compact ? COMPACT_ACTION_CIRCLE_SIZE : ACTION_CIRCLE_SIZE;
-  const iconSize = props.compact ? COMPACT_ACTION_ICON_SIZE : ACTION_ICON_SIZE;
-  const { fontScale } = useWindowDimensions();
-  // Even compact actions can outgrow a short row at large app text sizes; shrink the label's
-  // leading to the room left under the circle.
-  const labelRoom =
-    props.compact && props.rowHeight > 0
-      ? (props.rowHeight - circleSize) / Math.min(fontScale, ACTION_LABEL_MAX_FONT_SCALE)
-      : Infinity;
-  const labelLineHeight = Math.min(useScaledTextRole("micro").lineHeight, labelRoom);
-  // Android scales lineHeight by the full font scale, past maxFontSizeMultiplier.
-  const labelTextStyle = {
-    lineHeight:
-      Platform.OS === "android" && fontScale > ACTION_LABEL_MAX_FONT_SCALE
-        ? (labelLineHeight * ACTION_LABEL_MAX_FONT_SCALE) / fontScale
-        : labelLineHeight,
-  };
   const actionStyle = useAnimatedStyle(() => {
     const reveal = Math.max(-translation.value, 0);
     const entryProgress = interpolate(
@@ -671,24 +636,6 @@ function SwipeActionButton(props: {
       transform: [{ translateX: -stretch * (0.5 + armedProgress * 0.5) }],
     };
   });
-  const labelStyle = useAnimatedStyle(() => {
-    if (!stretchesOnFullSwipe) {
-      return { opacity: 1 };
-    }
-
-    const reveal = Math.max(-translation.value, 0);
-    const stretch = Math.max(reveal - actionsWidth, 0);
-    return {
-      opacity: interpolate(
-        reveal,
-        [fullSwipeThreshold - 24, fullSwipeThreshold],
-        [1, 0],
-        Extrapolation.CLAMP,
-      ),
-      transform: [{ translateX: -stretch * 0.5 }],
-    };
-  });
-
   const button = (
     <Pressable
       accessibilityLabel={props.accessibilityLabel}
@@ -738,7 +685,7 @@ function SwipeActionButton(props: {
         >
           <SymbolView
             name={props.icon}
-            size={iconSize}
+            size={ACTION_ICON_SIZE}
             tintColorClassName={
               props.tone === "danger"
                 ? "accent-danger-foreground"
@@ -750,26 +697,6 @@ function SwipeActionButton(props: {
           />
         </Animated.View>
       </View>
-      {/* An offset, not padding: padding would grow the box and move the circle at 1x. */}
-      <Animated.View
-        style={[
-          {
-            justifyContent: "center",
-            minHeight: ACTION_LABEL_MIN_HEIGHT,
-            top: props.compact ? 0 : ACTION_LABEL_OFFSET,
-          },
-          labelStyle,
-        ]}
-      >
-        <Text
-          className="text-3xs font-t3-medium text-foreground-muted"
-          maxFontSizeMultiplier={ACTION_LABEL_MAX_FONT_SCALE}
-          numberOfLines={1}
-          style={labelTextStyle}
-        >
-          {props.label}
-        </Text>
-      </Animated.View>
     </Pressable>
   );
 
@@ -809,7 +736,6 @@ function ThreadSwipeActions(props: {
   readonly fullSwipeThreshold: number;
   readonly onFullSwipeArmedChange: (armed: boolean) => void;
   readonly primaryAction: ThreadSwipeAction;
-  readonly rowHeight: number;
   readonly secondaryAction: ThreadSwipeSecondaryAction | null;
   readonly translation: SharedValue<number>;
 }) {
@@ -847,9 +773,7 @@ function ThreadSwipeActions(props: {
         }
         fullSwipeThreshold={props.fullSwipeThreshold}
         icon={props.primaryAction.icon}
-        label={props.primaryAction.label}
         onPress={props.primaryAction.onPress}
-        rowHeight={props.rowHeight}
         stretchesOnFullSwipe={fullSwipeIsPrimary}
         translation={props.translation}
       />
@@ -862,10 +786,8 @@ function ThreadSwipeActions(props: {
           entryRange={[8, ACTION_ITEM_WIDTH * 0.72]}
           fullSwipeThreshold={props.fullSwipeThreshold}
           icon={secondaryAction.icon}
-          label={secondaryAction.label}
           menu={secondaryAction.menu}
           onPress={secondaryAction.onPress}
-          rowHeight={props.rowHeight}
           stretchesOnFullSwipe={!fullSwipeIsPrimary}
           translation={props.translation}
         />

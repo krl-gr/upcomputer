@@ -2,12 +2,12 @@ import { statusGroupKey } from "@t3tools/tasks-client/taskStatusGroups";
 import { taskRunState, type TaskRunKind } from "@t3tools/tasks-client/taskRunStatus";
 import { msg } from "gt-react-native";
 
-import type { AppSymbolName } from "../../components/ui/AppSymbol";
+import type { UpIconName } from "../../components/up-icons/UpIcon";
 import type { MessageResolver } from "../../i18n/messages";
 
 export interface TaskTone {
-  readonly icon: AppSymbolName;
-  /** Tint class for symbols. */
+  readonly icon: UpIconName;
+  /** Tint class for the icon. */
   readonly tint: string;
   /** Text color class. */
   readonly text: string;
@@ -20,13 +20,13 @@ const NEUTRAL: TaskTone = {
 };
 
 const STATUS_TONES: Readonly<Record<string, TaskTone>> = {
-  idea: { icon: "circle.dashed", tint: "accent-icon-muted", text: "text-foreground-muted" },
-  backlog: { icon: "circle.dashed", tint: "accent-icon-muted", text: "text-foreground-muted" },
-  queued: { icon: "circle.dashed", tint: "accent-icon-muted", text: "text-foreground-muted" },
+  idea: { icon: "circle-dashed", tint: "accent-icon-muted", text: "text-foreground-muted" },
+  backlog: { icon: "circle-dashed", tint: "accent-icon-muted", text: "text-foreground-muted" },
+  queued: { icon: "circle-dashed", tint: "accent-icon-muted", text: "text-foreground-muted" },
   "to do": NEUTRAL,
   restored: NEUTRAL,
   "in progress": {
-    icon: "circle.inset.filled",
+    icon: "contrast",
     tint: "accent-adaptive-sky-600-400",
     text: "text-adaptive-sky-600-400",
   },
@@ -36,12 +36,12 @@ const STATUS_TONES: Readonly<Record<string, TaskTone>> = {
     text: "text-adaptive-sky-600-400",
   },
   "needs you": {
-    icon: "exclamationmark.circle",
+    icon: "alert-circle",
     tint: "accent-adaptive-amber-700-300",
     text: "text-adaptive-amber-700-300",
   },
   "needs input": {
-    icon: "exclamationmark.circle",
+    icon: "alert-circle",
     tint: "accent-adaptive-amber-700-300",
     text: "text-adaptive-amber-700-300",
   },
@@ -56,21 +56,21 @@ const STATUS_TONES: Readonly<Record<string, TaskTone>> = {
     text: "text-adaptive-violet-600-400",
   },
   blocked: {
-    icon: "exclamationmark.triangle",
+    icon: "alert",
     tint: "accent-adaptive-rose-600-400",
     text: "text-adaptive-rose-600-400",
   },
   failed: {
-    icon: "xmark.circle.fill",
+    icon: "x-circle",
     tint: "accent-adaptive-rose-600-400",
     text: "text-adaptive-rose-600-400",
   },
   done: {
-    icon: "checkmark.circle.fill",
+    icon: "circle-check",
     tint: "accent-adaptive-emerald-600-400",
     text: "text-adaptive-emerald-600-400",
   },
-  cancelled: { icon: "slash.circle", tint: "accent-icon-muted", text: "text-foreground-muted" },
+  cancelled: { icon: "no-entry", tint: "accent-icon-muted", text: "text-foreground-muted" },
 };
 
 /** How a status looks; statuses are free text, so an unknown one looks like To Do. */
@@ -98,14 +98,14 @@ const RUN_TONES: Readonly<Record<TaskRunKind, TaskTone>> = {
     text: "text-adaptive-sky-600-400",
   },
   awaitingInput: {
-    icon: "questionmark.bubble",
+    icon: "message-question",
     tint: "accent-adaptive-indigo-600-300",
     text: "text-adaptive-indigo-600-300",
   },
   finalizing: { icon: "hammer", tint: "accent-icon-muted", text: "text-foreground-muted" },
   failed: STATUS_TONES.failed!,
   interrupted: STATUS_TONES.failed!,
-  stopped: { icon: "stop.fill", tint: "accent-icon-muted", text: "text-foreground-muted" },
+  stopped: { icon: "stop", tint: "accent-icon-muted", text: "text-foreground-muted" },
   blocked: STATUS_TONES.blocked!,
   completed: STATUS_TONES.done!,
 };

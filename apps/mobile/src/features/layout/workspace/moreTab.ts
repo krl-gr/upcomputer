@@ -16,10 +16,16 @@ export function openedFromMore(tab: NavigationTab, settingsOpen: boolean) {
   return settingsOpen || tab === "pullRequests" || tab === "issues";
 }
 
-/** SF Symbols for the bar's items where they differ from upstream's. */
-export const BOTTOM_BAR_SYMBOLS: Readonly<Record<string, string>> = {
-  notifications: "bell",
-  settings: "ellipsis",
+/**
+ * The bar's icons: iconmcp template images in the native module's T3NativeControlIcons bundle
+ * (`modules/t3-native-controls/ios/Resources/Icons`). The settings slot is More.
+ */
+export const BOTTOM_BAR_ICONS: Readonly<Record<string, string>> = {
+  threads: "chats",
+  tasks: "tasks",
+  usage: "limits",
+  notifications: "notifications",
+  settings: "more",
 };
 
 /** Tabs the bar leaves out that More lists, so the Settings list doesn't list them again. */

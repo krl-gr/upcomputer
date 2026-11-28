@@ -6,19 +6,30 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { Toolbar } from "../../components/ui/Toolbar";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import { useControlTheme } from "../../components/ui/useControlTheme";
-import { updateTasksPreferences, useTasksPreferences, type TasksView } from "./tasksPreferences";
+import {
+  HIDDEN_TASKS_VIEWS,
+  updateTasksPreferences,
+  useTasksPreferences,
+  type TasksView,
+} from "./tasksPreferences";
 
-/** The four views, in the desktop's names and with its right-panel icons. */
-export const TASKS_VIEWS: ReadonlyArray<{
-  readonly view: TasksView;
-  readonly title: string;
-  readonly icon: string;
-}> = [
-  { view: "workers", title: msg("Worker tasks"), icon: "person.2.badge.gearshape" },
-  { view: "automations", title: msg("Automations"), icon: "calendar.badge.clock" },
-  { view: "mine", title: msg("My tasks"), icon: "person" },
-  { view: "routines", title: msg("My routines"), icon: "repeat" },
+/** The four views, in the desktop's names. */
+const ALL_TASKS_VIEWS: ReadonlyArray<{ readonly view: TasksView; readonly title: string }> = [
+  { view: "workers", title: msg("Worker tasks") },
+  { view: "automations", title: msg("Automations") },
+  { view: "mine", title: msg("My tasks") },
+  { view: "routines", title: msg("My routines") },
 ];
+export const TASKS_VIEWS = ALL_TASKS_VIEWS.filter(
+  (entry) => !HIDDEN_TASKS_VIEWS.includes(entry.view),
+);
+
+/** The chosen view's name, for the native header title like every other tab's. */
+export function useTasksHeaderTitle() {
+  const messages = useMessages();
+  const { view } = useTasksPreferences();
+  return messages(TASKS_VIEWS.find((entry) => entry.view === view)?.title ?? TASKS_VIEWS[0]!.title);
+}
 
 function TasksHeaderTitle() {
   const messages = useMessages();
@@ -67,14 +78,13 @@ export function TasksToolbar(props: {
       <Toolbar.Menu
         identifier="tasks-view-menu"
         accessibilityLabel={props.menuLabel}
-        icon="switch.2"
+        icon="up.sliders"
         tintColor={props.applied ? tint : undefined}
       >
         <Toolbar.Menu inline title="">
           {TASKS_VIEWS.map((entry) => (
             <Toolbar.MenuAction
               key={entry.view}
-              icon={entry.icon}
               isOn={entry.view === view}
               onPress={() => updateTasksPreferences({ view: entry.view })}
             >
@@ -87,7 +97,7 @@ export function TasksToolbar(props: {
       <Toolbar.Button
         identifier="tasks-create"
         accessibilityLabel={props.createLabel}
-        icon="plus"
+        icon="up.plus"
         disabled={props.createDisabled}
         onPress={props.onCreate}
       />

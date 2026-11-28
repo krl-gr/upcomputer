@@ -27,6 +27,10 @@
       "types": "./src/state/taskStatusCounts.ts",
       "import": "./src/state/taskStatusCounts.ts"
     },
+    "./state/threadRunCounts": {
+      "types": "./src/state/threadRunCounts.ts",
+      "import": "./src/state/threadRunCounts.ts"
+    },
     "./taskStatusGroups": {
       "types": "./src/taskStatusGroups.ts",
       "import": "./src/taskStatusGroups.ts"

@@ -6,8 +6,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NativeStackScreenOptions } from "../../../native/StackHeader";
 import { ListSection } from "../../../components/ui/ListSection";
 import { ScreenScrollView as ScrollView } from "../../../components/ui/ScreenScrollView";
+import { upBarIcon } from "../../../components/up-icons/upBarIcons";
 import { SettingsRow } from "../../settings/components/SettingsRow";
-import { PullRequestGlyph } from "../../pull-requests/pullRequestGlyphs";
 import { withNativeGlassHeaderItem } from "../native-glass-header-items";
 import { MORE_TAB, openedFromMore } from "./moreTab";
 import type { NavigationTab } from "./navigation-tab-order";
@@ -38,22 +38,26 @@ export function MoreScreen() {
       >
         <ListSection>
           <SettingsRow
-            icon="robot"
+            icon="up.robot"
             label={gt("Workers")}
             onPress={() => navigation.navigate("Workers")}
           />
         </ListSection>
         <ListSection>
           <SettingsRow
-            icon={PullRequestGlyph.pullRequest}
+            icon="up.git-pull-request"
             label={gt("Pull requests")}
             onPress={() => selectTab("pullRequests")}
           />
-          <SettingsRow icon="git.issue" label={gt("Issues")} onPress={() => selectTab("issues")} />
+          <SettingsRow
+            icon="up.issue-open"
+            label={gt("Issues")}
+            onPress={() => selectTab("issues")}
+          />
         </ListSection>
         <ListSection>
           <SettingsRow
-            icon="gearshape"
+            icon="up.settings"
             label={gt("Settings")}
             onPress={() => selectTab("settings")}
           />
@@ -72,7 +76,7 @@ export function useBackToMoreHeaderItems(tab: NavigationTab, settingsOpen: boole
   return [
     withNativeGlassHeaderItem({
       accessibilityLabel: gt("Back to {name}", { name: label }),
-      icon: { name: "chevron.backward", type: "sfSymbol" as const },
+      icon: upBarIcon("chevron-left"),
       identifier: "workspace-back-to-more",
       label,
       onPress: () => selectTab(MORE_TAB),

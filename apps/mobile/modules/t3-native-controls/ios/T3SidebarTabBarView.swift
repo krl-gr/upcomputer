@@ -61,8 +61,8 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
       tabBar.setNeedsLayout()
     }
   }
-  /// Titles shown under the icons; a tab without one shows its icon alone.
-  var itemTitles: [String: String] = [:] { didSet { if itemTitles != oldValue { applyItemOverrides() } } }
+  /// Accessible names; the bar shows icons alone.
+  var itemLabels: [String: String] = [:] { didSet { if itemLabels != oldValue { applyItemOverrides() } } }
   var itemSymbols: [String: String] = [:] { didSet { if itemSymbols != oldValue { applyItemOverrides() } } }
   var badgedTabs: [String] = [] { didSet { if badgedTabs != oldValue { applyItemOverrides() } } }
   var appearance = "light" {
@@ -128,14 +128,21 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
 
   private func applyItemOverrides() {
     for (tab, item) in itemsByTab {
-      item.title = itemTitles[tab]
-      if let title = itemTitles[tab] { item.accessibilityLabel = title }
-      if let symbol = itemSymbols[tab], let image = UIImage(systemName: symbol) {
-        item.image = tabIcon(image)
-        item.selectedImage = tab == "threads" ? tabIcon(UIImage(systemName: "\(symbol).fill")) : nil
+      if let label = itemLabels[tab] { item.accessibilityLabel = label }
+      if let symbol = itemSymbols[tab], let image = bundledIcon(symbol) ?? UIImage(systemName: symbol) {
+        // Like the desktop's bell: a small dot cut into the icon, not UIKit's red badge.
+        item.image = badgedTabs.contains(tab) ? dottedIcon(tabIcon(image)) : tabIcon(image)
+        // Outline icons stay the same when selected; only the tint changes.
+        item.selectedImage = nil
       }
-      item.badgeValue = badgedTabs.contains(tab) ? "" : nil
+      item.badgeValue = nil
     }
+  }
+
+  /// A template icon from the T3NativeControlIcons bundle, such as "chats".
+  private func bundledIcon(_ name: String) -> UIImage? {
+    let iconBundle = Bundle(for: Self.self).url(forResource: "T3NativeControlIcons", withExtension: "bundle").flatMap(Bundle.init(url:))
+    return UIImage(named: name, in: iconBundle, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate)
   }
 
   private func updateItems() {
@@ -164,6 +171,21 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
   override func didMoveToWindow() {
     super.didMoveToWindow()
     updateSelection()
+  }
+
+  /// The icon with a dot at its top right and a clear ring around the dot, as the desktop draws it.
+  private func dottedIcon(_ image: UIImage?) -> UIImage? {
+    guard let image else { return nil }
+    let canvas = image.size
+    let dot = CGRect(x: canvas.width - 11, y: 2, width: 8, height: 8)
+    return UIGraphicsImageRenderer(size: canvas).image { context in
+      image.draw(at: .zero)
+      context.cgContext.setBlendMode(.clear)
+      context.cgContext.fillEllipse(in: dot.insetBy(dx: -2, dy: -2))
+      context.cgContext.setBlendMode(.normal)
+      UIColor.black.setFill()
+      context.cgContext.fillEllipse(in: dot)
+    }.withRenderingMode(.alwaysTemplate)
   }
 
   // Give symbols and bitmap assets the same image box; UIKit otherwise scales symbols independently.

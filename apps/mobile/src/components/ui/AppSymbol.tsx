@@ -11,6 +11,8 @@ import IconRobot from "@tabler/icons-react-native/IconRobot";
 import { SymbolView as ExpoSymbolView } from "expo-symbols";
 import { withUniwind } from "uniwind";
 import type { AppSymbolViewProps } from "./AppSymbol.android";
+import { UpIconView, upIconProps } from "../up-icons/UpIcon";
+import { upIconOfSymbol } from "../up-icons/upSymbol";
 
 export type { SFSymbol } from "expo-symbols";
 export type { AppSymbolName, AppSymbolViewProps } from "./AppSymbol.android";
@@ -30,6 +32,8 @@ const CUSTOM_ICONS = {
 
 function AppSymbolView(props: AppSymbolViewProps) {
   const name = typeof props.name === "string" ? props.name : props.name.ios;
+  const upIcon = upIconOfSymbol(name);
+  if (upIcon) return <UpIconView {...upIconProps(props)} name={upIcon} />;
   const CustomIcon = CUSTOM_ICONS[name as keyof typeof CUSTOM_ICONS];
   if (CustomIcon) {
     return (

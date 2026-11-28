@@ -13,6 +13,7 @@ import { useKeyboardState } from "react-native-keyboard-controller";
 import { SafeAreaInsetsContext, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CompactBrandTitle } from "../../../components/CompactBrandTitle";
+import { UpcomputerLogo } from "../../../components/UpcomputerLogo";
 import { HeaderItemsWidthContext } from "../../../native/header-items-width";
 import { NativeStackScreenOptions } from "../../../native/StackHeader";
 import {
@@ -31,7 +32,7 @@ import { WorkspaceConnectionTitle } from "../../home/WorkspaceConnectionTitle";
 import { useAdaptiveWorkspaceLayout } from "../AdaptiveWorkspaceLayout";
 import { PullRequestsScreen } from "../../pull-requests/PullRequestsScreen";
 import { IssuesScreen } from "../../issues/IssuesScreen";
-import { renderTasksHeaderTitle } from "../../tasks/TasksHeader";
+import { useTasksHeaderTitle } from "../../tasks/TasksHeader";
 import { TasksScreen } from "../../tasks/TasksScreen";
 import {
   WorkspaceTabsContext,
@@ -55,6 +56,13 @@ import {
 import { openSettings } from "../../settings/settings-navigation";
 
 const TAB_TITLES = WORKSPACE_TAB_LABELS;
+
+/** The phone's Chats header leads with the Up.computer mark, as an icon only. */
+const CHATS_BRAND_ITEM = {
+  type: "custom",
+  element: <UpcomputerLogo size={30} />,
+  hidesSharedBackground: true,
+} as const;
 
 function WorkspaceRootTitle(props: {
   readonly columnWidth: number;
@@ -144,6 +152,9 @@ function WorkspaceRootContent() {
               : WORKSPACE_DOCK.height + WORKSPACE_DOCK.bottomGap + 16);
   const context = { ...workspace, bottomClearance };
   const backToMore = useBackToMoreHeaderItems(state.selectedTab, settingsOpen);
+  const phoneChats = !sidebarNavigation && !settingsOpen && state.selectedTab === "threads";
+  const phoneTasks = !sidebarNavigation && !settingsOpen && state.selectedTab === "tasks";
+  const tasksTitle = useTasksHeaderTitle();
 
   return (
     <WorkspaceTabsContext value={context}>
@@ -158,9 +169,10 @@ function WorkspaceRootContent() {
           ]}
           options={{
             // The phone's Chats shows no title: its groups name themselves.
-            title:
-              !sidebarNavigation && !settingsOpen && state.selectedTab === "threads"
-                ? ""
+            title: phoneChats
+              ? ""
+              : phoneTasks
+                ? tasksTitle
                 : settingsOpen
                   ? gt("Settings")
                   : enabled.length
@@ -177,15 +189,10 @@ function WorkspaceRootContent() {
             ...(enabled.length === 0
               ? { headerSearchBarOptions: undefined, unstable_headerRightItems: () => [] }
               : {}),
-            unstable_headerLeftItems: () => backToMore,
+            unstable_headerLeftItems: () => (phoneChats ? [CHATS_BRAND_ITEM] : backToMore),
             // Beside a detail column the tab bar names the tab and the detail header the page,
             // so the sidebar keeps the brand.
-            headerTitle:
-              !sidebarNavigation && !settingsOpen && state.selectedTab === "tasks"
-                ? renderTasksHeaderTitle
-                : sidebarNavigation
-                  ? renderHeaderTitle
-                  : undefined,
+            headerTitle: sidebarNavigation ? renderHeaderTitle : undefined,
           }}
         />
         <SafeAreaInsetsContext value={compactTabs ? { ...insets, bottom: 0 } : insets}>

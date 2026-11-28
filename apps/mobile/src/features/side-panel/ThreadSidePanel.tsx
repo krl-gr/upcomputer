@@ -1,38 +1,33 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { NavigationContext } from "@react-navigation/native";
 import { useGT } from "gt-react-native";
-import { use, useRef, type ReactNode } from "react";
-import { Pressable, ScrollView, View, type ScrollViewInstance } from "react-native";
+import type { MenuAction } from "@react-native-menu/menu";
+import { use, useState, type ReactNode } from "react";
+import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
+import { UpIcon } from "../../components/up-icons/UpIcon";
+import { upSymbol } from "../../components/up-icons/upSymbol";
 import { ListRow } from "../../components/ui/ListRow";
-import { ListSection } from "../../components/ui/ListSection";
-import { cn } from "../../lib/cn";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
+import { GlassCapsule } from "./GlassBarButton";
+import { Menu } from "../../components/ui/Menu";
 import { useSideChats } from "../../state/entities";
-import { useThreadServerBrowserTabs } from "../../state/preview";
-import { resolveThreadPrBadgeAction } from "../../state/thread-pr-presentation";
-import { useThreadPr } from "../../state/use-thread-pr";
-import { useThreadSelection } from "../../state/use-thread-selection";
-import { WorkspaceSlotOptionsContext } from "../../native/v5-workspace-context";
 import { BrowserPreviewScreen } from "../browser/BrowserPreviewRouteScreen";
 import { ThreadFileNavigatorPane } from "../files/thread-file-navigator-pane";
 import { InspectorCloseContext } from "../layout/inspector-bar-store";
 import { InspectorPanes } from "../layout/inspector-host";
 import { InspectorSheetContext } from "../layout/workspace-inspector-sheet";
-import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
+import { SelectsDetailOverPageContext } from "../layout/workspace/useSelectWorkspaceDetail";
 import { ReviewSheet } from "../review/ReviewSheet";
-import { renderTasksHeaderTitle } from "../tasks/TasksHeader";
 import { TasksScreen } from "../tasks/TasksScreen";
 import { ThreadTerminalRouteScreen } from "../terminal/ThreadTerminalRouteScreen";
-import { useLinkedPullRequestLines } from "../threads/LinkedPullRequestList";
 import { ThreadMergeBackContext } from "../threads/ThreadGitControls";
 import { ThreadPullRequestsSheet } from "../threads/ThreadPullRequestsSheet";
-import { useOpenThreadPullRequests } from "../threads/use-open-thread-pull-requests";
 import { InspectorSheetSizeContext } from "./inspectorSheetSize";
+import { createSidePanelBarStore, SidePanelBarSlot, SidePanelHeaderRow } from "./sidePanelBar";
 import { sidePanelNavigation } from "./sidePanelNavigation";
+import { useSidePanelEntries, type SurfaceEntry } from "./useSidePanelEntries";
 import {
   closeSidePanelTab,
   openSidePanelSurface,
@@ -43,19 +38,10 @@ import {
   type SidePanelTab,
 } from "./sidePanelState";
 
-const TASKS_ICON: AppSymbolName = { ios: "checklist", android: "check" };
-
-interface SurfaceEntry {
-  readonly surface: SidePanelSurface | "pullRequest";
-  readonly label: string;
-  readonly icon: AppSymbolName;
-  readonly available: boolean;
-  readonly hint?: string;
-}
-
 /**
- * The desktop's right panel beside a chat: a row of tabs, each showing one of the phone's
- * screens, and a new tab that lists the views the desktop offers for this chat, minus Device.
+ * The desktop's right panel beside a chat: one header row whose select switches between the open
+ * views, each one of the phone's screens, opens and closes views, and shows the current view's
+ * actions; with no view open it lists the views the desktop offers for this chat, minus Device.
  * A sheet on the phone, the inspector column on the iPad.
  */
 export function ThreadSidePanel(props: {
@@ -66,6 +52,8 @@ export function ThreadSidePanel(props: {
   readonly isRepo: boolean;
   readonly onMergeBack?: () => void;
   readonly onSelectFile: (path: string) => void;
+  /** A page opened from the panel closed its sheet; Back to the chat should bring the sheet back. */
+  readonly onLeaveSheet?: () => void;
   readonly renderSideChat: (threadId: string) => ReactNode;
 }) {
   const gt = useGT();
@@ -78,93 +66,39 @@ export function ThreadSidePanel(props: {
   const closeSheet = use(InspectorSheetContext);
   const size = use(InspectorSheetSizeContext);
   const insets = useSafeAreaInsets();
-  const { selectedEnvironmentRuntime } = useThreadSelection();
-  const browserTabs = useThreadServerBrowserTabs({
-    environmentId: thread.environmentId,
-    threadId: thread.id,
-    enabled: true,
-  });
-  const linkedLines = useLinkedPullRequestLines(thread, selectedEnvironmentRuntime);
-  const sideChats = useSideChats({ environmentId: thread.environmentId, threadId: thread.id });
-  const pr = useThreadPr(thread);
-  const openThreadPullRequests = useOpenThreadPullRequests();
-  const leave = (then: () => void) => (closeSheet ? closeSheet(then) : then());
+  const leave = (then: () => void) => {
+    if (!closeSheet) return then();
+    props.onLeaveSheet?.();
+    closeSheet(then);
+  };
   const update = (change: Parameters<typeof updateSidePanel>[1]) =>
     updateSidePanel(threadKey, change);
 
-  const projectHint = gt("Available when a project is open.");
-  const entries: ReadonlyArray<SurfaceEntry> = [
-    {
-      surface: "browser",
-      label: gt("Browser"),
-      icon: "globe",
-      available: browserTabs.tabs.length > 0,
-      hint: gt("Available when this thread has a browser tab."),
-    },
-    {
-      surface: "terminal",
-      label: gt("Terminal"),
-      icon: "terminal",
-      available: props.canOpenTerminal,
-      hint: projectHint,
-    },
-    {
-      surface: "files",
-      label: gt("Files"),
-      icon: "doc.on.doc",
-      available: props.cwd !== null,
-      hint: projectHint,
-    },
-    {
-      surface: "diff",
-      label: gt("Diff"),
-      icon: "file.diff",
-      available: props.cwd !== null && props.isRepo,
-      hint: gt("Available for Git repositories."),
-    },
-    // The desktop offers these only for a chat that has them.
-    ...(pr !== null && resolveThreadPrBadgeAction(pr).kind !== "list"
-      ? [
-          {
-            surface: "pullRequest" as const,
-            label: gt("Pull request"),
-            icon: PullRequestGlyph.pullRequest,
-            available: true,
-          },
-        ]
-      : []),
-    ...(linkedLines.length > 0
-      ? [
-          {
-            surface: "linkedItems" as const,
-            label: gt("Linked items"),
-            icon: "link" as const,
-            available: true,
-          },
-        ]
-      : []),
-    ...(sideChats.length > 0
-      ? [
-          {
-            surface: "sideChat" as const,
-            label: gt("Side chat"),
-            icon: "bubble.left.and.bubble.right" as const,
-            available: true,
-          },
-        ]
-      : []),
-    { surface: "tasks", label: gt("Tasks"), icon: TASKS_ICON, available: true },
-  ];
+  const { entries, openPullRequest } = useSidePanelEntries({
+    thread,
+    cwd: props.cwd,
+    canOpenTerminal: props.canOpenTerminal,
+    isRepo: props.isRepo,
+  });
   const entryOf = (surface: SidePanelSurface) => entries.find((entry) => entry.surface === surface);
 
   const open = (surface: SurfaceEntry["surface"]) => {
     if (surface === "pullRequest") {
-      if (pr !== null) leave(() => openThreadPullRequests(thread, pr));
+      leave(openPullRequest);
       return;
     }
     update((state) => openSidePanelSurface(state, surface));
   };
-  const closeTab = (id: SidePanelSurface) => update((state) => closeSidePanelTab(state, id));
+  // Closing the last view closes the panel too: an empty panel only repeats the bar's menu.
+  const closeTab = (id: SidePanelSurface) => {
+    const last = panel.tabs.length === 1 && panel.tabs[0]?.id === id;
+    update((state) => closeSidePanelTab(state, id));
+    if (last) closePanel?.();
+  };
+
+  const [barStore] = useState(createSidePanelBarStore);
+  const current = panel.tabs.find((tab) => tab.id === panel.active) ?? null;
+  const currentEntry = current ? entryOf(current.id) : undefined;
 
   const renderTab = (tab: SidePanelTab) => {
     const scoped =
@@ -181,160 +115,133 @@ export function ThreadSidePanel(props: {
       });
     return (
       <NavigationContext.Provider value={scoped}>
-        {/* The tab row closes the panel, so a screen's bar keeps no close button of its own. */}
-        <InspectorCloseContext value={null}>
-          <TabBarOptions>
-            <SurfaceScreen
-              tab={tab}
-              thread={thread}
-              cwd={props.cwd}
-              projectTitle={props.projectTitle}
-              onMergeBack={props.onMergeBack}
-              onSelectFile={(path) => leave(() => props.onSelectFile(path))}
-              onClose={() => closeTab(tab.id)}
-              renderSideChat={props.renderSideChat}
-            />
-          </TabBarOptions>
-        </InspectorCloseContext>
+        {/* A row's page opens over the chat through `scoped`, not in place of it. */}
+        <SelectsDetailOverPageContext value>
+          {/* The header row closes the panel, so a screen's bar keeps no close button of its own. */}
+          <InspectorCloseContext value={null}>
+            <SidePanelBarSlot store={barStore} viewKey={tab.id}>
+              <SurfaceScreen
+                tab={tab}
+                thread={thread}
+                cwd={props.cwd}
+                projectTitle={props.projectTitle}
+                onMergeBack={props.onMergeBack}
+                onSelectFile={(path) => leave(() => props.onSelectFile(path))}
+                onClose={() => closeTab(tab.id)}
+                renderSideChat={props.renderSideChat}
+              />
+            </SidePanelBarSlot>
+          </InspectorCloseContext>
+        </SelectsDetailOverPageContext>
       </NavigationContext.Provider>
     );
   };
 
-  const newTab = panel.active === null;
-  const tabRow = useRef<ScrollViewInstance>(null);
-  const toolbarButton = (button: {
-    readonly icon: AppSymbolName;
-    readonly label: string;
-    readonly onPress: () => void;
-  }) => (
-    <Pressable
-      key={button.label}
-      accessibilityRole="button"
-      accessibilityLabel={button.label}
-      onPress={button.onPress}
-      hitSlop={4}
-      className="size-10 items-center justify-center rounded-full active:opacity-60"
-    >
-      <SymbolView name={button.icon} size={18} weight="medium" tintColorClassName="accent-icon" />
-    </Pressable>
-  );
+  const openActions: MenuAction[] = entries.map((entry) => ({
+    id: `open:${entry.surface}`,
+    title: entry.label,
+    image: entry.symbol,
+    ...(entry.available ? {} : { subtitle: entry.hint, attributes: { disabled: true } }),
+  }));
+  const selectActions: MenuAction[] =
+    panel.tabs.length === 0
+      ? openActions
+      : [
+          {
+            id: "views",
+            title: "",
+            displayInline: true,
+            subactions: panel.tabs.map((tab) => {
+              const entry = entryOf(tab.id);
+              return {
+                id: `show:${tab.id}`,
+                title: entry?.label ?? tab.id,
+                image: entry?.symbol,
+                state: tab.id === current?.id ? ("on" as const) : ("off" as const),
+              };
+            }),
+          },
+          {
+            id: "manage",
+            title: "",
+            displayInline: true,
+            subactions: [
+              { id: "open", title: gt("Open view"), image: "plus", subactions: openActions },
+              ...(current ? [{ id: "close", title: gt("Close view"), image: "xmark" }] : []),
+            ],
+          },
+        ];
+  const onSelect = (id: string) => {
+    if (id === "close") {
+      if (current) closeTab(current.id);
+      return;
+    }
+    const [kind, surface] = id.split(":") as [string, SurfaceEntry["surface"] | undefined];
+    if (surface === undefined) return;
+    if (kind === "open") open(surface);
+    else if (kind === "show" && surface !== "pullRequest")
+      update((state) => ({ ...state, active: surface }));
+  };
+  const selectTitle = currentEntry?.label ?? current?.id ?? gt("Open view");
 
   return (
     <View className="flex-1 bg-sheet">
-      <View
-        className="flex-row items-center gap-1 border-b border-border pb-2 pl-3 pr-2"
-        style={{ paddingTop: size ? 18 : insets.top + 8 }}
-      >
-        <ScrollView
-          ref={tabRow}
-          // A tab just added, or the new tab, sits at the end; keep it in view.
-          onContentSizeChange={() => {
-            if (newTab || panel.active === panel.tabs.at(-1)?.id) tabRow.current?.scrollToEnd();
-          }}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          accessibilityLabel={gt("Scroll panel tabs")}
-          className="flex-1"
-          contentContainerClassName="items-center gap-1.5 pr-1"
-        >
-          {panel.tabs.map((tab) => {
-            const entry = entryOf(tab.id);
-            const title = entry?.label ?? tab.id;
-            const active = panel.active === tab.id;
-            return (
-              <View
-                key={tab.id}
-                className={cn(
-                  "h-10 flex-row items-center rounded-full pl-3 pr-1",
-                  active ? "bg-subtle" : undefined,
-                )}
-              >
-                <Pressable
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={title}
-                  onPress={() => update((state) => ({ ...state, active: tab.id }))}
-                  className="flex-row items-center gap-1.5 active:opacity-60"
-                >
-                  {entry ? (
-                    <SymbolView
-                      name={entry.icon}
-                      size={15}
-                      tintColorClassName={active ? "accent-icon" : "accent-icon-muted"}
-                    />
-                  ) : null}
-                  <Text
-                    numberOfLines={1}
-                    className={cn(
-                      "text-[15px] font-t3-medium",
-                      active ? "text-foreground" : "text-foreground-muted",
-                    )}
-                  >
-                    {title}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={gt("Close {title}", { title })}
-                  onPress={() => closeTab(tab.id)}
-                  hitSlop={6}
-                  className="size-8 items-center justify-center active:opacity-60"
-                >
-                  <SymbolView
-                    name="xmark"
-                    size={11}
-                    weight="semibold"
-                    tintColorClassName="accent-icon-muted"
-                  />
-                </Pressable>
-              </View>
-            );
-          })}
-          {newTab ? (
-            <View className="h-10 flex-row items-center gap-1.5 rounded-full bg-subtle px-3">
-              <SymbolView name="plus" size={14} weight="medium" tintColorClassName="accent-icon" />
-              <Text className="text-[15px] font-t3-medium text-foreground">{gt("New tab")}</Text>
-            </View>
-          ) : null}
-        </ScrollView>
-        {newTab
-          ? null
-          : toolbarButton({
-              icon: "plus",
-              label: gt("Add panel surface"),
-              onPress: () => update((state) => ({ ...state, active: null })),
-            })}
-        {size
-          ? toolbarButton({
-              icon: size.expanded
-                ? "arrow.down.right.and.arrow.up.left"
-                : "arrow.up.left.and.arrow.down.right",
-              label: size.expanded ? gt("Restore panel size") : gt("Maximize panel"),
-              onPress: size.toggle,
-            })
-          : null}
-        {closePanel
-          ? toolbarButton({
-              icon: "sidebar.right",
-              label: gt("Toggle right panel"),
-              onPress: closePanel,
-            })
-          : null}
-      </View>
+      <SidePanelHeaderRow
+        store={barStore}
+        viewKey={current?.id ?? null}
+        style={{ paddingTop: size ? 14 : insets.top + 8 }}
+        leading={
+          <Menu
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={gt("View: {title}", { title: selectTitle })}
+            actions={selectActions}
+            onPressAction={({ nativeEvent }) => onSelect(nativeEvent.event)}
+            style={{ flexShrink: 1 }}
+          >
+            <GlassCapsule wide>
+              <UpIcon
+                name={currentEntry?.icon ?? "plus"}
+                size={18}
+                tintColorClassName="accent-icon"
+              />
+              <Text numberOfLines={1} className="shrink text-[17px] font-t3-medium text-foreground">
+                {selectTitle}
+              </Text>
+              <UpIcon name="chevron-down" size={14} tintColorClassName="accent-icon-muted" />
+            </GlassCapsule>
+          </Menu>
+        }
+        trailing={
+          closePanel ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={gt("Close")}
+              onPress={closePanel}
+              hitSlop={4}
+              className="active:opacity-60"
+            >
+              <GlassCapsule>
+                <UpIcon name="close" size={18} tintColorClassName="accent-icon" />
+              </GlassCapsule>
+            </Pressable>
+          ) : null
+        }
+      />
       <View className="flex-1">
         <InspectorPanes
           content={{
-            active: panel.active ?? "new",
+            active: current?.id ?? "new",
             resetKeys: [threadKey, props.cwd],
             panes: [
-              ...(newTab
-                ? [
+              ...(current
+                ? []
+                : [
                     {
                       key: "new",
                       render: () => <SurfaceLauncher entries={entries} onOpen={open} />,
                     },
-                  ]
-                : []),
+                  ]),
               ...panel.tabs.map((tab) => ({ key: tab.id, render: () => renderTab(tab) })),
             ],
           }}
@@ -345,50 +252,29 @@ export function ThreadSidePanel(props: {
   );
 }
 
-/**
- * A tab's screen shows its own bar inside the tab. The tabs share one native stack, so UIKit
- * would offer Back to the tab beneath; the tab row is the way between tabs.
- */
-function TabBarOptions(props: { readonly children: ReactNode }) {
-  const slot = use(WorkspaceSlotOptionsContext);
-  if (slot === null) return props.children;
-  return (
-    <WorkspaceSlotOptionsContext
-      value={{
-        byRoute: slot.byRoute,
-        set: (routeKey, options) => slot.set(routeKey, { ...options, headerBackVisible: false }),
-      }}
-    >
-      {props.children}
-    </WorkspaceSlotOptionsContext>
-  );
-}
-
-/** The new tab: "Open a surface", as on the desktop. Views the chat can't show yet are dimmed. */
+/** No view open yet: the views to open, each its own card. Views the chat can't show are dimmed. */
 function SurfaceLauncher(props: {
   readonly entries: ReadonlyArray<SurfaceEntry>;
   readonly onOpen: (surface: SurfaceEntry["surface"]) => void;
 }) {
-  const gt = useGT();
   const insets = useSafeAreaInsets();
   return (
     <ScrollView
       className="flex-1 bg-sheet"
-      contentContainerClassName="px-5 pt-5"
+      contentContainerClassName="gap-2 px-5 pt-5"
       contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
     >
-      <ListSection title={gt("Open a surface")}>
-        {props.entries.map((entry) => (
+      {props.entries.map((entry) => (
+        <View key={entry.surface} className="overflow-hidden rounded-2xl border-continuous">
           <ListRow
-            key={entry.surface}
-            icon={entry.icon}
+            icon={upSymbol(entry.icon)}
             label={entry.label}
             description={entry.available ? undefined : entry.hint}
             disabled={!entry.available}
             onPress={() => props.onOpen(entry.surface)}
           />
-        ))}
-      </ListSection>
+        </View>
+      ))}
     </ScrollView>
   );
 }
@@ -446,14 +332,7 @@ function SurfaceScreen(props: {
         />
       );
     case "tasks":
-      return (
-        <>
-          <NativeStackScreenOptions
-            options={{ headerShown: true, headerTitle: renderTasksHeaderTitle }}
-          />
-          <TasksScreen />
-        </>
-      );
+      return <TasksScreen />;
     case "linkedItems":
       return <ThreadPullRequestsSheet route={{ params: routeParams }} />;
     case "sideChat": {

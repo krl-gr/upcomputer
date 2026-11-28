@@ -94,3 +94,13 @@ export const botColors = [
 ] as const;
 
 export type BotAccessory = BotAppearance["accessory"];
+
+/** The desktop character's states; each settles into its own pose and prop. */
+export type BotCharacterState =
+  | "idle"
+  | "working"
+  | "waiting"
+  | "attention"
+  | "done"
+  | "failed"
+  | "limited";

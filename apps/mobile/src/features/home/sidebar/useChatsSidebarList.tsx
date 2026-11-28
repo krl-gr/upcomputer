@@ -5,13 +5,17 @@ import type {
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { canBecomeBotChat } from "@t3tools/tasks-client/bots/bots";
 import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import { resolveThreadProjectIconStack } from "@t3tools/client-runtime/thread-project-icons";
 import type { Bot } from "@t3tools/tasks-contracts/v1";
 import { useAtomValue } from "@effect/atom-react";
-import { useGT } from "gt-react-native";
+import { useGT, useMessages } from "gt-react-native";
 import type { ComponentProps } from "react";
 import { Platform } from "react-native";
 
 import { scopedProjectKey, scopedThreadKey } from "../../../lib/scopedEntities";
+import { relativeTime } from "../../../lib/time";
+import { useServerConfigs } from "../../../state/entities";
 import { threadListEnvironmentsAtom } from "../../../state/presentation";
 import type { WorkspaceEnvironment } from "../../../state/workspaceModel";
 import { useBotSections } from "../../bots/botsData";
@@ -74,12 +78,14 @@ export interface ChatsSidebarListInput {
  */
 export function useChatsSidebarList(home: ChatsSidebarHomeProps, input: ChatsSidebarListInput) {
   const gt = useGT();
+  const messages = useMessages();
   const groupsOpen = useSidebarGroupsOpen();
   const newThreadWithoutProject = useNewThreadWithoutProject(
     home.selectedEnvironmentId,
     home.onStartNewTask,
   );
   const environmentsState = useAtomValue(threadListEnvironmentsAtom);
+  const serverConfigs = useServerConfigs();
   const botSections = useBotSections(input.searchEnvironmentIds);
   const botsByEnvironment = new Map<EnvironmentId, ReadonlyArray<Bot>>(
     botSections.flatMap((section) =>
@@ -134,7 +140,7 @@ export function useChatsSidebarList(home: ChatsSidebarHomeProps, input: ChatsSid
           action={
             item.group === "threads"
               ? {
-                  icon: "square.and.pencil",
+                  icon: "compose-note",
                   label: gt("New thread"),
                   onPress: () => void newThreadWithoutProject(),
                 }
@@ -145,11 +151,30 @@ export function useChatsSidebarList(home: ChatsSidebarHomeProps, input: ChatsSid
     if (item.type !== "v2-thread") return null;
     const thread = item.item.thread;
     const bots = botsByEnvironment.get(thread.environmentId);
+    const project = projectOf(thread.environmentId, thread.projectId);
+    const projectIcons = resolveThreadProjectIconStack({
+      thread,
+      ownProject: project,
+      projectById: (projectId) =>
+        input.projectByKey.get(scopedProjectKey(thread.environmentId, projectId as ProjectId)),
+      isScratchProject: (candidate) =>
+        isScratchProject(
+          candidate,
+          serverConfigs.get(candidate.environmentId)?.scratchWorkspaceRoot,
+        ),
+    });
     return (
       <SidebarThreadRow
         thread={thread}
-        project={projectOf(thread.environmentId, thread.projectId)}
-        timeLabel={item.timeLabel}
+        project={project}
+        iconProjects={projectIcons.visibleProjects}
+        noProjectIcon={projectIcons.showScratchIcon}
+        // The desktop's row always shows the time, even beside a status word.
+        timeLabel={relativeTime(
+          thread.latestUserMessageAt ?? thread.updatedAt,
+          undefined,
+          messages,
+        )}
         snoozed={item.item.snoozed}
         snoozeWakeLabel={item.snoozeWakeLabelText}
         snoozePresetMinute={item.snoozePresetMinute ?? ""}

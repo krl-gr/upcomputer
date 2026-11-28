@@ -7,7 +7,6 @@ import { use } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
-import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Menu } from "../../components/ui/Menu";
 import { useControlTheme } from "../../components/ui/useControlTheme";
@@ -21,14 +20,16 @@ import { toggleSidebarGroup, useSidebarGroupsOpen } from "../home/sidebar/sideba
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import { useSelectWorkspaceTab } from "../layout/workspace/useSelectWorkspaceTab";
+import { ThreadRunCountNumbers, useThreadRunCounts } from "../tasks/ThreadRunCounts";
 import { BotCharacter } from "./character/BotCharacter";
 import { botLists, useBotSections } from "./botsData";
-import { BOT_STATUS_DETAILS, BOT_STATUS_TONES } from "./botPresentation";
+import { BOT_CHARACTER_STATES, BOT_STATUS_DETAILS, BOT_STATUS_TONES } from "./botPresentation";
 import { botStatusOf, shownBots } from "./botState";
 
 /**
  * The desktop sidebar's Bots group in the Chats list: its header with New bot, and the bots of
- * the computers Chats shows, one line each, each opening its chat.
+ * the computers Chats shows, one line each (the character showing its state, the name, the run
+ * counts), each opening its chat.
  */
 export function BotsSection(props: {
   readonly environmentIds: ReadonlyArray<EnvironmentId>;
@@ -132,6 +133,7 @@ function BotRow(props: {
   const { colors } = useControlTheme();
   const { bot } = props;
   const status = botStatusOf(bot, props.shell);
+  const runCounts = useThreadRunCounts(props.environmentId, bot.threadId);
   const tone = status === null ? null : BOT_STATUS_TONES[status.kind];
   const statusText =
     tone === null
@@ -162,13 +164,13 @@ function BotRow(props: {
       onDelete={() => undefined}
       primaryAction={{
         accessibilityLabel: gt("Tasks for {name}", { name: bot.agent.name }),
-        icon: "checkmark.circle",
+        icon: "up.circle-check",
         label: gt("Tasks"),
         onPress: openTasks,
       }}
       secondaryAction={{
         accessibilityLabel: gt("Settings for {name}", { name: bot.agent.name }),
-        icon: "gearshape",
+        icon: "up.settings",
         label: gt("Settings"),
         onPress: openSettings,
       }}
@@ -190,7 +192,16 @@ function BotRow(props: {
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ selected: props.selected }}
-            accessibilityLabel={[bot.agent.name, statusText, props.computer]
+            accessibilityLabel={[
+              bot.agent.name,
+              statusText,
+              props.computer,
+              runCounts.length > 0
+                ? gt("Runs: {counts}", {
+                    counts: runCounts.map((count) => `${count.label} ${count.count}`).join(", "),
+                  })
+                : null,
+            ]
               .filter(Boolean)
               .join(", ")}
             accessibilityHint={gt("Opens the bot's chat")}
@@ -204,17 +215,22 @@ function BotRow(props: {
             )}
           >
             <View className="w-[22px] items-center justify-center">
-              <BotCharacter id={bot.agent.id} appearance={bot.appearance} size={24} />
+              <BotCharacter
+                id={bot.agent.id}
+                appearance={bot.appearance}
+                size={24}
+                state={status === null ? "idle" : BOT_CHARACTER_STATES[status.kind]}
+              />
             </View>
             <Text className="min-w-0 flex-1 text-base text-foreground" numberOfLines={1}>
               {bot.agent.name}
             </Text>
             {props.computer ? (
-              <Text className="shrink-0 text-sm text-foreground-tertiary" numberOfLines={1}>
+              <Text className="shrink-0 text-base text-foreground-tertiary" numberOfLines={1}>
                 {props.computer}
               </Text>
             ) : null}
-            {tone ? <SymbolView name={tone.icon} size={14} tintColorClassName={tone.tint} /> : null}
+            {runCounts.length > 0 ? <ThreadRunCountNumbers counts={runCounts} /> : null}
           </Pressable>
         </Menu>
       )}

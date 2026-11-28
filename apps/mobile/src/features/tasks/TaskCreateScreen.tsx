@@ -1,4 +1,4 @@
-import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, type ProjectId } from "@t3tools/contracts";
 import { DEFAULT_TASK_STATUS } from "@t3tools/tasks-contracts/v1";
 import { useGT } from "gt-react-native";
@@ -23,6 +23,8 @@ export type TaskCreateParams = {
   readonly environmentId: string;
   /** Your own task or routine, for the planner; left out for a worker task. */
   readonly plannerKind?: "task" | "routine";
+  /** Opened from a chat's side panel: the new task opens over the chat, so Back returns there. */
+  readonly overPage?: boolean;
 };
 
 /** A pick-one field: a chip that opens a native menu. */
@@ -132,15 +134,15 @@ export function TaskCreateScreen({ route }: StaticScreenProps<TaskCreateParams>)
     inFlight.current = false;
     setBusy(false);
     if (created === null) return;
+    const page = {
+      environmentId: String(environmentId),
+      taskId: String(created.id),
+      title: created.title,
+    };
+    // Over a chat the form becomes the task's page: closing it first would refocus the chat.
+    if (route.params.overPage) return navigation.dispatch(StackActions.replace("Task", page));
     navigation.goBack();
-    selectDetail({
-      name: "Task",
-      params: {
-        environmentId: String(environmentId),
-        taskId: String(created.id),
-        title: created.title,
-      },
-    });
+    selectDetail({ name: "Task", params: page });
   };
 
   return (

@@ -1,18 +1,18 @@
 import { useGT } from "gt-react-native";
 import { Pressable, View } from "react-native";
 
-import { SymbolView, type AppSymbolName } from "../../../components/ui/AppSymbol";
 import { AppText as Text } from "../../../components/ui/AppText";
+import { UpIcon, type UpIconName } from "../../../components/up-icons/UpIcon";
 
 export interface SidebarGroupAction {
-  readonly icon: AppSymbolName;
+  readonly icon: UpIconName;
   readonly label: string;
   readonly onPress: () => void;
 }
 
 /**
  * A desktop sidebar group's header as an accordion: its name, the pick a closed group still
- * applies ("Projects · Acme"), the chevron, and its button, always shown at finger size.
+ * applies ("Projects · Acme"), the chevron, and its button, a bare glyph with a finger-sized target.
  */
 export function SidebarGroupHeader(props: {
   readonly title: string;
@@ -40,10 +40,9 @@ export function SidebarGroupHeader(props: {
         >
           {title}
         </Text>
-        <SymbolView
-          name={props.open ? "chevron.down" : "chevron.right"}
-          size={12}
-          weight="semibold"
+        <UpIcon
+          name={props.open ? "chevron-down" : "chevron-right"}
+          size={17}
           tintColorClassName="accent-icon-muted"
         />
       </Pressable>
@@ -53,14 +52,9 @@ export function SidebarGroupHeader(props: {
           accessibilityLabel={props.action.label}
           onPress={props.action.onPress}
           hitSlop={6}
-          className="size-10 items-center justify-center rounded-full bg-subtle active:opacity-60"
+          className="size-11 items-center justify-center active:opacity-60"
         >
-          <SymbolView
-            name={props.action.icon}
-            size={17}
-            weight="medium"
-            tintColorClassName="accent-icon"
-          />
+          <UpIcon name={props.action.icon} size={21} tintColorClassName="accent-icon" />
         </Pressable>
       ) : null}
     </View>

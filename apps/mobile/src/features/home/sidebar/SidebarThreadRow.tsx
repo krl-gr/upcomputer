@@ -34,10 +34,12 @@ import {
   turnThreadIntoProject,
 } from "../../threads/turnThreadIntoProject";
 import { useCanShareWithGuest } from "../../threads/useCanShareWithGuest";
-import { TaskProjectBadge } from "../../tasks/TaskProjectBadge";
+import { ProjectFavicon } from "../../../components/ProjectFavicon";
+import { ThreadRunCountNumbers, useThreadRunCounts } from "../../tasks/ThreadRunCounts";
 import { useSwipeRowDormant } from "../swipe-row-activation";
 import { ThreadSwipeable } from "../thread-swipe-actions";
 import { threadCanArchive } from "../threadArchive";
+import { NoProjectIcon } from "./NoProjectIcon";
 import { sidebarThreadMenuActions } from "./sidebarThreadMenu";
 import { sidebarThreadStatusWord } from "./sidebarThreadStatus";
 
@@ -56,13 +58,20 @@ export interface SidebarThreadRowActions {
   readonly onFilterProject: (thread: EnvironmentThreadShell | null) => void;
 }
 
+const PROJECT_ICON_SIZE = 22;
+
 /**
- * A thread as one line of the desktop sidebar: its project, the status word, the title and the
- * time. Swiping shows Archive and Delete; a long press opens the desktop's thread menu.
+ * A thread as one line of the desktop sidebar: its project icons, the status word, the title,
+ * and its run counts or the time. Swiping shows Archive and Delete; a long press opens the
+ * desktop's thread menu.
  */
 export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   readonly thread: EnvironmentThreadShell;
   readonly project: EnvironmentProject | null;
+  /** The desktop's leading icons: the thread's own project, then those it links. */
+  readonly iconProjects: ReadonlyArray<EnvironmentProject>;
+  /** A chat without a project or links draws the desktop's muted "No project" square. */
+  readonly noProjectIcon: boolean;
   readonly timeLabel: string;
   readonly snoozed: boolean;
   readonly snoozeWakeLabel: string | undefined;
@@ -72,7 +81,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   readonly pinningSupported: boolean;
   readonly titleRegenerationSupported: boolean;
   readonly turnIntoBotOffered: boolean;
-  /** The list shows one project, so rows leave out its badge and the menu offers All projects. */
+  /** The list shows one project, so rows leave out its icons and the menu offers All projects. */
   readonly projectFiltered: boolean;
   readonly selected: boolean;
   readonly fullSwipeWidth: number | undefined;
@@ -88,6 +97,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const { width: windowWidth } = useWindowDimensions();
   const { colors } = useControlTheme();
   const { thread, actions } = props;
+  const runCounts = useThreadRunCounts(thread.environmentId, thread.id);
   const dormant = useSwipeRowDormant(props.activationKey);
   const canOperate = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
   const canShareWithGuest = useCanShareWithGuest(thread.environmentId);
@@ -216,7 +226,17 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       className={props.selected ? "bg-thread-selected" : "bg-screen"}
       accessibilityRole="button"
       accessibilityState={{ selected: props.selected }}
-      accessibilityLabel={[statusLabel, thread.title, timeLabel].filter(Boolean).join(", ")}
+      accessibilityLabel={[
+        statusLabel,
+        thread.title,
+        runCounts.length > 0 && !props.snoozed
+          ? gt("Runs: {counts}", {
+              counts: runCounts.map((count) => `${count.label} ${count.count}`).join(", "),
+            })
+          : timeLabel,
+      ]
+        .filter(Boolean)
+        .join(", ")}
       accessibilityHint={canOperate ? gt("Opens the thread. Swipe left to archive.") : undefined}
       onPress={() => {
         close();
@@ -224,13 +244,23 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       }}
     >
       <View className="min-h-[48px] flex-row items-center gap-3 px-5 py-2.5">
-        {props.projectFiltered ? null : (
-          <TaskProjectBadge
-            environmentId={thread.environmentId}
-            project={props.project}
-            size={22}
-          />
-        )}
+        {props.projectFiltered ? null : props.noProjectIcon ? (
+          <NoProjectIcon size={PROJECT_ICON_SIZE} />
+        ) : props.iconProjects.length > 0 ? (
+          <View className="flex-row items-center gap-0.5" accessibilityElementsHidden>
+            {props.iconProjects.map((project) => (
+              <ProjectFavicon
+                key={project.id}
+                environmentId={project.environmentId}
+                faviconPath={project.faviconPath}
+                projectIcon={project.projectIcon}
+                size={PROJECT_ICON_SIZE}
+                projectTitle={project.title}
+                workspaceRoot={project.workspaceRoot}
+              />
+            ))}
+          </View>
+        ) : null}
         <Text className="min-w-0 flex-1 text-base" numberOfLines={1}>
           {statusLabel ? (
             <Text className={cn("text-base", props.selected ? foreground : status?.className)}>
@@ -247,7 +277,14 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             {thread.title}
           </Text>
         </Text>
-        <Text className={cn("text-sm tabular-nums", muted)}>{timeLabel}</Text>
+        {runCounts.length > 0 && !props.snoozed ? (
+          <ThreadRunCountNumbers
+            counts={runCounts}
+            colorClassName={props.selected ? foreground : undefined}
+          />
+        ) : (
+          <Text className={cn("text-base tabular-nums", muted)}>{timeLabel}</Text>
+        )}
       </View>
     </RowPressable>
   );
@@ -275,7 +312,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         onSwipeableWillOpen={props.onSwipeableWillOpen}
         primaryAction={{
           accessibilityLabel: gt("Archive {title}", { title: thread.title }),
-          icon: "archivebox",
+          icon: "up.archive",
           label: gt("Archive", { $context: "verb, thread action" }),
           onPress: () => actions.onArchive(thread),
         }}

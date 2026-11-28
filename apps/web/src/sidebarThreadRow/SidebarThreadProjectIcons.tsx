@@ -8,7 +8,7 @@ import { NoProjectIcon, ProjectRowIcon } from "../sidebarProjects/sidebarProject
 import { useProjects, useServerConfigs } from "../state/entities";
 import type { SidebarThreadSummary } from "../types";
 import { useSidebarProjectScope } from "../sidebarProjects/sidebarProjectScope";
-import { resolveThreadProjectIconStack } from "./threadProjectIcons.logic";
+import { resolveThreadProjectIconStack } from "@t3tools/client-runtime/thread-project-icons";
 
 // One project index for every row, rebuilt only when the project list changes.
 const projectIndexes = new WeakMap<
