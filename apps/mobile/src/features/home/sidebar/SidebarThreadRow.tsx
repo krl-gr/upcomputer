@@ -2,8 +2,10 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import { resolveThreadProjectIconStack } from "@t3tools/client-runtime/thread-project-icons";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, type ProjectId } from "@t3tools/contracts";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
 import { useNavigation } from "@react-navigation/native";
 import { useGT, useMessages } from "gt-react-native";
@@ -16,6 +18,7 @@ import { AppText as Text } from "../../../components/ui/AppText";
 import { Menu } from "../../../components/ui/Menu";
 import { RowPressable } from "../../../components/ui/RowPressable";
 import { cn } from "../../../lib/cn";
+import { scopedProjectKey } from "../../../lib/scopedEntities";
 import { copyTextWithHaptic } from "../../../lib/copyTextWithHaptic";
 import { copyThreadReference } from "../../../lib/copyThreadReference";
 import { useControlTheme } from "../../../components/ui/useControlTheme";
@@ -68,10 +71,9 @@ const PROJECT_ICON_SIZE = 22;
 export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   readonly thread: EnvironmentThreadShell;
   readonly project: EnvironmentProject | null;
-  /** The desktop's leading icons: the thread's own project, then those it links. */
-  readonly iconProjects: ReadonlyArray<EnvironmentProject>;
-  /** A chat without a project or links draws the desktop's muted "No project" square. */
-  readonly noProjectIcon: boolean;
+  /** Resolves the desktop's leading icons: the thread's own project, then those it links. */
+  readonly projectByKey: ReadonlyMap<string, EnvironmentProject>;
+  readonly scratchWorkspaceRoot: string | undefined;
   readonly timeLabel: string;
   readonly snoozed: boolean;
   readonly snoozeWakeLabel: string | undefined;
@@ -104,6 +106,16 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const markUnread = useAtomCommand(threadEnvironment.markUnread, { reportFailure: false });
   const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
   const status = sidebarThreadStatusWord(thread);
+  // Resolved here, not by the list, so the memo above still skips rows whose inputs are unchanged.
+  const projectIcons = props.projectFiltered
+    ? null
+    : resolveThreadProjectIconStack({
+        thread,
+        ownProject: props.project,
+        projectById: (projectId) =>
+          props.projectByKey.get(scopedProjectKey(thread.environmentId, projectId as ProjectId)),
+        isScratchProject: (candidate) => isScratchProject(candidate, props.scratchWorkspaceRoot),
+      });
   const statusLabel = status ? m(status.label) : null;
   const timeLabel =
     props.snoozed && props.snoozeWakeLabel ? m(props.snoozeWakeLabel) : m(props.timeLabel);
@@ -244,11 +256,11 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       }}
     >
       <View className="min-h-[48px] flex-row items-center gap-3 px-5 py-2.5">
-        {props.projectFiltered ? null : props.noProjectIcon ? (
+        {projectIcons === null ? null : projectIcons.showScratchIcon ? (
           <NoProjectIcon size={PROJECT_ICON_SIZE} />
-        ) : props.iconProjects.length > 0 ? (
+        ) : projectIcons.visibleProjects.length > 0 ? (
           <View className="flex-row items-center gap-0.5" accessibilityElementsHidden>
-            {props.iconProjects.map((project) => (
+            {projectIcons.visibleProjects.map((project) => (
               <ProjectFavicon
                 key={project.id}
                 environmentId={project.environmentId}

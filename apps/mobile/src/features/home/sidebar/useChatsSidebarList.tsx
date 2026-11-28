@@ -5,8 +5,6 @@ import type {
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { canBecomeBotChat } from "@t3tools/tasks-client/bots/bots";
 import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
-import { isScratchProject } from "@t3tools/client-runtime/state/projects";
-import { resolveThreadProjectIconStack } from "@t3tools/client-runtime/thread-project-icons";
 import type { Bot } from "@t3tools/tasks-contracts/v1";
 import { useAtomValue } from "@effect/atom-react";
 import { useGT, useMessages } from "gt-react-native";
@@ -151,24 +149,12 @@ export function useChatsSidebarList(home: ChatsSidebarHomeProps, input: ChatsSid
     if (item.type !== "v2-thread") return null;
     const thread = item.item.thread;
     const bots = botsByEnvironment.get(thread.environmentId);
-    const project = projectOf(thread.environmentId, thread.projectId);
-    const projectIcons = resolveThreadProjectIconStack({
-      thread,
-      ownProject: project,
-      projectById: (projectId) =>
-        input.projectByKey.get(scopedProjectKey(thread.environmentId, projectId as ProjectId)),
-      isScratchProject: (candidate) =>
-        isScratchProject(
-          candidate,
-          serverConfigs.get(candidate.environmentId)?.scratchWorkspaceRoot,
-        ),
-    });
     return (
       <SidebarThreadRow
         thread={thread}
-        project={project}
-        iconProjects={projectIcons.visibleProjects}
-        noProjectIcon={projectIcons.showScratchIcon}
+        project={projectOf(thread.environmentId, thread.projectId)}
+        projectByKey={input.projectByKey}
+        scratchWorkspaceRoot={serverConfigs.get(thread.environmentId)?.scratchWorkspaceRoot}
         // The desktop's row always shows the time, even beside a status word.
         timeLabel={relativeTime(
           thread.latestUserMessageAt ?? thread.updatedAt,
