@@ -229,65 +229,70 @@ export function TaskDescriptionField(props: {
     if (saved) setEditing(null);
   };
   return (
-    <TaskPageSection
-      title={gt("Description")}
-      defaultOpen={props.defaultOpen}
-      forceOpen={editing !== null}
-      action={
-        props.canEdit ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={editing ? gt("Done") : gt("Edit description")}
-            disabled={saving}
-            hitSlop={8}
-            onPress={() => (editing ? inputRef.current?.blur() : setEditing({ text: props.value }))}
-            className="min-h-11 justify-center active:opacity-60"
-          >
-            <Text
-              className={cn("text-base", saving ? "text-foreground-muted" : "text-primary-text")}
+    <>
+      <TaskPageSection
+        title={gt("Description")}
+        defaultOpen={props.defaultOpen}
+        forceOpen={editing !== null}
+        action={
+          props.canEdit ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={editing ? gt("Done") : gt("Edit description")}
+              disabled={saving}
+              hitSlop={8}
+              onPress={() =>
+                editing ? inputRef.current?.blur() : setEditing({ text: props.value })
+              }
+              className="min-h-11 justify-center active:opacity-60"
             >
-              {editing
-                ? gt("Done")
-                : gt("Edit", { $context: "button that edits a task's description" })}
-            </Text>
-          </Pressable>
-        ) : undefined
-      }
-    >
-      {editing ? (
-        <TextInput
-          ref={(input) => {
-            inputRef.current = input;
-          }}
-          autoFocus
-          multiline
-          editable={!saving}
-          accessibilityLabel={gt("Task description")}
-          placeholder={gt("Description…")}
-          placeholderTextColorClassName="accent-foreground-muted"
-          maxLength={65536}
-          value={editing.text}
-          onChangeText={(text) => setEditing({ text })}
-          onBlur={() => void finish()}
-          inputAccessoryViewID={Platform.OS === "ios" ? accessoryId : undefined}
-          className="min-h-36 rounded-[14px] border-continuous bg-grouped-card p-4 text-base text-foreground"
-          style={{ textAlignVertical: "top" }}
-        />
-      ) : props.value.trim() ? (
-        <View className="px-1">
-          <TaskMarkdown
-            markdown={props.value}
-            environmentId={props.environmentId}
-            cwd={props.cwd}
+              <Text
+                className={cn("text-base", saving ? "text-foreground-muted" : "text-primary-text")}
+              >
+                {editing
+                  ? gt("Done")
+                  : gt("Edit", { $context: "button that edits a task's description" })}
+              </Text>
+            </Pressable>
+          ) : undefined
+        }
+      >
+        {editing ? (
+          <TextInput
+            ref={(input) => {
+              inputRef.current = input;
+            }}
+            autoFocus
+            multiline
+            editable={!saving}
+            accessibilityLabel={gt("Task description")}
+            placeholder={gt("Description…")}
+            placeholderTextColorClassName="accent-foreground-muted"
+            maxLength={65536}
+            value={editing.text}
+            onChangeText={(text) => setEditing({ text })}
+            onBlur={() => void finish()}
+            inputAccessoryViewID={Platform.OS === "ios" ? accessoryId : undefined}
+            className="min-h-36 rounded-[14px] border-continuous bg-grouped-card p-4 text-base text-foreground"
+            style={{ textAlignVertical: "top" }}
           />
-        </View>
-      ) : (
-        <Text className="px-1 text-base text-foreground-muted">
-          {gt("No description", { $context: "a task has no description" })}
-        </Text>
-      )}
+        ) : props.value.trim() ? (
+          <View className="px-1">
+            <TaskMarkdown
+              markdown={props.value}
+              environmentId={props.environmentId}
+              cwd={props.cwd}
+            />
+          </View>
+        ) : (
+          <Text className="px-1 text-base text-foreground-muted">
+            {gt("No description", { $context: "a task has no description" })}
+          </Text>
+        )}
+      </TaskPageSection>
       {editing && Platform.OS === "ios" ? (
         // A long description scrolls Done above out of view; the keyboard's bar keeps it in reach.
+        // Outside the section: it links to its input only when that input is already on screen.
         <InputAccessoryView nativeID={accessoryId}>
           <View className="flex-row justify-end border-t border-border bg-sheet px-4 py-2">
             <Pressable
@@ -301,6 +306,6 @@ export function TaskDescriptionField(props: {
           </View>
         </InputAccessoryView>
       ) : null}
-    </TaskPageSection>
+    </>
   );
 }

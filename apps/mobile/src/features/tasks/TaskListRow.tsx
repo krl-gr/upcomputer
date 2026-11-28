@@ -2,7 +2,7 @@ import type { MenuAction } from "@react-native-menu/menu";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { ScopedTaskListItem } from "@t3tools/tasks-client/state/taskPages";
 import { useGT, useMessages } from "gt-react-native";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
@@ -46,6 +46,28 @@ export const TaskListRow = memo(function TaskListRow(props: {
   const countsLabel = gt("Runs: {counts}", {
     counts: runCounts.map((count) => `${count.label} ${count.count}`).join(", "),
   });
+  const [pressed, setPressed] = useState(false);
+  // Beside the row's button, not in it: a menu nested in the row's button never gets the tap.
+  const counts =
+    runCounts.length > 0 ? (
+      <TaskRunCountButton
+        counts={runCounts}
+        label={countsLabel}
+        onSelect={(runStatus) => props.onSelect(task, runStatus)}
+      />
+    ) : run ? (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={gt("Worker: {state}", { state: run.label })}
+        accessibilityHint={gt("Shows this task's runs")}
+        hitSlop={10}
+        onPress={() => props.onSelect(task)}
+        style={{ height: ROW_MARK_SIZE }}
+        className="justify-center rounded-full border border-border px-2 active:opacity-60"
+      >
+        <Text className={cn("text-xs font-t3-medium", run.text)}>{run.label}</Text>
+      </Pressable>
+    ) : null;
   const row = (
     <Pressable
       accessibilityRole="button"
@@ -66,10 +88,9 @@ export const TaskListRow = memo(function TaskListRow(props: {
         .join(", ")}
       accessibilityHint={gt("Touch and hold for actions.")}
       onPress={() => props.onSelect(task)}
-      className={cn(
-        "gap-1.5 rounded-xl border-continuous px-3 py-2.5",
-        props.selected ? "bg-foreground/8" : "active:bg-foreground/5",
-      )}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      className={cn("gap-1.5 py-2.5 pl-3", counts ? "pr-2" : "pr-3")}
     >
       <View className="flex-row items-center gap-3">
         <TaskProjectBadge
@@ -90,25 +111,6 @@ export const TaskListRow = memo(function TaskListRow(props: {
         >
           {task.title}
         </Text>
-        {runCounts.length > 0 ? (
-          <TaskRunCountButton
-            counts={runCounts}
-            label={countsLabel}
-            onSelect={(runStatus) => props.onSelect(task, runStatus)}
-          />
-        ) : run ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={gt("Worker: {state}", { state: run.label })}
-            accessibilityHint={gt("Shows this task's runs")}
-            hitSlop={10}
-            onPress={() => props.onSelect(task)}
-            style={{ height: ROW_MARK_SIZE }}
-            className="justify-center rounded-full border border-border px-2 active:opacity-60"
-          >
-            <Text className={cn("text-xs font-t3-medium", run.text)}>{run.label}</Text>
-          </Pressable>
-        ) : null}
       </View>
       {task.tags.length > 0 || archived ? (
         <View
@@ -147,8 +149,14 @@ export const TaskListRow = memo(function TaskListRow(props: {
     { id: "copy-id", title: gt("Copy task ID"), image: "doc.on.doc" },
   ];
   return (
-    <View className="px-2 py-px">
+    <View
+      className={cn(
+        "mx-2 my-px flex-row items-start rounded-xl border-continuous",
+        props.selected ? "bg-foreground/8" : pressed ? "bg-foreground/5" : null,
+      )}
+    >
       <Menu
+        style={{ flex: 1, minWidth: 0 }}
         accessibilityLabel={task.title}
         actions={actions}
         onPressAction={({ nativeEvent }) => {
@@ -163,6 +171,7 @@ export const TaskListRow = memo(function TaskListRow(props: {
       >
         {row}
       </Menu>
+      {counts ? <View className="py-2.5 pr-3">{counts}</View> : null}
     </View>
   );
 });
