@@ -188,6 +188,8 @@
         "expo-audio",
         "expo-video",
         "expo-network",
+        "expo-app-metrics",
+        "expo-observe",
         "expo-sharing"
       ],
       "ios": {

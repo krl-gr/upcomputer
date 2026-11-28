@@ -128,14 +128,14 @@ describe("apply-branding rules", () => {
     );
   });
 
-  it("names the app where the iPhone app says T3 alone, but not monograms or Android-only files", () => {
+  it("names the app where the mobile app says T3 alone, but not monograms", () => {
     const source =
       'const a = gt("T3 Account"); const b = "Open T3 to refresh"; const c = `${n} more in T3`; const d = ["t3code", "T3", "teal"]; const e = "Link T3 Chat"; const f = msg("Open {app}", { app: "T3" });';
     expect(rebrandText(source, "apps/mobile/src/widgets/SubscriptionUsage.tsx")).toBe(
       'const a = gt("Up.computer Account"); const b = "Open Up.computer to refresh"; const c = `${n} more in Up.computer`; const d = ["t3code", "T3", "teal"]; const e = "Link T3 Chat"; const f = msg("Open {app}", { app: "Up.computer" });',
     );
     expect(isCopyFile("apps/mobile/src/widgets/SubscriptionUsage.tsx")).toBe(true);
-    expect(isCopyFile("apps/mobile/src/widgets/SubscriptionUsage.android.tsx")).toBe(false);
+    expect(isCopyFile("apps/mobile/src/widgets/SubscriptionUsage.android.tsx")).toBe(true);
   });
 
   it("rewrites the HTML render tool copy", () => {
