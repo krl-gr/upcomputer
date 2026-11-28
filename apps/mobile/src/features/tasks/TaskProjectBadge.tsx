@@ -3,7 +3,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { View } from "react-native";
 
 import { ProjectFavicon } from "../../components/ProjectFavicon";
-import { SymbolView } from "../../components/ui/AppSymbol";
+import { UpIcon } from "../../components/up-icons/UpIcon";
 
 /** A task's project as the desktop's table shows it: the project's badge, or a folder. */
 export function TaskProjectBadge(props: {
@@ -17,9 +17,9 @@ export function TaskProjectBadge(props: {
         style={{ width: props.size, height: props.size }}
         className="items-center justify-center"
       >
-        <SymbolView
-          name={props.project ? { ios: "tray", android: "folder" } : "folder"}
-          size={props.size * 0.75}
+        <UpIcon
+          name={props.project ? "inbox" : "folder"}
+          size={props.size * 0.9}
           tintColorClassName="accent-icon-muted"
         />
       </View>

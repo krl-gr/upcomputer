@@ -2,8 +2,10 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import { resolveThreadProjectIconStack } from "@t3tools/client-runtime/thread-project-icons";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, type ProjectId } from "@t3tools/contracts";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
 import { useNavigation } from "@react-navigation/native";
 import { useGT, useMessages } from "gt-react-native";
@@ -16,6 +18,7 @@ import { AppText as Text } from "../../../components/ui/AppText";
 import { Menu } from "../../../components/ui/Menu";
 import { RowPressable } from "../../../components/ui/RowPressable";
 import { cn } from "../../../lib/cn";
+import { scopedProjectKey } from "../../../lib/scopedEntities";
 import { copyTextWithHaptic } from "../../../lib/copyTextWithHaptic";
 import { copyThreadReference } from "../../../lib/copyThreadReference";
 import { useControlTheme } from "../../../components/ui/useControlTheme";
@@ -34,10 +37,12 @@ import {
   turnThreadIntoProject,
 } from "../../threads/turnThreadIntoProject";
 import { useCanShareWithGuest } from "../../threads/useCanShareWithGuest";
-import { TaskProjectBadge } from "../../tasks/TaskProjectBadge";
+import { ProjectFavicon } from "../../../components/ProjectFavicon";
+import { ThreadRunCountNumbers, useThreadRunCounts } from "../../tasks/ThreadRunCounts";
 import { useSwipeRowDormant } from "../swipe-row-activation";
 import { ThreadSwipeable } from "../thread-swipe-actions";
 import { threadCanArchive } from "../threadArchive";
+import { NoProjectIcon } from "./NoProjectIcon";
 import { sidebarThreadMenuActions } from "./sidebarThreadMenu";
 import { sidebarThreadStatusWord } from "./sidebarThreadStatus";
 
@@ -56,13 +61,19 @@ export interface SidebarThreadRowActions {
   readonly onFilterProject: (thread: EnvironmentThreadShell | null) => void;
 }
 
+const PROJECT_ICON_SIZE = 22;
+
 /**
- * A thread as one line of the desktop sidebar: its project, the status word, the title and the
- * time. Swiping shows Archive and Delete; a long press opens the desktop's thread menu.
+ * A thread as one line of the desktop sidebar: its project icons, the status word, the title,
+ * and its run counts or the time. Swiping shows Archive and Delete; a long press opens the
+ * desktop's thread menu.
  */
 export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   readonly thread: EnvironmentThreadShell;
   readonly project: EnvironmentProject | null;
+  /** Resolves the desktop's leading icons: the thread's own project, then those it links. */
+  readonly projectByKey: ReadonlyMap<string, EnvironmentProject>;
+  readonly scratchWorkspaceRoot: string | undefined;
   readonly timeLabel: string;
   readonly snoozed: boolean;
   readonly snoozeWakeLabel: string | undefined;
@@ -72,7 +83,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   readonly pinningSupported: boolean;
   readonly titleRegenerationSupported: boolean;
   readonly turnIntoBotOffered: boolean;
-  /** The list shows one project, so rows leave out its badge and the menu offers All projects. */
+  /** The list shows one project, so rows leave out its icons and the menu offers All projects. */
   readonly projectFiltered: boolean;
   readonly selected: boolean;
   readonly fullSwipeWidth: number | undefined;
@@ -88,12 +99,23 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const { width: windowWidth } = useWindowDimensions();
   const { colors } = useControlTheme();
   const { thread, actions } = props;
+  const runCounts = useThreadRunCounts(thread.environmentId, thread.id);
   const dormant = useSwipeRowDormant(props.activationKey);
   const canOperate = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
   const canShareWithGuest = useCanShareWithGuest(thread.environmentId);
   const markUnread = useAtomCommand(threadEnvironment.markUnread, { reportFailure: false });
   const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
   const status = sidebarThreadStatusWord(thread);
+  // Resolved here, not by the list, so the memo above still skips rows whose inputs are unchanged.
+  const projectIcons = props.projectFiltered
+    ? null
+    : resolveThreadProjectIconStack({
+        thread,
+        ownProject: props.project,
+        projectById: (projectId) =>
+          props.projectByKey.get(scopedProjectKey(thread.environmentId, projectId as ProjectId)),
+        isScratchProject: (candidate) => isScratchProject(candidate, props.scratchWorkspaceRoot),
+      });
   const statusLabel = status ? m(status.label) : null;
   const timeLabel =
     props.snoozed && props.snoozeWakeLabel ? m(props.snoozeWakeLabel) : m(props.timeLabel);
@@ -216,7 +238,17 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       className={props.selected ? "bg-thread-selected" : "bg-screen"}
       accessibilityRole="button"
       accessibilityState={{ selected: props.selected }}
-      accessibilityLabel={[statusLabel, thread.title, timeLabel].filter(Boolean).join(", ")}
+      accessibilityLabel={[
+        statusLabel,
+        thread.title,
+        runCounts.length > 0 && !props.snoozed
+          ? gt("Runs: {counts}", {
+              counts: runCounts.map((count) => `${count.label} ${count.count}`).join(", "),
+            })
+          : timeLabel,
+      ]
+        .filter(Boolean)
+        .join(", ")}
       accessibilityHint={canOperate ? gt("Opens the thread. Swipe left to archive.") : undefined}
       onPress={() => {
         close();
@@ -224,13 +256,23 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       }}
     >
       <View className="min-h-[48px] flex-row items-center gap-3 px-5 py-2.5">
-        {props.projectFiltered ? null : (
-          <TaskProjectBadge
-            environmentId={thread.environmentId}
-            project={props.project}
-            size={22}
-          />
-        )}
+        {projectIcons === null ? null : projectIcons.showScratchIcon ? (
+          <NoProjectIcon size={PROJECT_ICON_SIZE} />
+        ) : projectIcons.visibleProjects.length > 0 ? (
+          <View className="flex-row items-center gap-0.5" accessibilityElementsHidden>
+            {projectIcons.visibleProjects.map((project) => (
+              <ProjectFavicon
+                key={project.id}
+                environmentId={project.environmentId}
+                faviconPath={project.faviconPath}
+                projectIcon={project.projectIcon}
+                size={PROJECT_ICON_SIZE}
+                projectTitle={project.title}
+                workspaceRoot={project.workspaceRoot}
+              />
+            ))}
+          </View>
+        ) : null}
         <Text className="min-w-0 flex-1 text-base" numberOfLines={1}>
           {statusLabel ? (
             <Text className={cn("text-base", props.selected ? foreground : status?.className)}>
@@ -247,7 +289,14 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             {thread.title}
           </Text>
         </Text>
-        <Text className={cn("text-sm tabular-nums", muted)}>{timeLabel}</Text>
+        {runCounts.length > 0 && !props.snoozed ? (
+          <ThreadRunCountNumbers
+            counts={runCounts}
+            colorClassName={props.selected ? foreground : undefined}
+          />
+        ) : (
+          <Text className={cn("text-base tabular-nums", muted)}>{timeLabel}</Text>
+        )}
       </View>
     </RowPressable>
   );
@@ -275,7 +324,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         onSwipeableWillOpen={props.onSwipeableWillOpen}
         primaryAction={{
           accessibilityLabel: gt("Archive {title}", { title: thread.title }),
-          icon: "archivebox",
+          icon: "up.archive",
           label: gt("Archive", { $context: "verb, thread action" }),
           onPress: () => actions.onArchive(thread),
         }}

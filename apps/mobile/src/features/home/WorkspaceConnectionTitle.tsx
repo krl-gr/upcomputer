@@ -139,8 +139,8 @@ export function WorkspaceConnectionTitle(props: {
           />
         ) : (
           <SymbolView
-            name="wifi.slash"
-            size={Math.round((size === "pageTitle" ? 17 : 15) * scale)}
+            name="up.wifi-off"
+            size={Math.round((size === "pageTitle" ? 20 : 18) * scale)}
             tintColorClassName={"accent-icon-muted"}
             type="monochrome"
           />

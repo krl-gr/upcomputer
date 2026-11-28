@@ -4,7 +4,7 @@ import { SafeAreaInsetsContext, useSafeAreaInsets } from "react-native-safe-area
 import { PaneContext } from "../../components/ui/Pane";
 import { PaneSheet } from "../../components/ui/PaneSheet";
 import { RoutedFormSheetContext } from "../../components/ui/RoutedFormSheetContext";
-import { InspectorSheetSizeContext, useInspectorSheetSize } from "../side-panel/inspectorSheetSize";
+import { formSheetDetents } from "../../native/sheet-surface";
 import { InspectorPanes } from "./inspector-host";
 import type { InspectorContent } from "./inspector-panes";
 
@@ -28,9 +28,7 @@ export function WorkspaceInspectorSheet(props: {
     mounted: props.open,
     session: 0,
   });
-  const size = useInspectorSheetSize();
   if (presented.open !== props.open) {
-    if (props.open) size.reset();
     setPresented({
       open: props.open,
       mounted: presented.mounted || props.open,
@@ -53,8 +51,7 @@ export function WorkspaceInspectorSheet(props: {
     <PaneSheet
       key={presented.session}
       isOpen={props.open}
-      detents={size.detents}
-      onDetentChanged={size.onDetentChanged}
+      detents={formSheetDetents(0.6, 0.95)}
       // The inspector's bar holds its actions, so the Duo needs no rail inside this sheet.
       prefersHorizontalBars
       onDismiss={closed}
@@ -64,16 +61,14 @@ export function WorkspaceInspectorSheet(props: {
       }}
     >
       <InspectorSheetContext value={close}>
-        <InspectorSheetSizeContext value={size}>
-          <RoutedFormSheetContext value={false}>
-            {/* The sheet starts below the status bar. */}
-            <SafeAreaInsetsContext value={{ ...insets, top: 0 }}>
-              <PaneContext value="inspector">
-                <InspectorPanes content={props.content} onClose={() => close()} />
-              </PaneContext>
-            </SafeAreaInsetsContext>
-          </RoutedFormSheetContext>
-        </InspectorSheetSizeContext>
+        <RoutedFormSheetContext value={false}>
+          {/* The sheet starts below the status bar. */}
+          <SafeAreaInsetsContext value={{ ...insets, top: 0 }}>
+            <PaneContext value="inspector">
+              <InspectorPanes content={props.content} onClose={() => close()} />
+            </PaneContext>
+          </SafeAreaInsetsContext>
+        </RoutedFormSheetContext>
       </InspectorSheetContext>
     </PaneSheet>
   );

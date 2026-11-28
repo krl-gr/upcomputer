@@ -121,7 +121,7 @@ import {
   threadRouteIsHydrating,
   threadRouteOpensDraft,
 } from "./thread-route-hydration";
-import { ThreadHeader } from "./ThreadHeader";
+import { ChatThreadHeader } from "../side-panel/ChatThreadHeader";
 import { resumeThread } from "./resume-thread";
 import {
   useAndroidWorkspaceBack,
@@ -138,6 +138,8 @@ import { useStartSideChat } from "./useStartSideChat";
 import { useThreadStatusAnnouncements } from "./useThreadStatusAnnouncements";
 import type { ThreadInspectorMode, ThreadInspectorTarget } from "./thread-inspector-navigation";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
+import { ThreadRunsSeen } from "../tasks/ThreadRunCounts";
+import { useReopenSidePanelOnReturn } from "../side-panel/useReopenSidePanelOnReturn";
 
 function firstRouteParam(value: string | string[] | undefined): string | null {
   const first = Array.isArray(value) ? value[0] : value;
@@ -614,6 +616,7 @@ function ThreadRouteContent(
     setChosenInspectorMode("panel");
     showInspector();
   };
+  const reopenSidePanelOnReturn = useReopenSidePanelOnReturn(handleOpenSidePanel);
   const handleSelectInspectorFile = (path: string) => {
     if (selectedThread === null) {
       return;
@@ -659,6 +662,7 @@ function ThreadRouteContent(
         isRepo={gitStatus.data?.isRepo ?? true}
         onMergeBack={threadGitControlProps.onMergeBack}
         onSelectFile={handleSelectInspectorFile}
+        onLeaveSheet={reopenSidePanelOnReturn}
         renderSideChat={(sideChatId) => (
           <ThreadInspectorPreview
             target={{
@@ -1065,7 +1069,7 @@ function ThreadRouteContent(
         <ThreadScreenBinding
           header={
             props.inspectorPresentation ? null : (
-              <ThreadHeader
+              <ChatThreadHeader
                 title={selectedThread.title}
                 subtitle={threadStatusLabel ?? headerSubtitle}
                 gitControls={threadGitControlProps}
@@ -1073,6 +1077,12 @@ function ThreadRouteContent(
                 inspectorMode={inspectorMode}
                 onOpenFilesInspector={handleOpenFilesInspector}
                 onOpenSidePanel={handleOpenSidePanel}
+                sidePanel={{
+                  thread: selectedThread,
+                  cwd: selectedThreadCwd,
+                  canOpenTerminal: threadGitControlProps.canOpenTerminal,
+                  isRepo: gitStatus.data?.isRepo ?? true,
+                }}
                 onReturnToThread={props.onReturnToThread}
               />
             )
@@ -1172,6 +1182,7 @@ function ThreadRouteContent(
 
   return (
     <>
+      <ThreadRunsSeen environmentId={selectedThread.environmentId} threadId={selectedThread.id} />
       {inspectorHeader}
       {!props.inspectorPresentation && inspectorContent ? (
         <Inspector

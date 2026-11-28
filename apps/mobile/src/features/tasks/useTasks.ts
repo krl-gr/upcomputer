@@ -12,8 +12,6 @@ import {
   TASK_HISTORY_EVENT_KINDS,
   taskWorkflowVersionOf,
   type Task,
-  type TaskAgent,
-  type TaskAgentRun,
   type TaskEvent,
   type TaskId,
   type TaskListSettings,
@@ -257,8 +255,6 @@ export interface TaskDetailData {
   readonly status: "loading" | "ready" | "missing" | "error";
   readonly error: string | null;
   readonly events: readonly TaskEvent[] | null;
-  readonly latestRun: TaskAgentRun | null;
-  readonly worker: TaskAgent | null;
   readonly refresh: () => Promise<void>;
   /** Shows a change this device made before the change stream reports it. */
   readonly applyLocal: (task: Task) => void;
@@ -268,32 +264,21 @@ interface DetailSnapshot {
   readonly key: string;
   readonly task: Task | null;
   readonly events: readonly TaskEvent[] | null;
-  readonly latestRun: TaskAgentRun | null;
-  readonly worker: TaskAgent | null;
   readonly error: string | null;
 }
 
 async function loadDetail(client: TasksWebRpcClient, taskId: TaskId, key: string) {
-  const [task, events, runs] = await Promise.all([
+  const [task, events] = await Promise.all([
     client.tasks.get({ id: taskId }),
     client.tasks
       .events({ taskId, kinds: TASK_DETAIL_EVENT_KINDS, limit: 50 })
       .then((result) => result.events)
       .catch(() => null),
-    client.agents.searchRuns({ taskId, limit: 1 }).then((result) => result.runs),
   ]);
-  const latestRun = runs[0] ?? null;
-  const worker =
-    latestRun === null
-      ? null
-      : ((await client.agents
-          .search({ includeArchived: true })
-          .then((result) => result.agents.find((agent) => agent.id === latestRun.agentId))
-          .catch(() => undefined)) ?? null);
-  return { key, task, events, latestRun, worker, error: null } satisfies DetailSnapshot;
+  return { key, task, events, error: null } satisfies DetailSnapshot;
 }
 
-/** One task with its history and latest worker run, reloaded when the change stream names it. */
+/** One task with its history, reloaded when the change stream names it. */
 export function useTaskDetail(
   environmentId: EnvironmentId,
   taskId: TaskId,
@@ -317,8 +302,6 @@ export function useTaskDetail(
           key,
           task: previous?.key === key ? previous.task : null,
           events: previous?.key === key ? previous.events : null,
-          latestRun: previous?.key === key ? previous.latestRun : null,
-          worker: previous?.key === key ? previous.worker : null,
           error: message,
         }));
       },
@@ -353,8 +336,6 @@ export function useTaskDetail(
             : "missing",
     error: current?.error ?? null,
     events: current?.events ?? null,
-    latestRun: current?.latestRun ?? null,
-    worker: current?.worker ?? null,
     refresh: load,
     applyLocal: (task) => {
       // A reload already in flight may predate this change; the change stream reloads after it.

@@ -1,5 +1,5 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { createBotLists } from "@t3tools/tasks-client/bots/botList";
 import type { Bot } from "@t3tools/tasks-contracts/v1";
 import { useCallback, useMemo, useSyncExternalStore } from "react";
@@ -101,4 +101,13 @@ export function useComposerBots(environmentId: EnvironmentId | null): ReadonlyAr
   const sections = useBotSections(environmentId === null ? [] : [environmentId]);
   const section = sections[0];
   return section?.state === "ready" ? section.bots : NO_BOTS;
+}
+
+/** The bot whose chat this thread is, once its computer's bot list has loaded. */
+export function useThreadBot(
+  environmentId: EnvironmentId | null,
+  threadId: ThreadId | null,
+): Bot | null {
+  const bots = useComposerBots(threadId === null ? null : environmentId);
+  return threadId === null ? null : (bots.find((bot) => bot.threadId === threadId) ?? null);
 }

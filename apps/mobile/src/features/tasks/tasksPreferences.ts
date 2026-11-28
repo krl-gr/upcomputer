@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import * as SecureStore from "expo-secure-store";
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import { DEFAULT_WORKER_TASK_FILTERS, WorkerTaskFilters } from "./taskListState";
 
@@ -92,6 +92,13 @@ export function updateTasksPreferences(patch: Partial<TasksPreferences>) {
   void SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(current)).catch(() => undefined);
 }
 
+/** Views left out of the phone's first version; a saved choice of one falls back to Worker tasks. */
+export const HIDDEN_TASKS_VIEWS: ReadonlyArray<TasksView> = ["mine", "routines"];
+
 export function useTasksPreferences(): TasksPreferences {
-  return useSyncExternalStore(subscribe, read, read);
+  const stored = useSyncExternalStore(subscribe, read, read);
+  return useMemo(
+    () => (HIDDEN_TASKS_VIEWS.includes(stored.view) ? { ...stored, view: "workers" } : stored),
+    [stored],
+  );
 }

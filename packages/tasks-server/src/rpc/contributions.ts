@@ -420,6 +420,8 @@ const TASK_AGENTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
     [TASK_AGENTS_RPC_METHODS.search]: read,
     [TASK_AGENTS_RPC_METHODS.delete]: operate,
     [TASK_AGENTS_RPC_METHODS.searchRuns]: read,
+    [TASK_AGENTS_RPC_METHODS.stopRun]: operate,
+    [TASK_AGENTS_RPC_METHODS.messageRun]: operate,
   },
   handlers: () =>
     TaskAgentsRpcGroup.toLayer(
@@ -485,6 +487,25 @@ const TASK_AGENTS_RPC_CONTRIBUTION = defineNamespacedRpcContribution({
             Effect.gen(function* () {
               const repository = yield* TaskRepository;
               return { runs: yield* repository.searchAgentRuns(input) };
+            }),
+          ),
+        // A run that already ended comes back as it is, so a stop that races the run's own end is no error.
+        [TASK_AGENTS_RPC_METHODS.stopRun]: (input) =>
+          asTaskRpc(
+            Effect.gen(function* () {
+              const taskAgents = yield* TaskAgentService;
+              const run = yield* taskAgents.stopRun(input);
+              if (Option.isNone(run)) return yield* taskError("This worker run no longer exists.");
+              return run.value;
+            }),
+          ),
+        [TASK_AGENTS_RPC_METHODS.messageRun]: (input) =>
+          asTaskRpc(
+            Effect.gen(function* () {
+              const taskAgents = yield* TaskAgentService;
+              const result = yield* taskAgents.messageRun({ id: input.runId, text: input.text });
+              if (!result.ok) return yield* taskError(result.error);
+              return { run: result.run, continued: result.continued };
             }),
           ),
       }),

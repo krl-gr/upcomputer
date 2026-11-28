@@ -79,7 +79,7 @@ export function AutomationRouteScreen({ route }: StaticScreenProps<AutomationRou
             ? [
                 {
                   title: gt("More actions"),
-                  icon: "ellipsis",
+                  icon: "up.more-horizontal",
                   items: [
                     {
                       id: "status",

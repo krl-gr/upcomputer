@@ -2,12 +2,13 @@ import type { BotStatusDetail, BotStatusKind } from "@t3tools/tasks-client/bots/
 import { defaultBotAppearance, type Bot, type BotAppearance } from "@t3tools/tasks-contracts/v1";
 import { msg } from "gt-react-native";
 
-import type { AppSymbolName } from "../../components/ui/AppSymbol";
+import type { UpIconName } from "../../components/up-icons/UpIcon";
+import type { BotCharacterState } from "./character/catalog";
 
 export interface BotStatusTone {
   /** English, from `msg()`; the desktop's thread status words. */
   readonly label: string;
-  readonly icon: AppSymbolName;
+  readonly icon: UpIconName;
   readonly tint: string;
   readonly text: string;
 }
@@ -15,58 +16,71 @@ export interface BotStatusTone {
 export const BOT_STATUS_TONES: { readonly [Kind in BotStatusKind]: BotStatusTone } = {
   preparing: {
     label: msg("Setting up", { $context: "bot status" }),
-    icon: "circle.dashed",
+    icon: "circle-dashed",
     tint: "accent-adaptive-sky-600-400",
     text: "text-adaptive-sky-600-400",
   },
   working: {
     label: msg("Working", { $context: "bot status" }),
-    icon: "circle.dashed",
+    icon: "circle-dashed",
     tint: "accent-adaptive-sky-600-400",
     text: "text-adaptive-sky-600-400",
   },
   waiting: {
     label: msg("Waiting", { $context: "bot status" }),
-    icon: "circle.dashed.inset.filled",
+    icon: "circle-dashed",
     tint: "accent-foreground-muted",
     text: "text-foreground-muted",
   },
   approval: {
     label: msg("Pending approval", { $context: "bot status" }),
-    icon: "exclamationmark.shield",
+    icon: "shield-alert",
     tint: "accent-warning-foreground",
     text: "text-warning-foreground",
   },
   input: {
     label: msg("Awaiting input", { $context: "bot status" }),
-    icon: "questionmark.bubble",
+    icon: "message-question",
     tint: "accent-adaptive-indigo-600-300",
     text: "text-adaptive-indigo-600-300",
   },
   request: {
     label: msg("Guest request", { $context: "bot status" }),
-    icon: "person.crop.circle",
+    icon: "user-circle",
     tint: "accent-adaptive-fuchsia-600-300",
     text: "text-adaptive-fuchsia-600-300",
   },
   done: {
     label: msg("Completed", { $context: "bot status" }),
-    icon: "checkmark.circle",
+    icon: "circle-check",
     tint: "accent-adaptive-emerald-700-300",
     text: "text-adaptive-emerald-700-300",
   },
   failed: {
     label: msg("Failed", { $context: "bot status" }),
-    icon: "exclamationmark.circle",
+    icon: "alert-circle",
     tint: "accent-danger-foreground",
     text: "text-danger-foreground",
   },
   limited: {
     label: msg("Limited", { $context: "bot status, usage limit reached" }),
-    icon: "exclamationmark.circle",
+    icon: "alert-circle",
     tint: "accent-warning-foreground",
     text: "text-warning-foreground",
   },
+};
+
+/** The character's state for each status, as the desktop's Bots section picks it. */
+export const BOT_CHARACTER_STATES: { readonly [Kind in BotStatusKind]: BotCharacterState } = {
+  preparing: "working",
+  working: "working",
+  waiting: "waiting",
+  approval: "attention",
+  input: "attention",
+  request: "attention",
+  done: "done",
+  failed: "failed",
+  limited: "limited",
 };
 
 export const BOT_STATUS_DETAILS: { readonly [Detail in BotStatusDetail]: string } = {

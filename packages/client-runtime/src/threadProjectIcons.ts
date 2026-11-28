@@ -1,12 +1,9 @@
 import { isWindowsAbsolutePath, normalizeProjectPathForComparison } from "@t3tools/shared/path";
 
 /*
- * The leading project icons of a sidebar thread row, as V1's
- * `resolveThreadProjectIconStack` decided them. A thread shows under its own
- * project, the projects it links (`linkedProjectIds` on the thread shell) and
- * the projects its own project links. The scratch project ("No project") is
- * never drawn: a chat without a project shows its links, or V1's muted chat
- * icon while it has none. Links are environment-local; unknown ids are dropped.
+ * A sidebar thread row's leading project icons (web and mobile): its own project, its links and
+ * its project's links. The scratch project ("No project") is never drawn; a chat without a
+ * project shows its links, or the muted chat icon. Links are environment-local.
  */
 
 interface IconStackProject {

@@ -5,14 +5,15 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { ScopedTaskListItem } from "@t3tools/tasks-client/state/taskPages";
 import { CURRENT_TASK_WORKFLOW_VERSION } from "@t3tools/tasks-contracts/v1";
 import { useGT, useMessages } from "gt-react-native";
-import { useRef, useState, type ReactNode } from "react";
+import { use, useRef, useState, type ReactNode } from "react";
 import { Keyboard, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
-import { SymbolView } from "../../components/ui/AppSymbol";
+import { UpIcon } from "../../components/up-icons/UpIcon";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import * as Dialog from "../../components/ui/Dialog";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { RefreshControl } from "../../components/ui/RefreshControl";
 import { Toolbar } from "../../components/ui/Toolbar";
@@ -20,7 +21,10 @@ import { useContentTopInset } from "../../components/ui/useBarInset";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
 import { useProjects } from "../../state/entities";
-import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
+import {
+  SelectsDetailOverPageContext,
+  useSelectWorkspaceDetail,
+} from "../layout/workspace/useSelectWorkspaceDetail";
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import { TaskListRow } from "./TaskListRow";
 import {
@@ -31,6 +35,7 @@ import {
   LAST_RUN_OPTIONS,
   taskListEmptyState,
   taskListSections,
+  taskStatusChoices,
   toggledTag,
   workerStatusOptions,
   workerTagOptions,
@@ -39,7 +44,7 @@ import {
 } from "./taskListState";
 import { TasksToolbar } from "./TasksHeader";
 import { updateTasksPreferences, useTasksPreferences } from "./tasksPreferences";
-import { useTasksAccess } from "./tasksRpc";
+import { readTasksClient, useTasksAccess } from "./tasksRpc";
 import { useTaskList, useTaskListSettings } from "./useTasks";
 
 type TaskListEntry =
@@ -134,8 +139,9 @@ export function WorkerTasksView(props: {
   });
 
   const selectDetail = useSelectWorkspaceDetail();
+  const overPage = use(SelectsDetailOverPageContext) && Platform.OS === "ios";
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const selectTask = (task: ScopedTaskListItem) => {
+  const selectTask = (task: ScopedTaskListItem, runStatus?: string) => {
     Keyboard.dismiss();
     setSelectedKey(`t:${task.id}`);
     selectDetail({
@@ -144,10 +150,22 @@ export function WorkerTasksView(props: {
         environmentId: String(task.environmentId),
         taskId: String(task.id),
         title: task.title,
+        ...(runStatus === undefined ? {} : { runStatus }),
       },
     });
   };
   const canCreate = connected && access?.canMutateTasks === true;
+  // The task page's status change; the change stream then moves the row to its new group.
+  const moveStatus = (task: ScopedTaskListItem, status: string) => {
+    void readTasksClient(task.environmentId)
+      .tasks.update({ id: task.id, status })
+      .catch((cause: unknown) =>
+        Dialog.alert(
+          gt("Couldn't change the status"),
+          cause instanceof Error ? cause.message : String(cause),
+        ),
+      );
+  };
 
   const statusOptions = workerStatusOptions(counts, workflowVersion, filters.status);
   const tagOptions = workerTagOptions(page?.tasks ?? [], filters.tags);
@@ -235,7 +253,6 @@ export function WorkerTasksView(props: {
         ))}
       </Toolbar.Menu>
       <Toolbar.MenuAction
-        icon="arrow.counterclockwise"
         disabled={appliedCount === 0}
         onPress={() => setFilters(DEFAULT_WORKER_TASK_FILTERS)}
       >
@@ -251,7 +268,10 @@ export function WorkerTasksView(props: {
         createDisabled={!canCreate}
         onCreate={() =>
           environmentId !== null &&
-          navigation.navigate("TaskCreate", { environmentId: String(environmentId) })
+          navigation.navigate("TaskCreate", {
+            environmentId: String(environmentId),
+            ...(overPage ? { overPage: true } : {}),
+          })
         }
         menuLabel={
           appliedCount > 0 ? gt("Filters, {count} applied", { count: appliedCount }) : gt("Filters")
@@ -293,6 +313,7 @@ export function WorkerTasksView(props: {
           initialScrollOffset > 0 ? initialScrollOffset - contentTopInset : undefined
         }
         contentContainerStyle={{
+          paddingTop: 4,
           paddingBottom: Math.max(bottomSafeArea, workspace?.bottomClearance ?? 0),
         }}
         onScroll={(event) => {
@@ -314,6 +335,8 @@ export function WorkerTasksView(props: {
               task={item.task}
               project={projectById.get(item.task.projectId) ?? null}
               onSelect={selectTask}
+              statusChoices={canCreate ? taskStatusChoices(workflowVersion, item.task.status) : []}
+              onMoveStatus={moveStatus}
               selected={selectedKey === item.key}
               sidebar={sidebar}
             />
@@ -346,7 +369,10 @@ export function WorkerTasksView(props: {
   );
 }
 
-/** The desktop's narrow group header: the status, a chevron, and the count at the end. */
+/**
+ * The desktop's narrow group header in the Chats list's group header metrics: the status and a
+ * chevron, and the count at the end, level with the rows' run counts.
+ */
 function StatusGroupHeader(props: {
   readonly title: string;
   readonly count: number;
@@ -359,18 +385,24 @@ function StatusGroupHeader(props: {
       accessibilityRole="button"
       accessibilityState={{ expanded: props.open }}
       accessibilityLabel={`${props.title}, ${props.count}`}
-      accessibilityHint={props.open ? gt("Collapses the group") : gt("Expands the group")}
+      accessibilityHint={props.open ? gt("Hides the group") : gt("Shows the group")}
       onPress={props.onToggle}
-      className="flex-row items-center gap-1.5 px-4 pb-1 pt-4"
+      className="min-h-[52px] flex-row items-center gap-2 px-5 pt-2 active:opacity-60"
     >
-      <Text className="text-sm font-t3-medium text-foreground-muted">{props.title}</Text>
-      <SymbolView
-        name={props.open ? "chevron.down" : "chevron.right"}
-        size={11}
-        tintColorClassName="accent-icon-muted"
-      />
-      <View className="flex-1" />
-      <Text className="text-sm tabular-nums text-foreground-muted">{props.count}</Text>
+      <View className="min-w-0 flex-1 flex-row items-center gap-1.5 py-2">
+        <Text
+          className="shrink text-base font-t3-medium text-foreground-tertiary"
+          numberOfLines={1}
+        >
+          {props.title}
+        </Text>
+        <UpIcon
+          name={props.open ? "chevron-down" : "chevron-right"}
+          size={17}
+          tintColorClassName="accent-icon-muted"
+        />
+      </View>
+      <Text className="text-base tabular-nums text-foreground-tertiary">{props.count}</Text>
     </Pressable>
   );
 }

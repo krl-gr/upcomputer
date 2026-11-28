@@ -51,7 +51,7 @@ export function Sheet(props: SheetProps) {
               backgroundColor="rgba(0,0,0,0)"
               tintColorClassName="accent-foreground"
               hideBackButton
-              hideShadow={false}
+              hideShadow
               title={props.title}
               titleColorClassName="accent-foreground"
               titleFontSize={18}

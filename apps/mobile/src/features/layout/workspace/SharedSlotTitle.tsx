@@ -47,8 +47,8 @@ export function SharedSlotTitle(props: { readonly tab: SharedSlotTab }) {
           {messages(TITLES[props.tab])}
         </Text>
         <SymbolView
-          name="chevron.down"
-          size={Math.round(12 * scale)}
+          name="up.chevron-down"
+          size={Math.round(17 * scale)}
           tintColorClassName="accent-icon-muted"
           type="monochrome"
           weight="semibold"

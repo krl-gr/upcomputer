@@ -17,7 +17,7 @@ const NativeSidebarTabBar = requireNativeView<
     appearance: string;
     showsCompose: boolean;
     compact?: boolean;
-    itemTitles?: Readonly<Record<string, string>>;
+    itemLabels?: Readonly<Record<string, string>>;
     itemSymbols?: Readonly<Record<string, string>>;
     badgedTabs?: readonly string[];
     onSelectionChange: (event: NativeSyntheticEvent<{ tab: string }>) => void;
@@ -50,7 +50,7 @@ export function WorkspaceSidebarTabs(props: {
         workspace.settingsOpen,
         hidden,
       )}
-      selectedColor={colors["--color-primary"]}
+      selectedColor={colors["--color-foreground"]}
       appearance={colorScheme}
       showsCompose={Boolean(props.onNewTask)}
       {...items}

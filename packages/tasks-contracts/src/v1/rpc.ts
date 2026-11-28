@@ -3,8 +3,12 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 
 import {
+  AgentRunMessageInput,
+  AgentRunMessageResult,
+  AgentRunStopInput,
   TaskAgent,
   TaskAgentDeleteInput,
+  TaskAgentRun,
   TaskAgentRunSearchInput,
   TaskAgentRunSearchResult,
   TaskAgentSearchInput,
@@ -167,6 +171,10 @@ export const TASK_AGENTS_RPC_METHODS = {
   search: `${TASK_AGENTS_RPC_NAMESPACE}.search`,
   delete: `${TASK_AGENTS_RPC_NAMESPACE}.delete`,
   searchRuns: `${TASK_AGENTS_RPC_NAMESPACE}.searchRuns`,
+  /** Stops an active run, as the agent_run_stop tool does. */
+  stopRun: `${TASK_AGENTS_RPC_NAMESPACE}.stopRun`,
+  /** Sends a message into a run's thread, as the agent_run_message tool does. */
+  messageRun: `${TASK_AGENTS_RPC_NAMESPACE}.messageRun`,
 } as const;
 
 export const TASK_AUTOMATIONS_RPC_METHODS = {
@@ -441,11 +449,24 @@ export const TaskAgentsSearchRunsRpc = Rpc.make(TASK_AGENTS_RPC_METHODS.searchRu
   error: TaskError,
 });
 
+export const TaskAgentsStopRunRpc = Rpc.make(TASK_AGENTS_RPC_METHODS.stopRun, {
+  payload: AgentRunStopInput,
+  success: TaskAgentRun,
+  error: TaskError,
+});
+export const TaskAgentsMessageRunRpc = Rpc.make(TASK_AGENTS_RPC_METHODS.messageRun, {
+  payload: AgentRunMessageInput,
+  success: AgentRunMessageResult,
+  error: TaskError,
+});
+
 export const TaskAgentsRpcGroup = RpcGroup.make(
   TaskAgentsUpsertRpc,
   TaskAgentsSearchRpc,
   TaskAgentsDeleteRpc,
   TaskAgentsSearchRunsRpc,
+  TaskAgentsStopRunRpc,
+  TaskAgentsMessageRunRpc,
 );
 
 export const TaskAutomationsUpsertRpc = Rpc.make(TASK_AUTOMATIONS_RPC_METHODS.upsert, {

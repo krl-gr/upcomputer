@@ -70,7 +70,7 @@ export function NotificationsScreen() {
             {outages.map((outage) => (
               <ListRowLayout
                 key={outage.environmentId}
-                icon={outage.stopped ? "exclamationmark.circle" : "exclamationmark.triangle"}
+                icon={outage.stopped ? "up.alert-circle" : "up.alert"}
                 label={
                   outage.stopped
                     ? gt("Can't connect to {computer}", { computer: outage.label })
@@ -115,7 +115,7 @@ function ProviderUpdateRow(props: { readonly update: ProviderUpdate }) {
   };
   return (
     <ListRowLayout
-      icon="arrow.up"
+      icon="up.arrow-up"
       label={`${update.name} ${update.latestVersion}`}
       description={
         update.version === null

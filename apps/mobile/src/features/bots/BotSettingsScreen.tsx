@@ -27,7 +27,8 @@ import { Keyboard, Pressable, View } from "react-native";
 import Svg, { Circle, Defs, LinearGradient, Stop } from "react-native-svg";
 
 import * as Dialog from "../../components/ui/Dialog";
-import { SymbolView, type SFSymbol } from "../../components/ui/AppSymbol";
+import type { SFSymbol } from "../../components/ui/AppSymbol";
+import { UpIcon, type UpIconName } from "../../components/up-icons/UpIcon";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { FitSheet } from "../../components/ui/FitSheet";
 import { ListSection } from "../../components/ui/ListSection";
@@ -66,11 +67,19 @@ export type BotSettingsParams = {
   readonly threadId?: string;
 };
 
+/** For the native menu's items, which take SF Symbols only. */
 const RUNTIME_MODE_ICONS: Record<RuntimeMode, SFSymbol> = {
   "approval-required": "lock",
   "auto-accept-edits": "pencil.line",
   auto: "checkmark.shield",
   "full-access": "shield.slash",
+};
+
+const RUNTIME_MODE_ROW_ICONS: Record<RuntimeMode, UpIconName> = {
+  "approval-required": "lock",
+  "auto-accept-edits": "edit",
+  auto: "shield-check",
+  "full-access": "shield-off",
 };
 
 const errorMessage = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
@@ -384,11 +393,7 @@ export function BotSettingsScreen({ route }: StaticScreenProps<BotSettingsParams
             onPress={() => change({ appearance: randomBotAppearance() })}
             className="absolute top-3 right-3 size-11 items-center justify-center rounded-full active:bg-subtle disabled:opacity-40"
           >
-            <SymbolView
-              name={{ ios: "dice", android: "psychology" }}
-              size={20}
-              tintColorClassName="accent-icon-muted"
-            />
+            <UpIcon name="dice-roll" size={24} tintColorClassName="accent-icon-muted" />
           </Pressable>
           <BotCharacter id={id} appearance={form.appearance} size={100} />
           <TextInput
@@ -443,11 +448,7 @@ export function BotSettingsScreen({ route }: StaticScreenProps<BotSettingsParams
               onSelect={() => change({ appearance: { ...form.appearance, accessory } })}
             >
               {accessory === "none" ? (
-                <SymbolView
-                  name={{ ios: "nosign", android: "remove" }}
-                  size={24}
-                  tintColorClassName="accent-icon-muted"
-                />
+                <UpIcon name="no-entry" size={28} tintColorClassName="accent-icon-muted" />
               ) : (
                 <BotAccessoryIcon accessory={accessory} size={36} />
               )}
@@ -495,7 +496,7 @@ export function BotSettingsScreen({ route }: StaticScreenProps<BotSettingsParams
           title={gt("Permissions")}
           description={gt("For the bot's chat and its background tasks.")}
           value={m(runtimeChoice.label)}
-          icon={RUNTIME_MODE_ICONS[runtimeChoice.mode]}
+          icon={RUNTIME_MODE_ROW_ICONS[runtimeChoice.mode]}
           disabled={!editable}
           options={runtimeChoices.map((choice) => ({
             id: choice.mode,
@@ -656,7 +657,7 @@ function SettingRow(props: {
       <Text className="min-w-0 flex-1 text-right text-base text-foreground-muted" numberOfLines={1}>
         {props.value}
       </Text>
-      <SymbolView name="chevron.right" size={13} tintColorClassName="accent-chevron" />
+      <UpIcon name="chevron-right" size={18} tintColorClassName="accent-chevron" />
     </Pressable>
   );
 }
@@ -666,7 +667,7 @@ function MenuRow(props: {
   readonly title: string;
   readonly description?: string;
   readonly value: string;
-  readonly icon?: SFSymbol;
+  readonly icon?: UpIconName;
   readonly disabled?: boolean;
   readonly options: ReadonlyArray<{
     readonly id: string;
@@ -692,20 +693,12 @@ function MenuRow(props: {
       </View>
       <View className="max-w-[55%] shrink flex-row items-center gap-1.5">
         {props.icon ? (
-          <SymbolView
-            name={{ ios: props.icon, android: "lock" }}
-            size={15}
-            tintColorClassName="accent-icon-muted"
-          />
+          <UpIcon name={props.icon} size={18} tintColorClassName="accent-icon-muted" />
         ) : null}
         <Text className="shrink text-base text-foreground-muted" numberOfLines={1}>
           {props.value}
         </Text>
-        <SymbolView
-          name={{ ios: "chevron.up.chevron.down", android: "keyboard_arrow_down" }}
-          size={12}
-          tintColorClassName="accent-chevron"
-        />
+        <UpIcon name="chevrons-up-down" size={16} tintColorClassName="accent-chevron" />
       </View>
     </View>
   );

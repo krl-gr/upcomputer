@@ -27,6 +27,10 @@
       "types": "./src/state/taskStatusCounts.ts",
       "import": "./src/state/taskStatusCounts.ts"
     },
+    "./state/threadRunCounts": {
+      "types": "./src/state/threadRunCounts.ts",
+      "import": "./src/state/threadRunCounts.ts"
+    },
     "./taskStatusGroups": {
       "types": "./src/taskStatusGroups.ts",
       "import": "./src/taskStatusGroups.ts"
@@ -94,6 +98,18 @@
     "./automations/cronSchedule": {
       "types": "./src/automations/cronSchedule.ts",
       "import": "./src/automations/cronSchedule.ts"
+    },
+    "./tags/tagSuggestions": {
+      "types": "./src/tags/tagSuggestions.ts",
+      "import": "./src/tags/tagSuggestions.ts"
+    },
+    "./taskEdits": {
+      "types": "./src/taskEdits.ts",
+      "import": "./src/taskEdits.ts"
+    },
+    "./runs/taskRuns": {
+      "types": "./src/runs/taskRuns.ts",
+      "import": "./src/runs/taskRuns.ts"
     }
   },
   "scripts": {

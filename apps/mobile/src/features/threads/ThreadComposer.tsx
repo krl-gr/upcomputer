@@ -111,6 +111,7 @@ import { ComposerQueuedEditAttachments } from "./ComposerQueuedEdit";
 import { useComposerCommandMenu } from "./use-composer-command-menu";
 import { routeBotMention } from "../bots/botMention";
 import { useBotComposerItems } from "../bots/botComposer";
+import { useThreadBot } from "../bots/botsData";
 import type { ComposerEnvironmentCandidate } from "@t3tools/client-runtime/composerThreadItems";
 import { offersLinkedEnvironments } from "@t3tools/client-runtime/link-request";
 import {
@@ -701,7 +702,9 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     </>
   ) : null;
 
-  const modelControl = (
+  // A bot's model is set in its settings, so its chat has no model picker.
+  const isBotChat = useThreadBot(props.environmentId, props.selectedThread.id) !== null;
+  const modelControl = isBotChat ? null : (
     // Only the expanded label can truncate; shrinking the icon-only control clips the icon.
     <View className={compactEditor.isExpanded ? "min-w-0 shrink" : "shrink-0"}>
       <ComposerModelControl

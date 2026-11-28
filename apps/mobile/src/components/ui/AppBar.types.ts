@@ -72,10 +72,21 @@ export interface AppBarSearch {
   readonly onClose?: () => void;
 }
 
+export interface AppBarTitlePill {
+  readonly icon: ReactNode;
+  readonly label: string;
+  readonly accessibilityLabel?: string;
+  readonly onPress?: () => void;
+}
+
 export interface AppBarProps {
   readonly title: string;
-  /** Android: replaces the title text, such as the brand title. iOS ignores it. */
+  /** Android: replaces the title text, such as the brand title or a bot's character. */
   readonly titleContent?: ReactNode;
+  /** iOS: a glass capsule beside Back in place of the title, such as a bot chat's. */
+  readonly titlePill?: AppBarTitlePill;
+  /** The page shows its own title, so the bar draws none; `title` still names it for Back's menu. */
+  readonly hideTitle?: boolean;
   readonly subtitle?: string | null;
   readonly actions?: ReadonlyArray<AppBarAction>;
   /**

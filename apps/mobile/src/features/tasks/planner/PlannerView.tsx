@@ -37,7 +37,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppActivityIndicator } from "../../../components/ui/AppActivityIndicator";
-import { SymbolView } from "../../../components/ui/AppSymbol";
+import { UpIcon } from "../../../components/up-icons/UpIcon";
 import { AppText as Text } from "../../../components/ui/AppText";
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
@@ -508,12 +508,12 @@ function WeekHeader(props: {
         <Text className="text-foreground-muted"> {year}</Text>
       </Text>
       <RowControl
-        icon={{ ios: "chevron.left.2", android: "check" }}
+        icon="chevrons-left"
         accessibilityLabel={gt("Previous week")}
         onPress={() => props.onStep("previous-week")}
       />
       <RowControl
-        icon="chevron.left"
+        icon="chevron-left"
         accessibilityLabel={gt("Previous day")}
         onPress={() => props.onStep("previous-day")}
       />
@@ -523,12 +523,12 @@ function WeekHeader(props: {
         onPress={() => props.onStep("today")}
       />
       <RowControl
-        icon="chevron.right"
+        icon="chevron-right"
         accessibilityLabel={gt("Next day")}
         onPress={() => props.onStep("next-day")}
       />
       <RowControl
-        icon={{ ios: "chevron.right.2", android: "check" }}
+        icon="chevrons-right"
         accessibilityLabel={gt("Next week")}
         onPress={() => props.onStep("next-week")}
       />
@@ -551,7 +551,7 @@ function WeekHeader(props: {
           if (count !== undefined) props.onDayCount(count);
         }}
       >
-        <RowControl icon="ellipsis" accessibilityLabel={gt("View options")} />
+        <RowControl icon="more-horizontal" accessibilityLabel={gt("View options")} />
       </Menu>
     </View>
   );
@@ -636,7 +636,7 @@ const DayColumn = memo(function DayColumn(props: {
               hitSlop={8}
               className="h-6 w-6 items-center justify-center"
             >
-              <SymbolView name="ellipsis" size={14} tintColorClassName="accent-icon-muted" />
+              <UpIcon name="more-horizontal" size={17} tintColorClassName="accent-icon-muted" />
             </Pressable>
           </Menu>
         ) : null}
@@ -737,7 +737,7 @@ const EntryCard = memo(function EntryCard(props: {
       hitSlop={8}
       className={cn("h-6 w-6 items-center justify-center", !editable && "opacity-40")}
     >
-      <SymbolView name="ellipsis" size={14} tintColorClassName="accent-icon-muted" />
+      <UpIcon name="more-horizontal" size={17} tintColorClassName="accent-icon-muted" />
     </Pressable>
   );
   return (
@@ -783,9 +783,9 @@ const EntryCard = memo(function EntryCard(props: {
           hitSlop={8}
           className="h-6 w-6 items-center justify-center"
         >
-          <SymbolView
-            name={entry.status === "done" ? "checkmark.circle" : "circle"}
-            size={17}
+          <UpIcon
+            name={entry.status === "done" ? "circle-check" : "circle"}
+            size={20}
             tintColorClassName="accent-icon-muted"
           />
         </Pressable>
@@ -850,7 +850,7 @@ function BulkBar(props: {
       </Text>
       {state !== "active" ? (
         <RowControl
-          icon="arrow.uturn.backward"
+          icon="undo"
           accessibilityLabel={gt("Restore", {
             $context: "button that unarchives the selected tasks",
           })}
@@ -861,13 +861,13 @@ function BulkBar(props: {
       {state !== "finished" ? (
         <>
           <RowControl
-            icon="checkmark.circle"
+            icon="circle-check"
             accessibilityLabel={gt("Mark as done")}
             disabled={none}
             onPress={() => props.onRun((store, ids) => store.markDone(ids))}
           />
           <RowControl
-            icon="archivebox"
+            icon="archive"
             accessibilityLabel={gt("Archive", {
               $context: "button that archives the selected tasks",
             })}
@@ -878,7 +878,7 @@ function BulkBar(props: {
       ) : null}
       {props.queueDate !== null ? (
         <RowControl
-          icon={{ ios: "text.badge.plus", android: "check" }}
+          icon="list-plus"
           accessibilityLabel={gt("Add to queue for {date}", { date: props.queueDateLabel })}
           disabled={none}
           onPress={() =>
@@ -919,7 +919,11 @@ function BulkBar(props: {
             );
         }}
       >
-        <RowControl icon="ellipsis" accessibilityLabel={gt("More bulk actions")} disabled={none} />
+        <RowControl
+          icon="more-horizontal"
+          accessibilityLabel={gt("More bulk actions")}
+          disabled={none}
+        />
       </Menu>
       <View className="flex-1" />
       <Button
@@ -975,7 +979,7 @@ const PlannerTaskRow = memo(function PlannerTaskRow(props: {
     />
   );
   const more = (
-    <RowControl icon="ellipsis" accessibilityLabel={gt("More actions")} disabled={!edit} />
+    <RowControl icon="more-horizontal" accessibilityLabel={gt("More actions")} disabled={!edit} />
   );
   return (
     <View className="gap-2 px-4 py-2.5">
@@ -1016,7 +1020,7 @@ const PlannerTaskRow = memo(function PlannerTaskRow(props: {
         )}
         {finished ? (
           <RowControl
-            icon="arrow.uturn.backward"
+            icon="undo"
             accessibilityLabel={gt("Restore", { $context: "button that unarchives the task" })}
             disabled={!edit}
             onPress={() => void store.restore([task.id])}
@@ -1024,13 +1028,13 @@ const PlannerTaskRow = memo(function PlannerTaskRow(props: {
         ) : (
           <>
             <RowControl
-              icon="checkmark.circle"
+              icon="circle-check"
               accessibilityLabel={gt("Mark as done")}
               disabled={!edit}
               onPress={() => void store.markDone([task.id])}
             />
             <RowControl
-              icon="archivebox"
+              icon="archive"
               accessibilityLabel={gt("Archive", { $context: "button that archives the task" })}
               disabled={!edit}
               onPress={() => void store.archive([task.id])}
@@ -1044,7 +1048,7 @@ const PlannerTaskRow = memo(function PlannerTaskRow(props: {
         ) : null}
         {props.queueDate !== null ? (
           <RowControl
-            icon={{ ios: "text.badge.plus", android: "check" }}
+            icon="list-plus"
             accessibilityLabel={gt("Add to queue for {date}", { date: props.queueDateLabel })}
             disabled={!edit}
             onPress={() =>
@@ -1053,7 +1057,7 @@ const PlannerTaskRow = memo(function PlannerTaskRow(props: {
           />
         ) : null}
         <RowControl
-          icon={{ ios: "calendar", android: "check" }}
+          icon="calendar"
           label={props.progress ?? undefined}
           accessibilityLabel={
             props.progress
@@ -1064,7 +1068,7 @@ const PlannerTaskRow = memo(function PlannerTaskRow(props: {
         />
         {props.selectMode ? (
           <RowControl
-            icon={props.selected ? "checkmark.circle.fill" : "circle"}
+            icon={props.selected ? "circle-check" : "circle"}
             tintClassName={props.selected ? "accent-primary" : undefined}
             accessibilityLabel={props.selected ? gt("Deselect") : gt("Select")}
             accessibilityState={{ selected: props.selected }}
@@ -1073,7 +1077,7 @@ const PlannerTaskRow = memo(function PlannerTaskRow(props: {
         ) : (
           <>
             <RowControl
-              icon="arrow.up.left.and.arrow.down.right"
+              icon="expand-diagonal"
               accessibilityLabel={gt("Open details")}
               onPress={props.onOpen}
             />

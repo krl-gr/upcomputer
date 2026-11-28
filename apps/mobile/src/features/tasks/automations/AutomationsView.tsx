@@ -253,7 +253,11 @@ const AutomationRow = memo(function AutomationRow(props: {
   const status = messages(AUTOMATION_STATUS_LABELS[automation.status]);
   const count = automation.taskCount ?? null;
   const more = (
-    <RowControl icon="ellipsis" accessibilityLabel={gt("More actions")} disabled={!props.canEdit} />
+    <RowControl
+      icon="more-horizontal"
+      accessibilityLabel={gt("More actions")}
+      disabled={!props.canEdit}
+    />
   );
   return (
     <View className="px-4 py-3">
@@ -286,7 +290,7 @@ const AutomationRow = memo(function AutomationRow(props: {
           {count !== null ? gt("{count, plural, one {# task} other {# tasks}}", { count }) : ""}
         </Text>
         <RowControl
-          icon="arrow.up.left.and.arrow.down.right"
+          icon="expand-diagonal"
           accessibilityLabel={gt("Open automation")}
           onPress={() => props.onOpen(automation)}
         />
