@@ -214,7 +214,7 @@ export function TaskDescriptionField(props: {
   const gt = useGT();
   const [editing, setEditing] = useState<{ readonly text: string } | null>(null);
   const [saving, setSaving] = useState(false);
-  const inputRef = useRef<{ blur: () => void } | null>(null);
+  const inputRef = useRef<{ blur: () => void; isFocused: () => boolean } | null>(null);
   const accessoryId = useId();
   const finish = async () => {
     if (editing === null || saving) return;
@@ -228,6 +228,8 @@ export function TaskDescriptionField(props: {
     setSaving(false);
     if (saved) setEditing(null);
   };
+  // Leaving the field saves; after a failed save it is no longer focused, so Done saves itself.
+  const done = () => (inputRef.current?.isFocused() ? inputRef.current.blur() : void finish());
   return (
     <>
       <TaskPageSection
@@ -241,9 +243,7 @@ export function TaskDescriptionField(props: {
               accessibilityLabel={editing ? gt("Done") : gt("Edit description")}
               disabled={saving}
               hitSlop={8}
-              onPress={() =>
-                editing ? inputRef.current?.blur() : setEditing({ text: props.value })
-              }
+              onPress={() => (editing ? done() : setEditing({ text: props.value }))}
               className="min-h-11 justify-center active:opacity-60"
             >
               <Text
@@ -295,12 +295,7 @@ export function TaskDescriptionField(props: {
         // Outside the section: it links to its input only when that input is already on screen.
         <InputAccessoryView nativeID={accessoryId}>
           <View className="flex-row justify-end border-t border-border bg-sheet px-4 py-2">
-            <Pressable
-              accessibilityRole="button"
-              disabled={saving}
-              hitSlop={8}
-              onPress={() => inputRef.current?.blur()}
-            >
+            <Pressable accessibilityRole="button" disabled={saving} hitSlop={8} onPress={done}>
               <Text className="text-base font-t3-semibold text-primary-text">{gt("Done")}</Text>
             </Pressable>
           </View>
